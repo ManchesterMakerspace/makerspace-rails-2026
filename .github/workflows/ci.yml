@@ -18,6 +18,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "16.20"
+      - run: npx --yes update-browserslist-db@latest
+         working-directory: ui/
+         continue-on-error: true
       - run: yarn && yarn build
         working-directory: ui/
       - run: bundle exec rspec
