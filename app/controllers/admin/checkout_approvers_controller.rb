@@ -1,5 +1,4 @@
 class Admin::CheckoutApproversController < AdminController
-  # Only full admins can manage who gets approver status
   before_action :find_approver, only: [:update, :destroy]
 
   def index
@@ -8,14 +7,17 @@ class Admin::CheckoutApproversController < AdminController
   end
 
   def create
-    # Upsert — if approver already exists, update their shops
     approver = CheckoutApprover.find_or_initialize_by(member_id: approver_params[:member_id])
-    approver.shop_ids = approver_params[:shop_ids] || []
+    # Merge incoming shop IDs with any existing ones (React sends full list on edit,
+    # but merge here as a safety net against accidental data loss)
+    incoming = approver_params[:shop_ids] || []
+    approver.shop_ids = (approver.shop_ids + incoming).uniq
     approver.save!
     render json: approver, serializer: CheckoutApproverSerializer, adapter: :attributes
   end
 
   def update
+    # PUT replaces the shop list entirely — used for explicit edit from the UI
     @approver.update_attributes!(approver_params)
     render json: @approver, serializer: CheckoutApproverSerializer, adapter: :attributes
   end
