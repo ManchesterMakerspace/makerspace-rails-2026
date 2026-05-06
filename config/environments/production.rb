@@ -27,11 +27,13 @@ Rails.application.configure do
     }
   elsif ENV['SMTP_USERNAME'].present?
     config.action_mailer.smtp_settings = {
-      authentication: :plain,
+      authentication: :login,
       address: ENV['SMTP_ADDRESS'],
+      host: ENV['SMTP_ADDRESS'],
       port: (ENV['SMTP_PORT'] || 587).to_i,
       user_name: ENV['SMTP_USERNAME'],
-      password: ENV['SMTP_PASSWORD']
+      password: ENV['SMTP_PASSWORD'],
+      enable_starttls_auto: true
     }
   else
     config.action_mailer.perform_deliveries = false
