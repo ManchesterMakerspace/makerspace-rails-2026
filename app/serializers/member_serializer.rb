@@ -11,8 +11,7 @@ class MemberSerializer < MemberSummarySerializer
              :member_contract_on_file,
              :group_name,
              :household_role,
-             :subscription_plan_id,
-             :mailtrap
+             :subscription_plan_id
 
   def card_id
     active_card = object.access_cards.to_a.find { |card| card.is_active? }
@@ -37,18 +36,6 @@ class MemberSerializer < MemberSummarySerializer
     invoice&.plan_id
   end
 
-  def mailtrap
-    event = object.mailtrap_event
-    return nil unless event
-
-    {
-      id: event.id,
-      timestamp: event.occurred_at&.in_time_zone("Eastern Time (US & Canada)")&.iso8601,
-      email: event.email,
-      status: event.status
-    }
-  end
-  
   def address
     {
       street: object.address_street,
