@@ -1,5 +1,5 @@
 class Admin::MembersController < AdminController
-  before_action :set_member, only: [:update, :update_password, :send_password_reset]
+  before_action :set_member, only: [:update, :update_password, :send_password_reset, :invite_google_drive]
 
   def create
     @member = Member.new(get_camel_case_params(create_member_params()))
@@ -34,6 +34,13 @@ class Admin::MembersController < AdminController
   # Admin triggers a Devise reset-link email (member sets their own password via link).
   def send_password_reset
     send_set_password_email
+    render json: {}, status: 204 and return
+  end
+
+  # POST /api/admin/members/:id/invite_google_drive
+  # Re-sends a Google Drive folder invite to the member.
+  def invite_google_drive
+    ::Service::GoogleDrive.new.invite_gdrive(@member.email)
     render json: {}, status: 204 and return
   end
 
