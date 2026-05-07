@@ -1,7 +1,7 @@
 # app/controllers/admin_or_rm_controller.rb
 #
-# Base controller for endpoints that are accessible to both admins and
-# resource managers. Currently used by:
+# Base controller for endpoints that are accessible to admins, board members,
+# and resource managers. Currently used by:
 #   - Admin::InvoicesController  (RM limited to resource_class: "fee")
 #   - Admin::InvoiceOptionsController  (RM limited to resource_class: "fee")
 #
@@ -14,6 +14,6 @@ class AdminOrRmController < ApplicationController
   private
 
   def authorized?
-    raise ::Error::Forbidden.new unless is_admin? || is_resource_manager?
+    raise ::Error::Forbidden.new unless is_admin? || is_board_member? || is_resource_manager?
   end
 end

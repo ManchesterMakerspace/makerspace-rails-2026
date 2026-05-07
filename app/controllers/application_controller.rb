@@ -42,6 +42,14 @@ class ApplicationController < ActionController::Base
     current_member.try(:role) == 'resource_manager'
   end
 
+  def is_board_member?
+    current_member.try(:role) == 'board_member'
+  end
+
+  def is_privileged?
+    is_admin? || is_board_member? || is_resource_manager?
+  end
+
   def filter_requests
     if params[:format] && (/html|json/ =~ params[:format]).nil?
       raise Error::NotFound.new

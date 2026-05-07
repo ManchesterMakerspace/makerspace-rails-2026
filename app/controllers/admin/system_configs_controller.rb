@@ -1,4 +1,4 @@
-class Admin::SystemConfigsController < AdminController
+class Admin::SystemConfigsController < AdminPortalSettingsController
 
   # Keys that can be toggled as boolean flags
   FLAG_KEYS = [

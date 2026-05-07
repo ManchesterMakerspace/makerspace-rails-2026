@@ -25,7 +25,7 @@ class Member
   field :expirationTime,  type: Integer  #pre-calcualted time of expiration
   field :startDate, default: Time.now
   field :groupName, type: String #potentially member is in a group/partner membership
-  field :role,                          default: "member" #admin,resource_manager,member
+  field :role,                          default: "member" #admin,board_member,resource_manager,member
   field :member_contract_signed_date, type: Date
   field :subscription,    type: Boolean,   default: false
   ## Database authenticatable
@@ -51,7 +51,7 @@ class Member
   validates :email, uniqueness: true
   validates :cardID, uniqueness: true, allow_nil: true
   validates_inclusion_of :status, in: ["activeMember", "nonMember", "revoked", "inactive"]
-  validates_inclusion_of :role, in: ["admin", "resource_manager", "member"]
+  validates_inclusion_of :role, in: ["admin", "board_member", "resource_manager", "member"]
 
   before_validation :normalize_email
   after_initialize :verify_group_expiry
