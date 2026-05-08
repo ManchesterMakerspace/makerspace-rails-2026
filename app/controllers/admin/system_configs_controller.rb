@@ -1,9 +1,13 @@
-class Admin::SystemConfigsController < AdminPortalSettingsController
+class Admin::SystemConfigsController < AdminController
 
   # Keys that can be toggled as boolean flags
   FLAG_KEYS = [
     SystemConfig::SLACK_SYNC_ENABLED,
     'volunteer_bounty_token_enabled',
+    'firebase_google_enabled',
+    'firebase_apple_enabled',
+    'firebase_github_enabled',
+    'firebase_microsoft_enabled',
   ].freeze
 
   # Keys that can be updated as plain string values
@@ -29,6 +33,10 @@ class Admin::SystemConfigsController < AdminPortalSettingsController
     flags = {
       slack_sync_enabled:             SystemConfig.enabled?(SystemConfig::SLACK_SYNC_ENABLED),
       volunteer_bounty_token_enabled: SystemConfig.enabled?('volunteer_bounty_token_enabled'),
+      firebase_google_enabled:        SystemConfig.enabled?('firebase_google_enabled'),
+      firebase_apple_enabled:         SystemConfig.enabled?('firebase_apple_enabled'),
+      firebase_github_enabled:        SystemConfig.enabled?('firebase_github_enabled'),
+      firebase_microsoft_enabled:     SystemConfig.enabled?('firebase_microsoft_enabled'),
     }
 
     jobs = SystemConfig::JOB_KEYS.map do |job_key, task_name|

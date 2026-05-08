@@ -10,7 +10,8 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :member_contract_on_file,
              :notes,
              :mailtrap,
-             :slack
+             :slack,
+             :firebase_uid
 
   def member_contract_on_file
     !object.member_contract_signed_date.nil?

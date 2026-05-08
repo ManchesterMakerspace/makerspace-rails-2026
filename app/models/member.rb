@@ -26,6 +26,7 @@ class Member
   field :startDate, default: Time.now
   field :groupName, type: String #potentially member is in a group/partner membership
   field :role,                          default: "member" #admin,board_member,resource_manager,member
+  field :firebase_uid,                   type: String
   field :member_contract_signed_date, type: Date
   field :subscription,    type: Boolean,   default: false
   ## Database authenticatable
