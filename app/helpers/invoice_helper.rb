@@ -75,7 +75,7 @@ module InvoiceHelper
         relevant_keys = get_all_invoices().select do |key|
             invoice_id = get_invoice_id_from_key(key)
             timestamp = get_timestamp(invoice_id)
-            timestamp >= last_month
+            timestamp < older_than_time
         end
         Redis.current.del(*relevant_keys) unless relevant_keys.empty?
     end

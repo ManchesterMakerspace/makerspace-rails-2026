@@ -7,9 +7,21 @@ Rails.application.routes.draw do
 
   root to: "application#application"
   post '/ipnlistener', to: 'paypal#notify'
+  post '/mailtrap_listener', to: 'mailtrap#webhooks', defaults: { format: :json }
 
   namespace :billing do
     post '/braintree_listener', to: 'braintree#webhooks'
+  end
+
+  # Slack inbound slash commands (outside :api scope — Slack posts form-encoded)
+  namespace :slack do
+    post '/commands/checkout',  to: 'commands#checkout'
+    post '/commands/volunteer', to: 'commands#volunteer'
+  end
+
+  # Public volunteer bounty board — unauthenticated, token gated via SystemConfig
+  namespace :volunteer do
+    get '/bounties', to: 'bounties#index'
   end
 
   scope :api, defaults: { format: :json } do
@@ -20,6 +32,10 @@ Rails.application.routes.draw do
     end
     resources :invoice_options, only: [:index, :show]
     resources :client_error_handler, only: [:create]
+
+    # Public shop/tool listing
+    resources :shops, only: [:index]
+    resources :tools, only: [:index]
 
     namespace :billing do
       resources :plans, only: [:index]
@@ -34,10 +50,15 @@ Rails.application.routes.draw do
         end
       end
 
+      # Member sees their own checkouts
+      resources :tool_checkouts, only: [:index]
+
       # Rentals — member self-service
       resources :rentals, only: [:show, :index, :update, :create] do
         member do
           delete :cancel
+          delete :decline_agreement
+          post   :mark_vacated
         end
       end
 
@@ -63,10 +84,25 @@ Rails.application.routes.draw do
         end
       end
 
+      # Volunteer — member self-service
+      get  '/volunteer/credits',              to: 'volunteer#credits'
+      get  '/volunteer/summary',              to: 'volunteer#summary'
+      get  '/volunteer/tasks',                to: 'volunteer#tasks'
+      get  '/volunteer/events',               to: 'volunteer#events'
+      post '/volunteer/tasks/:id/claim',      to: 'volunteer#claim_task'
+      post '/volunteer/tasks/:id/complete',   to: 'volunteer#complete_task'
+      post '/volunteer/events/:id/checkin',   to: 'volunteer#checkin_event'
+
       namespace :admin do
         resources :cards, only: [:new, :create, :index, :update]
         resources :invoices, only: [:index, :create, :update, :destroy]
         resources :invoice_options, only: [:create, :update, :destroy]
+
+        # Tool checkout management
+        resources :shops, only: [:index, :create, :update, :destroy]
+        resources :tools, only: [:index, :create, :update, :destroy]
+        resources :tool_checkouts, only: [:index, :create, :destroy]
+        resources :checkout_approvers, only: [:index, :create, :update, :destroy]
 
         # Rentals — admin manage + approve/deny
         resources :rentals, only: [:create, :update, :destroy, :index] do
@@ -100,6 +136,15 @@ Rails.application.routes.draw do
         resources :permissions, only: [:index, :update]
         resources :analytics, only: [:index]
 
+        # Member Portal Settings
+        resources :system_configs, only: [:index] do
+          collection do
+            put  :update_flag
+            put  :update_setting
+            post :run_job
+          end
+        end
+
         namespace :billing do
           resources :subscriptions, only: [:index, :destroy]
           resources :transactions, only: [:show, :index, :destroy]
@@ -109,6 +154,32 @@ Rails.application.routes.draw do
         resources :earned_memberships, only: [:index, :show, :create, :update] do
           scope module: :earned_memberships do
             resources :reports, only: [:index]
+          end
+        end
+
+        # Volunteer credits — admin/RM manage
+        resources :volunteer_credits, only: [:index, :create, :destroy] do
+          member do
+            post :approve
+            post :reject
+          end
+        end
+
+        # Volunteer bounty tasks — admin/RM manage
+        resources :volunteer_tasks, only: [:index, :create, :update, :destroy] do
+          member do
+            post :complete
+            post :cancel
+            post :release
+            post :reject_pending
+          end
+        end
+
+        # Volunteer events — admin/RM manage
+        resources :volunteer_events, only: [:index, :create, :show, :destroy] do
+          member do
+            post :close
+            post :add_attendee
           end
         end
       end

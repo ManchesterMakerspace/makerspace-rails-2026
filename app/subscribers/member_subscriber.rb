@@ -25,7 +25,7 @@ module MemberSubscriber
         begin 
           ::BraintreeService::Subscription.cancel(connect_gateway(), subscription_id)
         rescue => err
-          enque_message("Error cancelling #{event[:model].fullname}'s membership_subscription. Err: #{err}")
+          ::Service::SlackConnector.send_slack_message("Error cancelling #{event[:model].fullname}'s membership_subscription. Err: #{err}")
         end
       end
 
@@ -42,7 +42,7 @@ module MemberSubscriber
     begin
       invite_to_slack(member.email, member.lastname, member.firstname)
     rescue => err
-      enque_message("Error inviting #{member.fullname} to Slack. Error: #{err}")
+      ::Service::SlackConnector.send_slack_message("Error inviting #{member.fullname} to Slack. Error: #{err}")
     end
   end
 
@@ -50,7 +50,7 @@ module MemberSubscriber
     begin
       invite_gdrive(member.email)
     rescue Error::Google::Upload => err
-      enque_message("Error sharing Member Resources folder with #{member.fullname}. Error: #{err}")
+      ::Service::SlackConnector.send_slack_message("Error sharing Member Resources folder with #{member.fullname}. Error: #{err}")
     end
   end
 

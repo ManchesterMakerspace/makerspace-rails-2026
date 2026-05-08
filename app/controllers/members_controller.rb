@@ -28,7 +28,7 @@ class MembersController < AuthenticationController
     end
 
     def show
-      render json: @member, adapter: :attributes and return
+      render json: @member, serializer: MemberSerializer, adapter: :attributes and return
     end
 
     def update

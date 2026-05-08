@@ -25,7 +25,8 @@ class Member
   field :expirationTime,  type: Integer  #pre-calcualted time of expiration
   field :startDate, default: Time.now
   field :groupName, type: String #potentially member is in a group/partner membership
-  field :role,                          default: "member" #admin,resource_manager,member
+  field :role,                          default: "member" #admin,board_member,resource_manager,member
+  field :firebase_uid,                   type: String
   field :member_contract_signed_date, type: Date
   field :subscription,    type: Boolean,   default: false
   ## Database authenticatable
@@ -39,7 +40,7 @@ class Member
 
   field :customer_id, type: String # Braintree customer relation
   field :subscription_id, type: String # Braintree relation
-
+  field :mailtrap_id, type: BSON::ObjectId
   field :silence_emails, type: Boolean # Stop all slack and email notifications to user
   field :notes, type: String
 
@@ -51,8 +52,9 @@ class Member
   validates :email, uniqueness: true
   validates :cardID, uniqueness: true, allow_nil: true
   validates_inclusion_of :status, in: ["activeMember", "nonMember", "revoked", "inactive"]
-  validates_inclusion_of :role, in: ["admin", "resource_manager", "member"]
+  validates_inclusion_of :role, in: ["admin", "board_member", "resource_manager", "member"]
 
+  before_validation :normalize_email
   after_initialize :verify_group_expiry
   after_create :apply_default_permissions, :publish_create
   after_update :update_card, :publish_update, :check_household_exit, :sync_expiration_to_group
@@ -166,6 +168,16 @@ class Member
     return "#{self.firstname} #{self.lastname}"
   end
 
+  def normalize_email
+    self.email = self.email.to_s.strip.downcase
+  end
+
+  def mailtrap_event
+    return nil if mailtrap_id.blank?
+    # We have an updated email result from Mailtrap
+    MailtrapEvent.where(id: mailtrap_id).first
+  end
+  
   def verify_group_expiry
     if self.group
       # Primary member drives the group expiry — don't overwrite their expiration
@@ -239,15 +251,15 @@ class Member
   # Emit to Member & Management channels on renewal
   def send_renewal_slack_message(current_user=nil)
     slack_user = SlackUser.find_by(member_id: id)
-    enque_message(get_renewal_slack_message, slack_user.slack_id) unless slack_user.nil?
-    enque_message(get_renewal_slack_message(current_user), ::Service::SlackConnector.members_relations_channel)
+    ::Service::SlackConnector.send_slack_message(get_renewal_slack_message, slack_user.slack_id) unless slack_user.nil?
+    ::Service::SlackConnector.send_slack_message(get_renewal_slack_message(current_user), ::Service::SlackConnector.members_relations_channel)
   end
 
   # Emit to Member & Management channels on renewal reversals
   def send_renewal_reversal_slack_message
     slack_user = SlackUser.find_by(member_id: id)
-    enque_message(get_renewal_reversal_slack_message, slack_user.slack_id) unless slack_user.nil?
-    enque_message(get_renewal_reversal_slack_message, ::Service::SlackConnector.members_relations_channel)
+    ::Service::SlackConnector.send_slack_message(get_renewal_reversal_slack_message, slack_user.slack_id) unless slack_user.nil?
+    ::Service::SlackConnector.send_slack_message(get_renewal_reversal_slack_message, ::Service::SlackConnector.members_relations_channel)
   end
 
   protected

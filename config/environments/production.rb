@@ -16,7 +16,7 @@ Rails.application.configure do
     redis: { host: ENV['REDIS_URL'], port: ENV['REDIS_PORT'], db: ENV['REDIS_DB'] }
   }
 
-  if ENV['GMAIL_USERNAME']
+  if ENV['GMAIL_USERNAME'].present?
     config.action_mailer.smtp_settings = {
       authentication: :plain,
       address: 'smtp.gmail.com',
@@ -25,14 +25,19 @@ Rails.application.configure do
       user_name: ENV['GMAIL_USERNAME'],
       password: ENV['GMAIL_PASSWORD']
     }
-  elsif ENV['SMTP_USERNAME']
+  elsif ENV['SMTP_USERNAME'].present?
     config.action_mailer.smtp_settings = {
-      authentication: :plain,
+      authentication: :login,
       address: ENV['SMTP_ADDRESS'],
-      port: 587,
+      host: ENV['SMTP_ADDRESS'],
+      port: (ENV['SMTP_PORT'] || 587).to_i,
       user_name: ENV['SMTP_USERNAME'],
-      password: ENV['SMTP_PASSWORD']
+      password: ENV['SMTP_PASSWORD'],
+      enable_starttls_auto: true
     }
+  else
+    config.action_mailer.perform_deliveries = false
+    Rails.logger.warn '[Mailer] WARNING: No mail provider configured — email delivery disabled'
   end
 
   # Code is not reloaded between requests.

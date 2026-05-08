@@ -22,14 +22,14 @@ class RentalVacatingCheckJob < ApplicationJob
         # Slack DM to member
         slack_user = SlackUser.find_by(member_id: member.id)
         unless slack_user.nil?
-          ::Service::SlackConnector.enque_message(
+          ::Service::SlackConnector.send_slack_message(
             "Your rental of *#{rental.number}* has now ended. Thank you — the space is available for other members.",
             slack_user.slack_id
           )
         end
 
         # Admin channel notification
-        ::Service::SlackConnector.enque_message(
+        ::Service::SlackConnector.send_slack_message(
           "🔴 #{member.fullname}'s rental of *#{rental.number}* has expired and been automatically cancelled."
         )
 

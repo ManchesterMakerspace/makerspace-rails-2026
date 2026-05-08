@@ -21,7 +21,7 @@ class ApplicationController < ActionController::Base
   protected
   def allow_only_html_requests
     if params[:format] && params[:format] != "html"
-      render :file => Rails.public_path.join("404.html")
+      send_file Rails.public_path.join("404.html"), status: 404, type: "text/html", disposition: "inline"
     end
   end
 
@@ -40,6 +40,14 @@ class ApplicationController < ActionController::Base
 
   def is_resource_manager?
     current_member.try(:role) == 'resource_manager'
+  end
+
+  def is_board_member?
+    current_member.try(:role) == 'board_member'
+  end
+
+  def is_privileged?
+    is_admin? || is_board_member? || is_resource_manager?
   end
 
   def filter_requests

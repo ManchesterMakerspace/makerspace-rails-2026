@@ -1,7 +1,11 @@
-class Admin::InvoicesController < AdminController
+class Admin::InvoicesController < AdminOrRmController
   include FastQuery::MongoidQuery
   include BraintreeGateway
   before_action :find_invoice, only: [:update, :destroy]
+
+  # Allow Resource Managers to create shop fee invoices (resource_class: "fee" only).
+  # Full admin access remains for all invoice types.
+  before_action :authorize_invoice_action, only: [:create]
 
   def index
     @queries = invoice_query_params.keys.map do |k|
@@ -48,7 +52,7 @@ class Admin::InvoicesController < AdminController
     return render_with_total_items(invoices, { each_serializer: InvoiceSerializer, adapter: :attributes })
   end
 
-  # Create an invoice from an invoice option
+  # Create an invoice from an invoice option (or raw params for admins with customBilling)
   def create
     if params['id']
       member = Member.find(invoice_option_params[:member_id])
@@ -82,8 +86,20 @@ class Admin::InvoicesController < AdminController
   end
 
   private
+
+  # Admins can create any invoice type.
+  # Resource Managers can only create fee invoices (shop charges).
+  def authorize_invoice_action
+    return if is_admin?
+    resource_class = params[:resource_class]
+    unless resource_class == "fee"
+      render json: { error: "Resource managers may only create shop fee invoices" }, status: 403
+    end
+  end
+
   def update_invoice_params
     params.permit(:description,
+                  :name,
                   :items,
                   :settled,
                   :amount,

@@ -1,5 +1,5 @@
 class Admin::MembersController < AdminController
-  before_action :set_member, only: [:update, :update_password, :send_password_reset]
+  before_action :set_member, only: [:update, :update_password, :send_password_reset, :invite_google_drive]
 
   def create
     @member = Member.new(get_camel_case_params(create_member_params()))
@@ -37,6 +37,13 @@ class Admin::MembersController < AdminController
     render json: {}, status: 204 and return
   end
 
+  # POST /api/admin/members/:id/invite_google_drive
+  # Re-sends a Google Drive folder invite to the member.
+  def invite_google_drive
+    ::Service::GoogleDrive.new.invite_gdrive(@member.email)
+    render json: {}, status: 204 and return
+  end
+
   private
   def create_member_params
     params.require([:firstname, :lastname, :email])
@@ -45,7 +52,9 @@ class Admin::MembersController < AdminController
   end
 
   def update_member_params
-    params.permit(:firstname, :lastname, :role, :email, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
+    # Email intentionally excluded — changing email requires its own validation flow
+    # and including it triggers Mongoid uniqueness re-validation on unchanged values
+    params.permit(:firstname, :lastname, :role, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
       :silence_emails, :phone, :subscription, address: [:street, :unit, :city, :state, :postal_code])
   end
 

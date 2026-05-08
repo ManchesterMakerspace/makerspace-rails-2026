@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manchester Makerspace — Volunteer Bounties</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: #0d0d0d;
+      color: #f0f0f0;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2rem;
+      border-bottom: 2px solid #e85d04;
+      padding-bottom: 1rem;
+    }
+
+    header h1 { font-size: 2rem; font-weight: 700; color: #e85d04; letter-spacing: 0.04em; }
+    header .subtitle { font-size: 1rem; color: #aaa; margin-top: 0.35rem; }
+    header .subtitle code {
+      background: #2a2a2a;
+      color: #e85d04;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    #last-updated { font-size: 0.8rem; color: #666; text-align: right; flex-shrink: 0; }
+
+    #task-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .task-card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-left: 4px solid #e85d04;
+      border-radius: 6px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .task-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+    }
+
+    .task-number {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #e85d04;
+      background: rgba(232, 93, 4, 0.15);
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .task-title { font-size: 1.1rem; font-weight: 600; color: #ffffff; }
+    .task-description { font-size: 0.9rem; color: #ccc; line-height: 1.5; flex-grow: 1; }
+
+    .task-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 0.5rem;
+    }
+
+    .task-credit {
+      background: #e85d04;
+      color: #fff;
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 0.25rem 0.6rem;
+      border-radius: 20px;
+    }
+
+    .task-shop { font-size: 0.8rem; color: #888; }
+
+    #empty-state { display: none; text-align: center; color: #555; font-size: 1.25rem; margin-top: 6rem; }
+    #error-state { display: none; text-align: center; color: #c62828; font-size: 1rem; margin-top: 4rem; }
+
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid #555;
+      border-top-color: #e85d04;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-left: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Volunteer Bounties</h1>
+      <div class="subtitle">
+        Claim a task and help out around the space! Use <code>/volunteer claim &lt;task#&gt;</code> in Slack.
+      </div>
+    </div>
+    <div id="last-updated">Loading<span class="spinner"></span></div>
+  </header>
+
+  <div id="task-grid"></div>
+  <div id="empty-state">No bounty tasks available right now. Check back soon!</div>
+  <div id="error-state">Unable to load tasks. Will retry shortly.</div>
+
+  <script>
+    const urlParams  = new URLSearchParams(window.location.search);
+    const token      = urlParams.get('token') || '';
+    const jsonUrl    = '/volunteer/bounties.json' + (token ? '?token=' + encodeURIComponent(token) : '');
+    const REFRESH_MS = 30000;
+
+    const grid        = document.getElementById('task-grid');
+    const emptyState  = document.getElementById('empty-state');
+    const errorState  = document.getElementById('error-state');
+    const lastUpdated = document.getElementById('last-updated');
+
+    function creditLabel(value) {
+      const n = parseFloat(value);
+      return n + ' ' + (n === 1 ? 'credit' : 'credits');
+    }
+
+    function renderTasks(tasks) {
+      const available = tasks.filter(t => t.status === 'available');
+      grid.innerHTML = '';
+      emptyState.style.display = available.length === 0 ? 'block' : 'none';
+      errorState.style.display = 'none';
+
+      available.forEach(task => {
+        const card = document.createElement('div');
+        card.className = 'task-card';
+        const taskNum = task.task_number ? '#' + task.task_number : '';
+        card.innerHTML = `
+          <div class="task-header">
+            ${taskNum ? '<span class="task-number">' + escapeHtml(taskNum) + '</span>' : ''}
+            <div class="task-title">${escapeHtml(task.title)}</div>
+          </div>
+          <div class="task-description">${escapeHtml(task.description)}</div>
+          <div class="task-footer">
+            <span class="task-credit">${creditLabel(task.credit_value)}</span>
+            ${task.shop_name ? '<span class="task-shop">' + escapeHtml(task.shop_name) + '</span>' : ''}
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      const now = new Date();
+      lastUpdated.textContent = 'Updated ' + now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
+    }
+
+    function loadTasks() {
+      fetch(jsonUrl)
+        .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+        .then(renderTasks)
+        .catch(() => {
+          errorState.style.display = 'block';
+          lastUpdated.textContent = 'Failed to load — retrying...';
+        });
+    }
+
+    loadTasks();
+    setInterval(loadTasks, REFRESH_MS);
+  </script>
+</body>
+</html>

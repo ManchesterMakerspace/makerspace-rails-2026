@@ -391,6 +391,23 @@ FactoryBot.define do
     timestamp { Time.now }
     payload { JSON.generate(build(:subscription)) }
   end
+  factory :mailtrap_event do
+    transient do
+      member { create(:member) }
+    end
+
+    email { member.email }
+    status { "delivery" }
+    occurred_at { Time.utc(2026, 4, 24, 12, 0, 0) }
+    message_id { generate(:uid) }
+    event_id { generate(:uid) }
+    event { "delivery" }
+    timestamp { occurred_at.to_i }
+
+    after(:build) do |mailtrap_event, evaluator|
+      mailtrap_event.member_id ||= evaluator.member.id
+    end
+  end
 
   factory :dispute_notification, parent: :notification do
     kind { Braintree::WebhookNotification::Kind::DisputeOpened }

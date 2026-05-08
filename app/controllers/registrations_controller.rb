@@ -4,7 +4,7 @@ class RegistrationsController < ApplicationController
   respond_to :json
 
   def new
-    email = new_member_params[:email]
+    email = new_member_params[:email].to_s.strip.downcase
     member = Member.find_by(email: email)
     if member
       error = "Cannot send registration to #{email}. Account already exists"

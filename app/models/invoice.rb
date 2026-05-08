@@ -9,6 +9,9 @@ class Invoice
     "member" => Member,
     "rental" => Rental,
     "household" => Group,
+    # One-off shop charges. ShopFee is a no-op stub — settling a fee invoice
+    # runs a Braintree sale but does NOT alter membership expiry.
+    "fee" => ShopFee,
   }.freeze
   OPERATION_FUNCTIONS = ["renew="].freeze
 
@@ -156,8 +159,8 @@ class Invoice
     slack_user = SlackUser.find_by(member_id: self.member_id)
     type = self.resource_class == "member" ? "membership" : "rental"
     message = "#{self.member.fullname}'s #{type} subscription#{type == "rental" ? " for #{self.resource.try(:number) || self.name}" : ""} has been canceled."
-    enque_message(message, slack_user.slack_id) unless slack_user.nil?
-    enque_message(message, ::Service::SlackConnector.members_relations_channel)
+    ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id) unless slack_user.nil?
+    ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.members_relations_channel)
     BillingMailer.canceled_subscription(self.member.email, self.resource_class).deliver_later
   end
 
@@ -187,7 +190,7 @@ class Invoice
       household: "group_display_name"
     }
     option = options[self.resource_class.to_sym]
-    self.resource.try(option.to_sym)
+    self.resource.try(option.to_sym) if option
   end
 
   def generate_subscription_id
@@ -208,6 +211,8 @@ class Invoice
   end
 
   def send_rental_email
+    # Only send new_invoice email for rental and fee invoices (not recurring membership)
+    return unless resource_class == "rental" || resource_class == "fee"
     BillingMailer.new_invoice(self.member.email, self.id.as_json).deliver_later
   end
 
@@ -219,7 +224,8 @@ class Invoice
     # Test a validation function if it exists
     if !OPERATION_RESOURCES[self.resource_class].method_defined?(:delay_invoice_operation) || (!self.resource.nil? && !self.resource.delay_invoice_operation(operation))
       raise ::Error::UnprocessableEntity.new("Unable to process invoice. Operation failed for invoice #{self.id}") unless resource.execute_operation(operation, self)
-      resource.send_renewal_slack_message()
+      # Skip renewal slack message for fee invoices — no membership change occurred
+      resource.send_renewal_slack_message() unless resource_class == "fee"
       self.settled = true
       self.save!
     else
@@ -233,7 +239,7 @@ class Invoice
     raise ::Error::UnprocessableEntity.new("Unable to reverse invoice. Invalid operation for invoice #{self.id}") if operation.nil?
 
     raise ::Error::UnprocessableEntity.new("Unable to reverse invoice. Operation failed for invoice #{self.id}") unless resource.reverse_operation(operation, self)
-    resource.send_renewal_reversal_slack_message()
+    resource.send_renewal_reversal_slack_message() unless resource_class == "fee"
     self.settled = false
     self.save!
   end

@@ -34,6 +34,11 @@ task :member_review => :environment do
       @no_member_contract = Service::Analytics::Members.query_no_member_contract()
       @no_rental_contract = Member.where(:id.in => Service::Analytics::Rentals.query_no_rental_contract().pluck(:member_id))
 
+      # Members with active rentals whose membership has expired
+      @expired_with_rentals = Rental.where(:status.in => ["active", "vacating"]).map(&:member).compact.select do |member|
+        member.status != "activeMember"
+      end.uniq
+
       # Helpers
       def send_report(member_list, management_message, slack_lambda)
         build_management_messages(management_message, member_list)
@@ -156,6 +161,19 @@ task :member_review => :environment do
       notify_missing_contracts(@no_member_contract, "Member Contract") if @no_member_contract.length != 0
       notify_missing_contracts(@no_rental_contract, "Rental Agreement") if @no_rental_contract.length != 0
       notify_paypal_message() if @paypal_members.length != 0
+
+      # Notify admins of expired members with active rentals
+      if @expired_with_rentals.length > 0
+        add_context("Expired members with active rentals", @expired_with_rentals)
+        rental_messages = @expired_with_rentals.map do |member|
+          rentals = Rental.where(member_id: member.id, :status.in => ["active", "vacating"]).map(&:number).join(", ")
+          "<#{@base_url}/members/#{member.id}|#{member.fullname}> — Rentals: #{rentals}"
+        end
+        @management_messages.push({
+          "type": "section",
+          "text": { "type": "mrkdwn", "text": rental_messages.join("\n") }
+        })
+      end
 
       # Send management their report
       ::Service::SlackConnector.send_slack_message(@management_messages, ::Service::SlackConnector.members_relations_channel)

@@ -109,6 +109,22 @@ RSpec.describe MembersController, type: :controller do
       get :show, params: {id: "foo" }, format: :json
       expect(response).to have_http_status(404)
     end
+    
+    it "includes the latest mailtrap details when mailtrap_id is present" do
+      member = create(:member)
+      mailtrap_event = create(:mailtrap_event, member: member, email: member.email, occurred_at: Time.utc(2026, 4, 24, 12, 30, 0))
+      member.set(mailtrap_id: mailtrap_event.id)
+
+      get :show, params: { id: member.to_param }, format: :json
+
+      parsed_response = JSON.parse(response.body)
+      expect(response).to have_http_status(200)
+      expect(parsed_response["mailtrap"]).to include(
+        "email" => member.email,
+        "status" => "delivery",
+        "timestamp" => "2026-04-24T08:30:00-04:00"
+      )
+    end
   end
 
   describe "PUT #update" do

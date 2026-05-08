@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title><%= ENV.fetch('VARIANT', '') %>Makerspace Authorization</title>
+  <title><%= Util.is_prod? ? '' : 'DEV - ' %>Makerspace Authorization</title>
   <%= favicon_link_tag asset_path('favicon.png'), :rel => 'icon', :type =>  'image/png' %>
   <%= favicon_link_tag asset_path('favicon.png'), :rel => 'apple-touch-icon', :type =>  'image/png' %>
   <%= stylesheet_link_tag 'application' %>
@@ -15,7 +15,14 @@
 <% else %>
 <body>
 <% end %>
-<% if ENV['VARIANT'] %><div class="watermark"><%= ENV['VARIANT'] %></div><% end %>
+<% unless Util.is_prod? %>
+  <div class="watermark">
+    DEVELOPMENT
+    | Braintree: <%= ENV.fetch('BT_ENV', 'unknown') %>
+    | Rails: <%= Rails.env %>
+    | Rack: <%= ENV.fetch('RACK_ENV', 'unknown') %>
+  </div>
+<% end %>
   <%= javascript_include_tag 'application' %>
 </body>
 </html>
