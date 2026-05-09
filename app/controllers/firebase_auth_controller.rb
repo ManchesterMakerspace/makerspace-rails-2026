@@ -33,7 +33,7 @@ class FirebaseAuthController < ApplicationController
 
     if member
       # Link firebase_uid if not already set
-      member.update_column(:firebase_uid, firebase_uid) if member.firebase_uid.blank?
+      member.set(firebase_uid: firebase_uid) if member.firebase_uid.blank?
     else
       # New member — create a stub record and let SignUpWorkflow complete membership
       member = Member.new(
@@ -67,7 +67,7 @@ class FirebaseAuthController < ApplicationController
     member = Member.find(params[:member_id])
     raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: params[:member_id] }) if member.nil?
 
-    member.update_column(:firebase_uid, nil)
+    member.set(firebase_uid: nil)
     render json: {}, status: 204
   rescue Mongoid::Errors::DocumentNotFound
     render json: { message: 'Member not found' }, status: :not_found
