@@ -4,6 +4,8 @@ FROM node:16-bullseye AS ui
 
 ARG REACT_REPO_URL
 ARG REACT_BRANCH=master
+ARG FIREBASE_API_KEY
+ARG FIREBASE_PROJECT_ID
 
 RUN apt-get update -qq && apt-get install -y -qq git
 
@@ -11,7 +13,7 @@ WORKDIR /react
 
 RUN git clone --branch ${REACT_BRANCH} ${REACT_REPO_URL} .
 
-RUN yarn install && PORT=3000 yarn build
+RUN yarn install && PORT=3000 FIREBASE_API_KEY=${FIREBASE_API_KEY} FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID} yarn build
 
 # Build backend
 

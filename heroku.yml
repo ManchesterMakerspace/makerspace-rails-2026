@@ -4,3 +4,5 @@ build:
   config:
     REACT_REPO_URL: https://github.com/thannemann/makerspace-react.git
     REACT_BRANCH: master
+    FIREBASE_API_KEY: $FIREBASE_API_KEY
+    FIREBASE_PROJECT_ID: $FIREBASE_PROJECT_ID
