@@ -42,6 +42,12 @@ Rails.application.routes.draw do
       resources :discounts, only: [:index]
     end
 
+    # Firebase authentication — public endpoints (no Devise session required)
+    scope :auth do
+      post   '/firebase_login',             to: 'firebase_auth#login'
+      delete '/firebase_unlink/:member_id', to: 'firebase_auth#unlink'
+    end
+
     authenticate :member do
       put "/members/change_password", to: "members/passwords#update"
       resources :members, only: [:show, :index, :update] do
