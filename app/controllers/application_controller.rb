@@ -21,7 +21,7 @@ class ApplicationController < ActionController::Base
   protected
   def allow_only_html_requests
     if params[:format] && params[:format] != "html"
-      send_file Rails.public_path.join("404.html"), status: 404, type: "text/html", disposition: "inline"
+      render plain: "Not Found", status: 404
     end
   end
 
