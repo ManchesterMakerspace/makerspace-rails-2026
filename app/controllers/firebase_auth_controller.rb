@@ -52,7 +52,8 @@ class FirebaseAuthController < ApplicationController
     sign_in(:member, member)
     render json: member, adapter: :attributes
   rescue => e
-    Rails.logger.error "[FirebaseAuth] Login error: \#{e.message}"
+    Rails.logger.error "[FirebaseAuth] Login error: #{e.message}"
+    Rails.logger.error "[FirebaseAuth] Backtrace: #{e.backtrace&.first(5)&.join(' | ')}"
     Honeybadger.notify(e, context: { controller: 'FirebaseAuthController', action: 'login' })
     render json: { message: 'Authentication failed' }, status: :internal_server_error
   end
@@ -71,7 +72,7 @@ class FirebaseAuthController < ApplicationController
   rescue Mongoid::Errors::DocumentNotFound
     render json: { message: 'Member not found' }, status: :not_found
   rescue => e
-    Rails.logger.error "[FirebaseAuth] Unlink error: \#{e.message}"
+    Rails.logger.error "[FirebaseAuth] Unlink error: #{e.message}"
     Honeybadger.notify(e)
     render json: { message: 'Failed to unlink Firebase account' }, status: :internal_server_error
   end
@@ -146,7 +147,7 @@ class FirebaseAuthController < ApplicationController
     return nil unless response.is_a?(Net::HTTPSuccess)
     JSON.parse(response.body)
   rescue => e
-    Rails.logger.error "[FirebaseAuth] Failed to fetch Google certs: \#{e.message}"
+    Rails.logger.error "[FirebaseAuth] Failed to fetch Google certs: #{e.message}"
     Honeybadger.notify(e, context: { controller: 'FirebaseAuthController', action: 'fetch_google_certs' })
     nil
   end
