@@ -139,7 +139,7 @@ class RentalsController < AuthenticationController
 
   # POST /api/rentals/:id/mark_vacated — member or admin marks a vacating rental as vacated
   def mark_vacated
-    unless @rental.member_id.to_s == current_member.id.to_s || current_member.role == "admin" || current_member.role == "resource_manager"
+    unless @rental.member_id.to_s == current_member.id.to_s || is_admin? || is_board_member? || is_resource_manager?
       raise ::Error::Forbidden.new
     end
     raise ::Error::UnprocessableEntity.new("Rental is not in vacating status.") unless @rental.status == "vacating"

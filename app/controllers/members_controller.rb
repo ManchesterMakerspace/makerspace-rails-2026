@@ -5,7 +5,7 @@ class MembersController < AuthenticationController
     def index
       base_query = Member.includes(:access_cards).includes(:earned_membership)
 
-      if is_admin? || is_resource_manager?
+      if is_admin? || is_board_member? || is_resource_manager?
         # Admins and Resource Managers can see all members,
         # filtered to current members only when requested
         if to_bool(search_params[:current_members])

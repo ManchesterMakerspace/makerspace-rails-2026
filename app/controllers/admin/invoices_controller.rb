@@ -90,7 +90,7 @@ class Admin::InvoicesController < AdminOrRmController
   # Admins can create any invoice type.
   # Resource Managers can only create fee invoices (shop charges).
   def authorize_invoice_action
-    return if is_admin?
+    return if is_admin? || is_board_member?
     resource_class = params[:resource_class]
     unless resource_class == "fee"
       render json: { error: "Resource managers may only create shop fee invoices" }, status: 403

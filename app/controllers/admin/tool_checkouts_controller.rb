@@ -90,7 +90,7 @@ class Admin::ToolCheckoutsController < AdminOrRmController
 
   # Admins can approve anything. RMs and checkout approvers are shop-scoped.
   def authorize_approver
-    return if is_admin?
+    return if is_admin? || is_board_member?
     tool = Tool.find(params[:tool_id])
     shop_id = tool.try(:shop_id)
 
