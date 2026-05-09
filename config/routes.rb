@@ -42,6 +42,9 @@ Rails.application.routes.draw do
       resources :discounts, only: [:index]
     end
 
+    # Public runtime config — serves env vars to React client at runtime
+    get '/config', to: 'client_config#index'
+
     # Firebase authentication — public endpoints (no Devise session required)
     scope :auth do
       post   '/firebase_login',             to: 'firebase_auth#login'
