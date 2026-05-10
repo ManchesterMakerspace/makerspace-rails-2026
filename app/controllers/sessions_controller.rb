@@ -14,8 +14,8 @@ class SessionsController < Devise::SessionsController
     # Check if TOTP enrollment is required for this member's role but not yet set up
     if totp_enrollment_required?(resource) && !resource.otp_required_for_login?
       sign_in(resource_name, resource)
-      render json: MemberSerializer.new(resource).as_json.merge(totp_enrollment_required: true), 
-       adapter: :attributes and return
+      member_json = MemberSerializer.new(resource, root: false).as_json
+      render json: member_json.merge("totp_enrollment_required" => true) and return
     end
 
     sign_in(resource_name, resource)
