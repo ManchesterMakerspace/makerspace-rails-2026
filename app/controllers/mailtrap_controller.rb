@@ -34,18 +34,40 @@ class MailtrapController < ApplicationController
     ActiveSupport::SecurityUtils.secure_compare(left, right)
   end
 
+  # Higher index = higher priority. Negative events always win over positive
+  # so admins can see bounces/spam even if a delivery was recorded earlier.
+  EVENT_PRIORITY = {
+    'delivery'    => 1,
+    'open'        => 2,
+    'click'       => 3,
+    'unsubscribe' => 10,
+    'soft bounce' => 10,
+    'spam'        => 10,
+    'bounce'      => 11,
+    'suspension'  => 11,
+    'reject'      => 11,
+  }.freeze
+
   def process_events(events)
     events.each do |event|
       next unless event.is_a?(Hash)
 
-      recipient_email = event["email"].to_s.strip
+      recipient_email = event['email'].to_s.strip
       next if recipient_email.blank?
 
       member = Member.where(email: /\A#{Regexp.escape(recipient_email)}\z/i).first
       next unless member
 
       mailtrap_event = MailtrapEvent.create!(mailtrap_attributes(event).merge(member_id: member.id))
-      member.set(mailtrap_id: mailtrap_event.id)
+
+      # Only update the member's displayed event if this one outranks the current one.
+      # This prevents a bot-triggered 'open' from overwriting a clean 'delivery' record,
+      # but always lets negative events (bounce, spam) surface.
+      current_event = member.mailtrap_event
+      new_priority     = EVENT_PRIORITY.fetch(mailtrap_event.event.to_s, 0)
+      current_priority = current_event ? EVENT_PRIORITY.fetch(current_event.event.to_s, 0) : -1
+
+      member.set(mailtrap_id: mailtrap_event.id) if new_priority >= current_priority
     end
   end
 

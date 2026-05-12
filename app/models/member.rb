@@ -27,6 +27,12 @@ class Member
   field :groupName, type: String #potentially member is in a group/partner membership
   field :role,                          default: "member" #admin,board_member,resource_manager,member
   field :firebase_uid,                   type: String
+
+  ## TOTP / Two-Factor Authentication
+  field :otp_secret_encrypted,   type: String   # AES-256-CBC encrypted base32 secret
+  field :otp_required_for_login, type: Boolean, default: false
+  field :otp_enabled_at,         type: Time
+  field :session_token,          type: String   # Rotated on TOTP reset to invalidate sessions
   field :member_contract_signed_date, type: Date
   field :subscription,    type: Boolean,   default: false
   ## Database authenticatable
@@ -162,6 +168,11 @@ class Member
         )
       end
     end
+  end
+
+  # Incorporate session_token so rotating it invalidates all existing Devise sessions
+  def authenticatable_salt
+    "#{super}#{session_token}"
   end
 
   def fullname

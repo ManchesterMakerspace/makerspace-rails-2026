@@ -42,8 +42,25 @@ Rails.application.routes.draw do
       resources :discounts, only: [:index]
     end
 
+    # Public runtime config — serves env vars to React client at runtime
+    get '/config', to: 'client_config#index'
+
+    # Firebase authentication — public endpoints (no Devise session required)
+    scope :auth do
+      post   '/firebase_login',             to: 'firebase_auth#login'
+      delete '/firebase_unlink/:member_id', to: 'firebase_auth#unlink'
+    end
+
     authenticate :member do
       put "/members/change_password", to: "members/passwords#update"
+
+      # TOTP self-service
+      scope :members do
+        post   '/totp/setup',   to: 'members/totp#setup'
+        post   '/totp/verify',  to: 'members/totp#verify'
+        delete '/totp',         to: 'members/totp#destroy'
+        post   '/totp_sessions', to: 'members/totp_sessions#create'
+      end
       resources :members, only: [:show, :index, :update] do
         scope module: :members do
           resources :permissions, only: [:index]
@@ -123,6 +140,11 @@ Rails.application.routes.draw do
             post :update_password
             post :send_password_reset
           end
+        end
+
+        # Admin TOTP reset
+        namespace :members do
+          delete '/:member_id/totp', to: 'totp#destroy'
         end
         resources :groups, only: [:index, :show, :create, :destroy] do
           member do

@@ -61,7 +61,7 @@ class Admin::VolunteerCreditsController < AdminOrRmController
 
   # DELETE /api/admin/volunteer_credits/:id
   def destroy
-    raise ::Error::Forbidden.new unless is_admin?
+    raise ::Error::Forbidden.new unless is_admin? || is_board_member?
     @credit.destroy
     render json: {}, status: :no_content
   end

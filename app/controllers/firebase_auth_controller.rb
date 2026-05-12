@@ -33,7 +33,7 @@ class FirebaseAuthController < ApplicationController
 
     if member
       # Link firebase_uid if not already set
-      member.update_column(:firebase_uid, firebase_uid) if member.firebase_uid.blank?
+      member.set(firebase_uid: firebase_uid) if member.firebase_uid.blank?
     else
       # New member — create a stub record and let SignUpWorkflow complete membership
       member = Member.new(
@@ -52,7 +52,8 @@ class FirebaseAuthController < ApplicationController
     sign_in(:member, member)
     render json: member, adapter: :attributes
   rescue => e
-    Rails.logger.error "[FirebaseAuth] Login error: \#{e.message}"
+    Rails.logger.error "[FirebaseAuth] Login error: #{e.message}"
+    Rails.logger.error "[FirebaseAuth] Backtrace: #{e.backtrace&.first(5)&.join(' | ')}"
     Honeybadger.notify(e, context: { controller: 'FirebaseAuthController', action: 'login' })
     render json: { message: 'Authentication failed' }, status: :internal_server_error
   end
@@ -66,12 +67,12 @@ class FirebaseAuthController < ApplicationController
     member = Member.find(params[:member_id])
     raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: params[:member_id] }) if member.nil?
 
-    member.update_column(:firebase_uid, nil)
+    member.set(firebase_uid: nil)
     render json: {}, status: 204
   rescue Mongoid::Errors::DocumentNotFound
     render json: { message: 'Member not found' }, status: :not_found
   rescue => e
-    Rails.logger.error "[FirebaseAuth] Unlink error: \#{e.message}"
+    Rails.logger.error "[FirebaseAuth] Unlink error: #{e.message}"
     Honeybadger.notify(e)
     render json: { message: 'Failed to unlink Firebase account' }, status: :internal_server_error
   end
@@ -79,39 +80,65 @@ class FirebaseAuthController < ApplicationController
   private
 
   def verify_firebase_token(id_token)
-    require 'jwt'
+    require 'base64'
+    require 'openssl'
 
     project_id = ENV['FIREBASE_PROJECT_ID']
     return nil if project_id.blank?
 
-    # Fetch Google's public certificates (cached by Ruby's HTTP stack)
+    # Split the JWT into header, payload, signature (all base64url-encoded)
+    parts = id_token.split('.')
+    return nil unless parts.length == 3
+
+    header_b64, payload_b64, signature_b64 = parts
+
+    # Decode header to find which key was used (kid)
+    header = JSON.parse(base64url_decode(header_b64)) rescue nil
+    return nil if header.nil?
+    return nil unless header['alg'] == 'RS256'
+
+    # Decode payload
+    payload = JSON.parse(base64url_decode(payload_b64)) rescue nil
+    return nil if payload.nil?
+
+    # Validate standard claims before verifying signature
+    now = Time.now.to_i
+    expected_iss = "https://securetoken.google.com/#{project_id}"
+    return nil if payload['exp'].to_i < now          # expired
+    return nil if payload['iat'].to_i > now + 60     # issued in future (60s clock skew)
+    return nil if payload['aud'] != project_id        # wrong audience
+    return nil if payload['iss'] != expected_iss      # wrong issuer
+    return nil if payload['sub'].blank?               # missing subject
+
+    # Fetch Google's public certificates and verify signature
     certs = fetch_google_certs
     return nil if certs.nil?
 
-    # Try each certificate until one works
-    certs.each do |_key_id, cert_string|
+    signing_input = "#{header_b64}.#{payload_b64}"
+    signature     = base64url_decode(signature_b64)
+
+    # Try the cert matching the kid first, then fall back to all certs
+    cert_candidates = header['kid'] && certs[header['kid']] ?
+      { header['kid'] => certs[header['kid']] } : certs
+
+    cert_candidates.each do |_kid, cert_string|
       begin
         certificate = OpenSSL::X509::Certificate.new(cert_string)
-        payload, _header = JWT.decode(
-          id_token,
-          certificate.public_key,
-          true,
-          {
-            algorithms:        ['RS256'],
-            iss:               "https://securetoken.google.com/#{project_id}",
-            verify_iss:        true,
-            aud:               project_id,
-            verify_aud:        true,
-            verify_expiration: true,
-          }
-        )
-        return payload
-      rescue JWT::DecodeError
+        digest      = OpenSSL::Digest::SHA256.new
+        verified    = certificate.public_key.verify(digest, signature, signing_input)
+        return payload if verified
+      rescue OpenSSL::PKey::RSAError, OpenSSL::X509::CertificateError
         next
       end
     end
 
     nil
+  end
+
+  def base64url_decode(str)
+    # Convert base64url to standard base64 and decode
+    padded = str + '=' * ((4 - str.length % 4) % 4)
+    Base64.decode64(padded.tr('-_', '+/'))
   end
 
   def fetch_google_certs
@@ -120,7 +147,7 @@ class FirebaseAuthController < ApplicationController
     return nil unless response.is_a?(Net::HTTPSuccess)
     JSON.parse(response.body)
   rescue => e
-    Rails.logger.error "[FirebaseAuth] Failed to fetch Google certs: \#{e.message}"
+    Rails.logger.error "[FirebaseAuth] Failed to fetch Google certs: #{e.message}"
     Honeybadger.notify(e, context: { controller: 'FirebaseAuthController', action: 'fetch_google_certs' })
     nil
   end

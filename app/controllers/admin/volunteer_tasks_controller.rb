@@ -66,7 +66,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
 
   # DELETE /api/admin/volunteer_tasks/:id
   def destroy
-    raise ::Error::Forbidden.new unless is_admin?
+    raise ::Error::Forbidden.new unless is_admin? || is_board_member?
     @task.destroy
     render json: {}, status: :no_content
   end

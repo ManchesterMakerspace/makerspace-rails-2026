@@ -4,10 +4,9 @@ class Admin::SystemConfigsController < AdminController
   FLAG_KEYS = [
     SystemConfig::SLACK_SYNC_ENABLED,
     'volunteer_bounty_token_enabled',
-    'firebase_google_enabled',
-    'firebase_apple_enabled',
-    'firebase_github_enabled',
-    'firebase_microsoft_enabled',
+    'require_totp_admin',
+    'require_totp_board',
+    'require_totp_rm',
   ].freeze
 
   # Keys that can be updated as plain string values
@@ -33,10 +32,9 @@ class Admin::SystemConfigsController < AdminController
     flags = {
       slack_sync_enabled:             SystemConfig.enabled?(SystemConfig::SLACK_SYNC_ENABLED),
       volunteer_bounty_token_enabled: SystemConfig.enabled?('volunteer_bounty_token_enabled'),
-      firebase_google_enabled:        SystemConfig.enabled?('firebase_google_enabled'),
-      firebase_apple_enabled:         SystemConfig.enabled?('firebase_apple_enabled'),
-      firebase_github_enabled:        SystemConfig.enabled?('firebase_github_enabled'),
-      firebase_microsoft_enabled:     SystemConfig.enabled?('firebase_microsoft_enabled'),
+      require_totp_admin:             SystemConfig.enabled?('require_totp_admin'),
+      require_totp_board:             SystemConfig.enabled?('require_totp_board'),
+      require_totp_rm:                SystemConfig.enabled?('require_totp_rm'),
     }
 
     jobs = SystemConfig::JOB_KEYS.map do |job_key, task_name|
@@ -65,11 +63,18 @@ class Admin::SystemConfigsController < AdminController
       volunteer_bounty_token:           SystemConfig.get('volunteer_bounty_token')            || '',
     }
 
+    totp = {
+      require_totp_admin: SystemConfig.enabled?('require_totp_admin'),
+      require_totp_board: SystemConfig.enabled?('require_totp_board'),
+      require_totp_rm:    SystemConfig.enabled?('require_totp_rm'),
+    }
+
     render json: {
       flags:     flags,
       jobs:      jobs,
       slack:     slack,
       volunteer: volunteer,
+      totp:      totp,
     }, status: :ok
   end
 

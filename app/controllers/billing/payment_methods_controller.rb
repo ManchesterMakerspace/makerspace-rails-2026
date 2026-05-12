@@ -91,6 +91,11 @@ class Billing::PaymentMethodsController < BillingController
   end
 
   def generate_client_token
-    @gateway.client_token.generate
-  end
+  options = {}
+  options[:customer_id] = current_member.customer_id if current_member.customer_id.present?
+  @gateway.client_token.generate(options)
+rescue Braintree::BraintreeError => e
+  Honeybadger.notify(e)
+  raise Error::InternalServerError.new("Failed to initialize payment form")
+end
 end

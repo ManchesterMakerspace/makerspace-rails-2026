@@ -1,5 +1,6 @@
 class MemberSerializer < MemberSummarySerializer
   attributes :card_id,
+             :totp_enabled,
              :member_contract_signed_date,
              :subscription,
              :subscription_id,
@@ -12,6 +13,10 @@ class MemberSerializer < MemberSummarySerializer
              :group_name,
              :household_role,
              :subscription_plan_id
+
+  def totp_enabled
+    object.otp_required_for_login? && object.otp_secret_encrypted.present?
+  end
 
   def card_id
     active_card = object.access_cards.to_a.find { |card| card.is_active? }

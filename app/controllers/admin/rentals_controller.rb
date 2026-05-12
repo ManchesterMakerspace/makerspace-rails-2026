@@ -58,7 +58,7 @@ class Admin::RentalsController < AdminController
   end
 
   def destroy
-    raise ::Error::Forbidden.new unless is_admin?
+    raise ::Error::Forbidden.new unless is_admin? || is_board_member?
 
     # Cancel Braintree subscription if present
     if @rental.subscription_id.present?

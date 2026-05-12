@@ -54,7 +54,7 @@ class Admin::VolunteerEventsController < AdminOrRmController
 
   # DELETE /api/admin/volunteer_events/:id
   def destroy
-    raise ::Error::Forbidden.new unless is_admin?
+    raise ::Error::Forbidden.new unless is_admin? || is_board_member?
     @event.destroy
     render json: {}, status: :no_content
   end

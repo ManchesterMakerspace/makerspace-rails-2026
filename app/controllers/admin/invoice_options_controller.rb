@@ -24,7 +24,7 @@ class Admin::InvoiceOptionsController < AdminOrRmController
   # Admins can manage all invoice option types.
   # Resource Managers can only manage fee-type invoice options (the shop fee catalog).
   def authorize_fee_action
-    return if is_admin?
+    return if is_admin? || is_board_member?
     # For create: check incoming resource_class param
     # For update/destroy: check the existing record's resource_class
     target_class = @invoice_option ? @invoice_option.resource_class : params[:resource_class]
