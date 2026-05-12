@@ -1,6 +1,6 @@
 # Makerspace Rails
 Application to handle member management at the Manchester Makerspace.  Connects with
-key fob system for facility entry and PayPal API for payment processing.
+key fob system for facility entry and Braintree API for payment processing.
 
 # Development
 
