@@ -8,6 +8,7 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :role,
              :member_contract_signed_date,
              :member_contract_on_file,
+             :totp_enabled,
              :notes,
              :mailtrap,
              :slack,
@@ -15,6 +16,10 @@ class MemberSummarySerializer < ActiveModel::Serializer
 
   def member_contract_on_file
     !object.member_contract_signed_date.nil?
+  end
+
+  def totp_enabled
+    object.otp_required_for_login? && object.otp_secret_encrypted.present?
   end
 
   def mailtrap
