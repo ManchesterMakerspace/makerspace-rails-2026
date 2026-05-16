@@ -19,10 +19,10 @@ class Billing::TransactionsController < BillingController
         invoice_option = InvoiceOption.find(transaction_params[:invoice_option_id])
         raise ::Mongoid::Errors::DocumentNotFound.new(InvoiceOption, { id: transaction_params[:invoice_option_id] }) if invoice_option.nil?
         raise ::Error::UnprocessableEntity.new("Cannot create transaction from rental invoice option") if invoice_option.resource_class == "rental"
-        if (transaction_params[:discount_id])
+        if transaction_params[:discount_id].present?
           discounts = ::BraintreeService::Discount.get_discounts(@gateway)
-          invoice_discount = discounts.find { |d| d.id == transaction_params[:discount_id]}
-          raise ::Error::NotFound.new() if invoice_discount.nil?
+          invoice_discount = discounts.find { |d| d.id == transaction_params[:discount_id] }
+          raise ::Error::UnprocessableEntity.new("Discount code \"#{transaction_params[:discount_id]}\" was not recognized. Please check the code and try again.") if invoice_discount.nil?
         end
         invoice = invoice_option.build_invoice(current_member.id, Time.now, current_member.id, invoice_discount)
       end

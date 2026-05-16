@@ -1,5 +1,5 @@
 class BraintreeService::PaymentMethodSerializer < ActiveModel::Serializer
-  type ""
+  type ''
 
   private
   def common_attributes
@@ -24,6 +24,10 @@ class BraintreeService::PaymentMethodSerializer < ActiveModel::Serializer
     [:email]
   end
 
+  def venmo_attributes
+    [:username]
+  end
+
   def attributes(*attrs)
     fields = super(attrs)
 
@@ -36,6 +40,9 @@ class BraintreeService::PaymentMethodSerializer < ActiveModel::Serializer
     elsif object.kind_of?(::BraintreeService::PaypalAccount)
       paypal_attributes.each { |a| fields[a] = object.send(a) }
       fields[:payment_type] = :paypal
+    elsif object.kind_of?(::BraintreeService::VenmoAccount)
+      venmo_attributes.each { |a| fields[a] = object.send(a) }
+      fields[:payment_type] = :venmo
     end
     fields[:id] ||= object.token
     fields[:is_default] = !!object.default?

@@ -94,8 +94,13 @@
         </td>
         <td style="border-top: 1px solid black; border-right: 1px solid black; padding: 0.5em">
           <%
-            description = @payment_method.try(:card_type) ? "#{@payment_method.card_type} ending in #{@payment_method.last_4}" :
-              "Paypal account #{@payment_method.try(:payer_email) || @payment_method.try(:email)}"
+            description = if @payment_method.try(:card_type)
+              "#{@payment_method.card_type} ending in #{@payment_method.last_4}"
+            elsif @payment_method.try(:username)
+              "Venmo account @#{@payment_method.username}"
+            else
+              "PayPal account #{@payment_method.try(:payer_email) || @payment_method.try(:email)}"
+            end
           %>
           <img style="float: left; margin-right: 1em;" src=<%=@payment_method.image_url%> />
           <span style="line-height: 2.5em;"><%=description%></span>
