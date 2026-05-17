@@ -2,7 +2,7 @@
 
 FROM node:16-bullseye AS ui
 
-ARG REACT_REPO_URL
+ARG REACT_REPO_URL=https://github.com/ManchesterMakerspace/makerspace-react-2026.git
 ARG REACT_BRANCH=master
 
 RUN apt-get update -qq && apt-get install -y -qq git
