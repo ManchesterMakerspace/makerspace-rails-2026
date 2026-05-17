@@ -11,16 +11,7 @@ Rails.application.configure do
   config.hosts << "makerspace-dev-51ba804d4c30.herokuapp.com"
   # Do not eager load code on boot.
   config.eager_load = true
-
-  # Show full error reports.
-  config.consider_all_requests_local = true
-
-  config.cache_store = :redis_store, {
-    expires_in: 1.hour,
-    namespace: 'cache',
-    redis: { host: ENV['REDIS_URL'], port: ENV['REDIS_PORT'], db: ENV['REDIS_DB'] }
-  }
-
+  
   # require 'syslog/logger'
   # config.logger = ActiveSupport::TaggedLogging.new(Syslog::Logger.new 'app-name')
 
@@ -34,6 +25,16 @@ Rails.application.configure do
     logger.formatter = config.log_formatter
     config.logger = ActiveSupport::TaggedLogging.new(logger)
   end
+
+  # Show full error reports.
+  config.consider_all_requests_local = true
+
+  warn "Warning: REDIS_DB is missing!" unless ENV['REDIS_DB']
+  config.cache_store = :redis_store, {
+    expires_in: 1.hour,
+    namespace: 'cache',
+    redis: { host: ENV['REDIS_URL'], port: ENV['REDIS_PORT'], db: ENV['REDIS_DB'] }
+  }
   
   # # Enable/disable caching. By default caching is disabled.
   # if Rails.root.join('tmp/caching-dev.txt').exist?
