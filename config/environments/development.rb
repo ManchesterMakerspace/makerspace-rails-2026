@@ -137,5 +137,8 @@ Rails.application.configure do
   # routes, locales, etc. This feature depends on the listen gem.
   config.file_watcher = ActiveSupport::EventedFileUpdateChecker
 
-  
+  # The secret key used by Devise. Devise uses this key to generate
+  # random tokens. Changing this key will render invalid all existing
+  # confirmation, reset password and unlock tokens in the database.
+  warn "Warning: SECRET_KEY_BASE is missing!" unless ENV['SECRET_KEY_BASE']
 end
