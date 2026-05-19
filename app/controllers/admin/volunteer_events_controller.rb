@@ -1,5 +1,5 @@
 class Admin::VolunteerEventsController < AdminOrRmController
-  before_action :find_event, only: [:show, :close, :add_attendee, :destroy]
+  before_action :find_event, only: [:show, :close, :add_attendee, :remove_attendee, :destroy]
 
   # GET /api/admin/volunteer_events
   def index
@@ -21,7 +21,6 @@ class Admin::VolunteerEventsController < AdminOrRmController
   end
 
   # POST /api/admin/volunteer_events/:id/close
-  # Close event and issue credits to all attendees
   def close
     if @event.status != 'open'
       render json: { error: 'Event is already closed' }, status: :forbidden and return
@@ -33,7 +32,6 @@ class Admin::VolunteerEventsController < AdminOrRmController
   end
 
   # POST /api/admin/volunteer_events/:id/add_attendee
-  # Manually add an attendee by member_id
   def add_attendee
     member = Member.find(params[:member_id])
     raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: params[:member_id] }) if member.nil?
@@ -50,6 +48,27 @@ class Admin::VolunteerEventsController < AdminOrRmController
     render json: @event, serializer: VolunteerEventSerializer, adapter: :attributes
   rescue Error::Forbidden
     render json: { error: 'Unable to add attendee' }, status: :forbidden
+  end
+
+  # DELETE /api/admin/volunteer_events/:id/remove_attendee
+  # Removes a member's check-in. Blocked on closed events.
+  # DMs the member notifying them of the removal.
+  def remove_attendee
+    member = Member.find(params[:member_id])
+    raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: params[:member_id] }) if member.nil?
+
+    if @event.status != 'open'
+      render json: { error: 'Event is not open — cannot remove attendees from a closed event' }, status: :forbidden and return
+    end
+
+    unless @event.attendee_ids.include?(member.id)
+      render json: { error: "#{member.fullname} is not checked in to this event" }, status: :unprocessable_entity and return
+    end
+
+    @event.remove_attendee!(member, current_member)
+    render json: @event, serializer: VolunteerEventSerializer, adapter: :attributes
+  rescue Error::Forbidden
+    render json: { error: 'Unable to remove attendee' }, status: :unprocessable_entity
   end
 
   # DELETE /api/admin/volunteer_events/:id

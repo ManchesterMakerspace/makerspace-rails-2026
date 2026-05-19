@@ -102,13 +102,14 @@ Rails.application.routes.draw do
       end
 
       # Volunteer — member self-service
-      get  '/volunteer/credits',              to: 'volunteer#credits'
-      get  '/volunteer/summary',              to: 'volunteer#summary'
-      get  '/volunteer/tasks',                to: 'volunteer#tasks'
-      get  '/volunteer/events',               to: 'volunteer#events'
-      post '/volunteer/tasks/:id/claim',      to: 'volunteer#claim_task'
-      post '/volunteer/tasks/:id/complete',   to: 'volunteer#complete_task'
-      post '/volunteer/events/:id/checkin',   to: 'volunteer#checkin_event'
+      get    '/volunteer/credits',            to: 'volunteer#credits'
+      get    '/volunteer/summary',            to: 'volunteer#summary'
+      get    '/volunteer/tasks',              to: 'volunteer#tasks'
+      get    '/volunteer/events',             to: 'volunteer#events'
+      post   '/volunteer/tasks/:id/claim',    to: 'volunteer#claim_task'
+      post   '/volunteer/tasks/:id/complete', to: 'volunteer#complete_task'
+      post   '/volunteer/events/:id/checkin', to: 'volunteer#checkin_event'
+      delete '/volunteer/events/:id/checkin', to: 'volunteer#remove_checkin'
 
       namespace :admin do
         resources :cards, only: [:new, :create, :index, :update]
@@ -184,6 +185,7 @@ Rails.application.routes.draw do
           member do
             post :approve
             post :reject
+            post :reverse
           end
         end
 
@@ -200,8 +202,9 @@ Rails.application.routes.draw do
         # Volunteer events — admin/RM manage
         resources :volunteer_events, only: [:index, :create, :show, :destroy] do
           member do
-            post :close
-            post :add_attendee
+            post   :close
+            post   :add_attendee
+            delete :remove_attendee
           end
         end
       end

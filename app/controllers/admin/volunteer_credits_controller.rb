@@ -2,15 +2,15 @@
 #
 # Admin and Resource Managers can:
 #   - List all credits (index)
-#   - Award a one-off credit to any member (create) — always 1.0 credit, auto-approved
+#   - Award a one-off credit to any member (create)
 #   - Approve or reject a pending credit (approve / reject)
 #   - Destroy a credit (admin only)
 #
-# Admins and RMs cannot approve credits for themselves.
-# Earned membership members may receive credits but they never trigger discounts.
+# Admins and board members only can:
+#   - Reverse an approved credit (reverse) — creates a negative offsetting record
 #
 class Admin::VolunteerCreditsController < AdminOrRmController
-  before_action :find_credit, only: [:approve, :reject, :destroy]
+  before_action :find_credit, only: [:approve, :reject, :reverse, :destroy]
 
   # GET /api/admin/volunteer_credits
   def index
@@ -22,8 +22,6 @@ class Admin::VolunteerCreditsController < AdminOrRmController
   end
 
   # POST /api/admin/volunteer_credits
-  # Award a one-off credit directly — always 1.0 credit, auto-approved.
-  # For variable credit values, use a bounty task instead.
   def create
     member = Member.find(credit_params[:member_id])
     raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: credit_params[:member_id] }) if member.nil?
@@ -57,6 +55,27 @@ class Admin::VolunteerCreditsController < AdminOrRmController
     render json: @credit, serializer: VolunteerCreditSerializer, adapter: :attributes
   rescue Error::Forbidden
     render json: { error: 'You cannot reject your own credit' }, status: :forbidden
+  end
+
+  # POST /api/admin/volunteer_credits/:id/reverse
+  # Creates a negative offsetting record and marks the original as reversed.
+  # Notifies the member via Slack DM.
+  # If the credit contributed to a Braintree discount, flags treasurer for review.
+  # Admin and board members only — RMs cannot reverse credits.
+  def reverse
+    unless is_admin? || is_board_member?
+      render json: { error: 'Only admins and board members can reverse credits' }, status: :forbidden and return
+    end
+
+    reason = params[:reason].to_s.strip
+    if reason.blank?
+      render json: { error: 'A reason is required to reverse a credit' }, status: :unprocessable_entity and return
+    end
+
+    reversal = @credit.reverse!(current_member, reason)
+    render json: reversal, serializer: VolunteerCreditSerializer, adapter: :attributes
+  rescue Error::Forbidden
+    render json: { error: 'Unable to reverse this credit. It may already be reversed or not yet approved.' }, status: :forbidden
   end
 
   # DELETE /api/admin/volunteer_credits/:id

@@ -8,6 +8,11 @@ class VolunteerCreditSerializer < ActiveModel::Serializer
              :status,
              :discount_applied,
              :discount_applied_at,
+             :reversed,
+             :reversal_of_id,
+             :reversal_reason,
+             :reversed_by_id,
+             :reversed_at,
              :created_at,
              :updated_at
 
@@ -25,6 +30,12 @@ class VolunteerCreditSerializer < ActiveModel::Serializer
 
   attribute :task_title do
     object.task&.title
+  rescue
+    nil
+  end
+
+  attribute :reversed_by_name do
+    Member.find(object.reversed_by_id)&.fullname if object.reversed_by_id
   rescue
     nil
   end
