@@ -168,11 +168,41 @@ class Invoice
     invoice = Invoice.find(invoice_id)
 
     unless invoice.nil?
-      # Destroy invoices for this subscription that are still outstanding
+      # Destroy invoices for this subscription that are still outstanding.
+      # Explicitly excludes fee invoices — shop charges survive subscription cancellation.
       invoice.resource.remove_subscription() unless invoice.resource.nil?
       Invoice.where(subscription_id: invoice.subscription_id, settled_at: nil, transaction_id: nil, :resource_class.ne => 'fee').destroy unless invoice.subscription_id.nil?
-      !skip_notification && invoice.send_cancellation_notification # Can send notification after destorying because there is still `invoice` in memory
+      !skip_notification && invoice.send_cancellation_notification
     end
+  end
+
+  # Orphaned invoices: unsettled, have a subscription_id, but the subscription
+  # has already been cancelled (the resource's current subscription_id no longer
+  # matches). These can block resubscription and need admin cleanup.
+  def self.orphaned
+    candidates = where(:settled_at => nil, :transaction_id => nil, :subscription_id.ne => nil)
+    candidates.select do |invoice|
+      resource = invoice.resource
+      resource.nil? || resource.try(:subscription_id) != invoice.subscription_id
+    end
+  end
+
+  # Force-cancels an orphaned invoice set — destroys all unsettled invoices
+  # sharing this subscription_id and clears the resource's subscription fields.
+  # Safe to call when the Braintree subscription is already cancelled.
+  # Admin only.
+  def self.force_cancel(invoice_id)
+    invoice = Invoice.find(invoice_id)
+    return if invoice.nil?
+
+    Invoice.where(
+      subscription_id: invoice.subscription_id,
+      settled_at: nil,
+      transaction_id: nil,
+      :resource_class.ne => 'fee'
+    ).destroy
+
+    invoice.resource.remove_subscription() unless invoice.resource.nil?
   end
 
   def self.resource(class_name, id)

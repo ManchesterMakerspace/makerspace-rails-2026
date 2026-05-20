@@ -113,7 +113,11 @@ Rails.application.routes.draw do
 
       namespace :admin do
         resources :cards, only: [:new, :create, :index, :update]
-        resources :invoices, only: [:index, :create, :update, :destroy]
+        resources :invoices, only: [:index, :create, :update, :destroy] do
+          member do
+            post :force_cancel
+          end
+        end
         resources :invoice_options, only: [:create, :update, :destroy]
 
         # Tool checkout management
@@ -140,8 +144,6 @@ Rails.application.routes.draw do
           member do
             post :update_password
             post :send_password_reset
-            post :invite_google_drive
-            post :invite_slack
           end
         end
 
