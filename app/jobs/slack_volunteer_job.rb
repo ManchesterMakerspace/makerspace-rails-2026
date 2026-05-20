@@ -74,7 +74,7 @@ class SlackVolunteerJob < ApplicationJob
 
     year_count      = VolunteerCredit.year_count_for(member.id)
     pending_count   = VolunteerCredit.pending.where(member_id: member.id).count
-    discount_active = VolunteerCredit.discount_amount > 0.0
+    discount_active = VolunteerCredit.discount_id.present?
     is_earned       = EarnedMembership.where(member_id: member.id).exists?
 
     lines = ["📊 *Volunteer Status for #{member.fullname}*"]
