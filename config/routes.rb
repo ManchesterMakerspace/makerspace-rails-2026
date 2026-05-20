@@ -140,6 +140,8 @@ Rails.application.routes.draw do
           member do
             post :update_password
             post :send_password_reset
+            post :invite_google_drive
+            post :invite_slack
           end
         end
 

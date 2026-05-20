@@ -1,5 +1,5 @@
 class Admin::MembersController < AdminController
-  before_action :set_member, only: [:update, :update_password, :send_password_reset, :invite_google_drive]
+  before_action :set_member, only: [:update, :update_password, :send_password_reset, :invite_google_drive, :invite_slack]
 
   def create
     @member = Member.new(get_camel_case_params(create_member_params()))
@@ -42,6 +42,17 @@ class Admin::MembersController < AdminController
   def invite_google_drive
     ::Service::GoogleDrive.new.invite_gdrive(@member.email)
     render json: {}, status: 204 and return
+  end
+
+  # POST /api/admin/members/:id/invite_slack
+  # Re-sends a Slack workspace invite to the member's email.
+  # Safe to call even if the member is already in the workspace — Slack
+  # will return an error which is surfaced to the admin.
+  def invite_slack
+    ::Service::SlackConnector.invite_to_slack(@member.email, @member.lastname, @member.firstname)
+    render json: {}, status: 204 and return
+  rescue => e
+    render json: { message: e.message }, status: :unprocessable_entity and return
   end
 
   private
