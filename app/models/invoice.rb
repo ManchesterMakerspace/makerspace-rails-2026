@@ -170,7 +170,7 @@ class Invoice
     unless invoice.nil?
       # Destroy invoices for this subscription that are still outstanding
       invoice.resource.remove_subscription() unless invoice.resource.nil?
-      Invoice.where(subscription_id: invoice.subscription_id, settled_at: nil, transaction_id: nil).destroy unless invoice.subscription_id.nil?
+      Invoice.where(subscription_id: invoice.subscription_id, settled_at: nil, transaction_id: nil, :resource_class.ne => 'fee').destroy unless invoice.subscription_id.nil?
       !skip_notification && invoice.send_cancellation_notification # Can send notification after destorying because there is still `invoice` in memory
     end
   end
