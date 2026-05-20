@@ -47,6 +47,28 @@ class BraintreeService::Subscription < Braintree::Subscription
       raise ::Error::UnprocessableEntity.new("Subscription already exists for #{invoice.resource_name}. Please contact support")
     end
 
+    # Block subscription creation if the member has outstanding past-due invoices.
+    # This prevents members from subscribing while owing unpaid shop fees or
+    # prior membership charges.
+    member = invoice.member
+    if member
+      outstanding_count = Invoice.where(
+        member_id:      member.id,
+        settled_at:     nil,
+        transaction_id: nil
+      ).where(
+        :due_date.lt => Time.now,
+        :id.ne       => invoice.id
+      ).count
+
+      if outstanding_count > 0
+        raise ::Error::UnprocessableEntity.new(
+          "You have #{outstanding_count} outstanding past-due invoice#{'s' if outstanding_count > 1}. " \
+          "Please settle all outstanding invoices before starting a new subscription."
+        )
+      end
+    end
+
     subscription_hash = {
       payment_method_token: invoice.payment_method_id,
       plan_id: invoice.plan_id,
