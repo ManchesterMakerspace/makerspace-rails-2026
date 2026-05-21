@@ -10,11 +10,15 @@ class BraintreeService::Subscription < Braintree::Subscription
     begin
       Timeout::timeout(25) do
         subscriptions = gateway.subscription.search { |search| search_query && search_query.call(search) }
-        # Cap at 50 results per request — same pattern as transactions to prevent
-        # H12 timeout if subscription count grows over time.
-        subscriptions.first(50).map do |subscription|
-          normalize_subscription(gateway, subscription)
+        # Braintree::ResourceCollection#first does not accept an argument (gem 2.94.0).
+        # Use each with a break instead — fetches IDs in one call, then fetches
+        # the first page of 50 records and stops, preventing H12 timeout.
+        results = []
+        subscriptions.each do |subscription|
+          results << normalize_subscription(gateway, subscription)
+          break if results.length >= 50
         end
+        results
       end
     rescue Timeout::Error => e
       ::Service::SlackConnector.send_slack_message(

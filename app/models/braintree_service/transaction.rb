@@ -29,13 +29,16 @@ class BraintreeService::Transaction < Braintree::Transaction
     begin
       Timeout::timeout(25) do
         transactions = gateway.transaction.search { |search| search_query && search_query.call(search) }
-        # Cap at 50 results per request to prevent Heroku H12 timeout.
-        # Braintree paginates in batches of 50 — fetching all pages sequentially
-        # takes ~1s per page and exceeds the 30s Heroku request limit.
+        # Braintree::ResourceCollection#first does not accept an argument (gem 2.94.0).
+        # Use each with a break — fetches IDs in one call then the first page of
+        # 50 records and stops, preventing H12 timeout and R14 memory errors.
         # Use date filters in the UI to narrow results further.
-        transactions.first(50).map do |transaction|
-          normalize(gateway, transaction)
+        results = []
+        transactions.each do |transaction|
+          results << normalize(gateway, transaction)
+          break if results.length >= 50
         end
+        results
       end
     rescue Timeout::Error => e
       ::Service::SlackConnector.send_slack_message(
