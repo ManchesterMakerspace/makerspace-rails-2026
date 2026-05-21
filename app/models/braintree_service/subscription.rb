@@ -7,9 +7,22 @@ class BraintreeService::Subscription < Braintree::Subscription
   attr_accessor :resource, :member
 
   def self.get_subscriptions(gateway, search_query = nil)
-     subscriptions = gateway.subscription.search { |search| search_query && search_query.call(search) }
-     subscriptions.map do |subscription|
-      normalize_subscription(gateway, subscription)
+    begin
+      Timeout::timeout(25) do
+        subscriptions = gateway.subscription.search { |search| search_query && search_query.call(search) }
+        # Cap at 50 results per request — same pattern as transactions to prevent
+        # H12 timeout if subscription count grows over time.
+        subscriptions.first(50).map do |subscription|
+          normalize_subscription(gateway, subscription)
+        end
+      end
+    rescue Timeout::Error => e
+      ::Service::SlackConnector.send_slack_message(
+        "⚠️ Braintree subscription search timed out after 25s. Error: #{e.message}",
+        ::Service::SlackConnector.logs_channel
+      )
+      Honeybadger.notify(e) if defined?(Honeybadger)
+      raise ::Error::UnprocessableEntity.new("Braintree request timed out. Please try again.")
     end
   end
 

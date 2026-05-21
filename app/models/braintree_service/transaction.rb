@@ -26,9 +26,24 @@ class BraintreeService::Transaction < Braintree::Transaction
   end
 
   def self.get_transactions(gateway, search_query = nil)
-    transactions = gateway.transaction.search { |search| search_query && search_query.call(search) }
-    transactions.map do |transaction|
-      normalize(gateway, transaction)
+    begin
+      Timeout::timeout(25) do
+        transactions = gateway.transaction.search { |search| search_query && search_query.call(search) }
+        # Cap at 50 results per request to prevent Heroku H12 timeout.
+        # Braintree paginates in batches of 50 — fetching all pages sequentially
+        # takes ~1s per page and exceeds the 30s Heroku request limit.
+        # Use date filters in the UI to narrow results further.
+        transactions.first(50).map do |transaction|
+          normalize(gateway, transaction)
+        end
+      end
+    rescue Timeout::Error => e
+      ::Service::SlackConnector.send_slack_message(
+        "⚠️ Braintree transaction search timed out after 25s. Try narrowing the date range. Error: #{e.message}",
+        ::Service::SlackConnector.logs_channel
+      )
+      Honeybadger.notify(e) if defined?(Honeybadger)
+      raise ::Error::UnprocessableEntity.new("Braintree request timed out. Please narrow your date range and try again.")
     end
   end
 
