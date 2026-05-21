@@ -35,11 +35,18 @@ class FirebaseAuthController < ApplicationController
       # Link firebase_uid if not already set
       member.set(firebase_uid: firebase_uid) if member.firebase_uid.blank?
     else
+      # Parse name from token — 'profile' scope required for name fields to appear.
+      # Defensive fallback: if name is absent or single-word, use email prefix
+      # so lastname validation never fails.
+      name_parts = payload['name'].to_s.strip.split
+      firstname  = name_parts.first.presence || email.split('@').first
+      lastname   = name_parts.length > 1 ? name_parts.last : (name_parts.first.presence || email.split('@').first)
+
       # New member — create a stub record and let SignUpWorkflow complete membership
       member = Member.new(
         email:        email.downcase,
-        firstname:    payload.dig('name')&.split(' ')&.first || email.split('@').first,
-        lastname:     payload.dig('name')&.split(' ')&.last || '',
+        firstname:    firstname,
+        lastname:     lastname,
         firebase_uid: firebase_uid,
         status:       'inactive',
         role:         'member',
