@@ -1,7 +1,3 @@
-# VolunteerController
-#
-# Member-facing volunteer endpoints.
-#
 class VolunteerController < AuthenticationController
 
   # GET /api/volunteer/credits
@@ -17,7 +13,7 @@ class VolunteerController < AuthenticationController
     is_earned       = EarnedMembership.where(member_id: member_id).exists?
     year_count      = VolunteerCredit.year_count_for(member_id)
     pending_count   = VolunteerCredit.pending.where(member_id: member_id).count
-    discount_active = VolunteerCredit.discount_amount > 0.0
+    discount_active = VolunteerCredit.discount_id.present?
 
     if discount_active
       discounts_used = VolunteerCredit.discounts_applied_this_year_for(member_id)
@@ -104,6 +100,10 @@ class VolunteerController < AuthenticationController
       render json: { error: 'Event is not open for check-in' }, status: :unprocessable_entity and return
     end
 
+    if event.event_date.present? && event.event_date < Date.today
+      render json: { error: 'Check-in is no longer available after the event date.' }, status: :unprocessable_entity and return
+    end
+
     if event.attendee_ids.include?(current_member.id)
       render json: { error: 'You are already checked in to this event' }, status: :unprocessable_entity and return
     end
@@ -112,5 +112,26 @@ class VolunteerController < AuthenticationController
     render json: event, serializer: VolunteerEventSerializer, adapter: :attributes
   rescue Error::Forbidden
     render json: { error: 'Unable to check in to this event' }, status: :unprocessable_entity
+  end
+
+  # DELETE /api/volunteer/events/:id/checkin
+  # Member removes their own check-in. Blocked on closed events.
+  # Silently recorded — removed_by_id will equal the member's own id.
+  def remove_checkin
+    event = VolunteerEvent.find(params[:id])
+    raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerEvent, { id: params[:id] }) if event.nil?
+
+    unless event.attendee_ids.include?(current_member.id)
+      render json: { error: 'You are not checked in to this event' }, status: :unprocessable_entity and return
+    end
+
+    if event.event_date.present? && event.event_date < Date.today
+      render json: { error: 'Check-in removal is no longer available after the event date.' }, status: :unprocessable_entity and return
+    end
+
+    event.remove_attendee!(current_member, current_member)
+    render json: event, serializer: VolunteerEventSerializer, adapter: :attributes
+  rescue Error::Forbidden
+    render json: { error: 'Unable to remove check-in. The event may already be closed.' }, status: :unprocessable_entity
   end
 end

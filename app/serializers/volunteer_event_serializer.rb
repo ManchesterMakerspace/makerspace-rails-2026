@@ -10,6 +10,7 @@ class VolunteerEventSerializer < ActiveModel::Serializer
              :closed_by_id,
              :closed_at,
              :attendee_ids,
+             :attendee_removals,
              :created_at,
              :updated_at
 

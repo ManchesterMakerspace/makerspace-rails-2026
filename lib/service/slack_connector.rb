@@ -85,15 +85,27 @@ module Service
         )
       end
     end
+
+    # ── Channel helpers ──────────────────────────────────────────────────────
+    # All channels read from SystemConfig first, with hardcoded fallback.
+    # Configure channel names (without #) in Admin → Settings → Slack.
+
     def self.treasurer_channel
-      "treasurer"
+      SystemConfig.get('slack_channel_treasurer') || 'treasurer'
     end
+
     def self.members_relations_channel
-      "members_relations"
+      SystemConfig.get('slack_channel_rm') || 'members_relations'
     end
+
     def self.logs_channel
-      "interface-logs"
+      SystemConfig.get('slack_channel_logs') || 'interface-logs'
     end
+
+    def self.admin_channel
+      SystemConfig.get('slack_channel_admin') || 'general'
+    end
+
     private
     def self.safe_channel(channel)
       Util.is_prod? ? channel : "test_channel"

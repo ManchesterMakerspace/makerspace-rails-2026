@@ -115,6 +115,8 @@ class VolunteerTask
     )
     credit.send(:notify_member_credit_awarded)
     credit.send(:check_discount_threshold!)
+
+    notify_task_verified(verifier)
   end
 
   # Release a claimed task back to available.
@@ -175,8 +177,20 @@ class VolunteerTask
     end
   end
 
-  def notify_member_task_released(member_id, reason)
-    slack_user = SlackUser.find_by(member_id: member_id)
+  def notify_task_verified(verifier)
+    claimant = Member.find(claimed_by_id) rescue nil
+    claimant_name = claimant&.fullname || 'Unknown member'
+
+    ::Service::SlackConnector.send_slack_message(
+      "✅ *#{verifier.fullname}* verified task *#{title}* (#{display_number}) " \
+      "complete for *#{claimant_name}*. Credit issued!",
+      VolunteerCredit.pending_slack_channel
+    )
+  rescue => e
+    Honeybadger.notify(e) if defined?(Honeybadger)
+  end
+
+  def notify_member_task_released(member_id, reason)    slack_user = SlackUser.find_by(member_id: member_id)
     return unless slack_user
 
     ::Service::SlackConnector.send_slack_message(

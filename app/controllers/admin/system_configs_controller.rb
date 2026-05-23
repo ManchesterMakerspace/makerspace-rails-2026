@@ -20,7 +20,7 @@ class Admin::SystemConfigsController < AdminController
     # Volunteer settings
     'volunteer_credits_per_discount',
     'volunteer_max_discounts_per_year',
-    'volunteer_discount_amount',
+    'volunteer_discount_id',
     'volunteer_task_max_credit',
     'volunteer_bounty_token',
   ].freeze
@@ -48,18 +48,18 @@ class Admin::SystemConfigsController < AdminController
     end
 
     slack = {
-      slack_channel_treasurer:          SystemConfig.get('slack_channel_treasurer')          || ENV.fetch('SLACK_TREASURER_CHANNEL', 'treasurer'),
-      slack_channel_rm:                 SystemConfig.get('slack_channel_rm')                 || ENV.fetch('SLACK_RM_CHANNEL', 'general'),
-      slack_channel_admin:              SystemConfig.get('slack_channel_admin')               || ENV.fetch('SLACK_ADMIN_CHANNEL', 'general'),
-      slack_channel_logs:               SystemConfig.get('slack_channel_logs')               || ENV.fetch('SLACK_LOGS_CHANNEL', 'interface-logs'),
-      volunteer_pending_slack_channel:  SystemConfig.get('volunteer_pending_slack_channel')  || ENV.fetch('VOLUNTEER_PENDING_SLACK_CHANNEL', 'general'),
+      slack_channel_treasurer:          SystemConfig.get('slack_channel_treasurer')          || 'treasurer',
+      slack_channel_rm:                 SystemConfig.get('slack_channel_rm')                 || 'members_relations',
+      slack_channel_admin:              SystemConfig.get('slack_channel_admin')               || 'general',
+      slack_channel_logs:               SystemConfig.get('slack_channel_logs')               || 'interface-logs',
+      volunteer_pending_slack_channel:  SystemConfig.get('volunteer_pending_slack_channel')  || 'general',
     }
 
     volunteer = {
-      volunteer_credits_per_discount:   SystemConfig.get('volunteer_credits_per_discount')   || ENV.fetch('VOLUNTEER_CREDITS_PER_DISCOUNT', '8'),
-      volunteer_max_discounts_per_year: SystemConfig.get('volunteer_max_discounts_per_year') || ENV.fetch('VOLUNTEER_MAX_DISCOUNTS_PER_YEAR', '2'),
-      volunteer_discount_amount:        SystemConfig.get('volunteer_discount_amount')         || ENV.fetch('VOLUNTEER_DISCOUNT_AMOUNT', '0'),
-      volunteer_task_max_credit:        SystemConfig.get('volunteer_task_max_credit')         || ENV.fetch('VOLUNTEER_TASK_MAX_CREDIT', '2.0'),
+      volunteer_credits_per_discount:   SystemConfig.get('volunteer_credits_per_discount')   || '8',
+      volunteer_max_discounts_per_year: SystemConfig.get('volunteer_max_discounts_per_year') || '2',
+      volunteer_discount_id:            SystemConfig.get('volunteer_discount_id')             || '',
+      volunteer_task_max_credit:        SystemConfig.get('volunteer_task_max_credit')         || '2.0',
       volunteer_bounty_token:           SystemConfig.get('volunteer_bounty_token')            || '',
     }
 
@@ -93,7 +93,9 @@ class Admin::SystemConfigsController < AdminController
   end
 
   # PUT /api/admin/system_configs/update_setting
-  # Update a plain string setting value
+  # Update a plain string setting value.
+  # Special case: volunteer_discount_id changes post Slack notifications to
+  # the logs and treasurer channels for full audit transparency.
   def update_setting
     key   = params[:key]
     value = params[:value].to_s.strip
@@ -102,7 +104,14 @@ class Admin::SystemConfigsController < AdminController
       render json: { error: "Unknown setting key: #{key}" }, status: :unprocessable_entity and return
     end
 
-    SystemConfig.set(key, value)
+    if key == 'volunteer_discount_id'
+      old_value = SystemConfig.get('volunteer_discount_id').presence
+      SystemConfig.set(key, value)
+      notify_volunteer_discount_changed(old_value, value.presence)
+    else
+      SystemConfig.set(key, value)
+    end
+
     render json: { key: key, value: value }, status: :ok
   end
 
@@ -123,5 +132,35 @@ class Admin::SystemConfigsController < AdminController
     end
 
     render json: { message: "#{job_key} enqueued successfully" }, status: :ok
+  end
+
+  private
+
+  # Posts to logs and treasurer channels when the volunteer discount setting changes.
+  # Fetches discount descriptions from Braintree for a human-readable audit trail.
+  def notify_volunteer_discount_changed(old_id, new_id)
+    gateway   = ::Service::BraintreeGateway.connect_gateway
+    discounts = gateway.discount.all
+
+    old_desc   = describe_discount(discounts, old_id)
+    new_desc   = describe_discount(discounts, new_id)
+    admin_name = current_member&.fullname || 'Unknown Admin'
+
+    message = "⚙️ Volunteer discount setting changed by *#{admin_name}*: " \
+              "*#{old_desc}* → *#{new_desc}*"
+
+    ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.logs_channel)
+    ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.treasurer_channel)
+  rescue => e
+    Honeybadger.notify(e) if defined?(Honeybadger)
+  end
+
+  # Returns a human-readable label for a Braintree discount ID.
+  # Falls back to "No Credit" when id is blank, or the raw ID if not found.
+  def describe_discount(discounts, discount_id)
+    return 'No Credit' if discount_id.blank?
+    found = discounts.find { |d| d.id == discount_id }
+    return discount_id unless found
+    (found.description.presence || found.name.presence || discount_id)
   end
 end

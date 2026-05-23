@@ -5,16 +5,20 @@ class VolunteerEvent
 
   store_in collection: 'volunteer_events'
 
-  field :event_number,  type: Integer
-  field :title,         type: String
-  field :description,   type: String
-  field :credit_value,  type: Float,   default: 1.0
-  field :event_date,    type: Date
-  field :status,        type: String,  default: 'open'  # open | closed
-  field :created_by_id, type: BSON::ObjectId
-  field :closed_by_id,  type: BSON::ObjectId, default: nil
-  field :closed_at,     type: Time,           default: nil
-  field :attendee_ids,  type: Array,          default: []  # array of member BSON::ObjectId
+  field :event_number,      type: Integer
+  field :title,             type: String
+  field :description,       type: String
+  field :credit_value,      type: Float,   default: 1.0
+  field :event_date,        type: Date
+  field :status,            type: String,  default: 'open'  # open | closed
+  field :created_by_id,     type: BSON::ObjectId
+  field :closed_by_id,      type: BSON::ObjectId, default: nil
+  field :closed_at,         type: Time,           default: nil
+  field :attendee_ids,      type: Array,          default: []  # array of member BSON::ObjectId
+
+  # Audit trail for check-in removals.
+  # Each entry: { 'member_id' => ObjectId, 'removed_by_id' => ObjectId, 'removed_at' => Time }
+  field :attendee_removals, type: Array, default: []
 
   VALID_STATUSES = %w[open closed].freeze
 
@@ -29,7 +33,7 @@ class VolunteerEvent
 
   # ── Scopes ────────────────────────────────────────────────────────────────
 
-  scope :active_events,   -> { where(status: 'open') }
+  scope :active_events, -> { where(status: 'open') }
   scope :closed_events, -> { where(status: 'closed') }
 
   # ── Class Methods ─────────────────────────────────────────────────────────
@@ -56,12 +60,31 @@ class VolunteerEvent
     Member.find(closed_by_id) if closed_by_id
   end
 
-  # Add a member to the event — guard against duplicates
+  # Member self check-in
   def checkin!(member)
     raise Error::Forbidden.new unless status == 'open'
     raise Error::Forbidden.new if attendee_ids.include?(member.id)
     push(attendee_ids: member.id)
     notify_member_checkin(member)
+  end
+
+  # Remove a check-in. Works for both member self-removal and admin removal.
+  # Blocked on closed events. Records who removed the check-in for audit.
+  # DMs the member only when an admin performs the removal.
+  def remove_attendee!(member, removed_by)
+    raise Error::Forbidden.new unless status == 'open'
+    raise Error::Forbidden.new unless attendee_ids.include?(member.id)
+
+    pull(attendee_ids: member.id)
+
+    push(attendee_removals: {
+      'member_id'     => member.id,
+      'removed_by_id' => removed_by.id,
+      'removed_at'    => Time.now
+    })
+
+    # Only DM the member when an admin removes them, not for self-removal
+    notify_member_removed(member) if removed_by.id != member.id
   end
 
   # Admin manually adds an attendee
@@ -76,9 +99,9 @@ class VolunteerEvent
     raise Error::Forbidden.new unless status == 'open'
 
     update!(
-      status:      'closed',
+      status:       'closed',
       closed_by_id: closer.id,
-      closed_at:   Time.now
+      closed_at:    Time.now
     )
 
     # Issue credits to all attendees
@@ -111,6 +134,20 @@ class VolunteerEvent
 
     enque_message(
       "✅ You're checked in to *#{title}* (#{display_number}). Credits will be issued when the event closes.",
+      slack_user.slack_id
+    )
+  rescue => e
+    Honeybadger.notify(e) if defined?(Honeybadger)
+  end
+
+  # DM the member when an admin removes their check-in
+  def notify_member_removed(member)
+    slack_user = SlackUser.find_by(member_id: member.id)
+    return unless slack_user
+
+    ::Service::SlackConnector.send_slack_message(
+      "ℹ️ Your check-in for *#{title}* (#{display_number}) has been removed by an administrator. " \
+      "Contact us if you have any questions.",
       slack_user.slack_id
     )
   rescue => e

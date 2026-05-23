@@ -1,13 +1,19 @@
 class Admin::InvoicesController < AdminOrRmController
   include FastQuery::MongoidQuery
   include BraintreeGateway
-  before_action :find_invoice, only: [:update, :destroy]
+  before_action :find_invoice, only: [:update, :destroy, :force_cancel]
 
   # Allow Resource Managers to create shop fee invoices (resource_class: "fee" only).
   # Full admin access remains for all invoice types.
   before_action :authorize_invoice_action, only: [:create]
 
   def index
+    # Special case: orphaned invoices (subscription cancelled but invoices not cleaned up)
+    if invoice_query_params[:orphaned] == 'true'
+      orphaned = Invoice.orphaned
+      return render json: orphaned, each_serializer: InvoiceSerializer, adapter: :attributes
+    end
+
     @queries = invoice_query_params.keys.map do |k|
       key = k.to_sym
 
@@ -85,6 +91,27 @@ class Admin::InvoicesController < AdminOrRmController
     render json: {}, status: 204 and return
   end
 
+  # POST /api/admin/invoices/:id/force_cancel
+  # Cleans up orphaned invoices left when a Braintree subscription cancellation
+  # partially failed. Destroys all unsettled invoices tied to the same
+  # subscription_id and clears the member's subscription fields.
+  # Admin and board members only.
+  def force_cancel
+    unless is_admin? || is_board_member?
+      render json: { error: 'Only admins and board members can force cancel invoices' }, status: :forbidden and return
+    end
+
+    unless @invoice.subscription_id.present?
+      render json: { error: 'Invoice has no subscription_id — nothing to clean up' }, status: :unprocessable_entity and return
+    end
+
+    Invoice.force_cancel(@invoice.id)
+    render json: {}, status: 204 and return
+  rescue => e
+    Honeybadger.notify(e) if defined?(Honeybadger)
+    render json: { error: e.message }, status: :unprocessable_entity and return
+  end
+
   private
 
   # Admins can create any invoice type.
@@ -127,7 +154,7 @@ class Admin::InvoicesController < AdminOrRmController
   end
 
   def invoice_query_params
-    params.permit(:settled, :past_due, :refunded, :refund_requested, :plan_id => [], :resource_class => [], :resource_id => [], :member_id => [])
+    params.permit(:settled, :past_due, :refunded, :refund_requested, :orphaned, :plan_id => [], :resource_class => [], :resource_id => [], :member_id => [])
   end
 
   def bool_params
