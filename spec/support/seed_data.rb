@@ -215,12 +215,13 @@ class SeedData
       member = members[i % members.length]
       next unless member
       Rental.create!(
-        member:         member,
-        number:         spot.number,
-        rental_spot_id: spot.id.to_s,
-        description:    spot.description,
-        expiration:     (Time.now + (i % 6 + 1).months).to_i * 1000,
-        status:         "active"
+        member:               member,
+        number:               spot.number,
+        rental_spot_id:       spot.id.to_s,
+        description:          spot.description,
+        expiration:           (Time.now + (i % 6 + 1).months).to_i * 1000,
+        status:               "active",
+        contract_signed_date: Date.today
       )
     end
     puts "  [seed] Created #{Rental.count} rentals linked to spots."
@@ -376,7 +377,8 @@ class SeedData
     member.update!(
       customer_id:     customer.id,
       subscription_id: subscription.id,
-      subscription:    true
+      subscription:    true,
+      expirationTime:  subscription.paid_through_date.to_time.to_i * 1000
     )
     Invoice.create!(
       member:            member,
@@ -419,7 +421,11 @@ class SeedData
       puts "  [seed] Warning: Could not create subscription for #{member.fullname}: #{result.message}"
       return
     end
-    member.update!(subscription_id: subscription_id, subscription: true)
+    member.update!(
+      subscription_id: subscription_id,
+      subscription:    true,
+      expirationTime:  (Time.now + invoice_option.quantity.months).to_i * 1000
+    )
     invoice.update!(subscription_id: subscription_id, settled_at: Time.now)
     puts "  [seed] Created subscription for #{member.fullname}: #{subscription_id}"
   end
