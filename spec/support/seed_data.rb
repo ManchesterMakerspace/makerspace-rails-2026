@@ -119,16 +119,16 @@ class SeedData
         plan_id: "rental-monthly-tote", operation: "renew=", disabled: false,
       },
       {
-        name: "Quarterly Back Shop Half-Shelf Rental Subscription",
-        description: "Half shelf rental subscription automatically renews every month for 3 months.",
-        amount: 19.0, quantity: 3, resource_class: "rental",
-        plan_id: "rental-quarterly-recurring-back-shop-Half-shelf-subscription", operation: "renew=", disabled: false,
+        name: "One Month Back Shop Shelf Rental",
+        description: "Full shelf rental subscription automatically renews every month.",
+        amount: 50.0, quantity: 1, resource_class: "rental",
+        plan_id: "2023-rental-month-Back-Shelf", operation: "renew=", disabled: false,
       },
       {
-        name: "Quarterly Back Shop Shelf Rental Subscription",
-        description: "Full shelf rental subscription automatically renews every month for 3 months.",
-        amount: 38.0, quantity: 3, resource_class: "rental",
-        plan_id: "rental-quarterly-recurring-back-shop-shelf-subscription", operation: "renew=", disabled: false,
+        name: "One Month Half Back Shop Shelf Rental",
+        description: "Half shelf rental subscription automatically renews every month.",
+        amount: 30.0, quantity: 1, resource_class: "rental",
+        plan_id: "2023-rental-month-Half-Back-Shelf", operation: "renew=", disabled: false,
       },
     ].each do |opt|
       next if InvoiceOption.where(plan_id: opt[:plan_id]).exists?
@@ -138,8 +138,8 @@ class SeedData
 
   def create_rental_types
     tote_opt       = InvoiceOption.find_by(plan_id: "rental-monthly-tote")
-    half_shelf_opt = InvoiceOption.find_by(plan_id: "rental-quarterly-recurring-back-shop-Half-shelf-subscription")
-    full_shelf_opt = InvoiceOption.find_by(plan_id: "rental-quarterly-recurring-back-shop-shelf-subscription")
+    half_shelf_opt = InvoiceOption.find_by(plan_id: "2023-rental-month-Half-Back-Shelf")
+    full_shelf_opt = InvoiceOption.find_by(plan_id: "2023-rental-month-Back-Shelf")
 
     [
       { display_name: "Storage Tote",  invoice_option: tote_opt,       active: true },
@@ -273,12 +273,12 @@ class SeedData
 
   def create_invoice_options
     create(:invoice_option, name: "One Month",    amount: 65.0,  id: "one-month",      plan_id: "membership-one-month-recurring")
-    create(:invoice_option, name: "Three Months", amount: 200.0, id: "three-months")
-    create(:invoice_option, name: "One Year",     amount: 800.0, id: "one-year")
+    create(:invoice_option, name: "Three Months", amount: 190.0, id: "three-months",   plan_id: "membership-three-month-recurring")
+    create(:invoice_option, name: "One Year",     amount: 765.0, id: "one-year",       plan_id: "membership-twelve-month-recurring")
     create(:invoice_option,
       name:        "Household Monthly Membership Subscription",
       amount:      125.0, id: "household-one-month",
-      plan_id:     "household-membership-one-month-recurring",
+      plan_id:     "2024_household-membership-one-month-recurring",
       description: "Membership subscription for two adults in the same household, automatically renews every month on the day the subscription started"
     )
   end
