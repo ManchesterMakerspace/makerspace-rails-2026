@@ -1,6 +1,7 @@
 class Admin::RejectionsController < AuthenticationController
   def index
-    render json: RejectionCard.where(rejections_query), adapter: :attributes and return
+    rejections = RejectionCard.where(rejections_query).map(&:attributes)
+    render json: { rejections: rejections } and return
   end
 
   private
