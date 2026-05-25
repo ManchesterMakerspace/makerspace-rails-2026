@@ -2,6 +2,7 @@ class Billing::PaymentMethodsController < BillingController
   # Allow unauthenticated access to new — needed for self-registration payment step
   # The client token is generated without a customer_id for unauthenticated requests
   skip_before_action :authenticate_member!, only: [:new]
+  skip_before_action :authenticated?, only: [:new]
 
   before_action :payment_method_params, only: [:create]
 
