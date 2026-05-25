@@ -242,11 +242,11 @@ jobs:
 
       - name: Install Playwright browsers
         working-directory: ui
-        run: yarn playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Run Playwright tests
         working-directory: ui
-        run: yarn e2e
+        run: npx playwright test
 
       - name: Upload Playwright artifacts on failure
         if: failure()
