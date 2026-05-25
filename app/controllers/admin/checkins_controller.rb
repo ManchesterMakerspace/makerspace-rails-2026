@@ -1,6 +1,6 @@
 class Admin::CheckinsController < AuthenticationController
   def index
-    render json: checkins_collection.find(checkins_query).to_a and return
+    render json: checkins_collection.find(checkins_query).to_a, root: false and return
   end
 
   private
