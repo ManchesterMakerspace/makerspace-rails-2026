@@ -1,6 +1,6 @@
 # Build UI — clone from GitHub
 
-FROM node:16-bullseye AS ui
+FROM node:22-bookworm AS ui
 
 ARG REACT_REPO_URL
 ARG REACT_BRANCH=master
@@ -15,7 +15,7 @@ RUN yarn install --ignore-engines && PORT=3000 yarn build
 
 # Build backend
 
-FROM ruby:2.6.9-bullseye
+FROM ruby:2.7.8-bookworm
 
 WORKDIR /app
 
