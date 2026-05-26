@@ -10,10 +10,10 @@ Rails.application.configure do
   config.action_mailer.raise_delivery_errors = false
   config.action_mailer.default :charset => "utf-8"
 
-  config.cache_store = :redis_store, {
+  config.cache_store = :redis_cache_store, {
+    url: ENV["REDIS_URL"],
     expires_in: 1.hour,
-    namespace: 'cache',
-    redis: { host: ENV['REDIS_URL'], port: ENV['REDIS_PORT'], db: ENV['REDIS_DB'] }
+    namespace: "cache"
   }
 
   if ENV['GMAIL_USERNAME'].present?

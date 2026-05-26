@@ -2,8 +2,8 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/ruby:2.7-browsers
-      - image: mongo:4.4  # TODO: bump to 7.0 with Mongoid 8 upgrade
+      - image: cimg/ruby:3.2-browsers
+      - image: mongo:7.0
         environment:
           MONGO_INITDB_DATABASE: makerspace_test
       - image: redis
@@ -19,26 +19,26 @@ jobs:
             chromedriver --version
             node -v
       - run:
-          name: Install Bundler 2.x
+          name: Install Bundler
           command: |
             gem install bundler
             bundle -v
       - restore_cache:
           keys:
-            - bundle-v2-{{ checksum "Gemfile.lock" }}
-            - bundle-v2-
+            - bundle-v3-{{ checksum "Gemfile.lock" }}
+            - bundle-v3-
       - run:
           name: Bundle install
           command: bundle install --path vendor/bundle --jobs 4 --retry 3
       - save_cache:
-          key: bundle-v2-{{ checksum "Gemfile.lock" }}
+          key: bundle-v3-{{ checksum "Gemfile.lock" }}
           paths:
             - vendor/bundle
       - run:
           name: Wait for MongoDB
           command: |
             for i in $(seq 1 30); do
-              mongo --eval "db.runCommand({ ping: 1 })" --quiet && break
+              mongosh --eval "db.runCommand({ ping: 1 })" --quiet && break
               echo "Waiting for mongo... ($i)"
               sleep 2
             done
@@ -53,7 +53,7 @@ jobs:
             "
       - run:
           name: Clear React cache
-          command: rm -rf tmp/makerspace-react && echo "React cache cleared, will clone fresh on next step"
+          command: rm -rf tmp/makerspace-react && echo "React cache cleared"
       - run:
           name: E2E
           command: bundle exec rake integration
@@ -65,24 +65,24 @@ jobs:
           path: ./tmp/makerspace-react/tmp/screenshots
   publish:
     docker:
-      - image: cimg/ruby:2.7-browsers
+      - image: cimg/ruby:3.2-browsers
     resource_class: large
     steps:
       - checkout
       - run:
-          name: Install Bundler 2.x
+          name: Install Bundler
           command: |
             gem install bundler
             bundle -v
       - restore_cache:
           keys:
-            - bundle-v2-{{ checksum "Gemfile.lock" }}
-            - bundle-v2-
+            - bundle-v3-{{ checksum "Gemfile.lock" }}
+            - bundle-v3-
       - run:
           name: Bundle install
           command: bundle install --path vendor/bundle --jobs 4 --retry 3
       - save_cache:
-          key: bundle-v2-{{ checksum "Gemfile.lock" }}
+          key: bundle-v3-{{ checksum "Gemfile.lock" }}
           paths:
             - vendor/bundle
       - run:
