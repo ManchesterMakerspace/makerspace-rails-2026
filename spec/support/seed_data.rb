@@ -273,9 +273,9 @@ class SeedData
   end
 
   def create_invoice_options
-    create(:invoice_option, name: "One Month",    amount: 65.0,  id: "one-month",      plan_id: "membership-one-month-recurring")
-    create(:invoice_option, name: "Three Months", amount: 190.0, id: "three-months",   plan_id: "membership-three-month-recurring")
-    create(:invoice_option, name: "One Year",     amount: 765.0, id: "one-year",       plan_id: "membership-twelve-month-recurring")
+    create(:invoice_option, name: "One Month",    amount: 65.0,  id: "one-month",      plan_id: "membership-one-month-recurring",     discount_id: "monthly_membership_sso")
+    create(:invoice_option, name: "Three Months", amount: 190.0, id: "three-months",   plan_id: "membership-three-month-recurring",   discount_id: "quarterly_membership_sso")
+    create(:invoice_option, name: "One Year",     amount: 765.0, id: "one-year",       plan_id: "membership-twelve-month-recurring",  discount_id: "annual_membership_sso")
     create(:invoice_option,
       name:        "Household Monthly Membership Subscription",
       amount:      125.0, id: "household-one-month",
