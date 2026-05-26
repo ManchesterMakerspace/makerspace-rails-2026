@@ -49,6 +49,11 @@ FactoryBot.define do
         member.role = 'resource_manager'
       end
     end
+    trait :board_member do
+      after(:build) do |member|
+        member.role = 'board_member'
+      end
+    end
     trait :inactive do
       after(:build) do |member|
         member.status = 'inactive'

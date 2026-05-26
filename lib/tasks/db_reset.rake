@@ -1,18 +1,24 @@
 namespace :db do
-  desc "Clears the db for testing."
+  desc "Clears and reseeds the db. Runs in test and development, never production."
   task :db_reset, [:options] => :environment do |t, args|
+    if Rails.env.production?
+      puts "db:db_reset refused to run in production."
+      exit 1
+    end
+
+    require 'factory_bot'
+    require 'database_cleaner'
+
+    puts "Cleaning db..."
+
+    Dir[Rails.root.join('spec/support/**/*.rb')].each { |f| require f }
+    DatabaseCleaner.strategy = :truncation
+    DatabaseCleaner.clean
+    FactoryBot.rewind_sequences
+
+    # Braintree cleanup options — only meaningful in test (CI) where we want a
+    # clean sandbox. Skipped in development to preserve local sandbox data.
     if Rails.env.test?
-      require 'factory_bot'
-      require 'database_cleaner'
-
-      puts "Cleaning db..."
-
-      Dir[Rails.root.join('spec/support/**/*.rb')].each { |f| require f }
-      DatabaseCleaner.strategy = :truncation
-      DatabaseCleaner.clean
-      FactoryBot.rewind_sequences
-
-      # Collect extra arguments
       braintree_options = (args[:options] || "").split(",").map(&:to_sym)
 
       if braintree_options.length > 0
@@ -20,11 +26,11 @@ namespace :db do
         cancel_subscriptions(gateway) if braintree_options.include?(:subscriptions)
         delete_payment_methods(gateway) if braintree_options.include?(:payment_methods)
       end
-      puts "DB cleaned, seeding.."
-
-      SeedData.new.call
-      puts "Seeding complete, done."
     end
+
+    puts "DB cleaned, seeding..."
+    SeedData.new.call
+    puts "Seeding complete, done."
   end
 
   task :reject_card, [:number] => :environment do |t, args|
@@ -41,7 +47,7 @@ namespace :db do
   end
 
   task :braintree_webhook, [:member_email] => :environment do |t, args|
-    if args[:member_email] then 
+    if args[:member_email] then
       member = Member.find_by(email: args[:member_email])
       invoice = Invoice.active_invoice_for_resource(member.id)
       sample_notification = ::Service::BraintreeGateway.connect_gateway.webhook_testing.sample_notification(
@@ -55,9 +61,9 @@ namespace :db do
   end
 
   task :paypal_webhook, [:member_email] => :environment do |t, args|
-    if args[:member_email] then 
+    if args[:member_email] then
       session = ActionDispatch::Integration::Session.new(Rails.application)
-      session.post "/ipnlistener", { params: { 
+      session.post "/ipnlistener", { params: {
         "payer_email" => args[:member_email],
         "txn_type": "subscr_cancel"
         } }
@@ -66,7 +72,7 @@ namespace :db do
 end
 
 def cancel_subscriptions(gateway)
-  subscriptions = ::BraintreeService::Subscription.get_subscriptions(gateway, Proc.new do |search| 
+  subscriptions = ::BraintreeService::Subscription.get_subscriptions(gateway, Proc.new do |search|
     search.status.in(
       Braintree::Subscription::Status::Active,
       Braintree::Subscription::Status::Expired,

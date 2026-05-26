@@ -1,4 +1,9 @@
 class Billing::PaymentMethodsController < BillingController
+  # Allow unauthenticated access to new — needed for self-registration payment step
+  # The client token is generated without a customer_id for unauthenticated requests
+  skip_before_action :authenticate_member!, only: [:new]
+  skip_before_action :authenticated?, only: [:new]
+
   before_action :payment_method_params, only: [:create]
 
   def new
@@ -85,17 +90,23 @@ class Billing::PaymentMethodsController < BillingController
   end
 
   private
+
   def payment_method_params
     params.require(:payment_method_nonce)
     params.permit(:payment_method_nonce, :make_default)
   end
 
   def generate_client_token
-  options = {}
-  options[:customer_id] = current_member.customer_id if current_member.customer_id.present?
-  @gateway.client_token.generate(options)
-rescue Braintree::BraintreeError => e
-  Honeybadger.notify(e)
-  raise Error::InternalServerError.new("Failed to initialize payment form")
-end
+    options = {}
+    # Only include customer_id if authenticated and member has one
+    begin
+      options[:customer_id] = current_member.customer_id if current_member&.customer_id.present?
+    rescue
+      # Unauthenticated — generate token without customer_id
+    end
+    @gateway.client_token.generate(options)
+  rescue Braintree::BraintreeError => e
+    Honeybadger.notify(e)
+    raise Error::InternalServerError.new("Failed to initialize payment form")
+  end
 end

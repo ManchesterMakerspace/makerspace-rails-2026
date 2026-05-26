@@ -11,7 +11,7 @@ WORKDIR /react
 
 RUN git clone --branch ${REACT_BRANCH} ${REACT_REPO_URL} .
 
-RUN yarn install && PORT=3000 yarn build
+RUN yarn install --ignore-engines && PORT=3000 yarn build
 
 # Build backend
 
