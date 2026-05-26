@@ -113,6 +113,8 @@ Rails.application.routes.draw do
 
       namespace :admin do
         resources :cards, only: [:new, :create, :index, :update]
+        resources :checkins, only: [:index]
+        resources :rejections, only: [:index]
         resources :invoices, only: [:index, :create, :update, :destroy] do
           member do
             post :force_cancel
