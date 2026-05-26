@@ -15,7 +15,7 @@ RUN yarn install --ignore-engines && PORT=3000 yarn build
 
 # Build backend
 
-FROM ruby:2.7.8-bookworm
+FROM ruby:2.7.8-bullseye
 
 WORKDIR /app
 
