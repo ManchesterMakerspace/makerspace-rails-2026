@@ -12,7 +12,7 @@ module Service
         channel = members_relations_channel,
         uniquifier = request_caller_id(caller_locations(1,1)[0].label)
       )
-      Redis.current.set(uniquifier, {
+      REDIS.set(uniquifier, {
         message: message,
         channel: channel,
         timestamp: Time.now
@@ -22,8 +22,8 @@ module Service
       ::Service::SlackConnector.get_enqueued_messages(uniquifier)
     end
     def self.get_enqueued_messages(uniquifier)
-      related_keys = Redis.current.keys(uniquifier)
-      related_keys.reduce({}) { |msg_hash, key| msg_hash.merge({ key => Redis.current.get(key) }) }
+      related_keys = REDIS.keys(uniquifier)
+      related_keys.reduce({}) { |msg_hash, key| msg_hash.merge({ key => REDIS.get(key) }) }
     end
     def send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel)
       ::Service::SlackConnector.send_slack_messages(messages, channel)

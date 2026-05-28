@@ -45,11 +45,11 @@ module InvoiceHelper
     end
 
     def self.get_all_invoices()
-        Redis.current.keys("#{name}/*")
+        REDIS.keys("#{name}/*")
     end
 
     def self.get_invoice_cache(invoice_id)
-        cache = Redis.current.get(normalize_invoice_id(invoice_id))
+        cache = REDIS.get(normalize_invoice_id(invoice_id))
         JSON.parse(cache) unless cache.nil?
     end
 
@@ -65,7 +65,7 @@ module InvoiceHelper
     end
 
     def self.update_lifecycle(invoice_id, lifecycle)
-        Redis.current.set(normalize_invoice_id(invoice_id), {
+        REDIS.set(normalize_invoice_id(invoice_id), {
             lifecycle: lifecycle,
             timestamp: Time.now.to_i
         }.to_json)
@@ -77,6 +77,6 @@ module InvoiceHelper
             timestamp = get_timestamp(invoice_id)
             timestamp < older_than_time
         end
-        Redis.current.del(*relevant_keys) unless relevant_keys.empty?
+        REDIS.del(*relevant_keys) unless relevant_keys.empty?
     end
 end
