@@ -7,7 +7,7 @@ on:
     branches: [master]
   workflow_dispatch:
 
-# Which React branch to use for E2E. Override with workflow_dispatch input if needed.
+# Which React branch to pull for UI build and E2E.
 env:
   REACT_BRANCH: master
 
@@ -26,16 +26,16 @@ jobs:
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 
-      - name: Set up Node 16
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '22'
           cache: yarn
           cache-dependency-path: ui/yarn.lock
 
       - name: Install UI dependencies
         working-directory: ui
-        run: yarn install --ignore-engines
+        run: yarn install --frozen-lockfile --ignore-engines
 
       - name: Build UI
         working-directory: ui
@@ -47,6 +47,7 @@ jobs:
           name: ui-build
           path: ui/dist
           retention-days: 1
+
 
   # -- 2. React unit tests (Jest) ----------------------------------------------
   jest:
@@ -62,27 +63,80 @@ jobs:
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 
-      - name: Set up Node 16
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '22'
           cache: yarn
           cache-dependency-path: ui/yarn.lock
 
       - name: Install UI dependencies
         working-directory: ui
-        run: yarn install --ignore-engines
+        run: yarn install --frozen-lockfile --ignore-engines
 
       - name: Run Jest
         working-directory: ui
         run: yarn test --ci --reporters=default
 
 
-  # -- 3. RSpec - TEMPORARILY DISABLED ------------------------------------------
-  # 18 pre-existing failures tracked in GitHub issue. Re-enable after fixing.
-  # rspec job removed from CI until spec/models, spec/controllers, spec/api fixed.
+  # -- 3. RSpec unit tests -----------------------------------------------------
+  rspec:
+    name: RSpec (Rails unit tests)
+    runs-on: ubuntu-latest
 
-  # -- 4. Production asset compile check --------------------------------------
+    services:
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })' --quiet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RAILS_ENV: test
+      MLAB_URI: mongodb://localhost:27017/makerspace_test
+      REDIS_URL: redis://localhost:6379/0
+      DEVISE_SECRET_KEY: ci_dummy_devise_secret
+      OTP_SECRET_KEY: ci_dummy_otp_secret
+      APP_DOMAIN: http://localhost:3035
+      SLACK_ADMIN_TOKEN: dummy
+      SLACK_SIGNING_SECRET: dummy
+      FIREBASE_API_KEY: dummy
+      FIREBASE_PROJECT_ID: dummy
+      SMTP_ADDRESS: smtp.example.com
+      SMTP_PORT: 587
+      SMTP_USERNAME: dummy@example.com
+      SMTP_PASSWORD: dummy
+      SMTP_FROM: dummy@example.com
+      HONEYBADGER_API_KEY: dummy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.2.9
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.9'
+          bundler-cache: true
+
+      - name: Run RSpec
+        run: bundle exec rspec
+
+
+  # -- 4. Production asset compile check ----------------------------------------
   compile-production:
     name: Production Asset Compile
     runs-on: ubuntu-latest
@@ -92,29 +146,31 @@ jobs:
       RAILS_ENV: production
       SECRET_KEY_BASE: ci_dummy_secret_key_base
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
+      OTP_SECRET_KEY: ci_dummy_otp_secret
       MLAB_URI: mongodb://localhost:27017/makerspace_production
-      PAYPAL_CLIENT_ID: dummy
-      PAYPAL_SECRET: dummy
+      APP_DOMAIN: http://localhost:3035
+      SLACK_ADMIN_TOKEN: dummy
+      SLACK_SIGNING_SECRET: dummy
+      FIREBASE_API_KEY: dummy
+      FIREBASE_PROJECT_ID: dummy
+      SMTP_ADDRESS: smtp.example.com
+      SMTP_PORT: 587
+      SMTP_USERNAME: dummy@example.com
+      SMTP_PASSWORD: dummy
+      SMTP_FROM: dummy@example.com
+      HONEYBADGER_API_KEY: dummy
       BT_ENV: sandbox
       BT_MERCHANT_ID: dummy
       BT_PUBLIC_KEY: dummy
       BT_PRIVATE_KEY: dummy
-      SLACK_ADMIN_TOKEN: dummy
-      GMAIL_USERNAME: dummy@example.com
-      GMAIL_PASSWORD: dummy
-      GOOGLE_ID: dummy
-      GOOGLE_SECRET: dummy
-      GOOGLE_TOKEN: dummy
-      HONEYBADGER_API_KEY: dummy
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Ruby 2.6.9
+      - name: Set up Ruby 3.2.9
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '2.6.9'
-          bundler: '1.17.3'
+          ruby-version: '3.2.9'
           bundler-cache: true
 
       - name: Download built UI assets
@@ -126,7 +182,8 @@ jobs:
       - name: Precompile assets
         run: bundle exec rails assets:precompile
 
-  # -- 5. E2E (Playwright) -----------------------------------------------------
+
+  # -- 5. E2E (Playwright) ------------------------------------------------------
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
@@ -134,17 +191,17 @@ jobs:
 
     services:
       mongo:
-        image: mongo:4.4
+        image: mongo:7.0
         ports:
           - 27017:27017
         options: >-
-          --health-cmd "mongo --eval 'db.runCommand({ ping: 1 })'"
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })' --quiet"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
 
       redis:
-        image: redis:6
+        image: redis:7
         ports:
           - 6379:6379
         options: >-
@@ -158,36 +215,29 @@ jobs:
       PORT: 3035
       MLAB_URI: mongodb://localhost:27017/makerspace_test
       REDIS_URL: redis://localhost:6379/0
-      SECRET_KEY_BASE: ci_dummy_secret_key_base
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
-      PAYPAL_CLIENT_ID: dummy
-      PAYPAL_SECRET: dummy
-      # Braintree - real sandbox credentials required for payment tests.
+      OTP_SECRET_KEY: ci_dummy_otp_secret
+      APP_DOMAIN: http://localhost:3035
+      RAILS_SERVE_STATIC_FILES: 'true'
+      SLACK_ADMIN_TOKEN: dummy
+      SLACK_SIGNING_SECRET: dummy
+      FIREBASE_API_KEY: dummy
+      FIREBASE_PROJECT_ID: dummy
+      SMTP_ADDRESS: smtp.example.com
+      SMTP_PORT: 587
+      SMTP_USERNAME: dummy@example.com
+      SMTP_PASSWORD: dummy
+      SMTP_FROM: dummy@example.com
+      HONEYBADGER_API_KEY: dummy
+      HONEYBADGER_ENV: test
+      # Braintree — real sandbox credentials required for payment tests.
       # Add BT_MERCHANT_ID, BT_PUBLIC_KEY, BT_PRIVATE_KEY to GitHub repo secrets.
       BT_ENV: sandbox
       BT_MERCHANT_ID: ${{ secrets.BT_MERCHANT_ID }}
       BT_PUBLIC_KEY: ${{ secrets.BT_PUBLIC_KEY }}
       BT_PRIVATE_KEY: ${{ secrets.BT_PRIVATE_KEY }}
-      SLACK_ADMIN_TOKEN: dummy
-      GMAIL_USERNAME: dummy@example.com
-      GMAIL_PASSWORD: dummy
-      GOOGLE_ID: dummy
-      GOOGLE_SECRET: dummy
-      GOOGLE_TOKEN: dummy
-      CODE_CONDUCT_ID: dummy
-      CODE_CONDUCT_FOLDER: dummy
-      CONTRACT_ID: dummy
-      MEMBER_CONTRACT_FOLDER: dummy
-      RENTAL_AGREEMENT_ID: dummy
-      RENTAL_AGREEMENT_FOLDER: dummy
-      RESOURCES_FOLDER: dummy
-      SIGNATURES_FOLDER: dummy
-      BACKUP_FOLDER: dummy
-      HONEYBADGER_API_KEY: dummy
-      HONEYBADGER_ENV: test
-      # Playwright env
+      # Playwright
       APP_URL: http://localhost:3035
-      RAILS_DIR: ${{ github.workspace }}
 
     steps:
       - uses: actions/checkout@v4
@@ -199,23 +249,22 @@ jobs:
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 
-      - name: Set up Ruby 2.6.9
+      - name: Set up Ruby 3.2.9
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '2.6.9'
-          bundler: '1.17.3'
+          ruby-version: '3.2.9'
           bundler-cache: true
 
-      - name: Set up Node 16
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '22'
           cache: yarn
           cache-dependency-path: ui/yarn.lock
 
       - name: Install UI dependencies
         working-directory: ui
-        run: yarn install --ignore-engines
+        run: yarn install --frozen-lockfile --ignore-engines
 
       - name: Download built UI assets
         uses: actions/download-artifact@v4
@@ -257,4 +306,3 @@ jobs:
             ui/tmp/playwright-results/
             ui/tmp/playwright-report/
           retention-days: 7
-
