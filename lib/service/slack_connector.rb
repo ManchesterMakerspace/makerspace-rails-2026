@@ -77,13 +77,14 @@ module Service
       ::Service::SlackConnector.invite_to_slack(email, lastname, firstname)
     end
     def self.invite_to_slack(email, lastname, firstname)
-      if Util.is_prod?
-        client.users_admin_invite(
-          email: email,
-          first_name: firstname,
-          last_name: lastname
-        )
+      unless ENV['SLACK_INVITES_ENABLED'] == 'true'
+        raise Error::NotAllowed.new('Slack invites are not enabled in this environment')
       end
+      client.users_admin_invite(
+        email: email,
+        first_name: firstname,
+        last_name: lastname
+      )
     end
 
     # ── Channel helpers ──────────────────────────────────────────────────────
@@ -108,14 +109,14 @@ module Service
 
     private
     def self.safe_channel(channel)
-      Util.is_prod? ? channel : "test_channel"
+      ENV['SLACK_ENV'] == 'production' ? channel : 'test_channel'
     end
     def self.client
       Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
     end
     def self.format_slack_messages(messages, channel)
-      messages = messages.map { |m| "#{channel}| #{m}" } unless Util.is_prod?
-      msg_string = messages.join(" \n ")
+      messages = messages.map { |m| "#{channel}| #{m}" } unless ENV['SLACK_ENV'] == 'production'
+      messages.join(" \n ")
     end
     def self.request_caller_id(caller_method)
       "#{Current.request_id}.#{caller_method}"

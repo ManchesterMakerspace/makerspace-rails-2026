@@ -2,7 +2,7 @@ Rails.application.configure do
 
   # Settings specified here will take precedence over those in config/application.rb.
   config.action_mailer.default_url_options = {
-    host: "https://#{::Util.is_prod? ? 'members.manchestermakerspace.org' : 'makerspace-test.herokuapp.com'}",
+    host: ENV.fetch('APP_DOMAIN'),
     protocol: "https"
   }
   config.action_mailer.delivery_method = :smtp
