@@ -34,9 +34,9 @@ RSpec.describe Admin::MembersController, type: :controller do
           post :create, params: valid_attributes, format: :json
           one_month_later_after = Time.now + 1.month;
 
-          expect(assigns(:member)).to be_a(Member)
-          expect(assigns(:member)).to be_persisted
-          expect(assigns[:member].firstname).to eq(valid_attributes[:firstname])
+          expect(Member.last).to be_a(Member)
+          expect(Member.last).to be_persisted
+          expect(Member.last.firstname).to eq(valid_attributes[:firstname])
         end
 
         it "renders json of the created member" do

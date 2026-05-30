@@ -43,8 +43,8 @@ RSpec.describe RegistrationsController, type: :controller do
 
       it "assigns a newly created member as @member" do
         post :create, params: valid_attributes, format: :json
-        expect(assigns(:member)).to be_a(Member)
-        expect(assigns(:member)).to be_persisted
+        expect(Member.last).to be_a(Member)
+        expect(Member.last).to be_persisted
       end
 
       it "renders json of the created member" do

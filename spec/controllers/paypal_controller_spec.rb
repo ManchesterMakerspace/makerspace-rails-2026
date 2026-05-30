@@ -34,8 +34,8 @@ RSpec.describe PaypalController, type: :controller do
 
       it "assigns a newly created paypal as @paypal" do
         post :notify, params: valid_attributes, format: :json
-        expect(assigns(:payment)).to be_a(Payment)
-        expect(assigns(:payment)).to be_persisted
+        expect(Payment.last).to be_a(Payment)
+        expect(Payment.last).to be_persisted
       end
 
       it "Sends a notification to Slack" do
@@ -45,7 +45,7 @@ RSpec.describe PaypalController, type: :controller do
 
       it "Attributes the correct member to the payment" do
         post :notify, params: valid_attributes, format: :json
-        expect(assigns(:payment).member).to eq(member)
+        expect(Payment.last.member).to eq(member)
       end
 
       it "Updates member to subscription for correct txn_type" do

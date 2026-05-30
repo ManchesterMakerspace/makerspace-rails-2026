@@ -41,7 +41,6 @@ group :test do
   gem 'rspec-rails', '~> 6.0'
   gem 'mongoid-rspec', '~> 4.1'
   gem 'database_cleaner-mongoid'
-  gem 'rails-controller-testing', '~> 1.0'
   gem 'simplecov', '~> 0.22'
   gem 'rswag-specs', '~> 2.14'
 end
