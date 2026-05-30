@@ -17,7 +17,7 @@ gem 'redis-actionpack'
 gem 'devise', '~> 4.9'
 gem 'rotp',    '~> 6.0'
 gem 'rqrcode', '~> 2.0'
-gem 'bcrypt'
+gem 'bcrypt', '~> 3.1'
 
 # MongoDB
 gem 'mongoid', '~> 8.0'
@@ -29,7 +29,8 @@ gem 'braintree', '~> 4.0'
 gem 'slack-ruby-client', '~> 2.0'
 
 # Google Drive
-gem 'multi_json', '>= 1.14.1'
+gem 'multi_json', '~> 1.15'
+gem 'faraday', '~> 2.12'
 gem 'google-apis-drive_v3'
 gem 'google-apis-sheets_v4'
 
@@ -42,16 +43,16 @@ gem 'rswag-api', '~> 2.14'
 gem 'rswag-ui', '~> 2.14'
 
 # PDF generation
-gem 'wicked_pdf', '~> 2.0'
-gem 'wkhtmltopdf-binary'
+gem 'wicked_pdf', '~> 2.8'
+gem 'wkhtmltopdf-binary', '~> 0.12.6'
 
 group :test do
   gem 'rspec-rails', '~> 6.0'
   gem 'mongoid-rspec', '~> 4.1'
   gem 'database_cleaner'
   gem 'database_cleaner-mongoid'
-  gem 'rails-controller-testing'
-  gem 'simplecov'
+  gem 'rails-controller-testing', '~> 1.0'
+  gem 'simplecov', '~> 0.22'
   gem 'rswag-specs', '~> 2.14'
 end
 
@@ -61,7 +62,7 @@ end
 
 group :development, :test do
   gem 'debug'
-  gem 'factory_bot_rails'
+  gem 'factory_bot_rails', '~> 6.0'
 end
 
 gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw, :jruby]
