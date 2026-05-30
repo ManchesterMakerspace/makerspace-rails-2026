@@ -41,6 +41,8 @@ module MemberSubscriber
   def send_slack_invite(member)
     begin
       invite_to_slack(member.email, member.lastname, member.firstname)
+    rescue Error::NotAllowed
+      # Slack invites disabled in this environment — silent skip
     rescue => err
       ::Service::SlackConnector.send_slack_message("Error inviting #{member.fullname} to Slack. Error: #{err}")
     end
@@ -49,6 +51,8 @@ module MemberSubscriber
   def send_google_invite(member)
     begin
       invite_gdrive(member.email)
+    rescue Error::NotAllowed
+      # Google Drive invites disabled in this environment — silent skip
     rescue Error::Google::Upload => err
       ::Service::SlackConnector.send_slack_message("Error sharing Member Resources folder with #{member.fullname}. Error: #{err}")
     end
