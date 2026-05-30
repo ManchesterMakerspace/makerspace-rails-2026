@@ -118,7 +118,7 @@ GEM
       responders
       warden (~> 1.2.3)
     diff-lcs (1.6.1)
-    docile (1.3.1)
+    docile (1.4.1)
     domain_name (0.6.20240107)
     dotenv (3.2.0)
     dotenv-rails (3.2.0)
@@ -127,18 +127,22 @@ GEM
     drb (2.2.3)
     erb (6.0.4)
     erubi (1.13.1)
-    factory_bot (5.0.2)
-      activesupport (>= 4.2.0)
-    factory_bot_rails (5.0.1)
-      factory_bot (~> 5.0.0)
-      railties (>= 4.2.0)
-    faraday (2.0.0)
-      ruby2_keywords (>= 0.0.4)
+    factory_bot (6.6.0)
+      activesupport (>= 6.1.0)
+    factory_bot_rails (6.5.1)
+      factory_bot (~> 6.5)
+      railties (>= 6.1.0)
+    faraday (2.14.2)
+      faraday-net_http (>= 2.0, < 3.5)
+      json
+      logger
     faraday-mashify (1.0.2)
       faraday (~> 2.0)
       hashie
     faraday-multipart (1.2.0)
       multipart-post (~> 2.0)
+    faraday-net_http (3.4.3)
+      net-http (~> 0.5)
     fast-stemmer (1.0.2)
     ffi (1.17.4-x86_64-linux-gnu)
     git (2.3.3)
@@ -192,7 +196,7 @@ GEM
       prism (>= 1.3.0)
       rdoc (>= 4.0.0)
       reline (>= 0.4.2)
-    json (2.3.1)
+    json (2.19.7)
     json-schema (6.2.0)
       addressable (~> 2.8)
       bigdecimal (>= 3.1, < 5)
@@ -245,6 +249,8 @@ GEM
     multi_json (1.21.1)
     multipart-post (2.0.0)
     mutex_m (0.3.0)
+    net-http (0.9.1)
+      uri (>= 0.11.1)
     net-imap (0.6.4)
       date
       net-protocol
@@ -399,11 +405,12 @@ GEM
       faraday (>= 0.17.5, < 3.a)
       jwt (>= 1.5, < 4.0)
       multi_json (~> 1.10)
-    simplecov (0.16.1)
+    simplecov (0.22.0)
       docile (~> 1.1)
-      json (>= 1.8, < 3)
-      simplecov-html (~> 0.10.0)
-    simplecov-html (0.10.2)
+      simplecov-html (~> 0.11)
+      simplecov_json_formatter (~> 0.1)
+    simplecov-html (0.13.2)
+    simplecov_json_formatter (0.1.4)
     slack-ruby-client (2.6.0)
       faraday (>= 2.0)
       faraday-mashify
@@ -427,6 +434,7 @@ GEM
     tzinfo (2.0.6)
       concurrent-ruby (~> 1.0)
     uber (0.1.0)
+    uri (1.1.1)
     useragent (0.16.11)
     warden (1.2.9)
       rack (>= 2.0.9)
@@ -435,9 +443,10 @@ GEM
       base64
       websocket-extensions (>= 0.1.0)
     websocket-extensions (0.1.5)
-    wicked_pdf (2.0.2)
+    wicked_pdf (2.8.2)
       activesupport
-    wkhtmltopdf-binary (0.12.4)
+      ostruct
+    wkhtmltopdf-binary (0.12.6.10)
     xml-simple (1.1.5)
     zeitwerk (2.6.18)
 
@@ -446,7 +455,7 @@ PLATFORMS
 
 DEPENDENCIES
   active_model_serializers (~> 0.10.15)
-  bcrypt
+  bcrypt (~> 3.1)
   braintree (~> 4.0)
   concurrent-ruby (~> 1.3)
   connection_pool (~> 2.4)
@@ -455,7 +464,8 @@ DEPENDENCIES
   debug
   devise (~> 4.9)
   dotenv-rails
-  factory_bot_rails
+  factory_bot_rails (~> 6.0)
+  faraday (~> 2.12)
   git (~> 2.0)
   google-apis-drive_v3
   google-apis-sheets_v4
@@ -466,12 +476,12 @@ DEPENDENCIES
   mongoid (~> 8.0)
   mongoid-rspec (~> 4.1)
   mongoid_search (~> 0.4)
-  multi_json (>= 1.14.1)
+  multi_json (~> 1.15)
   paypal-sdk-rest (~> 1.7)
   puma (~> 6.0)
   rack-cors (~> 2.0)
   rails (~> 7.2.0)
-  rails-controller-testing
+  rails-controller-testing (~> 1.0)
   redis (~> 5.0)
   redis-actionpack
   rest-client (~> 2.1)
@@ -481,12 +491,12 @@ DEPENDENCIES
   rswag-api (~> 2.14)
   rswag-specs (~> 2.14)
   rswag-ui (~> 2.14)
-  simplecov
+  simplecov (~> 0.22)
   slack-ruby-client (~> 2.0)
   sprockets-rails
   tzinfo-data
-  wicked_pdf (~> 2.0)
-  wkhtmltopdf-binary
+  wicked_pdf (~> 2.8)
+  wkhtmltopdf-binary (~> 0.12.6)
 
 RUBY VERSION
    ruby 3.2.9p265
