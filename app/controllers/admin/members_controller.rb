@@ -40,8 +40,10 @@ class Admin::MembersController < AdminController
   # POST /api/admin/members/:id/invite_google_drive
   # Re-sends a Google Drive folder invite to the member.
   def invite_google_drive
-    ::Service::GoogleDrive.new.invite_gdrive(@member.email)
+    ::Service::GoogleDrive.invite_gdrive(@member.email)
     render json: {}, status: 204 and return
+  rescue => e
+    render json: { message: e.message }, status: :unprocessable_entity and return
   end
 
   # POST /api/admin/members/:id/invite_slack
