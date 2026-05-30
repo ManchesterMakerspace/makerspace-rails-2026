@@ -2,8 +2,8 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/ruby:2.6.9-browsers
-      - image: mongo:4.4
+      - image: cimg/ruby:3.2-browsers
+      - image: mongo:7.0
         environment:
           MONGO_INITDB_DATABASE: makerspace_test
       - image: redis
@@ -15,43 +15,30 @@ jobs:
           command: |
             ruby -v
             which ruby
-            cat Gemfile | grep ^ruby || echo "no ruby version in Gemfile"
-      - run:
-          name: Install Chrome and ChromeDriver
-          command: |
-            sudo apt-get update
-            sudo apt-get install -y libu2f-udev libvulkan1
-            wget -q https://mirror.cs.uchicago.edu/google-chrome/pool/main/g/google-chrome-stable/google-chrome-stable_114.0.5735.90-1_amd64.deb
-            sudo apt-get install -y ./google-chrome-stable_114.0.5735.90-1_amd64.deb
-            wget -q https://chromedriver.storage.googleapis.com/114.0.5735.90/chromedriver_linux64.zip
-            unzip chromedriver_linux64.zip
-            sudo mv chromedriver /usr/local/bin/chromedriver
-            sudo chmod +x /usr/local/bin/chromedriver
             google-chrome --version
             chromedriver --version
-      - run:
-          name: Install Bundler 1.17.3
-          command: |
-            gem install bundler:1.17.3
-            bundle -v
             node -v
-            ruby -v
+      - run:
+          name: Install Bundler
+          command: |
+            gem install bundler
+            bundle -v
       - restore_cache:
           keys:
-            - bundle-v1-{{ checksum "Gemfile.lock" }}
-            - bundle-v1-
+            - bundle-v3-{{ checksum "Gemfile.lock" }}
+            - bundle-v3-
       - run:
           name: Bundle install
           command: bundle install --path vendor/bundle --jobs 4 --retry 3
       - save_cache:
-          key: bundle-v1-{{ checksum "Gemfile.lock" }}
+          key: bundle-v3-{{ checksum "Gemfile.lock" }}
           paths:
             - vendor/bundle
       - run:
           name: Wait for MongoDB
           command: |
             for i in $(seq 1 30); do
-              mongo --eval "db.runCommand({ ping: 1 })" --quiet && break
+              mongosh --eval "db.runCommand({ ping: 1 })" --quiet && break
               echo "Waiting for mongo... ($i)"
               sleep 2
             done
@@ -66,7 +53,7 @@ jobs:
             "
       - run:
           name: Clear React cache
-          command: rm -rf tmp/makerspace-react && echo "React cache cleared, will clone fresh on next step"
+          command: rm -rf tmp/makerspace-react && echo "React cache cleared"
       - run:
           name: E2E
           command: bundle exec rake integration
@@ -78,24 +65,24 @@ jobs:
           path: ./tmp/makerspace-react/tmp/screenshots
   publish:
     docker:
-      - image: cimg/ruby:2.6.9-browsers
+      - image: cimg/ruby:3.2-browsers
     resource_class: large
     steps:
       - checkout
       - run:
-          name: Install Bundler 1.17.3
+          name: Install Bundler
           command: |
-            gem install bundler:1.17.3
+            gem install bundler
             bundle -v
       - restore_cache:
           keys:
-            - bundle-v1-{{ checksum "Gemfile.lock" }}
-            - bundle-v1-
+            - bundle-v3-{{ checksum "Gemfile.lock" }}
+            - bundle-v3-
       - run:
           name: Bundle install
           command: bundle install --path vendor/bundle --jobs 4 --retry 3
       - save_cache:
-          key: bundle-v1-{{ checksum "Gemfile.lock" }}
+          key: bundle-v3-{{ checksum "Gemfile.lock" }}
           paths:
             - vendor/bundle
       - run:

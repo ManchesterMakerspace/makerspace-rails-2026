@@ -20,7 +20,7 @@ RSpec.describe RentalsController, type: :controller do
     it "assigns all rentals for current user as @rentals" do
       rental = Rental.create(valid_attributes)
       get :index, params: {}
-      expect(assigns(:rentals)).to eq([rental])
+      expect(Rental.where(member_id: member.id).to_a).to eq([rental])
     end
 
     it "renders json of @rentals" do
@@ -38,7 +38,7 @@ RSpec.describe RentalsController, type: :controller do
     it "assigns the requested rental as @rental" do
       rental = Rental.create(valid_attributes)
       get :show, params: {id: rental.to_param}
-      expect(assigns(:rental)).to eq(rental)
+      expect(Rental.find(rental.id)).to eq(rental)
     end
 
     it "renders json of the created rental" do

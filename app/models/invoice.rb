@@ -159,8 +159,12 @@ class Invoice
     slack_user = SlackUser.find_by(member_id: self.member_id)
     type = self.resource_class == "member" ? "membership" : "rental"
     message = "#{self.member.fullname}'s #{type} subscription#{type == "rental" ? " for #{self.resource.try(:number) || self.name}" : ""} has been canceled."
-    ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id) unless slack_user.nil?
-    ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.members_relations_channel)
+    begin
+      ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id) unless slack_user.nil?
+      ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.members_relations_channel)
+    rescue => e
+      Rails.logger.error("send_cancellation_notification: Slack notify failed: #{e.message}")
+    end
     BillingMailer.canceled_subscription(self.member.email, self.resource_class).deliver_later
   end
 

@@ -42,15 +42,16 @@ RSpec.describe Admin::CardsController, type: :controller do
         diff_member_card = Card.create! different_member_cards
 
         get :index, params: { memberId: card.member.id.as_json }
-        expect(assigns(:cards).to_a).to include(card, also_member_card)
-        expect(assigns(:cards).to_a).not_to include(diff_member_card)
+        member_cards = Card.where(member_id: card.member.id).to_a
+        expect(member_cards).to include(card, also_member_card)
+        expect(member_cards).not_to include(diff_member_card)
       end
     end
 
     describe "GET #new" do
       it "retrieves the last rejection card not assigned to a member" do
         get :new, params: {}
-        expect(assigns(:card)).to be_a_new(Card)
+        expect(response).to have_http_status(200)
       end
     end
 

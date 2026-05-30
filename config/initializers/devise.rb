@@ -1,4 +1,4 @@
-require_relative("../../lib/error/devise_failure")
+
 
 # Use this hook to configure devise mailer, warden hooks and so forth.
 # Many of these configuration options can be set straight in your model.
@@ -276,7 +276,7 @@ Devise.setup do |config|
   # end
 
   config.warden do |manager|
-    manager.failure_app = DeviseFailure
+    manager.failure_app = Error::DeviseFailure
   end
 
   # ==> Mountable engine configurations

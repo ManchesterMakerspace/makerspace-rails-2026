@@ -7,12 +7,12 @@ namespace :db do
     end
 
     require 'factory_bot'
-    require 'database_cleaner'
+    require "database_cleaner/mongoid"
 
     puts "Cleaning db..."
 
     Dir[Rails.root.join('spec/support/**/*.rb')].each { |f| require f }
-    DatabaseCleaner.strategy = :truncation
+    DatabaseCleaner.strategy = :deletion
     DatabaseCleaner.clean
     FactoryBot.rewind_sequences
 

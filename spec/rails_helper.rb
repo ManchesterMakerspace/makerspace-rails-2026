@@ -1,5 +1,4 @@
-require "database_cleaner"
-
+require "database_cleaner/mongoid"
 # This file is copied to spec/ when you run 'rails generate rspec:install'
 ENV['RAILS_ENV'] ||= 'test'
 if ENV['RAILS_ENV'] == 'test' && ENV['LOG_COVERAGE'] then
@@ -7,7 +6,6 @@ if ENV['RAILS_ENV'] == 'test' && ENV['LOG_COVERAGE'] then
   SimpleCov.start
   puts "required simplecov"
 end
-
 require File.expand_path('../../config/environment', __FILE__)
 # Prevent database truncation if the environment is production
 abort("The Rails environment is running in production mode!") if Rails.env.production?
@@ -19,7 +17,6 @@ require 'base64'
 require 'bcrypt'
 require 'securerandom'
 # Add additional requires below this line. Rails is not loaded until this point!
-
 # Requires supporting ruby files with custom matchers and macros, etc, in
 # spec/support/ and its subdirectories. Files matching `spec/**/*_spec.rb` are
 # run as spec files by default. This means that files in spec/support that end
@@ -34,7 +31,6 @@ require 'securerandom'
 # require only the support files necessary.
 #
 Dir[Rails.root.join('spec/support/**/*.rb')].each { |f| require f }
-
 RSpec.configure do |config|
   config.include Devise::Test::ControllerHelpers, :type => :controller
   config.include Devise::Test::IntegrationHelpers, type: :request
@@ -42,22 +38,20 @@ RSpec.configure do |config|
   config.include TestHelpers, :type => :controller
   config.include FactoryBot::Syntax::Methods
   config.include Mongoid::Matchers, type: :model
+  # Disable ActiveRecord integration — this app uses Mongoid only.
+  config.use_active_record = false
   # Clean/Reset Mongoid DB prior to running each test.
   config.use_transactional_fixtures = false
-
   config.before(:suite) do
-    DatabaseCleaner.clean_with(:truncation)
+    DatabaseCleaner[:mongoid].clean_with(:deletion)
   end
-
   config.before(:each) do |example|
-    DatabaseCleaner.strategy= :truncation
-    DatabaseCleaner.start
+    DatabaseCleaner[:mongoid].strategy = :deletion
+    DatabaseCleaner[:mongoid].start
   end
-
   config.after(:each) do
-    DatabaseCleaner.clean
+    DatabaseCleaner[:mongoid].clean
   end
-
   # RSpec Rails can automatically mix in different behaviours to your tests
   # based on their file location, for example enabling you to call `get` and
   # `post` in specs under `spec/controllers`.
@@ -72,7 +66,6 @@ RSpec.configure do |config|
   # The different available types are documented in the features, such as in
   # https://relishapp.com/rspec/rspec-rails/docs
   config.infer_spec_type_from_file_location!
-
   # Filter lines from Rails gems in backtraces.
   config.filter_rails_from_backtrace!
   # arbitrary gems may also be filtered via:

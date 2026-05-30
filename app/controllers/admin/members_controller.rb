@@ -1,4 +1,5 @@
 class Admin::MembersController < AdminController
+  include Service::GoogleDrive
   before_action :set_member, only: [:update, :update_password, :send_password_reset, :invite_google_drive, :invite_slack]
 
   def create
@@ -40,8 +41,13 @@ class Admin::MembersController < AdminController
   # POST /api/admin/members/:id/invite_google_drive
   # Re-sends a Google Drive folder invite to the member.
   def invite_google_drive
-    ::Service::GoogleDrive.new.invite_gdrive(@member.email)
+    invite_gdrive(@member.email)
     render json: {}, status: 204 and return
+  rescue Error::NotAllowed => e
+    render json: { message: e.message }, status: :unprocessable_entity and return
+  rescue => e
+    Honeybadger.notify(e) if defined?(Honeybadger)
+    render json: { message: e.message }, status: :unprocessable_entity and return
   end
 
   # POST /api/admin/members/:id/invite_slack
@@ -51,7 +57,10 @@ class Admin::MembersController < AdminController
   def invite_slack
     ::Service::SlackConnector.invite_to_slack(@member.email, @member.lastname, @member.firstname)
     render json: {}, status: 204 and return
+  rescue Error::NotAllowed => e
+    render json: { message: e.message }, status: :unprocessable_entity and return
   rescue => e
+    Honeybadger.notify(e) if defined?(Honeybadger)
     render json: { message: e.message }, status: :unprocessable_entity and return
   end
 

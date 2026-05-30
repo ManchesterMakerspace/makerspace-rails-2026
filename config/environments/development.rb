@@ -15,10 +15,10 @@ Rails.application.configure do
   # Show full error reports.
   config.consider_all_requests_local = true
 
-  config.cache_store = :redis_store, {
+  config.cache_store = :redis_cache_store, {
+    url: ENV["REDIS_URL"],
     expires_in: 1.hour,
-    namespace: 'cache',
-    redis: { host: ENV['REDIS_URL'], port: ENV['REDIS_PORT'], db: ENV['REDIS_DB'] }
+    namespace: "cache"
   }
 
   # require 'syslog/logger'

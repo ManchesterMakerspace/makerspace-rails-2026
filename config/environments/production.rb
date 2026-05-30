@@ -2,7 +2,7 @@ Rails.application.configure do
 
   # Settings specified here will take precedence over those in config/application.rb.
   config.action_mailer.default_url_options = {
-    host: "https://#{::Util.is_prod? ? 'members.manchestermakerspace.org' : 'makerspace-test.herokuapp.com'}",
+    host: ENV.fetch('APP_DOMAIN'),
     protocol: "https"
   }
   config.action_mailer.delivery_method = :smtp
@@ -10,10 +10,10 @@ Rails.application.configure do
   config.action_mailer.raise_delivery_errors = false
   config.action_mailer.default :charset => "utf-8"
 
-  config.cache_store = :redis_store, {
+  config.cache_store = :redis_cache_store, {
+    url: ENV["REDIS_URL"],
     expires_in: 1.hour,
-    namespace: 'cache',
-    redis: { host: ENV['REDIS_URL'], port: ENV['REDIS_PORT'], db: ENV['REDIS_DB'] }
+    namespace: "cache"
   }
 
   if ENV['GMAIL_USERNAME'].present?

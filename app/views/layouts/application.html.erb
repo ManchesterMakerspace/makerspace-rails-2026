@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title><%= Util.is_prod? ? '' : 'DEV - ' %>Makerspace Authorization</title>
+  <title><%= (ENV['BT_ENV'] != 'production' || ENV['SLACK_ENV'] != 'production' || Rails.env != 'production' || ENV['RACK_ENV'] != 'production') ? 'DEV - ' : '' %>Makerspace Authorization</title>
   <%= favicon_link_tag asset_path('favicon.png'), :rel => 'icon', :type =>  'image/png' %>
   <%= favicon_link_tag asset_path('favicon.png'), :rel => 'apple-touch-icon', :type =>  'image/png' %>
   <%= stylesheet_link_tag 'application' %>
@@ -16,12 +16,13 @@
 <% else %>
 <body>
 <% end %>
-<% unless Util.is_prod? %>
+<% if ENV['BT_ENV'] != 'production' || ENV['SLACK_ENV'] != 'production' || Rails.env != 'production' || ENV['RACK_ENV'] != 'production' %>
   <div class="watermark">
     DEVELOPMENT
     | Braintree: <%= ENV.fetch('BT_ENV', 'unknown') %>
     | Rails: <%= Rails.env %>
     | Rack: <%= ENV.fetch('RACK_ENV', 'unknown') %>
+    | Slack: <%= ENV.fetch('SLACK_ENV', 'unknown') %>
   </div>
 <% end %>
   <%= javascript_include_tag 'application' %>

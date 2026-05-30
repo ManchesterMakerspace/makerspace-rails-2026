@@ -38,7 +38,7 @@ module MemberInterface
     config.eager_load_paths << "#{Rails.root}/lib"
 
     if Rails.env.development?
-      config.action_mailer.preview_path = "#{Rails.root}/spec/mailers/previews"
+      config.action_mailer.preview_paths = ["#{Rails.root}/spec/mailers/previews"]
     end
 
     config.to_prepare do

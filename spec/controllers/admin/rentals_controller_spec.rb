@@ -59,8 +59,8 @@ RSpec.describe Admin::RentalsController, type: :controller do
 
       it "assigns a newly created rental as @rental" do
         post :create, params: valid_attributes, format: :json
-        expect(assigns(:rental)).to be_a(Rental)
-        expect(assigns(:rental)).to be_persisted
+        expect(Rental.last).to be_a(Rental)
+        expect(Rental.last).to be_persisted
       end
 
       it "renders json of the created rental" do

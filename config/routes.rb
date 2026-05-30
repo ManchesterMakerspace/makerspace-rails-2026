@@ -1,8 +1,8 @@
 Rails.application.routes.draw do
 
   unless Rails.env.production?
-    mount OpenApi::Rswag::Ui::Engine => '/api-docs'
-    mount OpenApi::Rswag::Api::Engine => '/api-docs'
+    mount Rswag::Ui::Engine => '/api-docs'
+    mount Rswag::Api::Engine => '/api-docs'
   end
 
   root to: "application#application"
@@ -146,6 +146,8 @@ Rails.application.routes.draw do
           member do
             post :update_password
             post :send_password_reset
+            post :invite_slack
+            post :invite_google_drive
           end
         end
 

@@ -19,7 +19,7 @@ class SlackCheckoutJob < ApplicationJob
     end
 
     lock_key = "checkout_lock/#{member_token.downcase}/#{tool_name.downcase}"
-    acquired = Redis.current.set(lock_key, 1, nx: true, ex: 30)
+    acquired = REDIS.set(lock_key, 1, nx: true, ex: 30)
     unless acquired
       post_response(response_url, :ephemeral, "⚠ A checkout for this member and tool is already being processed. Please wait a moment and try again.")
       return
@@ -183,7 +183,7 @@ class SlackCheckoutJob < ApplicationJob
       post_response(response_url, :in_channel, "✅ #{member.fullname} has been checked out on *#{tool.name}* in *#{shop.name}* by #{invoker.fullname}.#{warning}")
 
     ensure
-      Redis.current.del(lock_key)
+      REDIS.del(lock_key)
     end
   end
 

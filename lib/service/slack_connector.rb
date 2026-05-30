@@ -12,7 +12,7 @@ module Service
         channel = members_relations_channel,
         uniquifier = request_caller_id(caller_locations(1,1)[0].label)
       )
-      Redis.current.set(uniquifier, {
+      REDIS.set(uniquifier, {
         message: message,
         channel: channel,
         timestamp: Time.now
@@ -22,8 +22,8 @@ module Service
       ::Service::SlackConnector.get_enqueued_messages(uniquifier)
     end
     def self.get_enqueued_messages(uniquifier)
-      related_keys = Redis.current.keys(uniquifier)
-      related_keys.reduce({}) { |msg_hash, key| msg_hash.merge({ key => Redis.current.get(key) }) }
+      related_keys = REDIS.keys(uniquifier)
+      related_keys.reduce({}) { |msg_hash, key| msg_hash.merge({ key => REDIS.get(key) }) }
     end
     def send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel)
       ::Service::SlackConnector.send_slack_messages(messages, channel)
@@ -77,13 +77,14 @@ module Service
       ::Service::SlackConnector.invite_to_slack(email, lastname, firstname)
     end
     def self.invite_to_slack(email, lastname, firstname)
-      if Util.is_prod?
-        client.users_admin_invite(
-          email: email,
-          first_name: firstname,
-          last_name: lastname
-        )
+      unless ENV['SLACK_INVITES_ENABLED'] == 'true'
+        raise Error::NotAllowed.new('Slack invites are not enabled in this environment')
       end
+      client.users_admin_invite(
+        email: email,
+        first_name: firstname,
+        last_name: lastname
+      )
     end
 
     # ── Channel helpers ──────────────────────────────────────────────────────
@@ -108,14 +109,14 @@ module Service
 
     private
     def self.safe_channel(channel)
-      Util.is_prod? ? channel : "test_channel"
+      ENV['SLACK_ENV'] == 'production' ? channel : 'test_channel'
     end
     def self.client
       Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
     end
     def self.format_slack_messages(messages, channel)
-      messages = messages.map { |m| "#{channel}| #{m}" } unless Util.is_prod?
-      msg_string = messages.join(" \n ")
+      messages = messages.map { |m| "#{channel}| #{m}" } unless ENV['SLACK_ENV'] == 'production'
+      messages.join(" \n ")
     end
     def self.request_caller_id(caller_method)
       "#{Current.request_id}.#{caller_method}"
