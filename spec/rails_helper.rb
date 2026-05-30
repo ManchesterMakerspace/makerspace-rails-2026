@@ -46,17 +46,16 @@ RSpec.configure do |config|
   config.use_transactional_fixtures = false
 
   config.before(:suite) do
-    DatabaseCleaner.orm = :mongoid
-    DatabaseCleaner.clean_with(:deletion)
+    DatabaseCleaner[:mongoid].clean_with(:deletion)
   end
 
   config.before(:each) do |example|
-    DatabaseCleaner.strategy= :deletion
-    DatabaseCleaner.start
+    DatabaseCleaner[:mongoid].strategy = :deletion
+    DatabaseCleaner[:mongoid].start
   end
 
   config.after(:each) do
-    DatabaseCleaner.clean
+    DatabaseCleaner[:mongoid].clean
   end
 
   # RSpec Rails can automatically mix in different behaviours to your tests
