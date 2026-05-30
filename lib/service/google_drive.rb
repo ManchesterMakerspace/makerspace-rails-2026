@@ -46,7 +46,7 @@ module Service
       google
     end
 
-    def self.invite_gdrive(email_address)
+    def invite_gdrive(email_address)
       unless ENV['GDRIVE_INVITES_ENABLED'] == 'true'
         raise Error::NotAllowed.new('Google Drive invites are not enabled in this environment')
       end
