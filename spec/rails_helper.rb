@@ -1,4 +1,4 @@
-require "database_cleaner"
+require "database_cleaner/mongoid"
 
 # This file is copied to spec/ when you run 'rails generate rspec:install'
 ENV['RAILS_ENV'] ||= 'test'
@@ -46,6 +46,7 @@ RSpec.configure do |config|
   config.use_transactional_fixtures = false
 
   config.before(:suite) do
+    DatabaseCleaner.orm = :mongoid
     DatabaseCleaner.clean_with(:deletion)
   end
 
