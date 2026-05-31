@@ -13,14 +13,21 @@ class Admin::MembersController < AdminController
   def update
     date = @member.expirationTime
     becoming_revoked = params[:status] == 'revoked' && @member.status != 'revoked'
+    incoming_params = get_camel_case_params(update_member_params())
+    slack_user = SlackUser.find_by(member_id: @member.id)
+    previous_firstname = @member.firstname
+    previous_lastname = @member.lastname
+    previous_status = @member.status
+    previous_expiration_time = @member.expirationTime
 
-    @member.update!(get_camel_case_params(update_member_params()))
+    @member.update!(incoming_params)
 
     if becoming_revoked
       handle_revocation
     end
 
     notify_renewal(date)
+    update_slack_profile(slack_user, previous_firstname, previous_lastname, previous_status, previous_expiration_time)
     @member.reload
     render json: @member, adapter: :attributes and return
   end
@@ -148,6 +155,40 @@ class Admin::MembersController < AdminController
         (Time.at(final / 1000) - Time.at((init || 0) / 1000) > 1.day))
       @member.send_renewal_slack_message(current_member)
     end
+  end
+
+  def update_slack_profile(slack_user, previous_firstname, previous_lastname, previous_status, previous_expiration_time)
+    # Populate custom profile fields in their slack profile to add their status and their full/given name
+    return if slack_user.nil? || slack_user.slack_id.blank?
+    return unless ENV['SLACK_ADMIN_TOKEN'].present?
+
+    status_changed = previous_status != @member.status || previous_expiration_time != @member.expirationTime
+    name_changed = previous_firstname != @member.firstname || previous_lastname != @member.lastname
+    return unless status_changed || name_changed
+
+    client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
+
+    profile = {}
+
+    if status_changed
+      # Fallback in the case of no environment variable
+      status_field = ENV['SLACK_PROFILE_STATUS'].presence || 'Xf084350PJ8K'
+      status_value = @member.expirationTime.present? && Time.at(@member.expirationTime / 1000) < Time.current ? 'Expired' : @member.status
+      profile[status_field] = { value: status_value }
+    end
+
+    if name_changed
+      # Fallback in the case of no environment variable
+      fullname_field = ENV['SLACK_PROFILE_FULLNAME'].presence || 'Xf084350PJ8K'
+      profile[fullname_field] = { value: "#{@member.firstname} #{@member.lastname} (#{slack_user.name})" }
+    end
+
+    client.users_profile_set(user: slack_user.slack_id, profile: profile) if profile.any?
+  rescue Slack::Web::Api::Errors::SlackError => e
+    ::Service::SlackConnector.send_slack_message(
+      "Error updating Slack profile for #{@member.fullname}: #{e.message}",
+      ::Service::SlackConnector.logs_channel
+    )
   end
 
   def send_welcome_email
