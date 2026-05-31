@@ -22,7 +22,7 @@ jobs:
       - name: Checkout react repo
         uses: actions/checkout@v4
         with:
-          repository: thannemann/makerspace-react
+          repository: ManchesterMakerspace/makerspace-react-2026
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 
@@ -59,7 +59,7 @@ jobs:
       - name: Checkout react repo
         uses: actions/checkout@v4
         with:
-          repository: thannemann/makerspace-react
+          repository: ManchesterMakerspace/makerspace-react-2026
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 
@@ -245,7 +245,7 @@ jobs:
       - name: Checkout react repo
         uses: actions/checkout@v4
         with:
-          repository: thannemann/makerspace-react
+          repository: ManchesterMakerspace/makerspace-react-2026
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 

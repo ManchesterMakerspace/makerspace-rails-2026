@@ -3,7 +3,7 @@ desc 'Run integration tests for frontend library'
 task :integration do
   rails_repo_dir = File.expand_path(".")
   react_repo_dir = File.expand_path("tmp/makerspace-react")
-  react_repo_url = ENV["REACT_REPO_URL"] || "https://github.com/thannemann/makerspace-react.git"
+  react_repo_url = ENV["REACT_REPO_URL"] || "https://github.com/ManchesterMakerspace/makerspace-react-2026.git"
   react_branch   = ENV["REACT_BRANCH"] or raise "REACT_BRANCH environment variable must be set (e.g. master, test_fixes)"
 
   puts "=" * 60
