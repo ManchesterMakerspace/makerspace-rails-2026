@@ -19,15 +19,6 @@ RSpec.describe Admin::MembersController, type: :controller do
     time.to_i * 1000
   end
 
-  def skip_unless_env_present!(key)
-    value = ENV[key]
-    if value.blank?
-      puts "[SKIP] #{key} is not set"
-      skip "#{key} is not set"
-    end
-    value
-  end
-
   describe "Authenticated admin" do
     login_admin
 
@@ -130,9 +121,8 @@ RSpec.describe Admin::MembersController, type: :controller do
         end
 
         it "updates the Slack profile when status changes" do
-          # We can't expect this test to succeed unless the necessary variables are defined.
-          slack_admin_token = skip_unless_env_present!("SLACK_ADMIN_TOKEN")
-          slack_profile_status = skip_unless_env_present!("SLACK_PROFILE_STATUS")
+          slack_admin_token = require_env!("SLACK_ADMIN_TOKEN")
+          slack_profile_status = require_env!("SLACK_PROFILE_STATUS")
 
           member = Member.create valid_attributes.merge(expirationTime: ((Time.now + 1.month).to_i * 1000))
           SlackUser.create!(
@@ -162,9 +152,8 @@ RSpec.describe Admin::MembersController, type: :controller do
         end
 
         it "updates the Slack profile fullname when names change" do
-          # We can't expect this test to succeed unless the necessary variables are defined.
-          slack_admin_token = skip_unless_env_present!("SLACK_ADMIN_TOKEN")
-          slack_profile_fullname = skip_unless_env_present!("SLACK_PROFILE_FULLNAME")
+          slack_admin_token = require_env!("SLACK_ADMIN_TOKEN")
+          slack_profile_fullname = require_env!("SLACK_PROFILE_FULLNAME")
 
           member = Member.create valid_attributes.merge(expirationTime: ((Time.now + 1.month).to_i * 1000))
           SlackUser.create!(
