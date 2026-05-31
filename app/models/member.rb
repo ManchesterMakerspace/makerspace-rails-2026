@@ -56,6 +56,7 @@ class Member
   validates :firstname, presence: true
   validates :lastname, presence: true
   validates :email, uniqueness: true
+  validates :email, email_deliverability: true
   validates :cardID, uniqueness: true, allow_nil: true
   validates_inclusion_of :status, in: ["activeMember", "nonMember", "revoked", "inactive"]
   validates_inclusion_of :role, in: ["admin", "board_member", "resource_manager", "member"]
