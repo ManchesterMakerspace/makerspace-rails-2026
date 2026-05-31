@@ -98,6 +98,9 @@ class Admin::MembersController < AdminController
       )
     end
 
+    # Silence all email/slack notifications to the member
+    @member.update_attribute(:silence_emails, true)
+
     # Rotate session token to invalidate any active portal sessions
     @member.update_attribute(:session_token, SecureRandom.hex)
   end
