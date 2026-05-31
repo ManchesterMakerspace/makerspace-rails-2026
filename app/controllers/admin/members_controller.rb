@@ -42,6 +42,7 @@ class Admin::MembersController < AdminController
   # Re-sends a Google Drive folder invite to the member.
   def invite_google_drive
     invite_gdrive(@member.email)
+    invite_gdrive_writer(@member.email)
     render json: {}, status: 204 and return
   rescue Error::NotAllowed => e
     render json: { message: e.message }, status: :unprocessable_entity and return
