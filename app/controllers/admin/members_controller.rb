@@ -12,7 +12,14 @@ class Admin::MembersController < AdminController
 
   def update
     date = @member.expirationTime
+    becoming_revoked = params[:status] == 'revoked' && @member.status != 'revoked'
+
     @member.update!(get_camel_case_params(update_member_params()))
+
+    if becoming_revoked
+      handle_revocation
+    end
+
     notify_renewal(date)
     @member.reload
     render json: @member, adapter: :attributes and return
@@ -65,9 +72,42 @@ class Admin::MembersController < AdminController
   end
 
   private
+
+  # Cancel subscription, revoke Drive/Slack access, and invalidate all sessions
+  # when a member's status is set to revoked.
+  def handle_revocation
+    # Cancel Braintree subscription if present
+    if @member.subscription_id
+      begin
+        ::BraintreeService::Subscription.cancel(connect_gateway, @member.subscription_id)
+      rescue => e
+        ::Service::SlackConnector.send_slack_message(
+          "⚠️ Error cancelling subscription for revoked member #{@member.fullname}: #{e.message}",
+          ::Service::SlackConnector.logs_channel
+        )
+      end
+    end
+
+    # Revoke Google Drive and Slack access
+    begin
+      Service::MemberAccess.revoke(@member)
+    rescue => e
+      ::Service::SlackConnector.send_slack_message(
+        "⚠️ Error revoking Drive/Slack access for #{@member.fullname}: #{e.message}",
+        ::Service::SlackConnector.logs_channel
+      )
+    end
+
+    # Silence all email/slack notifications to the member
+    @member.update_attribute(:silence_emails, true)
+
+    # Rotate session token to invalidate any active portal sessions
+    @member.update_attribute(:session_token, SecureRandom.hex)
+  end
+
   def create_member_params
     params.require([:firstname, :lastname, :email])
-    params.permit(:firstname, :lastname, :role, :email, :status, 
+    params.permit(:firstname, :lastname, :role, :email, :status,
       :silence_emails, :member_contract_on_file, :phone, :notes, address: [:street, :city, :state, :postal_code])
   end
 

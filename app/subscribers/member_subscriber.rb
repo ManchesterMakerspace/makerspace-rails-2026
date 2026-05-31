@@ -51,6 +51,7 @@ module MemberSubscriber
   def send_google_invite(member)
     begin
       invite_gdrive(member.email)
+      invite_gdrive_writer(member.email)
     rescue Error::NotAllowed
       # Google Drive invites disabled in this environment — silent skip
     rescue Error::Google::Upload => err

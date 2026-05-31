@@ -13,9 +13,9 @@ class Admin::CheckinsController < AuthenticationController
   def checkins_query
     query = { uid: { '$in' => query_uids } }
     if query_start_time || query_end_time
-      query[:time] = {}
-      query[:time]['$gte'] = query_start_time if query_start_time
-      query[:time]['$lte'] = query_end_time if query_end_time
+      query[:timeOf] = {}
+      query[:timeOf]['$gte'] = query_start_time if query_start_time
+      query[:timeOf]['$lte'] = query_end_time if query_end_time
     end
     query
   end
