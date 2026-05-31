@@ -60,6 +60,11 @@ RSpec.describe Admin::MembersController, type: :controller do
           email: 'test@test.com',
         }
 
+        before(:each) do
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SKIP_EMAILVALIDATION").and_return("true")
+        end
+
         it "raises validation error with invalid params" do
           post :create, params: missing_member_prop, format: :json
 
@@ -187,6 +192,11 @@ RSpec.describe Admin::MembersController, type: :controller do
           email: 'test@test.com',
           role: "foo"
         }
+
+        before(:each) do
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SKIP_EMAILVALIDATION").and_return("true")
+        end
 
         it "raises validation error with invalid params" do
           member = Member.create valid_attributes
