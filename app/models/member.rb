@@ -56,9 +56,8 @@ class Member
   validates :firstname, presence: true
   validates :lastname, presence: true
   validates :email, uniqueness: true
-  validates :email, email_deliverability: true
   validates :cardID, uniqueness: true, allow_nil: true
-  validates_inclusion_of :status, in: ["activeMember", "nonMember", "revoked", "inactive"]
+  validates_inclusion_of :status, in: ["activeMember", "nonMember", "revoked", "inactive", "suspended"]
   validates_inclusion_of :role, in: ["admin", "board_member", "resource_manager", "member"]
 
   before_validation :normalize_email
@@ -324,6 +323,21 @@ class Member
            self.expirationTime &&
            self.group.expiry > (Time.now.strftime('%s').to_i * 1000) &&
            self.group.expiry > self.expirationTime
+  end
+
+
+  # Devise hook — prevents revoked/suspended members from signing in.
+  def active_for_authentication?
+    super && !%w[revoked suspended].include?(status)
+  end
+
+  # Returns the i18n key used by DeviseFailure to build the error message.
+  def inactive_message
+    case status
+    when 'revoked'   then :revoked
+    when 'suspended' then :suspended
+    else super
+    end
   end
 
   def email_required?
