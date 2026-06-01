@@ -12,6 +12,9 @@ class VolunteerController < AuthenticationController
     member_id       = current_member.id
     is_earned       = EarnedMembership.where(member_id: member_id).exists?
     year_count      = VolunteerCredit.year_count_for(member_id)
+    lifetime_count  = VolunteerCredit.lifetime_count_for(member_id)
+    rolling_days    = (SystemConfig.get('volunteer_rolling_days') || 90).to_i
+    rolling_count   = VolunteerCredit.rolling_count_for(member_id, rolling_days)
     pending_count   = VolunteerCredit.pending.where(member_id: member_id).count
     discount_active = VolunteerCredit.discount_id.present?
 
@@ -41,6 +44,9 @@ class VolunteerController < AuthenticationController
 
     render json: {
       year_count:           year_count,
+      lifetime_count:       lifetime_count,
+      rolling_count:        rolling_count,
+      rolling_days:         rolling_days,
       discounts_used:       discounts_used,
       max_discounts:        max_discounts,
       credits_per_discount: threshold,

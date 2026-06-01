@@ -23,6 +23,8 @@ class Admin::SystemConfigsController < AdminController
     'volunteer_discount_id',
     'volunteer_task_max_credit',
     'volunteer_bounty_token',
+    'volunteer_rolling_days',
+    'volunteer_leaderboard_top',
   ].freeze
 
   ALL_EDITABLE_KEYS = (FLAG_KEYS + SETTING_KEYS).freeze
@@ -61,6 +63,8 @@ class Admin::SystemConfigsController < AdminController
       volunteer_discount_id:            SystemConfig.get('volunteer_discount_id')             || '',
       volunteer_task_max_credit:        SystemConfig.get('volunteer_task_max_credit')         || '2.0',
       volunteer_bounty_token:           SystemConfig.get('volunteer_bounty_token')            || '',
+      volunteer_rolling_days:           SystemConfig.get('volunteer_rolling_days')           || '90',
+      volunteer_leaderboard_top:        SystemConfig.get('volunteer_leaderboard_top')        || '10',
     }
 
     totp = {

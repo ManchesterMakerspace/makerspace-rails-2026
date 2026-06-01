@@ -19,9 +19,10 @@ Rails.application.routes.draw do
     post '/commands/volunteer', to: 'commands#volunteer'
   end
 
-  # Public volunteer bounty board — unauthenticated, token gated via SystemConfig
+  # Public volunteer pages — unauthenticated, token gated via SystemConfig
   namespace :volunteer do
-    get '/bounties', to: 'bounties#index'
+    get '/bounties',     to: 'bounties#index'
+    get '/leaderboard',  to: 'leaderboard#index'
   end
 
   scope :api, defaults: { format: :json } do

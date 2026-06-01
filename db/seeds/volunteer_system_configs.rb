@@ -18,6 +18,8 @@ configs = {
   'volunteer_task_max_credit'        => '2.0',
   'volunteer_bounty_token_enabled'   => 'false',
   'volunteer_bounty_token'           => '',         # Set a strong token before enabling
+  'volunteer_rolling_days'            => '90',       # Rolling credit window in days
+  'volunteer_leaderboard_top'         => '10',       # Number of top earners on leaderboard
 }
 
 configs.each do |key, default_value|

@@ -58,6 +58,23 @@ class VolunteerCredit
   # Total net credits for a member this year.
   # Includes approved credits (positive) and reversal records (negative),
   # so reversals automatically reduce the count with no extra logic.
+
+  # Total net lifetime credits for a member (all time).
+  def self.lifetime_count_for(member_id)
+    where(status: { '$in' => ['approved', 'reversal'] })
+      .where(member_id: member_id)
+      .sum(:credit_value).to_f
+  end
+
+  # Total net credits for a member in the last X days.
+  # Used for rolling counter display and future Slack promo channel eligibility checks.
+  def self.rolling_count_for(member_id, days)
+    where(status: { '$in' => ['approved', 'reversal'] })
+      .where(:created_at.gte => days.to_i.days.ago)
+      .where(member_id: member_id)
+      .sum(:credit_value).to_f
+  end
+
   def self.year_count_for(member_id)
     where(status: { '$in' => ['approved', 'reversal'] })
       .this_year
