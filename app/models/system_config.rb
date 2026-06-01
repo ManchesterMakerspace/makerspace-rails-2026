@@ -12,9 +12,11 @@ class SystemConfig
   index({ key: 1 }, { unique: true })
 
   SLACK_SYNC_ENABLED = "slack_sync_enabled"
+  SLACK_PROFILE_SYNC_ENABLED = "slack_profile_sync_enabled"
 
   JOB_KEYS = {
     "slack_sync"      => "slack:sync_users",
+    "slack_profile_sync" => "slack:sync_profiles",
     "member_review"   => "member_review",
     "invoice_review"  => "invoice_review",
     "garbage_collect" => "gc",
