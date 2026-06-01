@@ -33,8 +33,8 @@ module Service
     end
 
     def self.sync_all
-      unless SystemConfig.enabled?(SystemConfig::SLACK_SYNC_ENABLED)
-        puts '[Slack Profile Sync] Skipping — slack_sync_enabled is not set to true in SystemConfig'
+      unless SystemConfig.enabled?(SystemConfig::SLACK_PROFILE_SYNC_ENABLED)
+        puts '[Slack Profile Sync] Skipping - slack_profile_sync_enabled is not set to true in SystemConfig'
         return { skipped: true }
       end
 
