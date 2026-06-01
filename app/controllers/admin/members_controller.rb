@@ -28,7 +28,10 @@ class Admin::MembersController < AdminController
     end
 
     notify_renewal(date)
-    update_slack_profile(slack_user, previous_firstname, previous_lastname, previous_status, previous_expiration_time)
+    ::Service::SlackProfileSync.sync_one(@member) if previous_firstname != @member.firstname ||
+      previous_lastname != @member.lastname ||
+      previous_status != @member.status ||
+      previous_expiration_time != @member.expirationTime
     update_slack_user_groups(slack_user, previous_status)
     @member.reload
     render json: @member, adapter: :attributes and return
@@ -68,7 +71,7 @@ class Admin::MembersController < AdminController
 
   # POST /api/admin/members/:id/invite_slack
   # Re-sends a Slack workspace invite to the member's email.
-  # Safe to call even if the member is already in the workspace — Slack
+  # Safe to call even if the member is already in the workspace â€” Slack
   # will return an error which is surfaced to the admin.
   def invite_slack
     ::Service::SlackConnector.invite_to_slack(@member.email, @member.lastname, @member.firstname)
@@ -91,7 +94,7 @@ class Admin::MembersController < AdminController
         ::BraintreeService::Subscription.cancel(connect_gateway, @member.subscription_id)
       rescue => e
         ::Service::SlackConnector.send_slack_message(
-          "⚠️ Error cancelling subscription for revoked member #{@member.fullname}: #{e.message}",
+          "âš ï¸ Error cancelling subscription for revoked member #{@member.fullname}: #{e.message}",
           ::Service::SlackConnector.logs_channel
         )
       end
@@ -102,7 +105,7 @@ class Admin::MembersController < AdminController
       Service::MemberAccess.revoke(@member)
     rescue => e
       ::Service::SlackConnector.send_slack_message(
-        "⚠️ Error revoking Drive/Slack access for #{@member.fullname}: #{e.message}",
+        "âš ï¸ Error revoking Drive/Slack access for #{@member.fullname}: #{e.message}",
         ::Service::SlackConnector.logs_channel
       )
     end
@@ -157,45 +160,6 @@ class Admin::MembersController < AdminController
     end
   end
 
-  def update_slack_profile(slack_user, previous_firstname, previous_lastname, previous_status, previous_expiration_time)
-    if slack_user.nil? || slack_user.slack_id.blank?
-      Rails.logger.warn("Member #{previous_firstname} #{previous_lastname} has no slack account, no update possible!")
-      return
-    end
-    unless ENV['SLACK_ADMIN_TOKEN'].present?
-      Rails.logger.info("Cannot update slack profile without a SLACK_ADMIN_TOKEN")
-      return
-    end
-
-    status_changed = previous_status != @member.status || previous_expiration_time != @member.expirationTime
-    name_changed = previous_firstname != @member.firstname || previous_lastname != @member.lastname
-    return unless status_changed || name_changed
-
-    client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
-
-    profile = {}
-
-    if status_changed
-      status_field = ENV['SLACK_PROFILE_STATUS'].presence || 'Xf084350PJ8K'
-      status_value = @member.expirationTime.present? && Time.at(@member.expirationTime / 1000) < Time.current ? 'Expired' : @member.status
-      profile[status_field] = { value: status_value }
-      Rails.logger.info("Updating #{@member.firstname} #{@member.lastname} profile status from #{previous_status} to #{status_value}.")
-    end
-
-    if name_changed
-      fullname_field = ENV['SLACK_PROFILE_FULLNAME'].presence || 'Xf084350PJ8K'
-      profile[fullname_field] = { value: "#{@member.firstname} #{@member.lastname} (#{slack_user.name})" }
-      Rails.logger.info("Updating profile name fom #{previous_firstname} #{previous_lastname} to #{@member.firstname} #{@member.lastname}.")
-    end
-
-    client.users_profile_set(user: slack_user.slack_id, profile: profile) if profile.any?
-  rescue Slack::Web::Api::Errors::SlackError => e
-    ::Service::SlackConnector.send_slack_message(
-      "⚠️ Error updating Slack profile for #{@member.fullname}: #{e.message}",
-      ::Service::SlackConnector.logs_channel
-    )
-  end
-
   def update_slack_user_groups(slack_user, previous_status)
     return if slack_user.nil? || slack_user.slack_id.blank?
     return unless previous_status != @member.status
@@ -219,7 +183,7 @@ class Admin::MembersController < AdminController
     remove_user_from_slack_group(client, source_group_id, slack_user.slack_id)
   rescue Slack::Web::Api::Errors::SlackError => e
     ::Service::SlackConnector.send_slack_message(
-      "⚠️ Error updating Slack groups for #{@member.fullname}: #{e.message}",
+      "âš ï¸ Error updating Slack groups for #{@member.fullname}: #{e.message}",
       ::Service::SlackConnector.logs_channel
     )
   end
