@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Service::AuditLogger do
-  let(:actor)   { create(:member, firstname: 'Todd', lastname: 'Hannemann') }
+  let(:actor)          { create(:member, firstname: 'Todd', lastname: 'Hannemann') }
   let(:subject_member) { create(:member, firstname: 'Jane', lastname: 'Smith') }
 
   let(:base_params) do
@@ -37,20 +37,20 @@ RSpec.describe Service::AuditLogger do
         expect(log.slack_posted).to be_nil
       end
 
-      it 'stores changes diff when provided' do
-        changes = { 'status' => ['activeMember', 'revoked'] }
-        log = described_class.log(**base_params, changes: changes)
-        expect(log.changes).to eq(changes)
+      it 'stores field_changes when provided' do
+        field_changes = { 'status' => ['activeMember', 'revoked'] }
+        log = described_class.log(**base_params, field_changes: field_changes)
+        expect(log.field_changes).to eq(field_changes)
         expect(log.slack_message).to include('activeMember')
         expect(log.slack_message).to include('revoked')
       end
 
       it 'scrubs sensitive fields from before_snapshot' do
         before_snap = {
-          'firstname'          => 'Jane',
-          'encrypted_password' => 'supersecret',
+          'firstname'            => 'Jane',
+          'encrypted_password'   => 'supersecret',
           'otp_secret_encrypted' => 'topsecret',
-          'session_token'      => 'abc123'
+          'session_token'        => 'abc123'
         }
         log = described_class.log(**base_params, before_snapshot: before_snap)
         expect(log.before_snapshot).to include('firstname' => 'Jane')
@@ -97,7 +97,7 @@ RSpec.describe Service::AuditLogger do
           resource_type: 'SystemConfig',
           resource_id:   BSON::ObjectId.new,
           actor:         actor,
-          changes:       { 'billing' => ['false', 'true'] }
+          field_changes: { 'billing' => ['false', 'true'] }
         )
         expect(log.subject_id).to be_nil
         expect(log.subject_name).to be_nil
@@ -161,8 +161,8 @@ RSpec.describe Service::AuditLogger do
 
       it 'formats expirationTime as a date in change summary' do
         exp_ms = (Time.now + 30.days).to_i * 1000
-        changes = { 'expirationTime' => [nil, exp_ms] }
-        log = described_class.log(**base_params, changes: changes)
+        field_changes = { 'expirationTime' => [nil, exp_ms] }
+        log = described_class.log(**base_params, field_changes: field_changes)
         expect(log.slack_message).to match(%r{\d{2}/\d{2}/\d{4}})
         expect(log.slack_message).not_to include(exp_ms.to_s)
       end

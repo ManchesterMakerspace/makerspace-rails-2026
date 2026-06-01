@@ -33,10 +33,11 @@ class AuditLog
   field :resource_id,   type: BSON::ObjectId
 
   # ── Change data ────────────────────────────────────────────────────────────
-  # changes:         diff of only changed fields — { "status" => ["activeMember", "revoked"] }
+  # field_changes:   diff of only changed fields — { "status" => ["activeMember", "revoked"] }
+  #                  Named field_changes to avoid collision with Mongoid::Changeable#changes
   # before_snapshot: full document before change (sensitive fields scrubbed)
   # after_snapshot:  full document after change  (sensitive fields scrubbed)
-  field :changes,          type: Hash
+  field :field_changes,    type: Hash
   field :before_snapshot,  type: Hash
   field :after_snapshot,   type: Hash
 

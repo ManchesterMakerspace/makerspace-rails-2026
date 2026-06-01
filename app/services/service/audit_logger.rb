@@ -41,8 +41,9 @@ module Service
     #   subject:         (optional) Member instance — who was affected.
     #                    Nil for portal logs.
     #
-    #   changes:         (optional) Hash of changed fields: { "field" => [before, after] }
+    #   field_changes:   (optional) Hash of changed fields: { "field" => [before, after] }
     #                    Pass model.previous_changes after a save, or build manually.
+    #                    Named field_changes to avoid collision with Mongoid::Changeable#changes.
     #   before_snapshot: (optional) Hash — full document before the change.
     #   after_snapshot:  (optional) Hash — full document after the change.
     #
@@ -58,7 +59,7 @@ module Service
       resource_id:,
       actor: nil,
       subject: nil,
-      changes: nil,
+      field_changes: nil,
       before_snapshot: nil,
       after_snapshot: nil,
       slack_channel: nil
@@ -85,7 +86,7 @@ module Service
         actor_name:    actor_name,
         subject_name:  subject_name,
         resource_type: resource_type,
-        changes:       changes
+        field_changes: field_changes
       )
 
       # Attempt Slack post if a channel was provided
@@ -101,7 +102,7 @@ module Service
         subject_name:    subject_name,
         resource_type:   resource_type,
         resource_id:     to_object_id(resource_id),
-        changes:         changes,
+        field_changes:   field_changes,
         before_snapshot: clean_before,
         after_snapshot:  clean_after,
         slack_channel:   slack_channel,
@@ -112,6 +113,7 @@ module Service
 
       begin
         entry.save!
+        Rails.logger.info("[AuditLogger] #{event_type} on #{resource_type}:#{resource_id} by #{actor_id}")
         entry
       rescue => e
         notify_honeybadger(e, context: {
@@ -153,7 +155,7 @@ module Service
 
     # Generates a human-readable Slack message from structured data.
     # Always produced; only posted when slack_channel is present.
-    def self.generate_message(event_type:, actor_name:, subject_name:, resource_type:, changes:)
+    def self.generate_message(event_type:, actor_name:, subject_name:, resource_type:, field_changes:)
       parts = []
 
       # Lead with event label
@@ -170,18 +172,18 @@ module Service
       end
 
       # Change summary
-      if changes.present?
-        diff = format_changes(changes)
+      if field_changes.present?
+        diff = format_changes(field_changes)
         parts << "— #{diff}" if diff.present?
       end
 
       parts.join(' ')
     end
 
-    # Formats the changes hash into a readable string.
+    # Formats the field_changes hash into a readable string.
     # { "status" => ["activeMember", "revoked"] } → "status: activeMember → revoked"
-    def self.format_changes(changes)
-      changes.map do |field, (before, after)|
+    def self.format_changes(field_changes)
+      field_changes.map do |field, (before, after)|
         formatter = FIELD_FORMATTERS[field.to_s]
         if formatter
           "#{field}: #{formatter.call(before)} → #{formatter.call(after)}"

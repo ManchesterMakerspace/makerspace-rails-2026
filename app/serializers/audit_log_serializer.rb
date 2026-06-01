@@ -8,7 +8,7 @@ class AuditLogSerializer < ApplicationSerializer
              :subject_name,
              :resource_type,
              :resource_id,
-             :changes,
+             :field_changes,
              :before_snapshot,
              :after_snapshot,
              :slack_channel,

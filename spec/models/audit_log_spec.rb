@@ -32,7 +32,7 @@ RSpec.describe AuditLog, type: :model do
       expect(log.actor_name).to be_nil
       expect(log.subject_id).to be_nil
       expect(log.subject_name).to be_nil
-      expect(log.changes).to be_nil
+      expect(log.field_changes).to be_nil
       expect(log.before_snapshot).to be_nil
       expect(log.after_snapshot).to be_nil
       expect(log.slack_channel).to be_nil
