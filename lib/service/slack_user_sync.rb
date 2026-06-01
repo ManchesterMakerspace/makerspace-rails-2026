@@ -45,13 +45,14 @@ module Service
       if existing
         existing.set(slack_email: slack_email, name: name, real_name: real_name)
       else
-        SlackUser.create!(
+        slack_user = SlackUser.create!(
           slack_id:    slack_id,
           slack_email: slack_email,
           name:        name,
           real_name:   real_name,
           member:      member
         )
+        ::Service::SlackProfileSync.sync_one(member)
       end
 
       member
@@ -123,13 +124,14 @@ module Service
             puts "[Slack Sync] UPDATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
             updated_count += 1
           else
-            SlackUser.create!(
+            slack_user = SlackUser.create!(
               slack_id:    slack_id,
               slack_email: slack_email,
               name:        name,
               real_name:   real_name,
               member:      member
             )
+            ::Service::SlackProfileSync.sync_one(member)
             puts "[Slack Sync] CREATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
             created_count += 1
           end

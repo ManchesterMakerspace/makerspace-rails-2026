@@ -60,6 +60,11 @@ RSpec.describe Admin::MembersController, type: :controller do
           email: 'test@test.com',
         }
 
+        before(:each) do
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SKIP_EMAILVALIDATION").and_return("true")
+        end
+
         it "raises validation error with invalid params" do
           post :create, params: missing_member_prop, format: :json
 
@@ -119,6 +124,66 @@ RSpec.describe Admin::MembersController, type: :controller do
           member.reload
           expect(member.expirationTime).to eq(expected_renewal)
         end
+
+        it "updates the Slack profile when status changes" do
+          slack_admin_token = require_env!("SLACK_ADMIN_TOKEN")
+          slack_profile_status = require_env!("SLACK_PROFILE_STATUS")
+
+          member = Member.create valid_attributes.merge(expirationTime: ((Time.now + 1.month).to_i * 1000))
+          SlackUser.create!(
+            member: member,
+            slack_id: "U12345678",
+            name: "slack.name",
+            real_name: "Slack Name"
+          )
+
+          client = instance_double(Slack::Web::Client)
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SLACK_ADMIN_TOKEN").and_return(slack_admin_token)
+          allow(ENV).to receive(:[]).with("SLACK_PROFILE_STATUS").and_return(slack_profile_status)
+          allow(Slack::Web::Client).to receive(:new).and_return(client)
+          allow(client).to receive(:users_profile_set)
+
+          travel_to(Time.zone.parse("2026-05-31 12:00:00")) do
+            put :update, params: { id: member.to_param, status: "suspended" }, format: :json
+          end
+
+          expect(client).to have_received(:users_profile_set).with(
+            user: "U12345678",
+            profile: {
+              slack_profile_status => { value: "suspended" }
+            }
+          )
+        end
+
+        it "updates the Slack profile fullname when names change" do
+          slack_admin_token = require_env!("SLACK_ADMIN_TOKEN")
+          slack_profile_fullname = require_env!("SLACK_PROFILE_FULLNAME")
+
+          member = Member.create valid_attributes.merge(expirationTime: ((Time.now + 1.month).to_i * 1000))
+          SlackUser.create!(
+            member: member,
+            slack_id: "U12345679",
+            name: "slack.name",
+            real_name: "Slack Name"
+          )
+
+          client = instance_double(Slack::Web::Client)
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SLACK_ADMIN_TOKEN").and_return(slack_admin_token)
+          allow(ENV).to receive(:[]).with("SLACK_PROFILE_FULLNAME").and_return(slack_profile_fullname)
+          allow(Slack::Web::Client).to receive(:new).and_return(client)
+          allow(client).to receive(:users_profile_set)
+
+          put :update, params: { id: member.to_param, firstname: "New", lastname: "Name" }, format: :json
+
+          expect(client).to have_received(:users_profile_set).with(
+            user: "U12345679",
+            profile: {
+              slack_profile_fullname => { value: "New Name (slack.name)" }
+            }
+          )
+        end
       end
 
       context "with invalid params" do
@@ -127,6 +192,11 @@ RSpec.describe Admin::MembersController, type: :controller do
           email: 'test@test.com',
           role: "foo"
         }
+
+        before(:each) do
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SKIP_EMAILVALIDATION").and_return("true")
+        end
 
         it "raises validation error with invalid params" do
           member = Member.create valid_attributes

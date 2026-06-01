@@ -13,14 +13,26 @@ class Admin::MembersController < AdminController
   def update
     date = @member.expirationTime
     becoming_revoked = params[:status] == 'revoked' && @member.status != 'revoked'
+    incoming_params = get_camel_case_params(update_member_params())
+    validate_email_change!(incoming_params[:email]) if incoming_params.key?(:email) && incoming_params[:email] != @member.email
+    slack_user = SlackUser.find_by(member_id: @member.id)
+    previous_firstname = @member.firstname
+    previous_lastname = @member.lastname
+    previous_status = @member.status
+    previous_expiration_time = @member.expirationTime
 
-    @member.update!(get_camel_case_params(update_member_params()))
+    @member.update!(incoming_params)
 
     if becoming_revoked
       handle_revocation
     end
 
     notify_renewal(date)
+    ::Service::SlackProfileSync.sync_one(@member) if previous_firstname != @member.firstname ||
+      previous_lastname != @member.lastname ||
+      previous_status != @member.status ||
+      previous_expiration_time != @member.expirationTime
+    update_slack_user_groups(slack_user, previous_status)
     @member.reload
     render json: @member, adapter: :attributes and return
   end
@@ -59,7 +71,7 @@ class Admin::MembersController < AdminController
 
   # POST /api/admin/members/:id/invite_slack
   # Re-sends a Slack workspace invite to the member's email.
-  # Safe to call even if the member is already in the workspace — Slack
+  # Safe to call even if the member is already in the workspace â€” Slack
   # will return an error which is surfaced to the admin.
   def invite_slack
     ::Service::SlackConnector.invite_to_slack(@member.email, @member.lastname, @member.firstname)
@@ -82,7 +94,7 @@ class Admin::MembersController < AdminController
         ::BraintreeService::Subscription.cancel(connect_gateway, @member.subscription_id)
       rescue => e
         ::Service::SlackConnector.send_slack_message(
-          "⚠️ Error cancelling subscription for revoked member #{@member.fullname}: #{e.message}",
+          "âš ï¸ Error cancelling subscription for revoked member #{@member.fullname}: #{e.message}",
           ::Service::SlackConnector.logs_channel
         )
       end
@@ -93,7 +105,7 @@ class Admin::MembersController < AdminController
       Service::MemberAccess.revoke(@member)
     rescue => e
       ::Service::SlackConnector.send_slack_message(
-        "⚠️ Error revoking Drive/Slack access for #{@member.fullname}: #{e.message}",
+        "âš ï¸ Error revoking Drive/Slack access for #{@member.fullname}: #{e.message}",
         ::Service::SlackConnector.logs_channel
       )
     end
@@ -112,9 +124,7 @@ class Admin::MembersController < AdminController
   end
 
   def update_member_params
-    # Email intentionally excluded — changing email requires its own validation flow
-    # and including it triggers Mongoid uniqueness re-validation on unchanged values
-    params.permit(:firstname, :lastname, :role, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
+    params.permit(:firstname, :lastname, :role, :email, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
       :silence_emails, :phone, :subscription, address: [:street, :unit, :city, :state, :postal_code])
   end
 
@@ -150,6 +160,60 @@ class Admin::MembersController < AdminController
     end
   end
 
+  def update_slack_user_groups(slack_user, previous_status)
+    return if slack_user.nil? || slack_user.slack_id.blank?
+    return unless previous_status != @member.status
+    return unless ENV['SLACK_ADMIN_TOKEN'].present?
+
+    target_group, source_group =
+      if %w[inactive suspended revoked].include?(@member.status.to_s)
+        ['inactivemembers', 'activemembers']
+      elsif @member.expirationTime.present? && Time.at(@member.expirationTime / 1000) > Time.current
+        ['activemembers', 'inactivemembers']
+      end
+
+    return if target_group.nil? || source_group.nil?
+
+    client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
+    target_group_id = slack_user_group_id(client, target_group)
+    source_group_id = slack_user_group_id(client, source_group)
+    return if target_group_id.nil? || source_group_id.nil?
+
+    add_user_to_slack_group(client, target_group_id, slack_user.slack_id)
+    remove_user_from_slack_group(client, source_group_id, slack_user.slack_id)
+  rescue Slack::Web::Api::Errors::SlackError => e
+    ::Service::SlackConnector.send_slack_message(
+      "âš ï¸ Error updating Slack groups for #{@member.fullname}: #{e.message}",
+      ::Service::SlackConnector.logs_channel
+    )
+  end
+
+  def slack_user_group_id(client, group_name)
+    response = client.usergroups_list
+    groups = response['usergroups'] || response[:usergroups] || []
+    group = groups.find do |entry|
+      entry_name = entry['name'] || entry[:name]
+      entry_name.to_s == group_name
+    end
+    group && (group['id'] || group[:id])
+  end
+
+  def add_user_to_slack_group(client, group_id, slack_id)
+    response = client.usergroups_users_list(usergroup: group_id)
+    users = Array(response['users'] || response[:users]).map(&:to_s)
+    return if users.include?(slack_id)
+    Rails.logger.info("Adding #{@member.firstname} #{@member.lastname} to group #{group_id}.")
+    client.usergroups_users_update(usergroup: group_id, users: (users + [slack_id]).join(','))
+  end
+
+  def remove_user_from_slack_group(client, group_id, slack_id)
+    response = client.usergroups_users_list(usergroup: group_id)
+    users = Array(response['users'] || response[:users]).map(&:to_s)
+    return unless users.include?(slack_id)
+
+    client.usergroups_users_update(usergroup: group_id, users: (users - [slack_id]).join(','))
+  end
+
   def send_welcome_email
     raw_token, hashed_token = ::Devise.token_generator.generate(Member, :reset_password_token)
     @member.reset_password_token = hashed_token
@@ -160,5 +224,20 @@ class Admin::MembersController < AdminController
 
   def send_set_password_email
     @member.send_reset_password_instructions
+  end
+
+  def validate_email_change!(email)
+    normalized_email = email.to_s.strip.downcase
+    if normalized_email.blank?
+      raise ::Error::UnprocessableEntity.new("Email cannot be blank")
+    end
+
+    email_check = Member.new
+    validator = EmailDeliverabilityValidator.new(attributes: [:email])
+    validator.validate_each(email_check, :email, normalized_email)
+
+    return if email_check.errors[:email].blank?
+
+    raise ::Error::UnprocessableEntity.new(email_check.errors[:email].first)
   end
 end
