@@ -31,9 +31,10 @@ task :integration do
 
   Dir.chdir(react_repo_dir)
   system("PORT=3035 yarn && PORT=3035 yarn build") || exit(-1)
+   puts "Populating app/assets/builds..."
   FileUtils.mkdir_p(File.join(rails_repo_dir, "app/assets/builds"))
-  FileUtils.cp(File.join(react_repo_dir, "dist/makerspace-react.js"), File.join(rails_repo_dir, "app/assets/builds"))
-  FileUtils.cp(File.join(react_repo_dir, "dist/makerspace-react.css"), File.join(rails_repo_dir, "app/assets/builds"))
+  FileUtils.cp_r(File.join(react_repo_dir, "dist/."), File.join(rails_repo_dir, "app/assets/builds"))
+
   Dir.chdir(rails_repo_dir)
   server_started = system("RAILS_ENV=test rake 'db:db_reset[subscriptions,payment_methods]' && RAILS_ENV=test rails runner db/seeds_rental_spots.rb && RAILS_ENV=test rails s -b 0.0.0.0 -p 3035 -d")
   if server_started
