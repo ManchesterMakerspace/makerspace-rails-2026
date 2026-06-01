@@ -159,8 +159,13 @@ class Admin::MembersController < AdminController
   end
 
   def update_slack_profile(slack_user, previous_firstname, previous_lastname, previous_status, previous_expiration_time)
-    return if slack_user.nil? || slack_user.slack_id.blank?
-    return unless ENV['SLACK_ADMIN_TOKEN'].present?
+    if slack_user.nil? || slack_user.slack_id.blank?
+      Rails.logger.warn("Member #{previous_firstname} #{previous_lastname} has no slack account, no update possible.")
+    end
+    unless ENV['SLACK_ADMIN_TOKEN'].present?
+      Rails.logger.info("Cannot update slack profile without a SLACK_ADMIN_TOKEN")
+      return
+    end
 
     status_changed = previous_status != @member.status || previous_expiration_time != @member.expirationTime
     name_changed = previous_firstname != @member.firstname || previous_lastname != @member.lastname
@@ -174,11 +179,13 @@ class Admin::MembersController < AdminController
       status_field = ENV['SLACK_PROFILE_STATUS'].presence || 'Xf084350PJ8K'
       status_value = @member.expirationTime.present? && Time.at(@member.expirationTime / 1000) < Time.current ? 'Expired' : @member.status
       profile[status_field] = { value: status_value }
+      Rails.logger.info("Updating #{@member.firstname} #{@member.lastname} profile status from #{previous_status} to #{status_value}.")
     end
 
     if name_changed
       fullname_field = ENV['SLACK_PROFILE_FULLNAME'].presence || 'Xf084350PJ8K'
       profile[fullname_field] = { value: "#{@member.firstname} #{@member.lastname} (#{slack_user.name})" }
+      Rails.logger.info("Updating profile name fom #{previous_firstname} #{previous_lastname} to #{@member.firstname} #{@member.lastname}.")
     end
 
     client.users_profile_set(user: slack_user.slack_id, profile: profile) if profile.any?
@@ -231,7 +238,7 @@ class Admin::MembersController < AdminController
     response = client.usergroups_users_list(usergroup: group_id)
     users = Array(response['users'] || response[:users]).map(&:to_s)
     return if users.include?(slack_id)
-
+    Rails.logger.info("Adding #{@member.firstname} #{@member.lastname} to group #{group_id}.")
     client.usergroups_users_update(usergroup: group_id, users: (users + [slack_id]).join(','))
   end
 
