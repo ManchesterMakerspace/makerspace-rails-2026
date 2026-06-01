@@ -14,6 +14,7 @@ class Admin::MembersController < AdminController
     date = @member.expirationTime
     becoming_revoked = params[:status] == 'revoked' && @member.status != 'revoked'
     incoming_params = get_camel_case_params(update_member_params())
+    validate_email_change!(incoming_params[:email]) if incoming_params.key?(:email) && incoming_params[:email] != @member.email
     slack_user = SlackUser.find_by(member_id: @member.id)
     previous_firstname = @member.firstname
     previous_lastname = @member.lastname
@@ -120,9 +121,7 @@ class Admin::MembersController < AdminController
   end
 
   def update_member_params
-    # Email intentionally excluded — changing email requires its own validation flow
-    # and including it triggers Mongoid uniqueness re-validation on unchanged values
-    params.permit(:firstname, :lastname, :role, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
+    params.permit(:firstname, :lastname, :role, :email, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
       :silence_emails, :phone, :subscription, address: [:street, :unit, :city, :state, :postal_code])
   end
 
@@ -261,5 +260,20 @@ class Admin::MembersController < AdminController
 
   def send_set_password_email
     @member.send_reset_password_instructions
+  end
+
+  def validate_email_change!(email)
+    normalized_email = email.to_s.strip.downcase
+    if normalized_email.blank?
+      raise ::Error::UnprocessableEntity.new("Email cannot be blank")
+    end
+
+    email_check = Member.new
+    validator = EmailDeliverabilityValidator.new(attributes: [:email])
+    validator.validate_each(email_check, :email, normalized_email)
+
+    return if email_check.errors[:email].blank?
+
+    raise ::Error::UnprocessableEntity.new(email_check.errors[:email].first)
   end
 end
