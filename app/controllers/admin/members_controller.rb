@@ -160,7 +160,8 @@ class Admin::MembersController < AdminController
 
   def update_slack_profile(slack_user, previous_firstname, previous_lastname, previous_status, previous_expiration_time)
     if slack_user.nil? || slack_user.slack_id.blank?
-      Rails.logger.warn("Member #{previous_firstname} #{previous_lastname} has no slack account, no update possible.")
+      Rails.logger.warn("Member #{previous_firstname} #{previous_lastname} has no slack account, no update possible!")
+      return
     end
     unless ENV['SLACK_ADMIN_TOKEN'].present?
       Rails.logger.info("Cannot update slack profile without a SLACK_ADMIN_TOKEN")
