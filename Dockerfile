@@ -38,6 +38,6 @@ ENV RAILS_ENV=$ENVIRONMENT
 COPY . .
 
 RUN mkdir -p /app/app/assets/builds
-COPY --from=ui /react/dist/*.* /app/app/assets/builds/
+COPY --from=ui /react/dist/ /app/app/assets/builds/
 
 CMD ["bundle", "exec", "rails", "server", "-b", "0.0.0.0"]
