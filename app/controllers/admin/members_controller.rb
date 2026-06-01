@@ -28,6 +28,7 @@ class Admin::MembersController < AdminController
 
     notify_renewal(date)
     update_slack_profile(slack_user, previous_firstname, previous_lastname, previous_status, previous_expiration_time)
+    update_slack_user_groups(slack_user, previous_status)
     @member.reload
     render json: @member, adapter: :attributes and return
   end
@@ -158,7 +159,6 @@ class Admin::MembersController < AdminController
   end
 
   def update_slack_profile(slack_user, previous_firstname, previous_lastname, previous_status, previous_expiration_time)
-    # Populate custom profile fields in their slack profile to add their status and their full/given name
     return if slack_user.nil? || slack_user.slack_id.blank?
     return unless ENV['SLACK_ADMIN_TOKEN'].present?
 
@@ -171,14 +171,12 @@ class Admin::MembersController < AdminController
     profile = {}
 
     if status_changed
-      # Fallback in the case of no environment variable
       status_field = ENV['SLACK_PROFILE_STATUS'].presence || 'Xf084350PJ8K'
       status_value = @member.expirationTime.present? && Time.at(@member.expirationTime / 1000) < Time.current ? 'Expired' : @member.status
       profile[status_field] = { value: status_value }
     end
 
     if name_changed
-      # Fallback in the case of no environment variable
       fullname_field = ENV['SLACK_PROFILE_FULLNAME'].presence || 'Xf084350PJ8K'
       profile[fullname_field] = { value: "#{@member.firstname} #{@member.lastname} (#{slack_user.name})" }
     end
@@ -186,9 +184,63 @@ class Admin::MembersController < AdminController
     client.users_profile_set(user: slack_user.slack_id, profile: profile) if profile.any?
   rescue Slack::Web::Api::Errors::SlackError => e
     ::Service::SlackConnector.send_slack_message(
-      "Error updating Slack profile for #{@member.fullname}: #{e.message}",
+      "⚠️ Error updating Slack profile for #{@member.fullname}: #{e.message}",
       ::Service::SlackConnector.logs_channel
     )
+  end
+
+  def update_slack_user_groups(slack_user, previous_status)
+    return if slack_user.nil? || slack_user.slack_id.blank?
+    return unless previous_status != @member.status
+    return unless ENV['SLACK_ADMIN_TOKEN'].present?
+
+    target_group, source_group =
+      if %w[inactive suspended revoked].include?(@member.status.to_s)
+        ['inactivemembers', 'activemembers']
+      elsif @member.expirationTime.present? && Time.at(@member.expirationTime / 1000) > Time.current
+        ['activemembers', 'inactivemembers']
+      end
+
+    return if target_group.nil? || source_group.nil?
+
+    client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
+    target_group_id = slack_user_group_id(client, target_group)
+    source_group_id = slack_user_group_id(client, source_group)
+    return if target_group_id.nil? || source_group_id.nil?
+
+    add_user_to_slack_group(client, target_group_id, slack_user.slack_id)
+    remove_user_from_slack_group(client, source_group_id, slack_user.slack_id)
+  rescue Slack::Web::Api::Errors::SlackError => e
+    ::Service::SlackConnector.send_slack_message(
+      "⚠️ Error updating Slack groups for #{@member.fullname}: #{e.message}",
+      ::Service::SlackConnector.logs_channel
+    )
+  end
+
+  def slack_user_group_id(client, group_name)
+    response = client.usergroups_list
+    groups = response['usergroups'] || response[:usergroups] || []
+    group = groups.find do |entry|
+      entry_name = entry['name'] || entry[:name]
+      entry_name.to_s == group_name
+    end
+    group && (group['id'] || group[:id])
+  end
+
+  def add_user_to_slack_group(client, group_id, slack_id)
+    response = client.usergroups_users_list(usergroup: group_id)
+    users = Array(response['users'] || response[:users]).map(&:to_s)
+    return if users.include?(slack_id)
+
+    client.usergroups_users_update(usergroup: group_id, users: (users + [slack_id]).join(','))
+  end
+
+  def remove_user_from_slack_group(client, group_id, slack_id)
+    response = client.usergroups_users_list(usergroup: group_id)
+    users = Array(response['users'] || response[:users]).map(&:to_s)
+    return unless users.include?(slack_id)
+
+    client.usergroups_users_update(usergroup: group_id, users: (users - [slack_id]).join(','))
   end
 
   def send_welcome_email
