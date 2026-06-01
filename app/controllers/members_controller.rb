@@ -40,7 +40,9 @@ class MembersController < AuthenticationController
         DocumentUploadJob.perform_later(encoded_signature, "member_contract", @member.id.as_json)
         @member.update_attributes!(member_contract_signed_date: Date.today)
       else
-        @member.update_attributes!(member_params)
+        update_attributes = member_params
+        validate_email_change!(update_attributes[:email]) if update_attributes.key?(:email) && update_attributes[:email] != @member.email
+        @member.update_attributes!(update_attributes)
       end
 
       render json: @member, adapter: :attributes and return
@@ -58,6 +60,21 @@ class MembersController < AuthenticationController
 
     def member_params
       params.permit(:firstname, :lastname, :email, :phone, :silence_emails, address: [:street, :unit, :city, :state, :postal_code])
+    end
+
+    def validate_email_change!(email)
+      normalized_email = email.to_s.strip.downcase
+      if normalized_email.blank?
+        raise ::Error::UnprocessableEntity.new("Email cannot be blank")
+      end
+
+      email_check = Member.new
+      validator = EmailDeliverabilityValidator.new(attributes: [:email])
+      validator.validate_each(email_check, :email, normalized_email)
+
+      return if email_check.errors[:email].blank?
+
+      raise ::Error::UnprocessableEntity.new(email_check.errors[:email].first)
     end
 
     def search_params
