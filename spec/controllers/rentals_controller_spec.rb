@@ -54,7 +54,7 @@ RSpec.describe RentalsController, type: :controller do
 
   describe "PUT #update" do
     let!(:current_user) { create(:member) }
-    let(:rental) { create(:rental, member: current_user) }
+    let(:rental) { create(:rental, member: current_user, status: "pending_agreement") }
     before(:each) do
       sign_in current_user
     end

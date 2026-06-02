@@ -72,7 +72,7 @@ describe 'Rentals API', type: :request do
 
       response '200', 'rental updated' do
         let(:current_member) { create(:member) }
-        let(:rental) { create(:rental, member: current_member) }
+        let(:rental) { create(:rental, member: current_member, status: "pending_agreement") }
         before { sign_in current_member }
 
         schema '$ref' => '#/components/schemas/Rental'

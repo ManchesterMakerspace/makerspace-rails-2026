@@ -185,11 +185,12 @@ RSpec.describe Member, type: :model do
     describe "on create" do
       it "schedules a slack and google drive invite" do
         member = build(:member)
-        expect_any_instance_of(Service::GoogleDrive).to receive(:invite_gdrive).with(member.email)
-        expect_any_instance_of(Service::SlackConnector).to receive(:invite_to_slack).with(
-          member.email, 
+        expect(MemberSubscriber).to receive(:invite_gdrive).with(member.email)
+        expect(MemberSubscriber).to receive(:invite_gdrive_writer).with(member.email)
+        expect(MemberSubscriber).to receive(:invite_to_slack).with(
+          member.email,
           member.lastname,
-          member.firstname, 
+          member.firstname,
         )
         member.save!
       end
@@ -221,18 +222,19 @@ RSpec.describe Member, type: :model do
         # Mock this publish so Slack tracking only applies to update and not create
         allow(member).to receive(:publish_create)
         new_email = "foo_changed@test.com"
-        expect_any_instance_of(Service::GoogleDrive).to receive(:invite_gdrive).with(new_email)
-        expect_any_instance_of(Service::SlackConnector).to receive(:invite_to_slack).with(
-          new_email, 
+        expect(MemberSubscriber).to receive(:invite_gdrive).with(new_email)
+        expect(MemberSubscriber).to receive(:invite_gdrive_writer).with(new_email)
+        expect(MemberSubscriber).to receive(:invite_to_slack).with(
+          new_email,
           member.lastname,
-          member.firstname, 
+          member.firstname,
         )
         member.update!({ email: new_email })
       end
 
       it "Updates billing if a customer" do 
         customer = create(:member, customer_id: "foo")
-        allow_any_instance_of(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
+        allow(MemberSubscriber).to receive(:connect_gateway).and_return(gateway)
         mock_customer_chain = double 
         expect(gateway).to receive(:customer).and_return(mock_customer_chain)
         expect(mock_customer_chain).to receive(:update).with(
