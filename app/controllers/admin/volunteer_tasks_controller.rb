@@ -4,12 +4,16 @@
 # Admins additionally can destroy tasks.
 #
 class Admin::VolunteerTasksController < AdminOrRmController
-  before_action :find_task, only: [:update, :destroy, :complete, :cancel, :release, :reject_pending]
+  before_action :find_task, only: [:update, :destroy, :complete, :cancel, :release, :reject_pending, :reset_cooldown]
 
   # GET /api/admin/volunteer_tasks
+  # Optional filters: status, parent_task_id, children_only
   def index
     tasks = VolunteerTask.all.order_by(created_at: :desc)
-    tasks = tasks.where(status: params[:status]) if params[:status].present?
+    tasks = tasks.where(status: params[:status])               if params[:status].present?
+    tasks = tasks.where(parent_task_id: params[:parent_task_id]) if params[:parent_task_id].present?
+    tasks = tasks.where(:parent_task_id.ne => nil)             if params[:children_only] == 'true'
+    tasks = tasks.where(parent_task_id: nil)                   if params[:parents_only] == 'true'
     render json: tasks, each_serializer: VolunteerTaskSerializer, adapter: :attributes
   end
 
@@ -47,7 +51,6 @@ class Admin::VolunteerTasksController < AdminOrRmController
   end
 
   # POST /api/admin/volunteer_tasks/:id/release
-  # Release a claimed task back to available when member never completed it.
   def release
     raise ::Error::Unprocessable.new unless params[:reason].present?
     @task.release!(current_member, params[:reason])
@@ -57,7 +60,6 @@ class Admin::VolunteerTasksController < AdminOrRmController
   end
 
   # POST /api/admin/volunteer_tasks/:id/reject_pending
-  # Reject a pending task — member marked done but work not accepted.
   def reject_pending
     raise ::Error::Unprocessable.new unless params[:reason].present?
     @task.reject_pending!(current_member, params[:reason])
@@ -69,6 +71,19 @@ class Admin::VolunteerTasksController < AdminOrRmController
   # POST /api/admin/volunteer_tasks/:id/cancel
   def cancel
     @task.cancel!
+    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
+  end
+
+  # POST /api/admin/volunteer_tasks/:id/reset_cooldown
+  # Clears next_available on a recurring task so it becomes immediately claimable again.
+  # Also clears claimed_at so the parent looks untouched.
+  # Admin/RM only (inherited from AdminOrRmController).
+  def reset_cooldown
+    unless @task.status == 'recurring'
+      render json: { error: 'Only recurring tasks have a cooldown to reset' }, status: :unprocessable_entity and return
+    end
+
+    @task.update!(next_available: nil, claimed_at: nil)
     render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
   end
 

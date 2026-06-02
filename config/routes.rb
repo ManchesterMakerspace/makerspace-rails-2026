@@ -111,6 +111,7 @@ Rails.application.routes.draw do
       post   '/volunteer/tasks/:id/complete', to: 'volunteer#complete_task'
       post   '/volunteer/events/:id/checkin', to: 'volunteer#checkin_event'
       delete '/volunteer/events/:id/checkin', to: 'volunteer#remove_checkin'
+      get    '/volunteer/tasks/my_claims',    to: 'volunteer#my_claims'
 
       namespace :admin do
         resources :cards, only: [:new, :create, :index, :update]
@@ -206,6 +207,7 @@ Rails.application.routes.draw do
             post :cancel
             post :release
             post :reject_pending
+            post :reset_cooldown
           end
         end
 

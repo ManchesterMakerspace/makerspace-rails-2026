@@ -58,14 +58,41 @@ class VolunteerController < AuthenticationController
   end
 
   # GET /api/volunteer/tasks
-  # Returns tasks that are currently claimable (excludes cooling-down recurring tasks).
-  # Child tasks (spawned from multi-use parents) are excluded — members interact with
-  # the parent task only.
+  # Returns claimable parent tasks (no child documents, no cooling-down recurring tasks).
   def tasks
     tasks = VolunteerTask.claimable
                          .where(parent_task_id: nil)
                          .order_by(task_number: :asc)
     render json: tasks, each_serializer: VolunteerTaskSerializer, adapter: :attributes
+  end
+
+  # GET /api/volunteer/tasks/my_claims
+  # Returns the current member's active child task claims (claimed or pending status)
+  # spawned from reusable, repeatable, or recurring parent tasks.
+  # Also returns any standard tasks directly claimed by this member.
+  # This is the data source for the "My Active Claims" UI section.
+  def my_claims
+    member_id = current_member.id
+
+    # Child tasks from multi-use parents
+    child_claims = VolunteerTask.where(
+      claimed_by_id: member_id,
+      :parent_task_id.ne => nil,
+      :status.in => %w[claimed pending]
+    ).order_by(claimed_at: :desc)
+
+    # Standard tasks directly claimed by this member
+    standard_claims = VolunteerTask.where(
+      claimed_by_id: member_id,
+      parent_task_id: nil,
+      :status.in => %w[claimed pending]
+    ).order_by(claimed_at: :desc)
+
+    all_claims = (child_claims.to_a + standard_claims.to_a)
+                   .sort_by { |t| t.claimed_at || Time.at(0) }
+                   .reverse
+
+    render json: all_claims, each_serializer: VolunteerTaskSerializer, adapter: :attributes
   end
 
   # GET /api/volunteer/events
@@ -85,8 +112,8 @@ class VolunteerController < AuthenticationController
 
     result = task.claim!(current_member)
 
-    # For multi-use tasks the return value is the child task document; for
-    # standard tasks claim! returns self after updating in place.
+    # For multi-use tasks the return value is the child task document;
+    # for standard tasks claim! returns self after updating in place.
     render_target = result.is_a?(VolunteerTask) ? result : task
     render json: render_target, serializer: VolunteerTaskSerializer, adapter: :attributes
   rescue Error::AlreadyClaimed
@@ -142,7 +169,6 @@ class VolunteerController < AuthenticationController
   end
 
   # DELETE /api/volunteer/events/:id/checkin
-  # Member removes their own check-in. Blocked on closed events.
   def remove_checkin
     event = VolunteerEvent.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerEvent, { id: params[:id] }) if event.nil?
