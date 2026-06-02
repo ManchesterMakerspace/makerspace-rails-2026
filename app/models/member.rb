@@ -260,7 +260,7 @@ class Member
   end
 
   def is_allowed?(permission_name)
-    permissions.detect { |p| p.name == permission_name.to_sym && !!p.enabled }
+    permissions.detect { |p| p.name.to_s == permission_name.to_s && !!p.enabled }
   end
 
   def delay_invoice_operation(operation)
