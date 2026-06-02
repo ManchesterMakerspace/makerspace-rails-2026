@@ -44,13 +44,18 @@
     .task-card {
       background: #1a1a1a;
       border: 1px solid #2a2a2a;
-      border-left: 4px solid #e85d04;
       border-radius: 6px;
       padding: 1.25rem;
       display: flex;
       flex-direction: column;
       gap: 0.5rem;
     }
+
+    /* Left-border colour by task type */
+    .task-card.type-available  { border-left: 4px solid #e85d04; }
+    .task-card.type-reusable   { border-left: 4px solid #2e7d32; }
+    .task-card.type-repeatable { border-left: 4px solid #1565c0; }
+    .task-card.type-recurring  { border-left: 4px solid #6a1b9a; }
 
     .task-header {
       display: flex;
@@ -72,6 +77,21 @@
     .task-title { font-size: 1.1rem; font-weight: 600; color: #ffffff; }
     .task-description { font-size: 0.9rem; color: #ccc; line-height: 1.5; flex-grow: 1; }
 
+    /* Type badge shown below description */
+    .task-type-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      width: fit-content;
+    }
+    .task-type-badge.type-reusable   { background: rgba(46,125,50,0.2);   color: #66bb6a; }
+    .task-type-badge.type-repeatable { background: rgba(21,101,192,0.2);  color: #64b5f6; }
+    .task-type-badge.type-recurring  { background: rgba(106,27,154,0.2);  color: #ce93d8; }
+
     .task-footer {
       display: flex;
       align-items: center;
@@ -92,6 +112,26 @@
 
     #empty-state { display: none; text-align: center; color: #555; font-size: 1.25rem; margin-top: 6rem; }
     #error-state { display: none; text-align: center; color: #c62828; font-size: 1rem; margin-top: 4rem; }
+
+    /* Legend */
+    #legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+      font-size: 0.8rem;
+      color: #888;
+    }
+    .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+    .legend-swatch {
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .swatch-available  { background: #e85d04; }
+    .swatch-reusable   { background: #2e7d32; }
+    .swatch-repeatable { background: #1565c0; }
+    .swatch-recurring  { background: #6a1b9a; }
 
     .spinner {
       display: inline-block;
@@ -118,6 +158,13 @@
     <div id="last-updated">Loading<span class="spinner"></span></div>
   </header>
 
+  <div id="legend">
+    <span class="legend-item"><span class="legend-swatch swatch-available"></span>One-time</span>
+    <span class="legend-item"><span class="legend-swatch swatch-reusable"></span>Reusable — any member, once each</span>
+    <span class="legend-item"><span class="legend-swatch swatch-repeatable"></span>Repeatable — claim as many times as you like</span>
+    <span class="legend-item"><span class="legend-swatch swatch-recurring"></span>Recurring — resets on a schedule</span>
+  </div>
+
   <div id="task-grid"></div>
   <div id="empty-state">No bounty tasks available right now. Check back soon!</div>
   <div id="error-state">Unable to load tasks. Will retry shortly.</div>
@@ -133,27 +180,52 @@
     const errorState  = document.getElementById('error-state');
     const lastUpdated = document.getElementById('last-updated');
 
+    const CLAIMABLE_STATUSES = ['available', 'reusable', 'repeatable', 'recurring'];
+
     function creditLabel(value) {
       const n = parseFloat(value);
       return n + ' ' + (n === 1 ? 'credit' : 'credits');
     }
 
+    function typeBadgeHtml(task) {
+      switch (task.status) {
+        case 'reusable':
+          return '<span class="task-type-badge type-reusable">↩ Reusable</span>';
+        case 'repeatable':
+          return '<span class="task-type-badge type-repeatable">∞ Repeatable</span>';
+        case 'recurring':
+          const days = task.days;
+          const label = days ? 'Repeats every ' + days + ' day' + (days !== 1 ? 's' : '') : 'Recurring';
+          return '<span class="task-type-badge type-recurring">↻ ' + escapeHtml(label) + '</span>';
+        default:
+          return '';
+      }
+    }
+
     function renderTasks(tasks) {
-      const available = tasks.filter(t => t.status === 'available');
+      // The server already filters to claimable tasks via the claimable scope,
+      // but guard here too in case the endpoint is called with different params.
+      const claimable = tasks.filter(t => CLAIMABLE_STATUSES.includes(t.status));
+
       grid.innerHTML = '';
-      emptyState.style.display = available.length === 0 ? 'block' : 'none';
+      emptyState.style.display = claimable.length === 0 ? 'block' : 'none';
       errorState.style.display = 'none';
 
-      available.forEach(task => {
-        const card = document.createElement('div');
-        card.className = 'task-card';
+      claimable.forEach(task => {
+        const card    = document.createElement('div');
+        const typeClass = 'type-' + (task.status || 'available');
+        card.className  = 'task-card ' + typeClass;
+
         const taskNum = task.task_number ? '#' + task.task_number : '';
+        const badge   = typeBadgeHtml(task);
+
         card.innerHTML = `
           <div class="task-header">
             ${taskNum ? '<span class="task-number">' + escapeHtml(taskNum) + '</span>' : ''}
             <div class="task-title">${escapeHtml(task.title)}</div>
           </div>
           <div class="task-description">${escapeHtml(task.description)}</div>
+          ${badge}
           <div class="task-footer">
             <span class="task-credit">${creditLabel(task.credit_value)}</span>
             ${task.shop_name ? '<span class="task-shop">' + escapeHtml(task.shop_name) + '</span>' : ''}
@@ -178,7 +250,7 @@
         .then(renderTasks)
         .catch(() => {
           errorState.style.display = 'block';
-          lastUpdated.textContent = 'Failed to load — retrying...';
+          lastUpdated.textContent  = 'Failed to load — retrying...';
         });
     }
 
