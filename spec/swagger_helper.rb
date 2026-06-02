@@ -696,6 +696,9 @@ RSpec.configure do |config|
         title: 'Makerspace Server V2',
         version: 'v2',
       },
+      servers: [
+        { url: '/api', description: 'API base path' }
+      ],
       components: {
         schemas: {
           MemberStatus: {
