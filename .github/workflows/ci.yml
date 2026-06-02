@@ -7,8 +7,11 @@ on:
     branches: [master]
   workflow_dispatch:
 
-# Which React branch to pull for UI build and E2E.
+# Which React repo/branch to pull for UI build and E2E.
+# Switch REACT_REPO to ManchesterMakerspace/makerspace-react once the
+# upstream PR is merged.
 env:
+  REACT_REPO:   thannemann/makerspace-react-2026
   REACT_BRANCH: master
 
 jobs:
@@ -22,7 +25,7 @@ jobs:
       - name: Checkout react repo
         uses: actions/checkout@v4
         with:
-          repository: ManchesterMakerspace/makerspace-react-2026
+          repository: ${{ env.REACT_REPO }}
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 
@@ -59,7 +62,7 @@ jobs:
       - name: Checkout react repo
         uses: actions/checkout@v4
         with:
-          repository: ManchesterMakerspace/makerspace-react-2026
+          repository: ${{ env.REACT_REPO }}
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 
@@ -234,13 +237,10 @@ jobs:
       SMTP_FROM: dummy@example.com
       HONEYBADGER_API_KEY: dummy
       HONEYBADGER_ENV: test
-      # Braintree — real sandbox credentials required for payment tests.
-      # Add BT_MERCHANT_ID, BT_PUBLIC_KEY, BT_PRIVATE_KEY to GitHub repo secrets.
       BT_ENV: sandbox
       BT_MERCHANT_ID: ${{ secrets.BT_MERCHANT_ID }}
       BT_PUBLIC_KEY: ${{ secrets.BT_PUBLIC_KEY }}
       BT_PRIVATE_KEY: ${{ secrets.BT_PRIVATE_KEY }}
-      # Playwright
       APP_URL: http://localhost:3035
 
     steps:
@@ -249,7 +249,7 @@ jobs:
       - name: Checkout react repo
         uses: actions/checkout@v4
         with:
-          repository: ManchesterMakerspace/makerspace-react-2026
+          repository: ${{ env.REACT_REPO }}
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 

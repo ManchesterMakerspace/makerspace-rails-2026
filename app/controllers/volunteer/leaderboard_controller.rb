@@ -10,28 +10,32 @@ class Volunteer::LeaderboardController < ApplicationController
   def index
     top_count = (SystemConfig.get('volunteer_leaderboard_top') || 10).to_i
 
-    # Aggregate lifetime credits per member using MongoDB pipeline
+    # Fetch more than needed to account for deleted members,
+    # then filter and re-rank after resolving member records.
+    fetch_count = top_count * 3
+
     pipeline = [
       { '$match' => { 'status' => { '$in' => ['approved', 'reversal'] } } },
       { '$group' => { '_id' => '$member_id', 'lifetime_credits' => { '$sum' => '$credit_value' } } },
       { '$sort'  => { 'lifetime_credits' => -1 } },
-      { '$limit' => top_count }
+      { '$limit' => fetch_count }
     ]
 
     rows = VolunteerCredit.collection.aggregate(pipeline).to_a
 
-    member_ids   = rows.map { |r| r['_id'] }
+    member_ids    = rows.map { |r| r['_id'] }
     members_by_id = Member.in(id: member_ids).index_by(&:id)
 
-    @entries = rows.each_with_index.map do |row, idx|
+    # Filter out deleted members, re-rank sequentially from 1
+    @entries = rows.filter_map.with_index(1) do |row, idx|
       member = members_by_id[row['_id']]
       next if member.nil?
       {
-        rank:            idx + 1,
-        name:            member.fullname,
+        rank:             idx,
+        name:             member.fullname,
         lifetime_credits: row['lifetime_credits'].to_f.round(1)
       }
-    end.compact
+    end.first(top_count).each.with_index(1) { |e, i| e[:rank] = i }
 
     if request.format.json?
       render plain: @entries.to_json, content_type: 'application/json'

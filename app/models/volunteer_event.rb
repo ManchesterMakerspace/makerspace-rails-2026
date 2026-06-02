@@ -14,10 +14,9 @@ class VolunteerEvent
   field :created_by_id,     type: BSON::ObjectId
   field :closed_by_id,      type: BSON::ObjectId, default: nil
   field :closed_at,         type: Time,           default: nil
-  field :attendee_ids,      type: Array,          default: []  # array of member BSON::ObjectId
+  field :attendee_ids,      type: Array,          default: []
 
   # Audit trail for check-in removals.
-  # Each entry: { 'member_id' => ObjectId, 'removed_by_id' => ObjectId, 'removed_at' => Time }
   field :attendee_removals, type: Array, default: []
 
   VALID_STATUSES = %w[open closed].freeze
@@ -31,18 +30,12 @@ class VolunteerEvent
   index({ status: 1 })
   index({ event_number: 1 }, { unique: true })
 
-  # ── Scopes ────────────────────────────────────────────────────────────────
-
   scope :active_events, -> { where(status: 'open') }
   scope :closed_events, -> { where(status: 'closed') }
-
-  # ── Class Methods ─────────────────────────────────────────────────────────
 
   def self.find_by_number(number)
     find_by(event_number: number.to_i)
   end
-
-  # ── Instance Methods ──────────────────────────────────────────────────────
 
   def display_number
     "E#{event_number}"
@@ -60,17 +53,24 @@ class VolunteerEvent
     Member.find(closed_by_id) if closed_by_id
   end
 
-  # Member self check-in
+  def attendee_names
+    return [] if attendee_ids.empty?
+    Member.in(id: attendee_ids).map(&:fullname)
+  rescue
+    []
+  end
+
+  # Member self check-in.
+  # Guards: event must be open, member must be activeMember, not already checked in.
   def checkin!(member)
     raise Error::Forbidden.new unless status == 'open'
+    raise Error::Forbidden.new unless member.status == 'activeMember'
     raise Error::Forbidden.new if attendee_ids.include?(member.id)
     push(attendee_ids: member.id)
     notify_member_checkin(member)
   end
 
   # Remove a check-in. Works for both member self-removal and admin removal.
-  # Blocked on closed events. Records who removed the check-in for audit.
-  # DMs the member only when an admin performs the removal.
   def remove_attendee!(member, removed_by)
     raise Error::Forbidden.new unless status == 'open'
     raise Error::Forbidden.new unless attendee_ids.include?(member.id)
@@ -78,43 +78,43 @@ class VolunteerEvent
     pull(attendee_ids: member.id)
 
     push(attendee_removals: {
-      'member_id'     => member.id,
+      'member_id'    => member.id,
       'removed_by_id' => removed_by.id,
-      'removed_at'    => Time.now
+      'removed_at'   => Time.now
     })
 
-    # Only DM the member when an admin removes them, not for self-removal
-    notify_member_removed(member) if removed_by.id != member.id
+    # DM the member only when an admin/RM removed them (not self-removal)
+    if removed_by.id != member.id
+      notify_member_checkin_removed(member, removed_by)
+    end
   end
 
-  # Admin manually adds an attendee
-  def add_attendee!(member, added_by)
-    raise Error::Forbidden.new unless status == 'open'
-    raise Error::Forbidden.new if attendee_ids.include?(member.id)
-    push(attendee_ids: member.id)
-  end
-
-  # Close the event and issue credits to all attendees
-  def close!(closer)
+  # Close event and issue credits to all attendees.
+  def close!(closed_by_member)
     raise Error::Forbidden.new unless status == 'open'
 
     update!(
-      status:       'closed',
-      closed_by_id: closer.id,
-      closed_at:    Time.now
+      status:    'closed',
+      closed_by_id: closed_by_member.id,
+      closed_at: Time.now
     )
 
-    # Issue credits to all attendees
     attendee_ids.each do |member_id|
+      member = Member.find(member_id) rescue nil
+      next if member.nil?
+      next unless member.status == 'activeMember'
+
       credit = VolunteerCredit.create!(
         member_id:    member_id,
-        issued_by_id: closer.id,
-        description:  "Attended event: #{title}",
+        issued_by_id: closed_by_member.id,
+        description:  "Attended event: #{title} (#{display_number})",
         credit_value: credit_value,
         status:       'approved'
       )
       credit.send(:notify_member_credit_awarded)
       credit.send(:check_discount_threshold!)
+    rescue => e
+      Honeybadger.notify(e) if defined?(Honeybadger)
     end
   end
 
@@ -131,8 +131,7 @@ class VolunteerEvent
   def notify_member_checkin(member)
     slack_user = SlackUser.find_by(member_id: member.id)
     return unless slack_user
-
-    enque_message(
+    ::Service::SlackConnector.send_slack_message(
       "✅ You're checked in to *#{title}* (#{display_number}). Credits will be issued when the event closes.",
       slack_user.slack_id
     )
@@ -140,14 +139,12 @@ class VolunteerEvent
     Honeybadger.notify(e) if defined?(Honeybadger)
   end
 
-  # DM the member when an admin removes their check-in
-  def notify_member_removed(member)
+  def notify_member_checkin_removed(member, removed_by)
     slack_user = SlackUser.find_by(member_id: member.id)
     return unless slack_user
-
     ::Service::SlackConnector.send_slack_message(
-      "ℹ️ Your check-in for *#{title}* (#{display_number}) has been removed by an administrator. " \
-      "Contact us if you have any questions.",
+      "ℹ️ Your check-in for *#{title}* (#{display_number}) was removed by #{removed_by.fullname}. " \
+      "Contact an admin if you believe this was an error.",
       slack_user.slack_id
     )
   rescue => e

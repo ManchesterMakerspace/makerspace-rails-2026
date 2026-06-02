@@ -5,16 +5,17 @@
 #
 # Supported commands:
 #   /volunteer status [@member]
-#   /volunteer tasks                         — list available bounty tasks
+#   /volunteer tasks                         — list claimable bounty tasks
 #   /volunteer claim <task#>                 — claim a bounty task
 #   /volunteer done <task#>                  — mark claimed task as pending verification
+#   /volunteer myclaims                      — list your active claims
 #   /volunteer events                        — list open volunteer events
 #   /volunteer checkin <E#>                  — check in to an open event
-#   /volunteer award @member <reason>        — admin/RM: award a one-off credit
-#   /volunteer verify <task#>                — admin/RM: verify a completed task
-#   /volunteer release <task#> <reason>      — admin/RM: release a stale claimed task
-#   /volunteer reject <task#> <reason>       — admin/RM: reject a pending task
-#   /volunteer close <E#>                    — admin/RM: close event and issue credits
+#   /volunteer award @member <reason>        — admin/RM/board: award a one-off credit
+#   /volunteer verify <task#>                — admin/RM/board: verify a completed task
+#   /volunteer release <task#> <reason>      — admin/RM/board: release a stale claimed task
+#   /volunteer reject <task#> <reason>       — admin/RM/board: reject a pending task
+#   /volunteer close <E#>                    — admin/RM/board: close event and issue credits
 #
 class SlackVolunteerJob < ApplicationJob
   queue_as :default
@@ -39,17 +40,18 @@ class SlackVolunteerJob < ApplicationJob
     end
 
     case command
-    when 'status'   then handle_status(response_url, invoker, parts[1])
-    when 'tasks'    then handle_tasks(response_url)
-    when 'claim'    then handle_claim(response_url, invoker, parts[1])
-    when 'done'     then handle_done(response_url, invoker, parts[1])
-    when 'events'   then handle_events(response_url)
-    when 'checkin'  then handle_checkin(response_url, invoker, parts[1])
-    when 'award'    then handle_award(response_url, invoker, parts)
-    when 'verify'   then handle_verify(response_url, invoker, parts[1])
-    when 'release'  then handle_release(response_url, invoker, parts[1], parts[2..].join(' '))
-    when 'reject'   then handle_reject(response_url, invoker, parts[1], parts[2..].join(' '))
-    when 'close'    then handle_close(response_url, invoker, parts[1])
+    when 'status'    then handle_status(response_url, invoker, parts[1])
+    when 'tasks'     then handle_tasks(response_url)
+    when 'claim'     then handle_claim(response_url, invoker, parts[1])
+    when 'done'      then handle_done(response_url, invoker, parts[1])
+    when 'myclaims'  then handle_myclaims(response_url, invoker)
+    when 'events'    then handle_events(response_url)
+    when 'checkin'   then handle_checkin(response_url, invoker, parts[1])
+    when 'award'     then handle_award(response_url, invoker, parts)
+    when 'verify'    then handle_verify(response_url, invoker, parts[1])
+    when 'release'   then handle_release(response_url, invoker, parts[1], parts[2..].join(' '))
+    when 'reject'    then handle_reject(response_url, invoker, parts[1], parts[2..].join(' '))
+    when 'close'     then handle_close(response_url, invoker, parts[1])
     else
       post_response(response_url, :ephemeral, usage_text)
     end
@@ -99,8 +101,10 @@ class SlackVolunteerJob < ApplicationJob
     post_response(response_url, :ephemeral, lines.join("\n"))
   end
 
+  # List all claimable tasks — includes reusable, repeatable, and recurring
+  # (excluding recurring tasks still in their cooldown window).
   def handle_tasks(response_url)
-    tasks = VolunteerTask.available.order_by(task_number: :asc).limit(10)
+    tasks = VolunteerTask.claimable.where(parent_task_id: nil).order_by(task_number: :asc).limit(15)
 
     if tasks.empty?
       post_response(response_url, :ephemeral, '📋 No bounty tasks are currently available.')
@@ -110,9 +114,15 @@ class SlackVolunteerJob < ApplicationJob
     lines = ['📋 *Available Bounty Tasks*']
     tasks.each do |t|
       credit_label = t.credit_value == 1.0 ? '1 credit' : "#{t.credit_value} credits"
-      lines << "• *#{t.title}* (#{credit_label}) — `#{t.display_number}`\n  #{t.description}"
+      type_hint = case t.status
+        when 'reusable'   then ' _(reusable)_'
+        when 'repeatable' then ' _(repeatable)_'
+        when 'recurring'  then " _(repeats every #{t.days} day#{'s' if t.days != 1})_"
+        else ''
+      end
+      lines << "• *#{t.title}* (#{credit_label}#{type_hint}) — `#{t.display_number}`\n  #{t.description}"
     end
-    lines << "\nUse `/volunteer claim <task#>` to claim one. e.g. `/volunteer claim 3`"
+    lines << "\nUse `/volunteer claim <task#>` to claim one."
 
     post_response(response_url, :ephemeral, lines.join("\n"))
   end
@@ -123,20 +133,33 @@ class SlackVolunteerJob < ApplicationJob
       return
     end
 
+    # activeMember guard
+    unless invoker.status == 'activeMember'
+      post_response(response_url, :ephemeral, '❌ Only active members can claim tasks.')
+      return
+    end
+
     task = find_task_by_ref(task_ref)
     unless task
       post_response(response_url, :ephemeral, "❌ Task not found: #{task_ref}. Use `/volunteer tasks` to see available tasks.")
       return
     end
 
-    unless task.status == 'available'
-      post_response(response_url, :ephemeral, "❌ Task *#{task.title}* is not available (status: #{task.status}).")
-      return
+    begin
+      result = task.claim!(invoker)
+      # For multi-use tasks claim! returns the child document; for standard it returns self.
+      claimed = result.is_a?(VolunteerTask) ? result : task
+      done_ref = claimed.task_number || task.task_number
+      post_response(response_url, :ephemeral,
+        "🙌 You've claimed *#{task.title}* (#{task.display_number}). When you're done, use `/volunteer done #{done_ref}`")
+    rescue Error::AlreadyClaimed
+      post_response(response_url, :ephemeral, "❌ You've already claimed *#{task.title}*. Each member may only claim this task once.")
+    rescue Error::CoolingDown
+      available_on = task.next_available ? " It will be available again on #{task.next_available.strftime('%b %d')}." : ''
+      post_response(response_url, :ephemeral, "❌ *#{task.title}* is still in its cooldown period.#{available_on}")
+    rescue Error::Forbidden
+      post_response(response_url, :ephemeral, "❌ *#{task.title}* is not available to claim.")
     end
-
-    task.claim!(invoker)
-    post_response(response_url, :ephemeral,
-      "🙌 You've claimed *#{task.title}* (#{task.display_number}). When you're done, use `/volunteer done #{task.task_number}`")
   end
 
   def handle_done(response_url, invoker, task_ref)
@@ -145,10 +168,25 @@ class SlackVolunteerJob < ApplicationJob
       return
     end
 
+    # Find either a direct task or a child task the member owns
     task = find_task_by_ref(task_ref)
     unless task
       post_response(response_url, :ephemeral, "❌ Task not found: #{task_ref}.")
       return
+    end
+
+    # For multi-use tasks, find the member's active child claim
+    if VolunteerTask::MULTI_USE_STATUSES.include?(task.status)
+      child = VolunteerTask.where(
+        parent_task_id: task.id,
+        claimed_by_id:  invoker.id,
+        :status.in => %w[claimed]
+      ).first
+      unless child
+        post_response(response_url, :ephemeral, "❌ You don't have an active claim on *#{task.title}*.")
+        return
+      end
+      task = child
     end
 
     unless task.claimed_by_id == invoker.id
@@ -165,6 +203,40 @@ class SlackVolunteerJob < ApplicationJob
 
     post_response(response_url, :ephemeral,
       "✅ Task *#{task.title}* marked as complete. An admin or RM will verify shortly.")
+  rescue Error::Forbidden
+    post_response(response_url, :ephemeral, "❌ Unable to mark this task complete.")
+  end
+
+  # List the invoker's active claims (claimed + pending).
+  def handle_myclaims(response_url, invoker)
+    # Child task claims from multi-use parents
+    child_claims = VolunteerTask.where(
+      claimed_by_id:  invoker.id,
+      :parent_task_id.ne => nil,
+      :status.in => %w[claimed pending]
+    ).to_a
+
+    # Standard direct claims
+    standard_claims = VolunteerTask.where(
+      claimed_by_id:   invoker.id,
+      parent_task_id:  nil,
+      :status.in => %w[claimed pending]
+    ).to_a
+
+    all_claims = (child_claims + standard_claims).sort_by { |t| t.claimed_at || Time.at(0) }.reverse
+
+    if all_claims.empty?
+      post_response(response_url, :ephemeral, "📋 You have no active task claims.")
+      return
+    end
+
+    lines = ["📋 *Your Active Claims*"]
+    all_claims.each do |t|
+      status_label = t.status == 'pending' ? '_(awaiting verification)_' : '_(claimed)_'
+      lines << "• *#{t.title}* #{status_label} — use `/volunteer done #{t.task_number || t.parent_task&.task_number}` to mark complete"
+    end
+
+    post_response(response_url, :ephemeral, lines.join("\n"))
   end
 
   def handle_events(response_url)
@@ -181,7 +253,7 @@ class SlackVolunteerJob < ApplicationJob
       date_str     = e.event_date ? " — #{e.event_date.strftime('%b %d')}" : ''
       lines << "• *#{e.title}* (#{credit_label}#{date_str}) — `#{e.display_number}` — #{e.attendee_count} checked in\n  #{e.description}"
     end
-    lines << "\nUse `/volunteer checkin <E#>` to check in. e.g. `/volunteer checkin E1`"
+    lines << "\nUse `/volunteer checkin <E#>` to check in."
 
     post_response(response_url, :ephemeral, lines.join("\n"))
   end
@@ -201,13 +273,13 @@ class SlackVolunteerJob < ApplicationJob
     event.checkin!(invoker)
     post_response(response_url, :ephemeral,
       "✅ You're checked in to *#{event.title}* (#{event.display_number}). Credits will be issued when the event closes.")
-  rescue Error::Forbidden => e
-    post_response(response_url, :ephemeral, "❌ #{e.message}")
+  rescue Error::Forbidden
+    post_response(response_url, :ephemeral, "❌ Unable to check in. The event may be closed or you may not be an active member.")
   end
 
   def handle_award(response_url, invoker, parts)
     unless privileged?(invoker)
-      post_response(response_url, :ephemeral, '❌ Only admins and resource managers can award credits.')
+      post_response(response_url, :ephemeral, '❌ Only admins, board members, and resource managers can award credits.')
       return
     end
 
@@ -224,6 +296,11 @@ class SlackVolunteerJob < ApplicationJob
 
     if member.id == invoker.id
       post_response(response_url, :ephemeral, '❌ You cannot award a credit to yourself.')
+      return
+    end
+
+    unless member.status == 'activeMember'
+      post_response(response_url, :ephemeral, "❌ Cannot award a credit to #{member.fullname} — they are not an active member.")
       return
     end
 
@@ -244,7 +321,7 @@ class SlackVolunteerJob < ApplicationJob
 
   def handle_verify(response_url, invoker, task_ref)
     unless privileged?(invoker)
-      post_response(response_url, :ephemeral, '❌ Only admins and resource managers can verify tasks.')
+      post_response(response_url, :ephemeral, '❌ Only admins, board members, and resource managers can verify tasks.')
       return
     end
 
@@ -254,6 +331,13 @@ class SlackVolunteerJob < ApplicationJob
     end
 
     task = find_task_by_ref(task_ref)
+
+    # Also check child tasks for multi-use parents
+    if task && VolunteerTask::MULTI_USE_STATUSES.include?(task.status)
+      pending_child = VolunteerTask.where(parent_task_id: task.id, status: 'pending').first
+      task = pending_child if pending_child
+    end
+
     unless task
       post_response(response_url, :ephemeral, "❌ Task not found: #{task_ref}.")
       return
@@ -269,8 +353,14 @@ class SlackVolunteerJob < ApplicationJob
       return
     end
 
-    task.complete!(invoker)
+    # activeMember check on claimant
     claimant = Member.find(task.claimed_by_id) rescue nil
+    if claimant && claimant.status != 'activeMember'
+      post_response(response_url, :ephemeral, "❌ Cannot verify — #{claimant.fullname} is no longer an active member.")
+      return
+    end
+
+    task.complete!(invoker)
 
     post_response(response_url, :in_channel,
       "✅ *#{invoker.fullname}* verified task *#{task.title}* (#{task.display_number}) complete for *#{claimant&.fullname || 'member'}*. Credit issued!")
@@ -278,7 +368,7 @@ class SlackVolunteerJob < ApplicationJob
 
   def handle_release(response_url, invoker, task_ref, reason)
     unless privileged?(invoker)
-      post_response(response_url, :ephemeral, '❌ Only admins and resource managers can release tasks.')
+      post_response(response_url, :ephemeral, '❌ Only admins, board members, and resource managers can release tasks.')
       return
     end
 
@@ -288,6 +378,14 @@ class SlackVolunteerJob < ApplicationJob
     end
 
     task = find_task_by_ref(task_ref)
+
+    # For multi-use parents, release the oldest active child claim
+    if task && VolunteerTask::MULTI_USE_STATUSES.include?(task.status)
+      claimed_child = VolunteerTask.where(parent_task_id: task.id, status: 'claimed')
+                                   .order_by(claimed_at: :asc).first
+      task = claimed_child if claimed_child
+    end
+
     unless task
       post_response(response_url, :ephemeral, "❌ Task not found: #{task_ref}.")
       return
@@ -307,7 +405,7 @@ class SlackVolunteerJob < ApplicationJob
 
   def handle_reject(response_url, invoker, task_ref, reason)
     unless privileged?(invoker)
-      post_response(response_url, :ephemeral, '❌ Only admins and resource managers can reject tasks.')
+      post_response(response_url, :ephemeral, '❌ Only admins, board members, and resource managers can reject tasks.')
       return
     end
 
@@ -317,6 +415,14 @@ class SlackVolunteerJob < ApplicationJob
     end
 
     task = find_task_by_ref(task_ref)
+
+    # For multi-use parents, reject the oldest pending child claim
+    if task && VolunteerTask::MULTI_USE_STATUSES.include?(task.status)
+      pending_child = VolunteerTask.where(parent_task_id: task.id, status: 'pending')
+                                   .order_by(claimed_at: :asc).first
+      task = pending_child if pending_child
+    end
+
     unless task
       post_response(response_url, :ephemeral, "❌ Task not found: #{task_ref}.")
       return
@@ -329,14 +435,14 @@ class SlackVolunteerJob < ApplicationJob
 
     task.reject_pending!(invoker, reason)
     post_response(response_url, :in_channel,
-      "❌ Task *#{task.title}* (#{task.display_number}) rejected. Reason: #{reason}. Available for reclaiming.")
+      "❌ Task *#{task.title}* (#{task.display_number}) rejected. Reason: #{reason}.")
   rescue Error::Forbidden
     post_response(response_url, :ephemeral, '❌ You cannot reject your own task.')
   end
 
   def handle_close(response_url, invoker, event_ref)
     unless privileged?(invoker)
-      post_response(response_url, :ephemeral, '❌ Only admins and resource managers can close events.')
+      post_response(response_url, :ephemeral, '❌ Only admins, board members, and resource managers can close events.')
       return
     end
 
@@ -391,18 +497,22 @@ class SlackVolunteerJob < ApplicationJob
       `/volunteer tasks` — List available bounty tasks
       `/volunteer claim <task#>` — Claim a task e.g. `/volunteer claim 3`
       `/volunteer done <task#>` — Mark your task complete
+      `/volunteer myclaims` — See your active claims
       `/volunteer events` — List open volunteer events
       `/volunteer checkin <E#>` — Check in to an event e.g. `/volunteer checkin E1`
-      `/volunteer award @member <reason>` — _(admin/RM)_ Award a one-off credit
-      `/volunteer verify <task#>` — _(admin/RM)_ Verify a completed task
-      `/volunteer release <task#> <reason>` — _(admin/RM)_ Release a stale task
-      `/volunteer reject <task#> <reason>` — _(admin/RM)_ Reject a pending task
-      `/volunteer close <E#>` — _(admin/RM)_ Close event and issue credits
+      `/volunteer award @member <reason>` — _(admin/board/RM)_ Award a one-off credit
+      `/volunteer verify <task#>` — _(admin/board/RM)_ Verify a completed task
+      `/volunteer release <task#> <reason>` — _(admin/board/RM)_ Release a stale task
+      `/volunteer reject <task#> <reason>` — _(admin/board/RM)_ Reject a pending task
+      `/volunteer close <E#>` — _(admin/board/RM)_ Close event and issue credits
     TEXT
   end
 
+  # FIX: board_member was excluded — board members can approve credits,
+  # reverse credits, and force-cancel invoices in the web UI but were
+  # blocked from all Slack volunteer commands. Now consistent with AdminOrRmController.
   def privileged?(member)
-    member.role.in?(%w[admin resource_manager])
+    member.role.in?(%w[admin board_member resource_manager])
   end
 
   def find_member_by_slack_id(slack_id)
