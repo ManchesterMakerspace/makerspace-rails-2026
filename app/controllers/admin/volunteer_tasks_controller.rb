@@ -31,7 +31,15 @@ class Admin::VolunteerTasksController < AdminOrRmController
 
   # POST /api/admin/volunteer_tasks/:id/complete
   # Verify a task as complete and issue the credit.
+  # Blocked if the claiming member does not have activeMember status.
   def complete
+    if @task.claimed_by_id.present?
+      claimant = Member.find(@task.claimed_by_id)
+      if claimant.nil? || claimant.status != 'activeMember'
+        render json: { error: 'Cannot approve credit for a member who is not an active member' }, status: :forbidden and return
+      end
+    end
+
     @task.complete!(current_member)
     render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
   rescue Error::Forbidden
@@ -79,6 +87,6 @@ class Admin::VolunteerTasksController < AdminOrRmController
   end
 
   def task_params
-    params.permit(:title, :description, :credit_value, :shop_id)
+    params.permit(:title, :description, :credit_value, :shop_id, :status, :days)
   end
 end

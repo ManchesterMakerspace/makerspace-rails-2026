@@ -6,6 +6,9 @@ class VolunteerTaskSerializer < ActiveModel::Serializer
              :credit_value,
              :shop_id,
              :status,
+             :days,
+             :next_available,
+             :parent_task_id,
              :created_by_id,
              :claimed_by_id,
              :claimed_at,
@@ -37,5 +40,13 @@ class VolunteerTaskSerializer < ActiveModel::Serializer
     object.verified_by&.fullname
   rescue
     nil
+  end
+
+  attribute :is_child_task do
+    object.child_task?
+  end
+
+  attribute :is_cooling_down do
+    object.currently_cooling_down?
   end
 end

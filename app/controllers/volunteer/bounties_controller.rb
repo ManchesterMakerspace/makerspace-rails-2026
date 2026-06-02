@@ -9,7 +9,7 @@ class Volunteer::BountiesController < ApplicationController
     if request.format.json?
       render plain: active_tasks_json.to_json, content_type: 'application/json' and return
     end
-    @tasks = VolunteerTask.available.order_by(task_number: :asc)
+    @tasks = VolunteerTask.claimable.where(parent_task_id: nil).order_by(task_number: :asc)
     render 'volunteer/bounties/index', layout: false
   end
 
@@ -32,7 +32,9 @@ class Volunteer::BountiesController < ApplicationController
   end
 
   def active_tasks_json
-    VolunteerTask.active.order_by(task_number: :asc).map do |t|
+    # Show parent-level claimable tasks only; exclude cooling-down recurring tasks
+    # and child documents spawned from multi-use claims.
+    VolunteerTask.claimable.where(parent_task_id: nil).order_by(task_number: :asc).map do |t|
       {
         id:           t.id.to_s,
         task_number:  t.task_number,
@@ -41,7 +43,8 @@ class Volunteer::BountiesController < ApplicationController
         credit_value: t.credit_value,
         status:       t.status,
         shop_name:    (t.shop&.name rescue nil),
-        claimed_at:   t.claimed_at
+        claimed_at:   t.claimed_at,
+        next_available: t.next_available
       }
     end
   end

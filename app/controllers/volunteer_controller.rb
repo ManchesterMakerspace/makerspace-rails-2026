@@ -58,8 +58,13 @@ class VolunteerController < AuthenticationController
   end
 
   # GET /api/volunteer/tasks
+  # Returns tasks that are currently claimable (excludes cooling-down recurring tasks).
+  # Child tasks (spawned from multi-use parents) are excluded — members interact with
+  # the parent task only.
   def tasks
-    tasks = VolunteerTask.active.order_by(task_number: :asc)
+    tasks = VolunteerTask.claimable
+                         .where(parent_task_id: nil)
+                         .order_by(task_number: :asc)
     render json: tasks, each_serializer: VolunteerTaskSerializer, adapter: :attributes
   end
 
@@ -71,11 +76,23 @@ class VolunteerController < AuthenticationController
 
   # POST /api/volunteer/tasks/:id/claim
   def claim_task
+    unless current_member.status == 'activeMember'
+      render json: { error: 'Only active members may claim tasks' }, status: :forbidden and return
+    end
+
     task = VolunteerTask.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerTask, { id: params[:id] }) if task.nil?
 
-    task.claim!(current_member)
-    render json: task, serializer: VolunteerTaskSerializer, adapter: :attributes
+    result = task.claim!(current_member)
+
+    # For multi-use tasks the return value is the child task document; for
+    # standard tasks claim! returns self after updating in place.
+    render_target = result.is_a?(VolunteerTask) ? result : task
+    render json: render_target, serializer: VolunteerTaskSerializer, adapter: :attributes
+  rescue Error::AlreadyClaimed
+    render json: { error: 'You have already claimed this task' }, status: :unprocessable_entity
+  rescue Error::CoolingDown
+    render json: { error: 'This task is not yet available to claim again' }, status: :unprocessable_entity
   rescue Error::Forbidden
     render json: { error: 'Task is no longer available' }, status: :unprocessable_entity
   end
@@ -102,6 +119,10 @@ class VolunteerController < AuthenticationController
     event = VolunteerEvent.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerEvent, { id: params[:id] }) if event.nil?
 
+    unless current_member.status == 'activeMember'
+      render json: { error: 'Only active members may check in to events' }, status: :forbidden and return
+    end
+
     if event.status != 'open'
       render json: { error: 'Event is not open for check-in' }, status: :unprocessable_entity and return
     end
@@ -122,7 +143,6 @@ class VolunteerController < AuthenticationController
 
   # DELETE /api/volunteer/events/:id/checkin
   # Member removes their own check-in. Blocked on closed events.
-  # Silently recorded — removed_by_id will equal the member's own id.
   def remove_checkin
     event = VolunteerEvent.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerEvent, { id: params[:id] }) if event.nil?
