@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Admin::AuditLogsController, type: :controller do
-  include_context 'admin_member'
+  set_devise_mapping
 
   let(:admin)  { create(:member, role: 'admin') }
   let(:board)  { create(:member, role: 'board_member') }
