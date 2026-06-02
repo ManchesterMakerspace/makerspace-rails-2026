@@ -116,6 +116,7 @@ Rails.application.routes.draw do
         resources :cards, only: [:new, :create, :index, :update]
         resources :checkins, only: [:index]
         resources :rejections, only: [:index]
+        resources :audit_logs, only: [:index]
         resources :invoices, only: [:index, :create, :update, :destroy] do
           member do
             post :force_cancel
