@@ -3,7 +3,6 @@ class Admin::SystemConfigsController < AdminController
   # Keys that can be toggled as boolean flags
   FLAG_KEYS = [
     SystemConfig::SLACK_SYNC_ENABLED,
-    SystemConfig::SLACK_PROFILE_SYNC_ENABLED,
     'volunteer_bounty_token_enabled',
     'require_totp_admin',
     'require_totp_board',
@@ -34,7 +33,6 @@ class Admin::SystemConfigsController < AdminController
   def index
     flags = {
       slack_sync_enabled:             SystemConfig.enabled?(SystemConfig::SLACK_SYNC_ENABLED),
-      slack_profile_sync_enabled:     SystemConfig.enabled?(SystemConfig::SLACK_PROFILE_SYNC_ENABLED),
       volunteer_bounty_token_enabled: SystemConfig.enabled?('volunteer_bounty_token_enabled'),
       require_totp_admin:             SystemConfig.enabled?('require_totp_admin'),
       require_totp_board:             SystemConfig.enabled?('require_totp_board'),
@@ -94,7 +92,19 @@ class Admin::SystemConfigsController < AdminController
       render json: { error: "Unknown flag key: #{key}" }, status: :unprocessable_entity and return
     end
 
+    old_value = SystemConfig.enabled?(key).to_s
     SystemConfig.set(key, value)
+
+    Service::AuditLogger.log(
+      log_type:      'portal',
+      event_type:    'portal_setting_changed',
+      resource_type: 'SystemConfig',
+      resource_id:   BSON::ObjectId.new, # SystemConfig has no document ID — generate one for the log
+      actor:         current_member,
+      field_changes: { key => [old_value, value.to_s] },
+      slack_channel: ::Service::SlackConnector.logs_channel
+    )
+
     render json: { key: key, value: value }, status: :ok
   end
 
@@ -110,13 +120,27 @@ class Admin::SystemConfigsController < AdminController
       render json: { error: "Unknown setting key: #{key}" }, status: :unprocessable_entity and return
     end
 
+    old_value = SystemConfig.get(key).to_s
+
     if key == 'volunteer_discount_id'
-      old_value = SystemConfig.get('volunteer_discount_id').presence
       SystemConfig.set(key, value)
-      notify_volunteer_discount_changed(old_value, value.presence)
+      notify_volunteer_discount_changed(old_value.presence, value.presence)
     else
       SystemConfig.set(key, value)
     end
+
+    # Audit log goes to logs channel for all setting changes.
+    # volunteer_discount_id also posts to treasurer via notify_volunteer_discount_changed above —
+    # that post is intentionally left in place for treasurer visibility.
+    Service::AuditLogger.log(
+      log_type:      'portal',
+      event_type:    'portal_setting_changed',
+      resource_type: 'SystemConfig',
+      resource_id:   BSON::ObjectId.new,
+      actor:         current_member,
+      field_changes: { key => [old_value, value] },
+      slack_channel: ::Service::SlackConnector.logs_channel
+    )
 
     render json: { key: key, value: value }, status: :ok
   end
@@ -131,7 +155,6 @@ class Admin::SystemConfigsController < AdminController
 
     case job_key
     when 'slack_sync'      then SlackSyncJob.perform_later
-    when 'slack_profile_sync' then SlackProfileSyncJob.perform_later
     when 'member_review'   then MemberReviewJob.perform_later
     when 'invoice_review'  then InvoiceReviewJob.perform_later
     when 'garbage_collect' then GarbageCollectJob.perform_later
@@ -145,6 +168,7 @@ class Admin::SystemConfigsController < AdminController
 
   # Posts to logs and treasurer channels when the volunteer discount setting changes.
   # Fetches discount descriptions from Braintree for a human-readable audit trail.
+  # Note: the audit log entry is written separately in update_setting above.
   def notify_volunteer_discount_changed(old_id, new_id)
     gateway   = ::Service::BraintreeGateway.connect_gateway
     discounts = gateway.discount.all
