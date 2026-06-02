@@ -111,7 +111,6 @@ Rails.application.routes.draw do
       post   '/volunteer/tasks/:id/complete', to: 'volunteer#complete_task'
       post   '/volunteer/events/:id/checkin', to: 'volunteer#checkin_event'
       delete '/volunteer/events/:id/checkin', to: 'volunteer#remove_checkin'
-      get    '/volunteer/tasks/my_claims',    to: 'volunteer#my_claims'
 
       namespace :admin do
         resources :cards, only: [:new, :create, :index, :update]
@@ -168,7 +167,18 @@ Rails.application.routes.draw do
           end
         end
         resources :permissions, only: [:index, :update]
-        resources :analytics, only: [:index]
+        resources :analytics, only: [:index] do
+          collection do
+            get :member_growth
+            get :active_members
+            get :volunteer_summary
+          end
+        end
+        resources :space_usage, only: [:index] do
+          collection do
+            get :date_range
+          end
+        end
 
         # Member Portal Settings
         resources :system_configs, only: [:index] do
@@ -207,7 +217,6 @@ Rails.application.routes.draw do
             post :cancel
             post :release
             post :reject_pending
-            post :reset_cooldown
           end
         end
 
