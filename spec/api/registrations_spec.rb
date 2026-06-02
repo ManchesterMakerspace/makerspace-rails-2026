@@ -14,6 +14,7 @@ describe 'Registrations API', type: :request do
     post 'Signs in user' do
       tags 'Authentication'
       operationId 'signIn'
+      consumes 'application/json'
       parameter name: :signInDetails, in: :body, schema: {
         title: :signInDetails,
         type: :object,
@@ -51,6 +52,7 @@ describe 'Registrations API', type: :request do
     delete 'Signs out user' do
       tags 'Authentication'
       operationId 'signOut'
+      consumes 'application/json'
 
       response '204', 'User signed out' do
         before { sign_in create(:member) }
@@ -63,6 +65,7 @@ describe 'Registrations API', type: :request do
     post 'Sends password reset instructions' do
       tags 'Password'
       operationId 'requestPasswordReset'
+      consumes 'application/json'
       parameter name: :passwordResetDetails, in: :body, schema: {
         title: :passwordResetDetails, 
         type: :object,
@@ -94,6 +97,7 @@ describe 'Registrations API', type: :request do
     put 'Updates member password' do
       tags 'Password'
       operationId 'resetPassword'
+      consumes 'application/json'
       parameter name: :passwordResetDetails, in: :body, schema: {
         title: :passwordResetDetails, 
         type: :object,
@@ -136,6 +140,7 @@ end
     post 'Registers new member' do
       tags 'Authentication'
       operationId 'registerMember'
+      consumes 'application/json'
       parameter name: :registerMemberDetails, in: :body, schema: {
         title: :registerMemberDetails,
         type: :object,
@@ -188,6 +193,7 @@ end
     post 'Sends registration email' do
       tags 'Authentication'
       operationId 'sendRegistrationEmail'
+      consumes 'application/json'
       parameter name: :registrationEmailDetails, in: :body, schema: {
         title: :registrationEmailDetails, 
         type: :object,

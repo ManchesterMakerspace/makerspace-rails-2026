@@ -9,6 +9,7 @@ describe 'Admin::Rentals API', type: :request do
     get 'Gets a list of rentals' do
       tags 'Rentals'
       operationId "adminListRentals"
+      consumes 'application/json'
       parameter name: :pageNum, in: :query, type: :number, required: false
       parameter name: :orderBy, in: :query, type: :string, required: false
       parameter name: :order, in: :query, type: :string, required: false
@@ -38,6 +39,7 @@ describe 'Admin::Rentals API', type: :request do
     post 'Creates a rental' do
       tags 'Rentals'
       operationId "adminCreateRental"
+      consumes 'application/json'
       parameter name: :createRentalDetails, in: :body, schema: {
         title: :createRentalDetails,
         '$ref' => '#/components/schemas/NewRental' 
@@ -85,6 +87,7 @@ describe 'Admin::Rentals API', type: :request do
     put 'Updates a rental' do
       tags 'Rentals'
       operationId "adminUpdateRental"
+      consumes 'application/json'
       parameter name: :id, in: :path, type: :string
 
       parameter name: :updateRentalDetails, in: :body, schema: {

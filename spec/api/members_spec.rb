@@ -5,6 +5,7 @@ describe 'Members API', type: :request do
     get 'Gets a list of members' do
       tags 'Members'
       operationId "listMembers"
+      consumes 'application/json'
       parameter name: :pageNum, in: :query, type: :number, required: false
       parameter name: :orderBy, in: :query, type: :string, required: false
       parameter name: :order, in: :query, type: :string, required: false
@@ -33,6 +34,7 @@ describe 'Members API', type: :request do
     get 'Gets a member' do
       tags 'Members'
       operationId "getMember"
+      consumes 'application/json'
       parameter name: :id, in: :path, type: :string
 
       response '200', 'Member found' do
@@ -61,6 +63,7 @@ describe 'Members API', type: :request do
     put 'Updates a member and uploads signature' do
       tags 'Members'
       operationId "updateMember"
+      consumes 'application/json'
       parameter name: :id, in: :path, type: :string
       parameter name: :updateMemberDetails, in: :body, schema: {
         title: :updateMemberDetails,

@@ -8,6 +8,7 @@ describe 'Admin::AccessCards API', type: :request do
     get 'Initiate new card creation' do 
       tags 'Cards'
       operationId "adminGetNewCard"
+      consumes 'application/json'
       response '200', 'Card intilized' do 
         before do 
           sign_in admin 
@@ -36,6 +37,7 @@ describe 'Admin::AccessCards API', type: :request do
     get 'Gets a list of members cards' do 
       tags 'Cards'
       operationId "adminListCards"
+      consumes 'application/json'
       parameter name: :memberId, in: :query, type: :string, required: true
 
       response '200', 'cards found' do 
@@ -72,6 +74,7 @@ describe 'Admin::AccessCards API', type: :request do
     post 'Creates an access card' do 
       tags 'Cards'
       operationId "adminCreateCard"
+      consumes 'application/json'
       parameter name: :createAccessCardDetails, in: :body, schema: {
         title: :createAccessCardDetails,
         type: :object,
@@ -139,6 +142,7 @@ describe 'Admin::AccessCards API', type: :request do
     put 'Updates a card' do 
       tags 'Cards'
       operationId "adminUpdateCard"
+      consumes 'application/json'
       parameter name: :id, in: :path, type: :string
 
       parameter name: :updateAccessCardDetails, in: :body, schema: {

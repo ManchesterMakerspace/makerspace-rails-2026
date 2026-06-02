@@ -7,6 +7,7 @@ describe 'Admin::EarnedMemberships API', type: :request do
     get 'Gets a list of earned memberships' do
       tags 'EarnedMemberships'
       operationId "adminListEarnedMemberships"
+      consumes 'application/json'
       parameter name: :pageNum, in: :query, type: :number, required: false
       parameter name: :orderBy, in: :query, type: :string, required: false
       parameter name: :order, in: :query, type: :string, required: false
@@ -34,6 +35,7 @@ describe 'Admin::EarnedMemberships API', type: :request do
     post 'Creates an earned membership' do
       tags 'EarnedMemberships'
       operationId "adminCreateEarnedMembership"
+      consumes 'application/json'
       parameter name: :createEarnedMembershipDetails, in: :body, schema: {
         title: :createEarnedMembershipDetails, 
         '$ref' => '#/components/schemas/NewEarnedMembership'
@@ -76,6 +78,7 @@ describe 'Admin::EarnedMemberships API', type: :request do
   path "/admin/earned_memberships/{id}" do
     get 'Gets an earned membership' do
       operationId "adminGetEarnedMembership"
+      consumes 'application/json'
       tags 'EarnedMemberships'
       parameter name: :id, in: :path, type: :string
 
@@ -112,6 +115,7 @@ describe 'Admin::EarnedMemberships API', type: :request do
     put 'Updates an earned membership' do
       tags 'EarnedMemberships'
       operationId "adminUpdateEarnedMembership"
+      consumes 'application/json'
       parameter name: :id, in: :path, type: :string
 
       parameter name: :updateEarnedMembershipDetails, in: :body, schema: {

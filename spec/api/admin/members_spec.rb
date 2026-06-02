@@ -9,6 +9,7 @@ describe 'Admin::Members API', type: :request do
     post 'Creates a member' do
       tags 'Members'
       operationId "adminCreateMember"
+      consumes 'application/json'
       parameter name: :createMemberDetails, in: :body, schema: {
         title: :createMemberDetails,
         '$ref' => '#/components/schemas/NewMember'
@@ -79,6 +80,7 @@ describe 'Admin::Members API', type: :request do
     put 'Updates a member' do
       tags 'Members'
       operationId "adminUpdateMember"
+      consumes 'application/json'
       parameter name: :id, in: :path, type: :string
       parameter name: :updateMemberDetails, in: :body, schema: {
         title: :updateMemberDetails,

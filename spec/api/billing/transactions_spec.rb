@@ -16,6 +16,7 @@ describe 'Billing::Transactions API', type: :request do
     get 'Gets a list of transactions' do
       tags 'Transactions'
       operationId "listTransactions"
+      consumes 'application/json'
       parameter name: :startDate, in: :query, type: :string, required: false
       parameter name: :endDate, in: :query, type: :string, required: false
       parameter name: :refund, in: :query, type: :boolean, required: false
@@ -69,6 +70,7 @@ describe 'Billing::Transactions API', type: :request do
 
       tags 'Transactions'
       operationId "createTransaction"
+      consumes 'application/json'
       parameter name: :createTransactionDetails, in: :body, schema: {
         title: :createTransactionDetails, 
         type: :object,
