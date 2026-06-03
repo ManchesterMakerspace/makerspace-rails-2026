@@ -50,9 +50,13 @@ class Admin::SpaceUsageController < AdminController
     end
 
     # Fetch raw checkins in range
+    # Query both timeOf (newer Doorboto) and time (legacy field) for full coverage
     raw = checkins_col.find(
-      timeOf: { '$gte' => start_time, '$lte' => end_time }
-    ).projection(uid: 1, timeOf: 1).to_a
+      '$or' => [
+        { 'timeOf' => { '$gte' => start_time, '$lte' => end_time } },
+        { 'time'   => { '$gte' => start_time, '$lte' => end_time } }
+      ]
+    ).projection(uid: 1, timeOf: 1, time: 1).to_a
 
     # Deduplicate: one entry per (member_id, date_bucket)
     # timeOf is stored as milliseconds since epoch
@@ -62,7 +66,7 @@ class Admin::SpaceUsageController < AdminController
       member_id = uid_to_member[uid]
       next if member_id.blank?
 
-      ts   = Time.at(doc['timeOf'].to_i / 1000.0).utc
+      ts   = Time.at((doc['timeOf'] || doc['time']).to_i / 1000.0).utc
       date = ts.to_date
       key  = granularity == :day ? date.strftime('%Y-%m-%d') : date.strftime('%Y-%m')
 
@@ -83,15 +87,27 @@ class Admin::SpaceUsageController < AdminController
   def date_range
     checkins_col = Mongoid.default_client[:checkins]
 
-    earliest = checkins_col.find.sort(timeOf: 1).limit(1).first
-    latest   = checkins_col.find.sort(timeOf: -1).limit(1).first
+    # Check both time and timeOf fields for oldest/newest record
+    earliest_timeof = checkins_col.find('timeOf' => { '$exists' => true, '$ne' => nil }).sort(timeOf: 1).limit(1).first
+    earliest_time   = checkins_col.find('time'   => { '$exists' => true, '$ne' => nil }).sort(time: 1).limit(1).first
+    latest_timeof   = checkins_col.find('timeOf' => { '$exists' => true, '$ne' => nil }).sort(timeOf: -1).limit(1).first
+    latest_time     = checkins_col.find('time'   => { '$exists' => true, '$ne' => nil }).sort(time: -1).limit(1).first
 
-    if earliest.nil?
+    if earliest_timeof.nil? && earliest_time.nil?
       render plain: { earliest_year: Date.today.year, latest_year: Date.today.year }.to_json, content_type: "application/json" and return
     end
 
-    earliest_year = Time.at(earliest['timeOf'].to_i / 1000.0).utc.year
-    latest_year   = Time.at(latest['timeOf'].to_i / 1000.0).utc.year
+    earliest_ts = [
+      (earliest_timeof&.dig('timeOf') || Float::INFINITY),
+      (earliest_time&.dig('time')     || Float::INFINITY)
+    ].min
+    latest_ts = [
+      (latest_timeof&.dig('timeOf') || 0),
+      (latest_time&.dig('time')     || 0)
+    ].max
+
+    earliest_year = Time.at(earliest_ts.to_i / 1000.0).utc.year
+    latest_year   = Time.at(latest_ts.to_i / 1000.0).utc.year
 
     render plain: { earliest_year: earliest_year, latest_year: latest_year }.to_json, content_type: "application/json"
   end
