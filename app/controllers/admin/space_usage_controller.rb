@@ -74,7 +74,7 @@ class Admin::SpaceUsageController < AdminController
     data = seen.map { |date_key, members| { date: date_key, unique_members: members.size } }
                .sort_by { |d| d[:date] }
 
-    render json: data
+    render plain: data.to_json, content_type: "application/json"
   end
 
   # GET /api/admin/space_usage/date_range
@@ -87,12 +87,12 @@ class Admin::SpaceUsageController < AdminController
     latest   = checkins_col.find.sort(timeOf: -1).limit(1).first
 
     if earliest.nil?
-      render json: { earliest_year: Date.today.year, latest_year: Date.today.year } and return
+      render plain: { earliest_year: Date.today.year, latest_year: Date.today.year }.to_json, content_type: "application/json" and return
     end
 
     earliest_year = Time.at(earliest['timeOf'].to_i / 1000.0).utc.year
     latest_year   = Time.at(latest['timeOf'].to_i / 1000.0).utc.year
 
-    render json: { earliest_year: earliest_year, latest_year: latest_year }
+    render plain: { earliest_year: earliest_year, latest_year: latest_year }.to_json, content_type: "application/json"
   end
 end
