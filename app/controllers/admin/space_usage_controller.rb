@@ -66,7 +66,10 @@ class Admin::SpaceUsageController < AdminController
       member_id = uid_to_member[uid]
       next if member_id.blank?
 
-      ts   = Time.at((doc['timeOf'] || doc['time']).to_i / 1000.0).utc
+      # Use presence to treat empty string same as nil, then skip zero timestamps
+      ts_raw = doc['timeOf'].presence || doc['time']
+      next if ts_raw.blank? || ts_raw.to_i == 0
+      ts   = Time.at(ts_raw.to_i / 1000.0).utc
       date = ts.to_date
       key  = granularity == :day ? date.strftime('%Y-%m-%d') : date.strftime('%Y-%m')
 
