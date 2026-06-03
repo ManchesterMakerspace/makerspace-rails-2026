@@ -541,7 +541,7 @@ class SeedData
       join_date = member.startDate || 2.years.ago
       Rental.create!(
         member:               member,
-        number:               "H-#{spot.number}",   # prefix to avoid uniqueness collision
+        number:               "HIST-#{SecureRandom.hex(4).upcase}",
         rental_spot_id:       spot.id.to_s,
         description:          spot.description,
         expiration:           (Time.now + 6.months).to_i * 1000,
@@ -634,7 +634,7 @@ class SeedData
           status:        'available'
         )
         task.save!
-        task.set(:created_at, task_date)
+        task.set(created_at: task_date)
 
         # Claim
         task.update!(status: 'claimed', claimed_by_id: claimant.id, claimed_at: claim_date)
@@ -655,8 +655,8 @@ class SeedData
         )
         credit.save!
         # Set historical timestamps directly
-        credit.set(:created_at, verify_date)
-        credit.set(:updated_at, verify_date)
+        credit.set(created_at: verify_date)
+        credit.set(updated_at: verify_date)
 
         count_tasks  += 1
         count_credits += 1
@@ -712,8 +712,8 @@ class SeedData
           status:       'approved'
         )
         credit.save!
-        credit.set(:created_at, verify_date)
-        credit.set(:updated_at, verify_date)
+        credit.set(created_at: verify_date)
+        credit.set(updated_at: verify_date)
       end
     end
 
