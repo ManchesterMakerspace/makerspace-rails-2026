@@ -4,26 +4,48 @@ Dir[Rails.root.join('spec/support/**/*.rb')].each { |f| require f }
 class SeedData
   include FactoryBot::Syntax::Methods
 
-  # Seed 6 of each member type (indices 0-5). Keeps the sandbox lean.
+  # ── Constants ─────────────────────────────────────────────────────────────
+
+  # E2E test members — go through real Braintree sandbox
   MEMBER_COUNT = 6
 
-  # Braintree sandbox test nonce — only used on first run.
-  # Subsequent runs reuse existing Braintree customers via email lookup.
+  # Historical analytics members — no Braintree, just direct DB records
+  HISTORICAL_MEMBER_COUNT = 20
+
+  # How many years of historical data to generate
+  HISTORY_YEARS = 3
+
+  # Checkins per month per active member (random range)
+  CHECKINS_PER_MONTH_MIN = 20
+  CHECKINS_PER_MONTH_MAX = 30
+
   SANDBOX_VISA_NONCE = "fake-valid-visa-nonce".freeze
+  SANDBOX_PLAN_ID    = "membership-one-month-recurring".freeze
 
-  # PayPal and Venmo subscriptions skipped for now — basic_member0-5
-  # cover the full subscription lifecycle for v1 E2E tests.
-  # paypal_member0-5 are seeded as plain members without Braintree subscriptions.
+  VOLUNTEER_TASK_TITLES = [
+    ["Sweep woodshop floor",         "Sweep sawdust and debris from all floors in the woodshop"],
+    ["Organize lumber rack",          "Sort and label all lumber bins by species and dimension"],
+    ["Clean laser bed",               "Wipe down the laser cutter bed and lens with isopropyl"],
+    ["Restock consumables",           "Check and restock sandpaper, gloves, and safety glasses"],
+    ["Label tool storage",            "Print and affix labels to all unlabeled tool drawers"],
+    ["Wipe down 3D printers",         "Clean print beds and wipe down all 3D printer exteriors"],
+    ["Coil and store extension cords","Coil all loose extension cords and hang on wall hooks"],
+    ["Clean electronics workbench",   "Organize components, toss trash, wipe down bench surface"],
+    ["Sort scrap metal bin",          "Sort scrap metal by type and move oversized pieces to dumpster"],
+    ["Restock first aid kit",         "Inventory and restock the main first aid cabinet"],
+    ["Check fire extinguishers",      "Walk all shops and verify extinguisher inspection tags are current"],
+    ["Clean spray booth filters",     "Remove, wash and dry paint booth intake filters"],
+  ].freeze
 
-  # Plan ID must match an existing plan in your Braintree sandbox account.
-  SANDBOX_PLAN_ID = "membership-one-month-recurring".freeze
+  # ── Entry Point ───────────────────────────────────────────────────────────
 
   def call
     create_permissions
     create_members
     create_board_members
     create_resource_managers
-    create_rental_infrastructure   # Must run before create_rentals
+    create_rental_infrastructure
+    create_shops_and_tools
     create_rentals
     create_payments
     create_group
@@ -31,11 +53,19 @@ class SeedData
     create_invoice_options
     create_subscriptions
     create_member_cards
+    # Historical analytics data — order matters
+    create_historical_members
+    create_historical_invoices
+    create_historical_rentals
+    create_historical_checkouts
+    create_historical_volunteer_data
+    create_historical_checkins
+    create_membership_snapshots
   end
 
   private
 
-  # ── Members ──────────────────────────────────────────────────────────────────
+  # ── E2E Members (unchanged) ───────────────────────────────────────────────
 
   def create_members
     create_expired_members
@@ -100,9 +130,7 @@ class SeedData
     end
   end
 
-  # ── Rental infrastructure ────────────────────────────────────────────────────
-  # Mirrors db/seeds_rental_spots.rb — keep in sync if spot data changes.
-  # Must run before create_rentals so RentalSpots exist to link against.
+  # ── Rental Infrastructure ─────────────────────────────────────────────────
 
   def create_rental_infrastructure
     create_rental_invoice_options
@@ -113,24 +141,9 @@ class SeedData
 
   def create_rental_invoice_options
     [
-      {
-        name: "Monthly Tote Rental",
-        description: "Tote rental subscription automatically renews every month on the day the subscription started.",
-        amount: 15.0, quantity: 1, resource_class: "rental",
-        plan_id: "rental-monthly-tote", operation: "renew=", disabled: false,
-      },
-      {
-        name: "One Month Back Shop Shelf Rental",
-        description: "Full shelf rental subscription automatically renews every month.",
-        amount: 50.0, quantity: 1, resource_class: "rental",
-        plan_id: "2023-rental-month-Back-Shelf", operation: "renew=", disabled: false,
-      },
-      {
-        name: "One Month Half Back Shop Shelf Rental",
-        description: "Half shelf rental subscription automatically renews every month.",
-        amount: 30.0, quantity: 1, resource_class: "rental",
-        plan_id: "2023-rental-month-Half-Back-Shelf", operation: "renew=", disabled: false,
-      },
+      { name: "Monthly Tote Rental", description: "Tote rental subscription automatically renews every month on the day the subscription started.", amount: 15.0, quantity: 1, resource_class: "rental", plan_id: "rental-monthly-tote", operation: "renew=", disabled: false },
+      { name: "One Month Back Shop Shelf Rental", description: "Full shelf rental subscription automatically renews every month.", amount: 50.0, quantity: 1, resource_class: "rental", plan_id: "2023-rental-month-Back-Shelf", operation: "renew=", disabled: false },
+      { name: "One Month Half Back Shop Shelf Rental", description: "Half shelf rental subscription automatically renews every month.", amount: 30.0, quantity: 1, resource_class: "rental", plan_id: "2023-rental-month-Half-Back-Shelf", operation: "renew=", disabled: false },
     ].each do |opt|
       next if InvoiceOption.where(plan_id: opt[:plan_id]).exists?
       InvoiceOption.create!(opt)
@@ -141,7 +154,6 @@ class SeedData
     tote_opt       = InvoiceOption.find_by(plan_id: "rental-monthly-tote")
     half_shelf_opt = InvoiceOption.find_by(plan_id: "2023-rental-month-Half-Back-Shelf")
     full_shelf_opt = InvoiceOption.find_by(plan_id: "2023-rental-month-Back-Shelf")
-
     [
       { display_name: "Storage Tote",  invoice_option: tote_opt,       active: true },
       { display_name: "Full Shelf",    invoice_option: full_shelf_opt,  active: true },
@@ -150,11 +162,7 @@ class SeedData
       { display_name: "Plot",          invoice_option: nil,             active: true },
     ].each do |rt|
       next if RentalType.where(display_name: rt[:display_name]).exists?
-      RentalType.create!(
-        display_name:      rt[:display_name],
-        active:            rt[:active],
-        invoice_option_id: rt[:invoice_option]&.id&.to_s
-      )
+      RentalType.create!(display_name: rt[:display_name], active: rt[:active], invoice_option_id: rt[:invoice_option]&.id&.to_s)
     end
   end
 
@@ -163,7 +171,6 @@ class SeedData
     full_shelf_type = RentalType.find_by(display_name: "Full Shelf")
     half_shelf_type = RentalType.find_by(display_name: "Half Shelf")
     parking_type    = RentalType.find_by(display_name: "Parking Space")
-
     [
       { number: "LR-Tote-1", location: "Locker Room", description: "Black Tote", rental_type: tote_type,       requires_approval: false, parent_number: nil },
       { number: "LR-Tote-2", location: "Locker Room", description: "Black Tote", rental_type: tote_type,       requires_approval: false, parent_number: nil },
@@ -194,41 +201,55 @@ class SeedData
     ].each do |s|
       next if RentalSpot.where(number: s[:number]).exists?
       RentalSpot.create!(
-        number:            s[:number],
-        location:          s[:location],
-        description:       s[:description],
-        rental_type_id:    s[:rental_type]&.id&.to_s,
-        requires_approval: s[:requires_approval],
-        active:            true,
-        parent_number:     s[:parent_number]
+        number: s[:number], location: s[:location], description: s[:description],
+        rental_type_id: s[:rental_type]&.id&.to_s, requires_approval: s[:requires_approval],
+        active: true, parent_number: s[:parent_number]
       )
     end
   end
 
-  # ── Rentals ──────────────────────────────────────────────────────────────────
+  # ── Shops and Tools ───────────────────────────────────────────────────────
+
+  def create_shops_and_tools
+    return if Shop.count > 0
+    shop_data = [
+      { name: "3D Printers",  slack_channel: "shop-3dprinting",  tools: ["Prusa MK4", "Bambu X1C"] },
+      { name: "Woodshop",     slack_channel: "shop-woodworking",  tools: ["Table Saw", "Band Saw", "Planer", "Jointer", "Drill Press"] },
+      { name: "Metal Shop",   slack_channel: "shop-metalwork",    tools: ["MIG Welder", "TIG Welder", "Angle Grinder", "Metal Lathe"] },
+      { name: "Laser",        slack_channel: "shop-lasercutter",  tools: ["Laser Cutter 60W", "Laser Cutter 100W"] },
+      { name: "Electronics",  slack_channel: "shop-electronics",  tools: ["Oscilloscope", "Soldering Station", "PCB Mill"] },
+      { name: "Textile Arts", slack_channel: "shop-textile-arts", tools: ["Sewing Machine", "Embroidery Machine", "Serger"] },
+      { name: "Automotive",   slack_channel: "shop-automotive",   tools: ["Floor Jack", "OBD Scanner"] },
+      { name: "Paint",        slack_channel: "shop-paint",        tools: ["Spray Gun", "Air Compressor"] },
+    ]
+    shop_data.each do |s|
+      shop = Shop.create!(name: s[:name], slack_channel: s[:slack_channel])
+      s[:tools].each do |t|
+        Tool.create!(name: t, description: "#{t} in #{s[:name]}", shop: shop)
+      end
+    end
+    puts "  [seed] Created #{Shop.count} shops with #{Tool.count} tools."
+  end
+
+  # ── E2E Rentals ───────────────────────────────────────────────────────────
 
   def create_rentals
     assignable_spots = RentalSpot.where(requires_approval: false, active: true).to_a
     members = Member.where(:email.nin => ["household_primary@test.com", "household_secondary@test.com"])
                     .limit(assignable_spots.length).to_a
-
     assignable_spots.each_with_index do |spot, i|
       member = members[i % members.length]
       next unless member
       Rental.create!(
-        member:               member,
-        number:               spot.number,
-        rental_spot_id:       spot.id.to_s,
-        description:          spot.description,
-        expiration:           (Time.now + (i % 6 + 1).months).to_i * 1000,
-        status:               "active",
-        contract_signed_date: Date.today
+        member: member, number: spot.number, rental_spot_id: spot.id.to_s,
+        description: spot.description, expiration: (Time.now + (i % 6 + 1).months).to_i * 1000,
+        status: "active", contract_signed_date: Date.today
       )
     end
     puts "  [seed] Created #{Rental.count} rentals linked to spots."
   end
 
-  # ── Other ────────────────────────────────────────────────────────────────────
+  # ── Other E2E Data ────────────────────────────────────────────────────────
 
   def create_payments
     10.times { create(:payment) }
@@ -236,24 +257,16 @@ class SeedData
 
   def create_group
     primary = create(:member,
-      email:               "household_primary@test.com",
-      firstname:           "Household",
-      lastname:            "Primary",
-      expirationTime:      (Time.now + 1.year).to_i * 1000,
-      address_street:      "42 Elm Street",
-      address_city:        "Manchester",
-      address_state:       "NH",
-      address_postal_code: "03101"
+      email: "household_primary@test.com", firstname: "Household", lastname: "Primary",
+      expirationTime: (Time.now + 1.year).to_i * 1000,
+      address_street: "42 Elm Street", address_city: "Manchester",
+      address_state: "NH", address_postal_code: "03101"
     )
     secondary = create(:member,
-      email:               "household_secondary@test.com",
-      firstname:           "Household",
-      lastname:            "Secondary",
-      expirationTime:      (Time.now + 6.months).to_i * 1000,
-      address_street:      "42 Elm Street",
-      address_city:        "Manchester",
-      address_state:       "NH",
-      address_postal_code: "03101"
+      email: "household_secondary@test.com", firstname: "Household", lastname: "Secondary",
+      expirationTime: (Time.now + 6.months).to_i * 1000,
+      address_street: "42 Elm Street", address_city: "Manchester",
+      address_state: "NH", address_postal_code: "03101"
     )
     Invoice.create!(
       member: primary, name: "Household Membership", description: "Household membership plan",
@@ -274,63 +287,43 @@ class SeedData
   end
 
   def create_invoice_options
-    create(:invoice_option, name: "One Month",    amount: 65.0,  id: "one-month",      plan_id: "membership-one-month-recurring",     discount_id: "monthly_membership_sso")
-    create(:invoice_option, name: "Three Months", amount: 190.0, id: "three-months",   plan_id: "membership-three-month-recurring",   discount_id: "quarterly_membership_sso")
-    create(:invoice_option, name: "One Year",     amount: 765.0, id: "one-year",       plan_id: "membership-twelve-month-recurring",  discount_id: "annual_membership_sso")
+    create(:invoice_option, name: "One Month",    amount: 65.0,  id: "one-month",    plan_id: "membership-one-month-recurring",    discount_id: "monthly_membership_sso")
+    create(:invoice_option, name: "Three Months", amount: 190.0, id: "three-months", plan_id: "membership-three-month-recurring",  discount_id: "quarterly_membership_sso")
+    create(:invoice_option, name: "One Year",     amount: 765.0, id: "one-year",     plan_id: "membership-twelve-month-recurring", discount_id: "annual_membership_sso")
     create(:invoice_option,
-      name:        "Household Monthly Membership Subscription",
-      amount:      125.0, id: "household-one-month",
-      plan_id:     "2024_household-membership-one-month-recurring",
+      name: "Household Monthly Membership Subscription", amount: 125.0, id: "household-one-month",
+      plan_id: "2024_household-membership-one-month-recurring",
       description: "Membership subscription for two adults in the same household, automatically renews every month on the day the subscription started"
     )
   end
 
   def create_permissions
-    DefaultPermission.create(name: :billing,            enabled: true)
-    DefaultPermission.create(name: :custom_billing,     enabled: false)
-    DefaultPermission.create(name: :earned_membership,  enabled: true)
+    DefaultPermission.create(name: :billing,           enabled: true)
+    DefaultPermission.create(name: :custom_billing,    enabled: false)
+    DefaultPermission.create(name: :earned_membership, enabled: true)
   end
 
-  # ── Braintree subscriptions ──────────────────────────────────────────────────
-  #
-  # Creates/reuses subscriptions for basic_member0-5 (credit card via Visa nonce)
-  # and paypal_member0-5 (PayPal billing agreement via PayPal nonce).
-  #
-  # db:db_reset wipes MongoDB but leaves Braintree sandbox intact.
-  # On subsequent runs we search by email, reconnect existing customers/subscriptions
-  # to the fresh MongoDB records, and skip creating new Braintree objects.
-  #
-  # Venmo: Venmo does not support recurring subscriptions in Braintree.
-  # Venmo payment flows are covered by manual testing against existing members.
+  # ── FOB Cards for Braintree members ──────────────────────────────────────
 
-  # Create a card (FOB) for every member that has a Braintree subscription.
-  # Uses a realistic-looking hex UID so Doorboto-style lookups work in tests.
-  # Skips members who already have a card (idempotent on reseed).
   def create_member_cards
     subscribed_members = Member.where(subscription: true)
     created = 0
     subscribed_members.each do |member|
       next if Card.where(member_id: member.id).exists?
-      uid = SecureRandom.hex(7).upcase  # 14-char hex, e.g. "A3F2B1C4D5E6F7"
       Card.create!(
-        member_id: member.id,
-        uid:       uid,
-        holder:    member.fullname,
-        validity:  member.status,
-        expiry:    member.expirationTime
+        member_id: member.id, uid: SecureRandom.hex(7).upcase,
+        holder: member.fullname, validity: member.status, expiry: member.expirationTime
       )
       created += 1
     end
     puts "  [seed] Created #{created} member cards (#{Card.count} total)."
   end
 
+  # ── Braintree Subscriptions ───────────────────────────────────────────────
+
   def create_subscriptions
     gateway        = Service::BraintreeGateway.connect_gateway
     invoice_option = InvoiceOption.find("one-month")
-
-    # All active roles are paying members and need a Braintree subscription.
-    # Searches by email first — reuses existing Braintree customer/subscription
-    # if found, so db:db_reset never creates duplicate billing.
     {
       "basic_member"  => "Basic",
       "admin_member"  => "Admin",
@@ -351,17 +344,13 @@ class SeedData
   def seed_subscription_for(member, invoice_option, gateway, nonce)
     results           = gateway.customer.search { |s| s.email.is(member.email) }
     existing_customer = results.first
-
     if existing_customer
       active_sub = find_active_subscription(existing_customer)
-
       if active_sub
         reconnect_member(member, existing_customer, active_sub, invoice_option)
         puts "  [seed] Reused subscription for #{member.fullname}: #{active_sub.id}"
         return
       end
-
-      # Customer exists, subscription was cancelled — reuse payment method
       token = existing_customer.payment_methods.first&.token
       if token
         member.update!(customer_id: existing_customer.id)
@@ -369,19 +358,14 @@ class SeedData
         return
       end
     end
-
-    # First run — create customer + payment method from nonce
     result = gateway.customer.create(
-      first_name:           member.firstname,
-      last_name:            member.lastname,
-      email:                member.email,
-      payment_method_nonce: nonce
+      first_name: member.firstname, last_name: member.lastname,
+      email: member.email, payment_method_nonce: nonce
     )
     unless result.success?
       puts "  [seed] Warning: Could not create Braintree customer for #{member.fullname}: #{result.message}"
       return
     end
-
     member.update!(customer_id: result.customer.id)
     create_braintree_subscription(member, invoice_option, result.customer.payment_methods.first.token, gateway)
   end
@@ -397,58 +381,445 @@ class SeedData
 
   def reconnect_member(member, customer, subscription, invoice_option)
     member.update!(
-      customer_id:     customer.id,
-      subscription_id: subscription.id,
-      subscription:    true,
-      expirationTime:  subscription.paid_through_date.to_time.to_i * 1000
+      customer_id: customer.id, subscription_id: subscription.id,
+      subscription: true, expirationTime: subscription.paid_through_date.to_time.to_i * 1000
     )
     Invoice.create!(
-      member:            member,
-      name:              invoice_option.name,
-      description:       invoice_option.description,
-      amount:            invoice_option.amount,
-      quantity:          invoice_option.quantity,
-      plan_id:           invoice_option.plan_id,
-      payment_method_id: subscription.payment_method_token,
-      resource_class:    "member",
-      resource_id:       member.id,
-      operation:         invoice_option.operation,
-      subscription_id:   subscription.id,
-      due_date:          subscription.next_billing_date,
-      settled_at:        Time.now
+      member: member, name: invoice_option.name, description: invoice_option.description,
+      amount: invoice_option.amount, quantity: invoice_option.quantity,
+      plan_id: invoice_option.plan_id, payment_method_id: subscription.payment_method_token,
+      resource_class: "member", resource_id: member.id, operation: invoice_option.operation,
+      subscription_id: subscription.id, due_date: subscription.next_billing_date, settled_at: Time.now
     )
   end
 
   def create_braintree_subscription(member, invoice_option, payment_method_token, gateway)
     invoice = Invoice.create!(
-      member:            member,
-      name:              invoice_option.name,
-      description:       invoice_option.description,
-      amount:            invoice_option.amount,
-      quantity:          invoice_option.quantity,
-      plan_id:           invoice_option.plan_id,
-      payment_method_id: payment_method_token,
-      resource_class:    "member",
-      resource_id:       member.id,
-      operation:         invoice_option.operation,
-      due_date:          Time.now + 1.month
+      member: member, name: invoice_option.name, description: invoice_option.description,
+      amount: invoice_option.amount, quantity: invoice_option.quantity,
+      plan_id: invoice_option.plan_id, payment_method_id: payment_method_token,
+      resource_class: "member", resource_id: member.id, operation: invoice_option.operation,
+      due_date: Time.now + 1.month
     )
     subscription_id = invoice.generate_subscription_id
     result = gateway.subscription.create(
       payment_method_token: payment_method_token,
-      plan_id:              SANDBOX_PLAN_ID,
-      id:                   subscription_id
+      plan_id: SANDBOX_PLAN_ID,
+      id: subscription_id
     )
     unless result.success?
       puts "  [seed] Warning: Could not create subscription for #{member.fullname}: #{result.message}"
       return
     end
-    member.update!(
-      subscription_id: subscription_id,
-      subscription:    true,
-      expirationTime:  (Time.now + invoice_option.quantity.months).to_i * 1000
-    )
+    member.update!(subscription_id: subscription_id, subscription: true, expirationTime: (Time.now + invoice_option.quantity.months).to_i * 1000)
     invoice.update!(subscription_id: subscription_id, settled_at: Time.now)
     puts "  [seed] Created subscription for #{member.fullname}: #{subscription_id}"
+  end
+
+  # ── Historical Members ────────────────────────────────────────────────────
+  #
+  # 20 members seeded directly — no Braintree calls.
+  # startDate spread across HISTORY_YEARS so the membership growth chart
+  # shows realistic month-over-month trends.
+  # Each member gets a card UID for checkin matching.
+
+  def create_historical_members
+    first_names = %w[James Emma Liam Olivia Noah Ava William Sophia Benjamin Isabella
+                     Elijah Mia Lucas Charlotte Mason Amelia Ethan Harper Alexander Evelyn]
+    last_names  = %w[Smith Johnson Williams Brown Jones Garcia Miller Davis Wilson Moore
+                     Taylor Anderson Thomas Jackson White Harris Martin Thompson Lee Walker]
+
+    total_months = HISTORY_YEARS * 12
+    months_per_member = total_months.to_f / HISTORICAL_MEMBER_COUNT
+
+    HISTORICAL_MEMBER_COUNT.times do |n|
+      # Spread join dates evenly across the history window
+      months_ago  = (total_months - (n * months_per_member)).round
+      join_date   = months_ago.months.ago
+      # Members stay active for 1-3 years from join date
+      active_years = [1, 1, 2, 2, 3].sample
+      expiry_time  = join_date + active_years.years
+
+      # Some members are now expired, some still active
+      is_active = expiry_time > Time.now
+      status    = is_active ? 'activeMember' : 'inactive'
+
+      member = Member.create!(
+        email:          "hist_member#{n}@test.com",
+        firstname:      first_names[n % first_names.length],
+        lastname:       last_names[(n + 7) % last_names.length],
+        role:           'member',
+        status:         status,
+        startDate:      join_date,
+        expirationTime: expiry_time.to_i * 1000,
+        subscription:   true,
+        address_street:      "#{100 + n} Main St",
+        address_city:        "Manchester",
+        address_state:       "NH",
+        address_postal_code: "03101"
+      )
+
+      # Issue a card so checkins can be attributed
+      Card.create!(
+        member_id: member.id,
+        uid:       SecureRandom.hex(7).upcase,
+        holder:    member.fullname,
+        validity:  member.status,
+        expiry:    member.expirationTime
+      )
+    end
+    puts "  [seed] Created #{HISTORICAL_MEMBER_COUNT} historical members with cards."
+  end
+
+  # ── Historical Invoices ───────────────────────────────────────────────────
+  #
+  # One settled invoice per year per historical member.
+  # No Braintree subscription_id — these are direct payment records.
+  # Callbacks skipped for past-dated invoice creation to avoid side effects.
+
+  def create_historical_invoices
+    historical_members = Member.where(:email.in => (0...HISTORICAL_MEMBER_COUNT).map { |n| "hist_member#{n}@test.com" })
+    count = 0
+
+    historical_members.each do |member|
+      join_date   = member.startDate || HISTORY_YEARS.years.ago
+      expiry_time = Time.at(member.expirationTime / 1000.0)
+      active_years = ((expiry_time - join_date) / 1.year).ceil.clamp(1, HISTORY_YEARS)
+
+      active_years.times do |year_offset|
+        invoice_date = join_date + year_offset.years
+        next if invoice_date > Time.now
+
+        # Use skip_callback to avoid triggering Braintree/email side effects
+        Invoice.skip_callback(:create, :after, :send_rental_email)
+        Invoice.skip_callback(:save,   :before, :set_due_date)
+        begin
+          Invoice.create!(
+            member:         member,
+            name:           "Annual Membership — #{invoice_date.year}",
+            description:    "Annual membership payment",
+            amount:         65.0,
+            quantity:       1,
+            resource_class: "member",
+            resource_id:    member.id.to_s,
+            operation:      "renew=",
+            plan_id:        "membership-one-month-recurring",
+            due_date:       invoice_date + 1.month,
+            settled_at:     invoice_date,
+            created_at:     invoice_date
+          )
+          count += 1
+        rescue => e
+          puts "  [seed] Warning: Could not create invoice for #{member.fullname}: #{e.message}"
+        ensure
+          Invoice.set_callback(:create, :after, :send_rental_email)
+          Invoice.set_callback(:save,   :before, :set_due_date)
+        end
+      end
+    end
+    puts "  [seed] Created #{count} historical invoices."
+  end
+
+  # ── Historical Rentals ────────────────────────────────────────────────────
+  #
+  # Assign rentals to historical members with historical contract dates.
+
+  def create_historical_rentals
+    historical_members = Member.where(:email.in => (0...HISTORICAL_MEMBER_COUNT).map { |n| "hist_member#{n}@test.com" }).to_a
+    available_spots    = RentalSpot.where(requires_approval: false, active: true).to_a
+    count = 0
+
+    # Assign a spot to every other historical member
+    historical_members.each_with_index do |member, i|
+      next if i.odd?
+      spot = available_spots[i % available_spots.length]
+      next unless spot
+
+      # Skip spots already rented
+      next if Rental.where(number: spot.number, :status.in => %w[active pending]).exists?
+
+      join_date = member.startDate || 2.years.ago
+      Rental.create!(
+        member:               member,
+        number:               "H-#{spot.number}",   # prefix to avoid uniqueness collision
+        rental_spot_id:       spot.id.to_s,
+        description:          spot.description,
+        expiration:           (Time.now + 6.months).to_i * 1000,
+        status:               member.status == 'activeMember' ? 'active' : 'cancelled',
+        contract_signed_date: join_date.to_date
+      )
+      count += 1
+    end
+    puts "  [seed] Created #{count} historical rentals."
+  end
+
+  # ── Historical Tool Checkouts ─────────────────────────────────────────────
+  #
+  # Check out each historical active member on 2-4 tools.
+  # checked_out_at spread across their membership period.
+
+  def create_historical_checkouts
+    tools   = Tool.all.to_a
+    return if tools.empty?
+
+    admin   = Member.find_by(email: "admin_member0@test.com")
+    return unless admin
+
+    historical_members = Member.where(:email.in => (0...HISTORICAL_MEMBER_COUNT).map { |n| "hist_member#{n}@test.com" }).to_a
+    count = 0
+
+    historical_members.each do |member|
+      join_date    = member.startDate || 2.years.ago
+      checkout_tools = tools.sample(rand(2..4))
+
+      checkout_tools.each_with_index do |tool, i|
+        checkout_date = join_date + (i + 1).months
+        next if checkout_date > Time.now
+
+        ToolCheckout.create!(
+          member:       member,
+          tool:         tool,
+          approved_by:  admin,
+          checked_out_at: checkout_date,
+          signed_off_via: "portal"
+        )
+        count += 1
+      end
+    end
+    puts "  [seed] Created #{count} historical tool checkouts."
+  end
+
+  # ── Historical Volunteer Data ─────────────────────────────────────────────
+  #
+  # Creates completed volunteer tasks and associated credits spread across
+  # the full history window. Each task goes through the full lifecycle:
+  #   created → claimed → pending → completed (with credit issued)
+  #
+  # Uses Timecop-style timestamp manipulation via direct field assignment
+  # since we need historical created_at/completed_at values.
+
+  def create_historical_volunteer_data
+    admin   = Member.find_by(email: "admin_member0@test.com")
+    return unless admin
+
+    historical_members = Member.where(
+      :email.in => (0...HISTORICAL_MEMBER_COUNT).map { |n| "hist_member#{n}@test.com" },
+      status:      'activeMember'
+    ).to_a
+    return if historical_members.empty?
+
+    total_months   = HISTORY_YEARS * 12
+    tasks_per_month = 2
+    count_tasks    = 0
+    count_credits  = 0
+
+    total_months.times do |month_offset|
+      task_date = month_offset.months.ago
+
+      tasks_per_month.times do |t|
+        title_data  = VOLUNTEER_TASK_TITLES[(month_offset * tasks_per_month + t) % VOLUNTEER_TASK_TITLES.length]
+        claim_date  = task_date + 3.days
+        done_date   = claim_date + 2.days
+        verify_date = done_date + 1.day
+        next if verify_date > Time.now
+
+        claimant = historical_members[(month_offset + t) % historical_members.length]
+
+        # Create parent task
+        task = VolunteerTask.new(
+          title:         title_data[0],
+          description:   title_data[1],
+          credit_value:  [0.5, 1.0, 1.0, 1.5].sample,
+          created_by_id: admin.id,
+          status:        'available'
+        )
+        task.save!
+        task.set(:created_at, task_date)
+
+        # Claim
+        task.update!(status: 'claimed', claimed_by_id: claimant.id, claimed_at: claim_date)
+
+        # Mark pending
+        task.update!(status: 'pending', completed_at: done_date)
+
+        # Verify and issue credit — bypass model callbacks for historical timestamps
+        task.update!(status: 'completed', verified_by_id: admin.id)
+
+        credit = VolunteerCredit.new(
+          member_id:    claimant.id,
+          issued_by_id: admin.id,
+          task_id:      task.id,
+          description:  "Completed bounty task: #{title_data[0]}",
+          credit_value: task.credit_value,
+          status:       'approved'
+        )
+        credit.save!
+        # Set historical timestamps directly
+        credit.set(:created_at, verify_date)
+        credit.set(:updated_at, verify_date)
+
+        count_tasks  += 1
+        count_credits += 1
+      end
+    end
+
+    # Also seed a few multi-use task types for UI testing
+    seed_multiuse_tasks(admin, historical_members)
+
+    puts "  [seed] Created #{count_tasks} completed volunteer tasks and #{count_credits} credits."
+  end
+
+  def seed_multiuse_tasks(admin, members)
+    [
+      { status: 'reusable',   title: 'Weekly Woodshop Sweep',   description: 'Sweep the woodshop floor and empty the dust collector', days: nil },
+      { status: 'repeatable', title: 'Assist at Open House',    description: 'Help run the monthly open house event for prospective members', days: nil },
+      { status: 'recurring',  title: 'Restock Consumables',     description: 'Check and restock PPE, sandpaper and other consumables in all shops', days: 14 },
+    ].each do |task_attrs|
+      task = VolunteerTask.create!(
+        title:         task_attrs[:title],
+        description:   task_attrs[:description],
+        credit_value:  1.0,
+        created_by_id: admin.id,
+        status:        task_attrs[:status],
+        days:          task_attrs[:days]
+      )
+
+      # Create 2-3 completed child claims for each multi-use task
+      members.first(3).each_with_index do |member, i|
+        claim_date  = (i + 1).months.ago
+        verify_date = claim_date + 5.days
+        next if verify_date > Time.now
+
+        child = VolunteerTask.create!(
+          title:          task.title,
+          description:    task.description,
+          credit_value:   task.credit_value,
+          created_by_id:  admin.id,
+          parent_task_id: task.id,
+          status:         'completed',
+          claimed_by_id:  member.id,
+          claimed_at:     claim_date,
+          completed_at:   claim_date + 3.days,
+          verified_by_id: admin.id
+        )
+
+        credit = VolunteerCredit.new(
+          member_id:    member.id,
+          issued_by_id: admin.id,
+          task_id:      child.id,
+          description:  "Completed bounty task: #{task.title}",
+          credit_value: task.credit_value,
+          status:       'approved'
+        )
+        credit.save!
+        credit.set(:created_at, verify_date)
+        credit.set(:updated_at, verify_date)
+      end
+    end
+
+    # Leave one of each type in claimable state for E2E testing
+    VolunteerTask.create!(
+      title: 'Available Standard Task',   description: 'A standard one-time task ready to claim',
+      credit_value: 1.0, created_by_id: admin.id, status: 'available'
+    )
+    VolunteerTask.create!(
+      title: 'Available Reusable Task',   description: 'A reusable task — each member may claim once',
+      credit_value: 1.0, created_by_id: admin.id, status: 'reusable'
+    )
+    VolunteerTask.create!(
+      title: 'Available Repeatable Task', description: 'A repeatable task — claim as many times as you like',
+      credit_value: 1.0, created_by_id: admin.id, status: 'repeatable'
+    )
+    VolunteerTask.create!(
+      title: 'Available Recurring Task',  description: 'A recurring task — resets every 7 days',
+      credit_value: 1.0, created_by_id: admin.id, status: 'recurring', days: 7
+    )
+  end
+
+  # ── Historical Checkins ───────────────────────────────────────────────────
+  #
+  # Writes directly to the checkins collection (raw Mongo) to avoid any
+  # model layer assumptions. Uses card UIDs from historical members.
+  # 20-30 unique member checkins per month for 3 years.
+
+  def create_historical_checkins
+    checkins_col = Mongoid.default_client[:checkins]
+    cards        = Card.where(:member_id.in =>
+      Member.where(:email.in => (0...HISTORICAL_MEMBER_COUNT).map { |n| "hist_member#{n}@test.com" }).map(&:id)
+    ).to_a
+
+    return if cards.empty?
+
+    total_months  = HISTORY_YEARS * 12
+    total_inserted = 0
+
+    total_months.times do |month_offset|
+      # Reference point: first day of this month
+      month_start = month_offset.months.ago.beginning_of_month
+      month_end   = month_start.end_of_month
+      days_in_month = (month_end.to_date - month_start.to_date).to_i + 1
+
+      checkins_this_month = rand(CHECKINS_PER_MONTH_MIN..CHECKINS_PER_MONTH_MAX)
+
+      # Pick random members and random days — deduplicate per member per day
+      seen = {}
+      attempts = 0
+      inserted = 0
+
+      while inserted < checkins_this_month && attempts < checkins_this_month * 3
+        attempts += 1
+        card = cards.sample
+        day  = rand(0..days_in_month - 1)
+        key  = "#{card.uid}-#{day}"
+        next if seen[key]
+        seen[key] = true
+
+        checkin_time = month_start + day.days + rand(6..22).hours + rand(60).minutes
+        next if checkin_time > Time.now
+
+        checkins_col.insert_one(
+          '_id'     => BSON::ObjectId.new,
+          'uid'     => card.uid,
+          'timeOf'  => (checkin_time.to_i * 1000),
+          'holder'  => card.holder,
+          'validity'=> card.validity
+        )
+        inserted     += 1
+        total_inserted += 1
+      end
+    end
+
+    puts "  [seed] Created #{total_inserted} historical checkin records across #{total_months} months."
+  end
+
+  # ── Membership Snapshots ──────────────────────────────────────────────────
+  #
+  # Generate one snapshot per month for the full history window.
+  # Each snapshot records which member IDs were active at the last day of that month.
+  # Mirrors the logic in the existing rake task.
+
+  def create_membership_snapshots
+    total_months = HISTORY_YEARS * 12
+    count = 0
+
+    total_months.times do |month_offset|
+      snapshot_date = month_offset.months.ago.end_of_month.to_date
+      next if MembershipSnapshot.where(date: snapshot_date).exists?
+
+      snapshot_time_ms = snapshot_date.to_time.to_i * 1000
+
+      active_member_ids = Member.where(
+        :startDate.lte      => snapshot_date.to_time,
+        :expirationTime.gte => snapshot_time_ms
+      ).map { |m| m.id.as_json }
+
+      MembershipSnapshot.create!(
+        date:           snapshot_date,
+        active_members: active_member_ids
+      )
+      count += 1
+    end
+
+    puts "  [seed] Created #{count} monthly membership snapshots (#{MembershipSnapshot.count} total)."
   end
 end
