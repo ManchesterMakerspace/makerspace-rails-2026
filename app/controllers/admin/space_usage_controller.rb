@@ -101,12 +101,12 @@ class Admin::SpaceUsageController < AdminController
     end
 
     earliest_ts = [
-      (earliest_timeof&.dig('timeOf') || Float::INFINITY),
-      (earliest_time&.dig('time')     || Float::INFINITY)
+      (earliest_timeof&.dig('timeOf').presence&.to_i || Float::INFINITY),
+      (earliest_time&.dig('time').presence&.to_i     || Float::INFINITY)
     ].min
     latest_ts = [
-      (latest_timeof&.dig('timeOf') || 0),
-      (latest_time&.dig('time')     || 0)
+      (latest_timeof&.dig('timeOf').presence&.to_i || 0),
+      (latest_time&.dig('time').presence&.to_i     || 0)
     ].max
 
     earliest_year = Time.at(earliest_ts.to_i / 1000.0).utc.year
