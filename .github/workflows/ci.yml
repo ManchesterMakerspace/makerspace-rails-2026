@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
 
 # Which React repo/branch to pull for UI build and E2E.
-# Switch REACT_REPO to ManchesterMakerspace/makerspace-react once the
+# REACT_REPO points at ManchesterMakerspace/makerspace-react-2026.
 # upstream PR is merged.
 env:
-  REACT_REPO:   thannemann/makerspace-react-2026
+  REACT_REPO:   ManchesterMakerspace/makerspace-react-2026
   REACT_BRANCH: master
 
 jobs:
