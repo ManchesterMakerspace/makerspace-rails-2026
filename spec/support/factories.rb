@@ -23,6 +23,8 @@ FactoryBot.define do
     address_city { "Boston" }
     address_state { "MA" }
     address_postal_code { "90210" }
+    startDate            { rand(1..48).months.ago }
+    subscription         { false }
 
     trait :expired do
       after(:build) do |member|

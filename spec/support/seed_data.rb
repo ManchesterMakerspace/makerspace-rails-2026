@@ -30,6 +30,7 @@ class SeedData
     create_rejection_cards
     create_invoice_options
     create_subscriptions
+    create_member_cards
   end
 
   private
@@ -301,6 +302,27 @@ class SeedData
   #
   # Venmo: Venmo does not support recurring subscriptions in Braintree.
   # Venmo payment flows are covered by manual testing against existing members.
+
+  # Create a card (FOB) for every member that has a Braintree subscription.
+  # Uses a realistic-looking hex UID so Doorboto-style lookups work in tests.
+  # Skips members who already have a card (idempotent on reseed).
+  def create_member_cards
+    subscribed_members = Member.where(subscription: true)
+    created = 0
+    subscribed_members.each do |member|
+      next if Card.where(member_id: member.id).exists?
+      uid = SecureRandom.hex(7).upcase  # 14-char hex, e.g. "A3F2B1C4D5E6F7"
+      Card.create!(
+        member_id: member.id,
+        uid:       uid,
+        holder:    member.fullname,
+        validity:  member.status,
+        expiry:    member.expirationTime
+      )
+      created += 1
+    end
+    puts "  [seed] Created #{created} member cards (#{Card.count} total)."
+  end
 
   def create_subscriptions
     gateway        = Service::BraintreeGateway.connect_gateway
