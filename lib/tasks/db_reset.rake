@@ -113,3 +113,22 @@ def evaluate_results(results)
     end
   end
 end
+
+namespace :db do
+  desc "Seeds historical analytics data without wiping existing records. Safe to run on production."
+  task :seed_analytics => :environment do
+    require 'factory_bot'
+    Dir[Rails.root.join('spec/support/**/*.rb')].each { |f| require f }
+
+    puts "Seeding historical analytics data (non-destructive)..."
+    seeder = SeedData.new
+    seeder.send(:create_historical_members)
+    seeder.send(:create_historical_invoices)
+    seeder.send(:create_historical_rentals)
+    seeder.send(:create_historical_checkouts)
+    seeder.send(:create_historical_volunteer_data)
+    seeder.send(:create_historical_checkins)
+    seeder.send(:create_membership_snapshots)
+    puts "Analytics seeding complete."
+  end
+end
