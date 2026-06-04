@@ -9,33 +9,33 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
   let(:member) { create(:member) }
 
   let!(:log1) do
-    travel_to(2.days.ago) do
-      AuditLog.create!(
-        log_type:      'member',
-        event_type:    'member_updated',
-        resource_type: 'Member',
-        resource_id:   member.id,
-        actor_id:      admin.id,
-        actor_name:    admin.fullname,
-        subject_id:    member.id,
-        subject_name:  member.fullname,
-        slack_message: 'Member Updated by Admin on Jane Smith\'s Member'
-      )
-    end
+    log = AuditLog.create!(
+      log_type:      'member',
+      event_type:    'member_updated',
+      resource_type: 'Member',
+      resource_id:   member.id,
+      actor_id:      admin.id,
+      actor_name:    admin.fullname,
+      subject_id:    member.id,
+      subject_name:  member.fullname,
+      slack_message: 'Member Updated by Admin on Jane Smith\'s Member'
+    )
+    log.set(created_at: 2.days.ago)
+    log
   end
 
   let!(:log2) do
-    travel_to(1.day.ago) do
-      AuditLog.create!(
-        log_type:      'portal',
-        event_type:    'portal_setting_changed',
-        resource_type: 'SystemConfig',
-        resource_id:   BSON::ObjectId.new,
-        actor_id:      board.id,
-        actor_name:    board.fullname,
-        slack_message: 'Portal Setting Changed by Board on SystemConfig'
-      )
-    end
+    log = AuditLog.create!(
+      log_type:      'portal',
+      event_type:    'portal_setting_changed',
+      resource_type: 'SystemConfig',
+      resource_id:   BSON::ObjectId.new,
+      actor_id:      board.id,
+      actor_name:    board.fullname,
+      slack_message: 'Portal Setting Changed by Board on SystemConfig'
+    )
+    log.set(created_at: 1.day.ago)
+    log
   end
 
   describe 'GET #index' do

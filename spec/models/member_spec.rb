@@ -186,8 +186,8 @@ RSpec.describe Member, type: :model do
       it "schedules a slack and google drive invite" do
         member = build(:member)
         # invite_gdrive/writer come from extend Service::GoogleDrive — stub via the module
-        allow(Service::GoogleDrive).to receive(:invite_gdrive).and_return(nil)
-        allow(Service::GoogleDrive).to receive(:invite_gdrive_writer).and_return(nil)
+        allow_any_instance_of(Service::GoogleDrive).to receive(:invite_gdrive).and_return(nil)
+        allow_any_instance_of(Service::GoogleDrive).to receive(:invite_gdrive_writer).and_return(nil)
         expect(MemberSubscriber).to receive(:invite_to_slack).with(
           member.email,
           member.lastname,
@@ -223,8 +223,8 @@ RSpec.describe Member, type: :model do
         # Mock this publish so Slack tracking only applies to update and not create
         allow(member).to receive(:publish_create)
         new_email = "foo_changed@test.com"
-        allow(Service::GoogleDrive).to receive(:invite_gdrive).and_return(nil)
-        allow(Service::GoogleDrive).to receive(:invite_gdrive_writer).and_return(nil)
+        allow_any_instance_of(Service::GoogleDrive).to receive(:invite_gdrive).and_return(nil)
+        allow_any_instance_of(Service::GoogleDrive).to receive(:invite_gdrive_writer).and_return(nil)
         expect(MemberSubscriber).to receive(:invite_to_slack).with(
           new_email,
           member.lastname,

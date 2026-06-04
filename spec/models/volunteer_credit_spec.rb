@@ -113,13 +113,14 @@ describe VolunteerCredit, type: :model do
       allow(VolunteerCredit).to receive(:max_discounts_per_year).and_return(2)
       allow(VolunteerCredit).to receive(:discount_id).and_return('monthly_membership_sso')
       allow_any_instance_of(VolunteerCredit).to receive(:apply_braintree_discount).and_return(nil)
-      allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).and_return(nil)
       allow_any_instance_of(VolunteerCredit).to receive(:notify_no_subscription).and_return(nil)
+      # notify_discount_applied NOT stubbed here — individual tests stub/expect it as needed
       # member needs a subscription_id for discount to apply
       member.update!(subscription_id: 'sub_test_123')
     end
 
     it 'triggers discount when credits reach threshold' do
+      allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).and_return(nil)
       4.times do
         VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 1.0))
           .tap { |c| c.approve!(admin) }
@@ -128,6 +129,7 @@ describe VolunteerCredit, type: :model do
     end
 
     it 'triggers discount with fractional credits summing to threshold' do
+      allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).and_return(nil)
       2.times do
         VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 2.0))
           .tap { |c| c.approve!(admin) }
@@ -137,6 +139,7 @@ describe VolunteerCredit, type: :model do
     end
 
     it 'does not trigger discount when sum falls short' do
+      allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).and_return(nil)
       3.times do
         VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 1.0))
           .tap { |c| c.approve!(admin) }
@@ -145,6 +148,7 @@ describe VolunteerCredit, type: :model do
     end
 
     it 'does not apply discount for earned membership members' do
+      allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).and_return(nil)
       allow(EarnedMembership).to receive_message_chain(:where, :exists?).and_return(true)
       4.times do
         VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 1.0))
@@ -154,6 +158,7 @@ describe VolunteerCredit, type: :model do
     end
 
     it 'stops applying discounts after max_discounts_per_year' do
+      allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).and_return(nil)
       8.times do
         VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 1.0))
           .tap { |c| c.approve!(admin) }
