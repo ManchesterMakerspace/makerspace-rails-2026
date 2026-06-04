@@ -433,6 +433,9 @@ class SeedData
     months_per_member = total_months.to_f / HISTORICAL_MEMBER_COUNT
 
     HISTORICAL_MEMBER_COUNT.times do |n|
+      # Skip if already seeded (idempotent)
+      next if Member.where(email: "hist_member#{n}@test.com").exists?
+
       # Spread join dates evenly across the history window
       months_ago  = (total_months - (n * months_per_member)).round
       join_date   = months_ago.months.ago
@@ -599,6 +602,12 @@ class SeedData
   # since we need historical created_at/completed_at values.
 
   def create_historical_volunteer_data
+    # Skip if already seeded
+    if VolunteerTask.where(:title.in => VOLUNTEER_TASK_TITLES.map(&:first)).exists?
+      puts "  [seed] Historical volunteer data already seeded, skipping."
+      return
+    end
+
     admin   = Member.find_by(email: "admin_member0@test.com")
     return unless admin
 
@@ -744,6 +753,15 @@ class SeedData
 
   def create_historical_checkins
     checkins_col = Mongoid.default_client[:checkins]
+
+    # Skip if historical checkins already exist (idempotent)
+    hist_uids = Card.where(:member_id.in =>
+      Member.where(:email.in => (0...HISTORICAL_MEMBER_COUNT).map { |n| "hist_member#{n}@test.com" }).map(&:id)
+    ).map(&:uid)
+    if hist_uids.any? && checkins_col.find("uid" => { "$in" => hist_uids }).count > 0
+      puts "  [seed] Historical checkins already seeded, skipping."
+      return
+    end
     cards        = Card.where(:member_id.in =>
       Member.where(:email.in => (0...HISTORICAL_MEMBER_COUNT).map { |n| "hist_member#{n}@test.com" }).map(&:id)
     ).to_a
