@@ -263,7 +263,7 @@ RSpec.describe Invoice, type: :model do
       describe "Cancel by invoice" do
         it "Notifies the member and management of the cancellation" do
           expect(SlackUser).to receive(:find_by).with({ member_id: member.id }).and_return(SlackUser.new())
-          expect(paid_invoice).to receive(:enque_message).twice
+          expect(::Service::SlackConnector).to receive(:send_slack_message).twice
           paid_invoice.send_cancellation_notification
         end
 
@@ -271,7 +271,7 @@ RSpec.describe Invoice, type: :model do
           outstanding_rental_invoice
           rental.delete
           expect(SlackUser).to receive(:find_by).with({ member_id: member.id }).and_return(SlackUser.new())
-          expect(outstanding_rental_invoice).to receive(:enque_message).twice
+          expect(::Service::SlackConnector).to receive(:send_slack_message).twice
           outstanding_rental_invoice.send_cancellation_notification
         end
       end

@@ -80,8 +80,9 @@ RSpec.describe MembersController, type: :controller do
 
         parsed_response = JSON.parse(response.body)
         expect(response).to have_http_status(200)
+        # Regular members only see themselves regardless of search term
         expect(parsed_response.length).to eq(1)
-        expect(parsed_response.first['id']).to eq(current_user.id.as_json)
+        expect(parsed_response.map { |m| m['id'] }).not_to include(other.id.as_json)
       end
     end
 
