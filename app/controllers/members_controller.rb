@@ -41,7 +41,7 @@ class MembersController < AuthenticationController
     def update
         raise Error::NotFound.new unless defined?(@member.id)
         #  We are in the non-admin path, and Non admins can only update themselves
-        if @member.id != current_member.id?
+        if @member.id != current_member.id
             Rails.logger.warn("Calling update for #{@member.id} while logged in as #{@current_member.id}!")
             raise Error::Forbidden.new
         end
