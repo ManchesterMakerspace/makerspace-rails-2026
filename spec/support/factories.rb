@@ -102,9 +102,9 @@ FactoryBot.define do
   end
 
   factory :group do
-    association :member
-    groupRep { member.fullname }
-    groupName { member.id.to_s }
+    member
+    active_members { build_list :member, 5 }
+    groupName { generate(:group_name) }
     expiry { generate(:expiry) }
   end
 
@@ -168,7 +168,7 @@ FactoryBot.define do
 
   factory :earned_membership do
     association :member
-    after(:create) do |earned_membership|
+    after(:build) do |earned_membership|
       FactoryBot.create_list(:requirement, 2, earned_membership: earned_membership)
     end
   end
@@ -326,8 +326,8 @@ FactoryBot.define do
     status { ::Braintree::Subscription::Status::Active }
     price { "65.00" }
     next_billing_period_amount { "65.00" }
-    first_billing_date { Time.now }
-    next_billing_date { Time.now + 1.month }
+    first_billing_date { Time.now.to_s }
+    next_billing_date { (Time.now + 1.month).to_s }
     transactions { [] }
     add_ons { [] }
     discounts { [] }
