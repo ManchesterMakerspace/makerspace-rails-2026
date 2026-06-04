@@ -20,7 +20,7 @@ class MembersController < AuthenticationController
         end
       else
         # Regular members can only see themselves
-        raise Error::NotFound.new if @current_member.nil?
+        raise Error::NotFound.new unless defined?(@current_member)
         search = base_query.where(id: current_member.id)
       end
 
@@ -29,7 +29,7 @@ class MembersController < AuthenticationController
     end
 
     def show
-        raise Error::NotFound.new if @member.nil || @member.id.nil?
+        raise Error::NotFound.new unless defined?(@member)
          if @member.id == current_member.id || is_admin? || is_board_member? || is_resource_manager?
             render json: @member, serializer: MemberSerializer, adapter: :attributes and return
          else
@@ -39,13 +39,13 @@ class MembersController < AuthenticationController
     end
 
     def update
-        raise Error::NotFound.new if @member.nil || @member.id.nil?
+        raise Error::NotFound.new unless defined?(@member)
         #  We are in the non-admin path, and Non admins can only update themselves
         if @member.id != current_member.id?
             Rails.logger.warn("Calling update for #{member.id} while logged in as #{current_member.id}!")
             raise Error::Forbidden.new
         end
-        raise Error::Forbidden.new if @member.nil?
+        raise Error::Forbidden.new unless defined?(@member)
 
       before = @member.attributes.dup
 
