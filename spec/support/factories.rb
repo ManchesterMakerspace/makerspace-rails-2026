@@ -329,8 +329,8 @@ FactoryBot.define do
     status { ::Braintree::Subscription::Status::Active }
     price { "65.00" }
     next_billing_period_amount { "65.00" }
-    first_billing_date { Time.now }
-    next_billing_date { Time.now + 1.month }
+    first_billing_date { Time.now.to_s }
+    next_billing_date { (Time.now + 1.month).to_s }
     transactions { [] }
     add_ons { [] }
     discounts { [] }

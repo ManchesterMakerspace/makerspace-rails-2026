@@ -38,7 +38,9 @@ class EarnedMembership
 
   private
   def get_shortest_term_end_time
-    min_req_term = requirements.min_by(&:term_length).current_term
+    min_req = requirements.min_by(&:term_length)
+    return nil if min_req.nil?
+    min_req_term = min_req.current_term
     min_req_term && min_req_term.end_date.to_i * 1000
   end
 
