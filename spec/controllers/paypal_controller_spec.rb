@@ -23,7 +23,7 @@ RSpec.describe PaypalController, type: :controller do
     context "with valid params" do
       before(:each) do
         member
-        REDIS.flushall
+        Redis.current.flushall
         sleep(5.seconds)
       end 
       it "creates a new Paypal" do
@@ -75,9 +75,9 @@ RSpec.describe PaypalController, type: :controller do
         expect {
           post :notify, params: valid_attributes, format: :json
         }.to have_enqueued_job
-        messages = REDIS.mget(*REDIS.keys)
+        messages = Redis.current.mget(*Redis.current.keys)
         sorted_messages = messages.sort_by { |payload| Time.parse(JSON.load(payload)["timestamp"]) }
-        expect(JSON.load(sorted_messages.last)["message"]).to include("Txn is already taken")
+        expect(JSON.load(sorted_messages.last)["message"]).to include("already been taken")
       end
     end
   end

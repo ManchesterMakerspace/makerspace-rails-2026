@@ -36,7 +36,7 @@ class VolunteerCredit
 
   validates :member_id,    presence: true
   validates :description,  presence: true
-  validates :credit_value, numericality: true  # allows negative for reversal records
+  validates :credit_value, numericality: { other_than: 0 }  # 0 invalid; negative allowed for reversal records
   validates_inclusion_of :status, in: %w[pending approved rejected reversal]
 
   validate :approver_is_not_self

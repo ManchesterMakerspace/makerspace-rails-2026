@@ -335,8 +335,8 @@ FactoryBot.define do
     failure_count { 0 }
     days_past_due { 0 }
     billing_day_of_month { "10" }
-    billing_period_end_date { Time.now + 1.month }
-    billing_period_start_date { Time.now }
+    billing_period_end_date { (Time.now + 1.month).to_s }
+    billing_period_start_date { Time.now.to_s }
     payment_method_token { "g7291" }
 
     initialize_with { new(braintree_gateway, attributes) }

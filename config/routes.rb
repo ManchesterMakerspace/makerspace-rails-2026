@@ -106,6 +106,7 @@ Rails.application.routes.draw do
       get    '/volunteer/credits',            to: 'volunteer#credits'
       get    '/volunteer/summary',            to: 'volunteer#summary'
       get    '/volunteer/tasks',              to: 'volunteer#tasks'
+      get    '/volunteer/tasks/my_claims',    to: 'volunteer#my_claims'
       get    '/volunteer/events',             to: 'volunteer#events'
       post   '/volunteer/tasks/:id/claim',    to: 'volunteer#claim_task'
       post   '/volunteer/tasks/:id/complete', to: 'volunteer#complete_task'
@@ -167,18 +168,7 @@ Rails.application.routes.draw do
           end
         end
         resources :permissions, only: [:index, :update]
-        resources :analytics, only: [:index] do
-          collection do
-            get :member_growth
-            get :active_members
-            get :volunteer_summary
-          end
-        end
-        resources :space_usage, only: [:index] do
-          collection do
-            get :date_range
-          end
-        end
+        resources :analytics, only: [:index]
 
         # Member Portal Settings
         resources :system_configs, only: [:index] do
@@ -217,6 +207,7 @@ Rails.application.routes.draw do
             post :cancel
             post :release
             post :reject_pending
+            post :reset_cooldown
           end
         end
 

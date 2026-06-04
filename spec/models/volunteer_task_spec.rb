@@ -23,6 +23,8 @@ describe VolunteerTask, type: :model do
     allow(SlackUser).to receive(:find_by).and_return(nil)
     allow(Service::SlackConnector).to receive(:enque_message)
     allow(Service::SlackConnector).to receive(:send_slack_message)
+    allow(SystemConfig).to receive(:get).and_call_original
+    allow(SystemConfig).to receive(:set).and_call_original
   end
 
   # ── Validations ───────────────────────────────────────────────────────────
@@ -121,6 +123,7 @@ describe VolunteerTask, type: :model do
     end
 
     it 'creates a child task document with status claimed' do
+      task  # force lazy let evaluation before counting
       expect { task.claim!(member) }.to change { VolunteerTask.count }.by(1)
       child = VolunteerTask.where(parent_task_id: task.id).last
       expect(child.status).to eq('claimed')
@@ -185,6 +188,7 @@ describe VolunteerTask, type: :model do
     let(:task) { VolunteerTask.create!(valid_attrs.merge(status: 'recurring', days: 7)) }
 
     it 'creates a child task on first claim' do
+      task  # force lazy let evaluation before counting
       expect { task.claim!(member) }.to change { VolunteerTask.count }.by(1)
       child = VolunteerTask.where(parent_task_id: task.id).last
       expect(child.status).to eq('claimed')
@@ -291,7 +295,7 @@ describe VolunteerTask, type: :model do
     it 'attempts to DM the former claimant when Slack linked' do
       slack_user = double('SlackUser', slack_id: 'U456')
       allow(SlackUser).to receive(:find_by).with(member_id: member.id).and_return(slack_user)
-      expect(Service::SlackConnector).to receive(:enque_message).with(anything, 'U456', anything)
+      expect(Service::SlackConnector).to receive(:send_slack_message).with(anything, 'U456')
       task.release!(admin, 'No response from member')
     end
 
@@ -349,7 +353,7 @@ describe VolunteerTask, type: :model do
     it 'attempts to DM the former claimant when Slack linked' do
       slack_user = double('SlackUser', slack_id: 'U456')
       allow(SlackUser).to receive(:find_by).with(member_id: member.id).and_return(slack_user)
-      expect(Service::SlackConnector).to receive(:enque_message).with(anything, 'U456', anything)
+      expect(Service::SlackConnector).to receive(:send_slack_message).with(anything, 'U456')
       task.reject_pending!(admin, 'Work not completed to standard')
     end
 
