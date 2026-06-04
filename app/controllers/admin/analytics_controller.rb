@@ -70,44 +70,47 @@ class Admin::AnalyticsController < AdminController
   end
 
   # GET /api/admin/analytics/active_members
-  # Active member count over time from MembershipSnapshot (daily snapshots).
+  # Active member count per month derived directly from the Member table.
+  # No dependency on MembershipSnapshot or any scheduled job.
+  #
+  # For each month in the range, counts members where:
+  #   startDate <= end_of_month  AND  expirationTime >= end_of_month_ms
+  #   AND status == 'activeMember'
   #
   # Params:
-  #   year  (integer, optional) — filter to a calendar year
-  #   month (integer 1-12, optional) — combined with year, filter to a month
-  #   granularity (day|month, default: month) — group daily snapshots into months
+  #   year (integer, optional) — filter to a calendar year
   #
   # Response: [{ date: "2024-01", count: 142 }, ...]
   def active_members
-    snapshots = MembershipSnapshot.all.order_by(date: :asc)
-
+    # Determine date range
     if params[:year].present?
-      year  = params[:year].to_i
-      start = Date.new(year, 1, 1)
-      fin   = Date.new(year, 12, 31)
-      snapshots = snapshots.where(:date.gte => start, :date.lte => fin)
-
-      if params[:month].present?
-        month = params[:month].to_i
-        start = Date.new(year, month, 1)
-        fin   = start.end_of_month
-        snapshots = snapshots.where(:date.gte => start, :date.lte => fin)
-      end
+      year       = params[:year].to_i
+      start_date = Date.new(year, 1, 1)
+      end_date   = Date.new(year, 12, 31)
+    else
+      # Default: from the earliest member startDate to today
+      earliest = Member.where(:startDate.ne => nil).min(:startDate)
+      start_date = earliest ? earliest.to_date.beginning_of_month : 3.years.ago.to_date
+      end_date   = Date.today
     end
 
-    granularity = params[:granularity] == 'day' ? :day : :month
+    # Walk month by month and count active members at end of each month
+    data      = []
+    cursor    = start_date.beginning_of_month
+    end_month = end_date.beginning_of_month
 
-    if granularity == :day
-      data = snapshots.map do |s|
-        { date: s.date.strftime('%Y-%m-%d'), count: s.active_members.length }
-      end
-    else
-      # Group by year-month, take the last snapshot of each month as the count
-      grouped = snapshots.group_by { |s| s.date.strftime('%Y-%m') }
-      data = grouped.map do |month_str, snaps|
-        last = snaps.max_by(&:date)
-        { date: month_str, count: last.active_members.length }
-      end.sort_by { |d| d[:date] }
+    while cursor <= end_month
+      month_end    = cursor.end_of_month
+      month_end_ms = month_end.to_time.to_i * 1000
+
+      count = Member.where(
+        :startDate.lte      => month_end.to_time,
+        :expirationTime.gte => month_end_ms,
+        status:               'activeMember'
+      ).count
+
+      data << { date: cursor.strftime('%Y-%m'), count: count }
+      cursor = cursor >> 1  # advance one month
     end
 
     render json: data
