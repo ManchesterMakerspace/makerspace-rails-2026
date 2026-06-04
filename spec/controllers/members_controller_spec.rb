@@ -97,13 +97,12 @@ RSpec.describe MembersController, type: :controller do
   describe "GET #show" do
     login_user
     it "renders json of the retrieved member" do
-      member = create(:member)
-      get :show, params: {id: member.to_param}, format: :json
+      get :show, params: {id: current_user.to_param}, format: :json
 
       parsed_response = JSON.parse(response.body)
       expect(response).to have_http_status(200)
       expect(response.media_type).to eq "application/json"
-      expect(parsed_response['id']).to eq(Member.last.id.as_json)
+      expect(parsed_response['id']).to eq(current_user.id.as_json)
     end
 
     it "raises not found if member doesn't exist" do
@@ -112,11 +111,10 @@ RSpec.describe MembersController, type: :controller do
     end
     
     it "includes the latest mailtrap details when mailtrap_id is present" do
-      member = create(:member)
-      mailtrap_event = create(:mailtrap_event, member: member, email: member.email, occurred_at: Time.utc(2026, 4, 24, 12, 30, 0))
-      member.set(mailtrap_id: mailtrap_event.id)
+      mailtrap_event = create(:mailtrap_event, member: current_user, email: current_user.email, occurred_at: Time.utc(2026, 4, 24, 12, 30, 0))
+      current_user.set(mailtrap_id: mailtrap_event.id)
 
-      get :show, params: { id: member.to_param }, format: :json
+      get :show, params: { id: current_user.to_param }, format: :json
 
       parsed_response = JSON.parse(response.body)
       expect(response).to have_http_status(200)

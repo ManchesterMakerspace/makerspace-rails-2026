@@ -21,7 +21,7 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
       slack_message: 'Member Updated by Admin on Jane Smith\'s Member'
     )
     log.set(created_at: 2.days.ago)
-    log
+    log.reload
   end
 
   let!(:log2) do
@@ -35,7 +35,7 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
       slack_message: 'Portal Setting Changed by Board on SystemConfig'
     )
     log.set(created_at: 1.day.ago)
-    log
+    log.reload
   end
 
   describe 'GET #index' do

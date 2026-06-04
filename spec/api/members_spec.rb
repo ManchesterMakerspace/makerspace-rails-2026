@@ -38,8 +38,9 @@ describe 'Members API', type: :request do
       parameter name: :id, in: :path, type: :string
 
       response '200', 'Member found' do
-        before { sign_in create(:member) }
-        let(:id) { create(:member).id }
+        let(:current_member) { create(:member) }
+        before { sign_in current_member }
+        let(:id) { current_member.id }
 
         schema '$ref' => '#/components/schemas/Member'
 
