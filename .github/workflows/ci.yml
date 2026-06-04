@@ -139,6 +139,12 @@ jobs:
           ruby-version: '3.2.9'
           bundler-cache: true
 
+      - name: Create stub UI assets for RSpec
+        run: |
+          mkdir -p app/assets/builds
+          touch app/assets/builds/makerspace-react.js
+          touch app/assets/builds/makerspace-react.css
+
       - name: Run RSpec
         run: bundle exec rspec
 
