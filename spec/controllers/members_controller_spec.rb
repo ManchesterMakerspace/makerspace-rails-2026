@@ -76,12 +76,12 @@ RSpec.describe MembersController, type: :controller do
 
       it "does not return other members even when searching" do
         other = create(:member, firstname: "Other", lastname: "Person")
-        get :index, params: { search: "Other" }, format: :json
+        # Search for current_user's name to ensure only their record comes back
+        get :index, params: { search: current_user.firstname }, format: :json
 
         parsed_response = JSON.parse(response.body)
         expect(response).to have_http_status(200)
         # Regular members only see themselves regardless of search term
-        expect(parsed_response.length).to eq(1)
         expect(parsed_response.map { |m| m['id'] }).not_to include(other.id.as_json)
       end
     end

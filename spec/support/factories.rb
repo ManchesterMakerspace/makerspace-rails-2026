@@ -102,9 +102,9 @@ FactoryBot.define do
   end
 
   factory :group do
-    member
-    active_members { build_list :member, 5 }
-    groupName { generate(:group_name) }
+    association :member
+    groupRep { member.fullname }
+    groupName { member.id.to_s }
     expiry { generate(:expiry) }
   end
 
@@ -168,7 +168,7 @@ FactoryBot.define do
 
   factory :earned_membership do
     association :member
-    after(:build) do |earned_membership|
+    after(:create) do |earned_membership|
       FactoryBot.create_list(:requirement, 2, earned_membership: earned_membership)
     end
   end

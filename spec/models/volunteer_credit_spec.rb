@@ -88,7 +88,7 @@ describe VolunteerCredit, type: :model do
     it 'attempts to DM the member via Slack when linked' do
       slack_user = double('SlackUser', slack_id: 'U123')
       allow(SlackUser).to receive(:find_by).with(member_id: member.id).and_return(slack_user)
-      expect(Service::SlackConnector).to receive(:enque_message).with(anything, 'U123', anything)
+      expect(Service::SlackConnector).to receive(:send_slack_message).with(anything, 'U123')
       credit.approve!(admin)
     end
   end
@@ -111,6 +111,12 @@ describe VolunteerCredit, type: :model do
     before do
       allow(VolunteerCredit).to receive(:credits_per_discount).and_return(4.0)
       allow(VolunteerCredit).to receive(:max_discounts_per_year).and_return(2)
+      allow(VolunteerCredit).to receive(:discount_id).and_return('monthly_membership_sso')
+      allow_any_instance_of(VolunteerCredit).to receive(:apply_braintree_discount).and_return(nil)
+      allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).and_return(nil)
+      allow_any_instance_of(VolunteerCredit).to receive(:notify_no_subscription).and_return(nil)
+      # member needs a subscription_id for discount to apply
+      member.update!(subscription_id: 'sub_test_123')
     end
 
     it 'triggers discount when credits reach threshold' do
@@ -159,7 +165,7 @@ describe VolunteerCredit, type: :model do
     end
 
     it 'notifies treasurer channel when discount is triggered' do
-      expect(Service::SlackConnector).to receive(:enque_message).at_least(:once)
+      expect_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).at_least(:once)
       4.times do
         VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 1.0))
           .tap { |c| c.approve!(admin) }

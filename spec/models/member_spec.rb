@@ -185,10 +185,9 @@ RSpec.describe Member, type: :model do
     describe "on create" do
       it "schedules a slack and google drive invite" do
         member = build(:member)
-        # invite_gdrive/writer raise Error::NotAllowed when GDRIVE_INVITES_ENABLED != 'true'
-        # which is rescued silently — stub them to verify the call is attempted
-        allow(MemberSubscriber).to receive(:invite_gdrive).and_return(nil)
-        allow(MemberSubscriber).to receive(:invite_gdrive_writer).and_return(nil)
+        # invite_gdrive/writer come from extend Service::GoogleDrive — stub via the module
+        allow(Service::GoogleDrive).to receive(:invite_gdrive).and_return(nil)
+        allow(Service::GoogleDrive).to receive(:invite_gdrive_writer).and_return(nil)
         expect(MemberSubscriber).to receive(:invite_to_slack).with(
           member.email,
           member.lastname,
@@ -224,8 +223,8 @@ RSpec.describe Member, type: :model do
         # Mock this publish so Slack tracking only applies to update and not create
         allow(member).to receive(:publish_create)
         new_email = "foo_changed@test.com"
-        allow(MemberSubscriber).to receive(:invite_gdrive).and_return(nil)
-        allow(MemberSubscriber).to receive(:invite_gdrive_writer).and_return(nil)
+        allow(Service::GoogleDrive).to receive(:invite_gdrive).and_return(nil)
+        allow(Service::GoogleDrive).to receive(:invite_gdrive_writer).and_return(nil)
         expect(MemberSubscriber).to receive(:invite_to_slack).with(
           new_email,
           member.lastname,
@@ -236,7 +235,7 @@ RSpec.describe Member, type: :model do
 
       it "Updates billing if a customer" do 
         customer = create(:member, customer_id: "foo")
-        allow(MemberSubscriber).to receive(:connect_gateway).and_return(gateway)
+        allow(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
         mock_customer_chain = double 
         expect(gateway).to receive(:customer).and_return(mock_customer_chain)
         expect(mock_customer_chain).to receive(:update).with(
