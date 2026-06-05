@@ -172,6 +172,9 @@ describe VolunteerCredit, type: :model do
     it 'notifies treasurer channel when discount is triggered' do
       notified = 0
       allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied) { notified += 1 }
+      allow_any_instance_of(VolunteerCredit).to receive(:apply_braintree_discount) do |instance|
+        instance.send(:notify_discount_applied, member, { amount: '10.00' })
+      end
       attrs = { member_id: member.id, issued_by_id: admin.id, description: 'test', credit_value: 1.0, status: 'pending' }
       4.times do
         VolunteerCredit.create!(attrs)

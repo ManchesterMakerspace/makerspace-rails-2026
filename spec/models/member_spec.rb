@@ -219,9 +219,9 @@ RSpec.describe Member, type: :model do
 
       it "Reinvites to services if email changes" do
         new_email = "foo_changed@test.com"
-        allow(MemberSubscriber).to receive(:invite_gdrive).and_return(nil)
-        allow(MemberSubscriber).to receive(:invite_gdrive_writer).and_return(nil)
-        expect(MemberSubscriber).to receive(:invite_to_slack).with(
+        allow(Service::GoogleDrive).to receive(:invite_gdrive).and_return(nil)
+        allow(Service::GoogleDrive).to receive(:invite_gdrive_writer).and_return(nil)
+        expect(Service::SlackConnector).to receive(:invite_to_slack).with(
           new_email,
           member.lastname,
           member.firstname,
@@ -230,9 +230,9 @@ RSpec.describe Member, type: :model do
       end
 
       it "Updates billing if a customer" do 
-        allow(MemberSubscriber).to receive(:invite_gdrive).and_return(nil)
-        allow(MemberSubscriber).to receive(:invite_gdrive_writer).and_return(nil)
-        allow(MemberSubscriber).to receive(:invite_to_slack).and_return(nil)
+        allow(Service::GoogleDrive).to receive(:invite_gdrive).and_return(nil)
+        allow(Service::GoogleDrive).to receive(:invite_gdrive_writer).and_return(nil)
+        allow(Service::SlackConnector).to receive(:invite_to_slack).and_return(nil)
         customer = create(:member, customer_id: "foo")
         mock_customer_chain = double 
         allow(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
