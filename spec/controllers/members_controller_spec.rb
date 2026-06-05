@@ -119,7 +119,7 @@ RSpec.describe MembersController, type: :controller do
       parsed_response = JSON.parse(response.body)
       expect(response).to have_http_status(200)
       expect(parsed_response["mailtrap"]).to include(
-        "email" => member.email,
+        "email" => current_user.email,
         "status" => "delivery",
         "timestamp" => "2026-04-24T08:30:00-04:00"
       )

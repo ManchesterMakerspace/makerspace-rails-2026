@@ -22,10 +22,10 @@ module ControllerMacros
   end
 
   def login_user
+    let(:current_user) { create(:member) }
     before(:each) do
       @request.env["devise.mapping"] = Devise.mappings[:member]
-      user = create(:member)
-      sign_in user
+      sign_in current_user
     end
   end
 end
