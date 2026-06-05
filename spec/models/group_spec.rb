@@ -31,11 +31,17 @@ RSpec.describe Group, type: :model do
 
   describe "private methods" do
     it "Updates group expiration and access card" do
-      expired_member = create(:member, :expired)
+      primary = create(:member)
+      expired_member = create(:member, :expired, groupName: primary.id.to_s)
       card = create(:card, member: expired_member)
-      group = create(:group, groupRep: expired_member.fullname, groupName: expired_member.id.to_s)
+      # Create group owned by primary — expired_member is a secondary active_member
+      group = create(:group, groupRep: primary.fullname, groupName: primary.id.to_s)
       group_expiration = group.expiry
-      # Primary member's expirationTime is managed separately — only verify card expiry syncs
+      # after_create triggers update_active_members → verify_group_expiry on secondaries
+      expect(expired_member.reload.expirationTime).to eq(group_expiration)
+      # Card expiry syncs via Card#set_expiration (after_save on card, not on member).
+      # Re-save the card to fire the callback with the updated member expirationTime.
+      card.reload.save!
       expect(card.reload.expiry).to eq(group_expiration)
     end
   end

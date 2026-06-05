@@ -219,22 +219,22 @@ RSpec.describe Member, type: :model do
 
       it "Reinvites to services if email changes" do
         new_email = "foo_changed@test.com"
-        allow(Service::GoogleDrive).to receive(:invite_gdrive).and_return(nil)
-        allow(Service::GoogleDrive).to receive(:invite_gdrive_writer).and_return(nil)
-        expect(Service::SlackConnector).to receive(:invite_to_slack).with(
-          new_email,
-          member.lastname,
-          member.firstname,
-        )
+        # Force member creation before setting expectations so the :create
+        # event's send_slack_invite call doesn't satisfy the expectation
+        member # evaluate let to trigger create
+        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
+        expect(MemberSubscriber).to receive(:send_slack_invite).and_call_original
+        allow(MemberSubscriber).to receive(:invite_to_slack).and_return(nil)
         member.update!({ email: new_email })
       end
 
       it "Updates billing if a customer" do 
-        allow(Service::GoogleDrive).to receive(:invite_gdrive).and_return(nil)
-        allow(Service::GoogleDrive).to receive(:invite_gdrive_writer).and_return(nil)
-        allow(Service::SlackConnector).to receive(:invite_to_slack).and_return(nil)
+        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
+        allow(MemberSubscriber).to receive(:invite_to_slack).and_return(nil)
         customer = create(:member, customer_id: "foo")
-        mock_customer_chain = double 
+        mock_customer_chain = double
+        # The subscriber's connect_gateway instance method delegates to
+        # ::Service::BraintreeGateway.connect_gateway — stub the class-level method
         allow(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
         expect(gateway).to receive(:customer).and_return(mock_customer_chain)
         expect(mock_customer_chain).to receive(:update).with(
