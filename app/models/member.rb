@@ -292,6 +292,20 @@ class Member
     :expirationTime
   end
 
+  # Devise hook — prevents revoked/suspended members from signing in.
+  def active_for_authentication?
+    super && !%w[revoked suspended].include?(status)
+  end
+
+  # Returns the i18n key used by DeviseFailure to build the error message.
+  def inactive_message
+    case status
+    when 'revoked'   then :revoked
+    when 'suspended' then :suspended
+    else super
+    end
+  end
+
   private
   def update_card
     self.access_cards.each do |c|
@@ -326,19 +340,7 @@ class Member
   end
 
 
-  # Devise hook — prevents revoked/suspended members from signing in.
-  def active_for_authentication?
-    super && !%w[revoked suspended].include?(status)
-  end
 
-  # Returns the i18n key used by DeviseFailure to build the error message.
-  def inactive_message
-    case status
-    when 'revoked'   then :revoked
-    when 'suspended' then :suspended
-    else super
-    end
-  end
 
   def email_required?
     false
