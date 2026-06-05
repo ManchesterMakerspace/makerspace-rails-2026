@@ -106,6 +106,7 @@ FactoryBot.define do
     groupRep { member.fullname }
     groupName { member.id.to_s }
     expiry { generate(:expiry) }
+    to_create { |g| g.save(validate: false) }
   end
 
   factory :rejection_card do

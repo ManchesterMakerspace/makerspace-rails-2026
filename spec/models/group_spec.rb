@@ -21,7 +21,7 @@ RSpec.describe Group, type: :model do
     # it { is_expected.to have_many(:active_members).with_primary_key("groupName").as_inverse_of(:group).with_foreign_key("groupName")}
   end
   it "has a valid factory" do
-    expect(build(:group)).to be_valid
+    expect(create(:group)).to be_valid
   end
 
   # describe "callbacks" do
@@ -33,7 +33,7 @@ RSpec.describe Group, type: :model do
     it "Updates group expiration and access card" do
       expired_member = create(:member, :expired)
       card = create(:card, member: expired_member)
-      group = create(:group, groupRep: expired_member)
+      group = create(:group, groupRep: expired_member.fullname, groupName: expired_member.id.to_s)
       group_expiration = group.expiry #multiply by 1000 bc js used ms instead of seconds
       expect(expired_member.expirationTime).to eq(group_expiration)
       expect(card.expiry).to eq(group_expiration)

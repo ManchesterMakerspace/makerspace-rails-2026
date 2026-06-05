@@ -170,11 +170,14 @@ describe VolunteerCredit, type: :model do
     end
 
     it 'notifies treasurer channel when discount is triggered' do
-      expect_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).at_least(:once)
+      notified = 0
+      allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied) { notified += 1 }
+      attrs = { member_id: member.id, issued_by_id: admin.id, description: 'test', credit_value: 1.0, status: 'pending' }
       4.times do
-        VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 1.0))
+        VolunteerCredit.create!(attrs)
           .tap { |c| c.approve!(admin) }
       end
+      expect(notified).to be > 0
     end
   end
 end
