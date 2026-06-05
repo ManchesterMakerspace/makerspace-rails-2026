@@ -53,21 +53,21 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
         get :index, params: { log_type: 'portal' }, format: :json
         parsed = JSON.parse(response.body)
         expect(parsed.length).to eq(1)
-        expect(parsed.first['event_type']).to eq('portal_setting_changed')
+        expect(parsed.first['eventType']).to eq('portal_setting_changed')
       end
 
       it 'filters by event_type' do
         get :index, params: { event_type: 'member_updated' }, format: :json
         parsed = JSON.parse(response.body)
         expect(parsed.length).to eq(1)
-        expect(parsed.first['log_type']).to eq('member')
+        expect(parsed.first['logType']).to eq('member')
       end
 
       it 'filters by actor_id' do
         get :index, params: { actor_id: admin.id.to_s }, format: :json
         parsed = JSON.parse(response.body)
         expect(parsed.length).to eq(1)
-        expect(parsed.first['actor_name']).to eq(admin.fullname)
+        expect(parsed.first['actorName']).to eq(admin.fullname)
       end
 
       it 'filters by subject_id' do
@@ -80,13 +80,13 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
         get :index, params: { from_date: 1.5.days.ago.to_s }, format: :json
         parsed = JSON.parse(response.body)
         expect(parsed.length).to eq(1)
-        expect(parsed.first['event_type']).to eq('portal_setting_changed')
+        expect(parsed.first['eventType']).to eq('portal_setting_changed')
       end
 
       it 'returns logs ordered newest first' do
         get :index, format: :json
         parsed = JSON.parse(response.body)
-        dates = parsed.map { |l| Time.parse(l['created_at']) }
+        dates = parsed.map { |l| Time.parse(l['createdAt']) }
         expect(dates).to eq(dates.sort.reverse)
       end
     end
