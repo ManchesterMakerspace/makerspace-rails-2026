@@ -95,7 +95,7 @@ GEM
     cgi (0.5.1)
     chunky_png (1.4.0)
     concurrent-ruby (1.3.6)
-    connection_pool (2.5.5)
+    connection_pool (3.0.2)
     crass (1.0.6)
     database_cleaner-core (2.0.1)
     database_cleaner-mongoid (2.0.1)
@@ -475,7 +475,7 @@ DEPENDENCIES
   bcrypt (~> 3.1)
   braintree (~> 4.0)
   concurrent-ruby (~> 1.3)
-  connection_pool (~> 2.4)
+  connection_pool (~> 3.0)
   database_cleaner-mongoid
   debug
   devise (~> 4.9)
@@ -535,12 +535,12 @@ CHECKSUMS
   braintree (4.38.0) sha256=a67f682337d9c0934b1ce6f257b290bec553355a50189d6e424f82b3e2a46494
   bson (5.2.0) sha256=c468c1e8a3cfa1e80531cc519a890f85586986721d8e305f83465cc36bb82608
   builder (3.3.0) sha256=497918d2f9dca528fdca4b88d84e4ef4387256d984b8154e9d5d3fe5a9c8835f
-  bundler (4.0.12) sha256=7f8b757d28dfb636e7b24fba2344ac6dd13b5b24f4b46d62573d483f211825ac
+  bundler (4.0.13) sha256=19f08be7f27022cf0b89f27da0b044ae075e8270a9ef44ad248a932614e1ca3b
   case_transform (0.2) sha256=e2ad4418dceeb227cf474cc332cd5004c95c136c04186c1cceaad8ab8de6fe3b
   cgi (0.5.1) sha256=e93fcafc69b8a934fe1e6146121fa35430efa8b4a4047c4893764067036f18e9
   chunky_png (1.4.0) sha256=89d5b31b55c0cf4da3cf89a2b4ebc3178d8abe8cbaf116a1dba95668502fdcfe
   concurrent-ruby (1.3.6) sha256=6b56837e1e7e5292f9864f34b69c5a2cbc75c0cf5338f1ce9903d10fa762d5ab
-  connection_pool (2.5.5) sha256=e54ff92855753df1fd7c59fa04a398833355f27dd14c074f8c83a05f72a716ad
+  connection_pool (3.0.2) sha256=33fff5ba71a12d2aa26cb72b1db8bba2a1a01823559fb01d29eb74c286e62e0a
   crass (1.0.6) sha256=dc516022a56e7b3b156099abc81b6d2b08ea1ed12676ac7a5657617f012bd45d
   database_cleaner-core (2.0.1) sha256=8646574c32162e59ed7b5258a97a208d3c44551b854e510994f24683865d846c
   database_cleaner-mongoid (2.0.1) sha256=bf851bff841373bd940fa302d3c55e9d1f532d6b910c7aadaa4276098758b9cb
