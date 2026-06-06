@@ -16,7 +16,7 @@ gem 'rotp',    '~> 6.0'
 gem 'rqrcode', '~> 2.0'
 gem 'bcrypt', '~> 3.1'
 # MongoDB
-gem 'mongoid', '~> 8.0'
+gem 'mongoid', '~> 9.1'
 gem 'mongoid_search', '~> 0.4'
 # Payments
 gem 'paypal-sdk-rest', '~> 1.7'

@@ -230,11 +230,11 @@ GEM
     mongo (2.24.1)
       base64
       bson (>= 4.14.1, < 6.0.0)
-    mongoid (8.1.12)
-      activemodel (>= 5.1, < 8.1, != 7.0.0)
+    mongoid (9.1.0)
+      activemodel (>= 5.1, < 8.2, != 7.0.0)
       concurrent-ruby (>= 1.0.5, < 2.0)
       mongo (>= 2.18.0, < 3.0.0)
-      ruby2_keywords (~> 0.0.5)
+      ostruct
     mongoid-compatibility (1.0.0)
       activesupport
       mongoid (>= 2.0)
@@ -405,7 +405,6 @@ GEM
     rswag-ui (2.17.0)
       actionpack (>= 5.2, < 8.2)
       railties (>= 5.2, < 8.2)
-    ruby2_keywords (0.0.5)
     securerandom (0.4.1)
     signet (0.21.0)
       addressable (~> 2.8)
@@ -489,7 +488,7 @@ DEPENDENCIES
   listen (~> 3.8)
   mime-types (~> 3.5)
   mini_magick (~> 4.11)
-  mongoid (~> 8.0)
+  mongoid (~> 9.1)
   mongoid-rspec (~> 4.1)
   mongoid_search (~> 0.4)
   multi_json (~> 1.15)
@@ -535,7 +534,7 @@ CHECKSUMS
   braintree (4.38.0) sha256=a67f682337d9c0934b1ce6f257b290bec553355a50189d6e424f82b3e2a46494
   bson (5.2.0) sha256=c468c1e8a3cfa1e80531cc519a890f85586986721d8e305f83465cc36bb82608
   builder (3.3.0) sha256=497918d2f9dca528fdca4b88d84e4ef4387256d984b8154e9d5d3fe5a9c8835f
-  bundler (4.0.12) sha256=7f8b757d28dfb636e7b24fba2344ac6dd13b5b24f4b46d62573d483f211825ac
+  bundler (4.0.13) sha256=19f08be7f27022cf0b89f27da0b044ae075e8270a9ef44ad248a932614e1ca3b
   case_transform (0.2) sha256=e2ad4418dceeb227cf474cc332cd5004c95c136c04186c1cceaad8ab8de6fe3b
   cgi (0.5.1) sha256=e93fcafc69b8a934fe1e6146121fa35430efa8b4a4047c4893764067036f18e9
   chunky_png (1.4.0) sha256=89d5b31b55c0cf4da3cf89a2b4ebc3178d8abe8cbaf116a1dba95668502fdcfe
@@ -603,7 +602,7 @@ CHECKSUMS
   mini_mime (1.1.5) sha256=8681b7e2e4215f2a159f9400b5816d85e9d8c6c6b491e96a12797e798f8bccef
   minitest (5.27.0) sha256=2d3b17f8a36fe7801c1adcffdbc38233b938eb0b4966e97a6739055a45fa77d5
   mongo (2.24.1) sha256=b6276ca2b7e8394f1cf27153977c736b21de83973b2a8e6fefef9ddad374ec48
-  mongoid (8.1.12) sha256=c3f9ff2a6b5369544fd1b78ac23fe3ab05347f81a88d89b68ecf41747d0855c7
+  mongoid (9.1.0) sha256=ef7b50f4c84e636850c3431bc3c92f98481f4e1d147ff06a1c21242d0b242a9e
   mongoid-compatibility (1.0.0) sha256=08e5770d102258a3b8f39443057de42cde61d465980f182954b1b70d965465e8
   mongoid-rspec (4.2.0) sha256=0811fccdc6dcca21987486208a0f614cc395620ccb7ce884b9bce0b5a677ecc8
   mongoid_search (0.5.0) sha256=ee6c461a90e19fc3cd95ff22c8e50aac003e25c5c11c8fe81191c42f0557b591
@@ -672,7 +671,6 @@ CHECKSUMS
   rswag-api (2.17.0) sha256=728b336b65168ab8ab6024b0e5d267b485c22ccdeb9dfbfb6ec3bac423545a13
   rswag-specs (2.17.0) sha256=a3b2bdf6df89f8741fe4a4ee47ceb1e77dc13e1c96bbe07352117d6e61afa9e3
   rswag-ui (2.17.0) sha256=5f707b9b5e8171ddf9f519f6e401e79e419bd1d07387508603e76124f2443212
-  ruby2_keywords (0.0.5) sha256=ffd13740c573b7301cf7a2e61fc857b2a8e3d3aff32545d6f8300d8bae10e3ef
   securerandom (0.4.1) sha256=cc5193d414a4341b6e225f0cb4446aceca8e50d5e1888743fac16987638ea0b1
   signet (0.21.0) sha256=d617e9fbf24928280d39dcfefba9a0372d1c38187ffffd0a9283957a10a8cd5b
   simplecov (0.22.0) sha256=fe2622c7834ff23b98066bb0a854284b2729a569ac659f82621fc22ef36213a5
