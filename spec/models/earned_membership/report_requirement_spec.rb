@@ -24,19 +24,24 @@ RSpec.describe EarnedMembership::ReportRequirement, type: :model do
     end
 
     it "validates term exists" do
-      EarnedMembership::Report.skip_callback(:validation, :before, :apply_term)
-      report = build(:report)
-      requirement = create(:requirement, term_length: 1)
-      report_requirement = build(:report_requirement, report: report, requirement: requirement)
-      expect(report_requirement.valid?).to be(false)
-      report.save
-      expect(report_requirement.persisted?).to be(false)
+      # around not available at example level — use ensure to guarantee restoration
+      # even if an assertion raises before the final set_callback.
+      begin
+        EarnedMembership::Report.skip_callback(:validation, :before, :apply_term)
+        report = build(:report)
+        requirement = create(:requirement, term_length: 1)
+        report_requirement = build(:report_requirement, report: report, requirement: requirement)
+        expect(report_requirement.valid?).to be(false)
+        report.save
+        expect(report_requirement.persisted?).to be(false)
 
-      report_requirement.term = create(:term, start_date: Time.now - 1.month)
-      expect(report_requirement.valid?).to be(true)
-      report.save
-      expect(report_requirement.persisted?).to be(true)
-      EarnedMembership::Report.set_callback(:validation, :before, :apply_term)
+        report_requirement.term = create(:term, start_date: Time.now - 1.month)
+        expect(report_requirement.valid?).to be(true)
+        report.save
+        expect(report_requirement.persisted?).to be(true)
+      ensure
+        EarnedMembership::Report.set_callback(:validation, :before, :apply_term)
+      end
     end
   end
 end

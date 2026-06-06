@@ -28,19 +28,22 @@ RSpec.describe EarnedMembership::Report, type: :model do
     end
 
     it "validates users dont submit reports for the future" do
-      EarnedMembership::Requirement.skip_callback(:create, :before, :build_first_term)
-      term = build(:term, start_date: Time.now + 1.month)
-      requirement = create(:requirement, terms: [term])
-      report_requirement = build(:report_requirement, requirement: requirement)
-      report = build(:report, report_requirements: [report_requirement])
-      expect(report.valid?).to be(false)
-      report.save
-      expect(report.persisted?).to be(false)
-      requirement.terms.first.update(start_date: Time.now)
-      expect(report.valid?).to be(true)
-      report.save
-      expect(report.persisted?).to be(true)
-      EarnedMembership::Requirement.set_callback(:create, :before, :build_first_term)
+      begin
+        EarnedMembership::Requirement.skip_callback(:create, :before, :build_first_term)
+        term = build(:term, start_date: Time.now + 1.month)
+        requirement = create(:requirement, terms: [term])
+        report_requirement = build(:report_requirement, requirement: requirement)
+        report = build(:report, report_requirements: [report_requirement])
+        expect(report.valid?).to be(false)
+        report.save
+        expect(report.persisted?).to be(false)
+        requirement.terms.first.update(start_date: Time.now)
+        expect(report.valid?).to be(true)
+        report.save
+        expect(report.persisted?).to be(true)
+      ensure
+        EarnedMembership::Requirement.set_callback(:create, :before, :build_first_term)
+      end
     end
 
     it "applies current term to report_requirements" do
