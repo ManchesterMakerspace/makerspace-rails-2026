@@ -21,7 +21,7 @@ gem 'mongoid_search', '~> 0.4'
 # Payments
 gem 'paypal-sdk-rest', '~> 1.7'
 gem 'braintree', '~> 4.0'
-gem 'slack-ruby-client', '~> 2.0'
+gem 'slack-ruby-client', '~> 3.1'
 # Google Drive
 gem 'multi_json', '~> 1.15'
 gem 'faraday', '~> 2.12'
