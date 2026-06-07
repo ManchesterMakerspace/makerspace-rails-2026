@@ -13,7 +13,7 @@ gem 'redis-actionpack'
 # Authentication
 gem 'devise', '~> 4.9'
 gem 'rotp',    '~> 6.0'
-gem 'rqrcode', '~> 2.0'
+gem 'rqrcode', '~> 3.2'
 gem 'bcrypt', '~> 3.1'
 # MongoDB
 gem 'mongoid', '~> 8.0'
