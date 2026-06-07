@@ -8,7 +8,7 @@ gem 'dotenv-rails'
 gem 'concurrent-ruby', '~> 1.3'
 # Redis
 gem 'redis', '~> 5.0'
-gem 'connection_pool', '~> 3.0'
+gem 'connection_pool', '~> 2.4'
 gem 'redis-actionpack'
 # Authentication
 gem 'devise', '~> 4.9'
