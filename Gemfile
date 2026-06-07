@@ -1,6 +1,6 @@
 source 'https://rubygems.org'
 ruby '3.2.9'
-gem 'rails', '~> 7.2.0'
+gem 'rails', '~> 8.0.5'
 gem 'rack-cors', '~> 3.0'
 gem 'puma', '~> 8.0'
 gem 'active_model_serializers', '~> 0.10.15'
