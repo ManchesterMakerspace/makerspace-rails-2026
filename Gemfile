@@ -1,7 +1,7 @@
 source 'https://rubygems.org'
 ruby '3.2.9'
 gem 'rails', '~> 7.2.0'
-gem 'rack-cors', '~> 2.0'
+gem 'rack-cors', '~> 3.0'
 gem 'puma', '~> 6.0'
 gem 'active_model_serializers', '~> 0.10.15'
 gem 'dotenv-rails'
