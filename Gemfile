@@ -38,7 +38,7 @@ gem 'rswag-ui', '~> 2.14'
 gem 'wicked_pdf', '~> 2.8'
 gem 'wkhtmltopdf-binary', '~> 0.12.6'
 group :test do
-  gem 'rspec-rails', '~> 6.0'
+  gem 'rspec-rails', '~> 8.0'
   gem 'mongoid-rspec', '~> 4.1'
   gem 'database_cleaner-mongoid'
   gem 'simplecov', '~> 0.22'
