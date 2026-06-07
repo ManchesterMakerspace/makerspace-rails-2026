@@ -184,7 +184,7 @@ GEM
       signet (>= 0.16, < 2.a)
     hashie (5.1.0)
       logger
-    honeybadger (5.30.0)
+    honeybadger (6.7.0)
       logger
       ostruct
     http-accept (1.7.0)
@@ -489,7 +489,7 @@ DEPENDENCIES
   git (~> 4.3)
   google-apis-drive_v3
   google-apis-sheets_v4
-  honeybadger (~> 5.28)
+  honeybadger (~> 6.7)
   listen (~> 3.8)
   mime-types (~> 3.5)
   mini_magick (~> 5.3)
@@ -586,7 +586,7 @@ CHECKSUMS
   google-logging-utils (0.2.0) sha256=675462b4ea5affa825a3442694ca2d75d0069455a1d0956127207498fca3df7b
   googleauth (1.16.2) sha256=15009502e2e38af71948cda918f230e27d327f6882a1e47967a5a4664930a638
   hashie (5.1.0) sha256=c266471896f323c446ea8207f8ffac985d2718df0a0ba98651a3057096ca3870
-  honeybadger (5.30.0) sha256=cb7073b79900c8337e38154db11190a34b062b66589e5bd1fa48494da29cbdbf
+  honeybadger (6.7.0) sha256=9b638b33b6208859e64dd34fe8e707a61f95acf3db366dbd4c65cdd042525ebf
   http-accept (1.7.0) sha256=c626860682bfbb3b46462f8c39cd470fd7b0584f61b3cc9df5b2e9eb9972a126
   http-cookie (1.1.6) sha256=ba4b82be64de61dc281243dac70e3c382c45142f20268ed9276a3670c93feaa9
   i18n (1.14.8) sha256=285778639134865c5e0f6269e0b818256017e8cde89993fdfcbfb64d088824a5

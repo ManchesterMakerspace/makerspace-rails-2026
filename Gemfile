@@ -52,5 +52,5 @@ group :development, :test do
   gem 'factory_bot_rails', '~> 6.0'
 end
 gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw, :jruby]
-gem 'honeybadger', '~> 5.28'
+gem 'honeybadger', '~> 6.7'
 gem 'valid_email2'
