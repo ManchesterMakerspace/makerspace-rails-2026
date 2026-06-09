@@ -249,7 +249,7 @@ GEM
     multipart-post (2.4.1)
     net-http (0.9.1)
       uri (>= 0.11.1)
-    net-imap (0.6.4)
+    net-imap (0.6.4.1)
       date
       net-protocol
     net-pop (0.1.2)
@@ -539,7 +539,7 @@ CHECKSUMS
   braintree (4.38.0) sha256=a67f682337d9c0934b1ce6f257b290bec553355a50189d6e424f82b3e2a46494
   bson (5.2.0) sha256=c468c1e8a3cfa1e80531cc519a890f85586986721d8e305f83465cc36bb82608
   builder (3.3.0) sha256=497918d2f9dca528fdca4b88d84e4ef4387256d984b8154e9d5d3fe5a9c8835f
-  bundler (4.0.12) sha256=7f8b757d28dfb636e7b24fba2344ac6dd13b5b24f4b46d62573d483f211825ac
+  bundler (4.0.13) sha256=19f08be7f27022cf0b89f27da0b044ae075e8270a9ef44ad248a932614e1ca3b
   case_transform (0.2) sha256=e2ad4418dceeb227cf474cc332cd5004c95c136c04186c1cceaad8ab8de6fe3b
   cgi (0.5.1) sha256=e93fcafc69b8a934fe1e6146121fa35430efa8b4a4047c4893764067036f18e9
   chunky_png (1.4.0) sha256=89d5b31b55c0cf4da3cf89a2b4ebc3178d8abe8cbaf116a1dba95668502fdcfe
@@ -614,7 +614,7 @@ CHECKSUMS
   multi_json (1.21.1) sha256=e6126a31808e3b4d19f483c775ceac34df190dffa62adfb63a165ee14ba68080
   multipart-post (2.4.1) sha256=9872d03a8e552020ca096adadbf5e3cb1cd1cdd6acd3c161136b8a5737cdb4a8
   net-http (0.9.1) sha256=25ba0b67c63e89df626ed8fac771d0ad24ad151a858af2cc8e6a716ca4336996
-  net-imap (0.6.4) sha256=9a5598c67a3022c284d98430ef1d4948e7dbdb62596f61081ea8ca933270a02b
+  net-imap (0.6.4.1) sha256=29f0360d75a7efd3539f16ac1957dea5c0a51ddeceb348db4553c3120914ea0d
   net-pop (0.1.2) sha256=848b4e982013c15b2f0382792268763b748cce91c9e91e36b0f27ed26420dff3
   net-protocol (0.2.2) sha256=aa73e0cba6a125369de9837b8d8ef82a61849360eba0521900e2c3713aa162a8
   net-smtp (0.5.1) sha256=ed96a0af63c524fceb4b29b0d352195c30d82dd916a42f03c62a3a70e5b70736
