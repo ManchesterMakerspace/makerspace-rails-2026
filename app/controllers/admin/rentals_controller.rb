@@ -25,6 +25,13 @@ class Admin::RentalsController < AdminController
     @rental.status = "active"
     @rental.save!
 
+    ::Service::AuditLogger.log(
+      log_type: 'member', event_type: 'rental_created', resource_type: 'Rental',
+      resource_id: @rental.id, actor: current_member, subject: @rental.member,
+      field_changes: @rental.previous_changes, before_snapshot: {},
+      after_snapshot: @rental.attributes, slack_channel: ::Service::SlackConnector.logs_channel
+    )
+
     # Generate invoice for admin-created rentals
     spot = @rental.rental_spot
     if spot.nil? && @rental.number.present?
@@ -51,14 +58,26 @@ class Admin::RentalsController < AdminController
 
   def update
     initial_date = @rental.get_expiration
+    before = @rental.attributes.dup
     @rental.update_attributes!(update_rental_params)
     notify_renewal(initial_date)
     @rental.reload
+
+    ::Service::AuditLogger.log(
+      log_type: 'member', event_type: 'rental_updated', resource_type: 'Rental',
+      resource_id: @rental.id, actor: current_member, subject: @rental.member,
+      field_changes: @rental.previous_changes, before_snapshot: before,
+      after_snapshot: @rental.attributes, slack_channel: ::Service::SlackConnector.logs_channel
+    )
+
     render json: @rental, adapter: :attributes
   end
 
   def destroy
     raise ::Error::Forbidden.new unless is_admin? || is_board_member?
+
+    before = @rental.attributes.dup
+    member = @rental.member
 
     # Cancel Braintree subscription if present
     if @rental.subscription_id.present?
@@ -86,6 +105,13 @@ class Admin::RentalsController < AdminController
       RentalMailer.rental_ended(member.id.to_s, @rental.id.to_s).deliver_later
     end
 
+    ::Service::AuditLogger.log(
+      log_type: 'member', event_type: 'rental_cancelled', resource_type: 'Rental',
+      resource_id: before['_id'], actor: current_member, subject: member,
+      field_changes: {}, before_snapshot: before,
+      after_snapshot: {}, slack_channel: ::Service::SlackConnector.logs_channel
+    )
+
     render json: {}, status: 204
   end
 
@@ -107,6 +133,13 @@ class Admin::RentalsController < AdminController
     end
 
     RentalMailer.rental_request_approved(member.id.to_s, @rental.id.to_s).deliver_later
+
+    ::Service::AuditLogger.log(
+      log_type: 'member', event_type: 'rental_approved', resource_type: 'Rental',
+      resource_id: @rental.id, actor: current_member, subject: member,
+      field_changes: @rental.previous_changes, before_snapshot: { status: 'pending' },
+      after_snapshot: @rental.reload.attributes, slack_channel: ::Service::SlackConnector.logs_channel
+    )
 
     render json: @rental, serializer: RentalSerializer, adapter: :attributes
   end
@@ -130,6 +163,13 @@ class Admin::RentalsController < AdminController
     end
 
     RentalMailer.rental_request_denied(member.id.to_s, @rental.id.to_s, reason).deliver_later
+
+    ::Service::AuditLogger.log(
+      log_type: 'member', event_type: 'rental_denied', resource_type: 'Rental',
+      resource_id: @rental.id, actor: current_member, subject: member,
+      field_changes: @rental.previous_changes, before_snapshot: { status: 'pending' },
+      after_snapshot: @rental.reload.attributes, slack_channel: ::Service::SlackConnector.logs_channel
+    )
 
     render json: @rental, serializer: RentalSerializer, adapter: :attributes
   end

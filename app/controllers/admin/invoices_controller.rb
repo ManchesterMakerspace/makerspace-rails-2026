@@ -74,20 +74,47 @@ class Admin::InvoicesController < AdminOrRmController
       invoice = Invoice.new(create_invoice_params)
       invoice.save!
     end
+
+    ::Service::AuditLogger.log(
+      log_type: 'member', event_type: 'invoice_created', resource_type: 'Invoice',
+      resource_id: invoice.id, actor: current_member, subject: invoice.member,
+      field_changes: invoice.previous_changes, before_snapshot: {},
+      after_snapshot: invoice.attributes, slack_channel: ::Service::SlackConnector.logs_channel
+    )
+
     render json: invoice, adapter: :attributes and return
   end
 
   def update
+    before = @invoice.attributes.dup
     if !!update_invoice_params[:settled] && !@invoice.settled
       @invoice.submit_for_settlement(nil, nil, nil)
     else
       @invoice.update_attributes!(update_invoice_params)
     end
+
+    ::Service::AuditLogger.log(
+      log_type: 'member', event_type: 'invoice_updated', resource_type: 'Invoice',
+      resource_id: @invoice.id, actor: current_member, subject: @invoice.member,
+      field_changes: @invoice.previous_changes, before_snapshot: before,
+      after_snapshot: @invoice.reload.attributes, slack_channel: ::Service::SlackConnector.logs_channel
+    )
+
     render json: @invoice, adapter: :attributes and return
   end
 
   def destroy
+    before = @invoice.attributes.dup
+    member = @invoice.member
     @invoice.destroy
+
+    ::Service::AuditLogger.log(
+      log_type: 'member', event_type: 'invoice_deleted', resource_type: 'Invoice',
+      resource_id: before['_id'], actor: current_member, subject: member,
+      field_changes: {}, before_snapshot: before,
+      after_snapshot: {}, slack_channel: ::Service::SlackConnector.logs_channel
+    )
+
     render json: {}, status: 204 and return
   end
 
@@ -105,7 +132,18 @@ class Admin::InvoicesController < AdminOrRmController
       render json: { error: 'Invoice has no subscription_id — nothing to clean up' }, status: :unprocessable_entity and return
     end
 
+    before = @invoice.attributes.dup
+    member = @invoice.member
+
     Invoice.force_cancel(@invoice.id)
+
+    ::Service::AuditLogger.log(
+      log_type: 'member', event_type: 'invoice_force_cancelled', resource_type: 'Invoice',
+      resource_id: before['_id'], actor: current_member, subject: member,
+      field_changes: {}, before_snapshot: before,
+      after_snapshot: {}, slack_channel: ::Service::SlackConnector.logs_channel
+    )
+
     render json: {}, status: 204 and return
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
