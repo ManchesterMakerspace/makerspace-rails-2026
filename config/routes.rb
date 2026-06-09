@@ -21,19 +21,16 @@ Rails.application.routes.draw do
 
   # Public volunteer pages — unauthenticated, token gated via SystemConfig
   namespace :volunteer do
-    get '/bounties',    to: 'bounties#index'
-    get '/leaderboard', to: 'leaderboard#index'
+    get '/bounties',     to: 'bounties#index'
+    get '/leaderboard',  to: 'leaderboard#index'
   end
 
   scope :api, defaults: { format: :json } do
-    devise_for :members, skip: [:registrations], controllers: {
-      sessions: 'sessions'
-    }
+    devise_for :members, skip: [:registrations], controllers: { sessions: "sessions" }
     devise_scope :member do
-      post 'members',            to: 'registrations#create'
-      post '/send_registration', to: 'registrations#new'
+       post "members", to: "registrations#create"
+       post '/send_registration', to: 'registrations#new'
     end
-
     resources :invoice_options, only: [:index, :show]
     resources :client_error_handler, only: [:create]
 
@@ -42,144 +39,190 @@ Rails.application.routes.draw do
     resources :tools, only: [:index]
 
     namespace :billing do
-      resources :plans,     only: [:index]
+      resources :plans, only: [:index]
       resources :discounts, only: [:index]
     end
 
-    authenticate :member do
-      put '/members/change_password', to: 'members/passwords#update'
+    # Public runtime config — serves env vars to React client at runtime
+    get '/config', to: 'client_config#index'
 
+    # Firebase authentication — public endpoints (no Devise session required)
+    scope :auth do
+      post   '/firebase_login',             to: 'firebase_auth#login'
+      delete '/firebase_unlink/:member_id', to: 'firebase_auth#unlink'
+    end
+
+    authenticate :member do
+      put "/members/change_password", to: "members/passwords#update"
+
+      # TOTP self-service
+      scope :members do
+        post   '/totp/setup',   to: 'members/totp#setup'
+        post   '/totp/verify',  to: 'members/totp#verify'
+        delete '/totp',         to: 'members/totp#destroy'
+        post   '/totp_sessions', to: 'members/totp_sessions#create'
+      end
       resources :members, only: [:show, :index, :update] do
         scope module: :members do
           resources :permissions, only: [:index]
         end
       end
 
-      # Member self-service tool checkouts
+      # Member sees their own checkouts
       resources :tool_checkouts, only: [:index]
 
-      # Member self-service rentals
+      # Rentals — member self-service
       resources :rentals, only: [:show, :index, :update, :create] do
         member do
-          put :cancel
+          delete :cancel
+          delete :decline_agreement
+          post   :mark_vacated
         end
       end
 
-      # Member self-service invoices / billing
-      resources :invoices, only: [:index, :show] do
-        member do
-          post :pay
-          post :request_refund
-        end
-      end
+      # Rental spots — member browse
+      resources :rental_spots, only: [:index, :show]
 
-      # TOTP
-      resource :totp_session, only: [:create, :destroy]
-      resource :totp_setup,   only: [:show, :create, :destroy]
+      # Rental types — member dropdown
+      resources :rental_types, only: [:index]
 
-      # Firebase auth
-      namespace :auth do
-        post '/firebase_login', to: 'firebase#login'
-      end
-
-      # Member earned memberships
-      resources :earned_memberships, only: [:show, :update]
-
-      # Volunteer credits
-      resources :volunteer_credits, only: [:index]
-    end
-
-    namespace :admin do
-      resources :members do
-        collection do
-          post :send_set_password_email
-        end
-        member do
-          put  :update_password
-          post :membership_revoked
-        end
-        # Admin-only email delivery log for a member — feeds the Email Log tab
-        resources :mailtrap_events, only: [:index],
-                  module: :members,
-                  controller: 'mailtrap_events'
-      end
-
-      resources :invoices do
-        member do
-          post :force_cancel
-        end
-      end
-
-      resources :rentals do
-        member do
-          post :approve
-          post :deny
-        end
-      end
-
-      resources :invoice_options
-
-      resources :earned_memberships
-
-      resources :tool_checkouts do
-        collection do
-          get  :approvers
-          post :add_approver
-          delete :remove_approver
-        end
-      end
-
-      resources :tools do
-        member do
-          post :certify
-        end
-        collection do
-          get :certifications
-        end
-      end
-
-      resources :shops
+      resources :invoices, only: [:index, :create]
+      resources :documents, only: [:show], defaults: { format: :html }
 
       namespace :billing do
-        resources :plans,     only: [:index]
-        resources :discounts, only: [:index]
+        resources :payment_methods, only: [:new, :create, :show, :index, :destroy]
+        resources :subscriptions, only: [:show, :update, :destroy]
+        resources :transactions, only: [:create, :index, :destroy]
+        resources :receipts, only: [:show], defaults: { format: :html }
       end
 
-      resources :system_configs, only: [] do
-        collection do
-          put  :update_flag
-          put  :update_setting
-          post :run_job
+      resources :earned_memberships, only: [:show] do
+        scope module: :earned_memberships do
+          resources :reports, only: [:index, :create]
         end
       end
 
-      resources :audit_logs, only: [:index, :show]
+      # Volunteer — member self-service
+      get    '/volunteer/credits',            to: 'volunteer#credits'
+      get    '/volunteer/summary',            to: 'volunteer#summary'
+      get    '/volunteer/tasks',              to: 'volunteer#tasks'
+      get    '/volunteer/tasks/my_claims',    to: 'volunteer#my_claims'
+      get    '/volunteer/events',             to: 'volunteer#events'
+      post   '/volunteer/tasks/:id/claim',    to: 'volunteer#claim_task'
+      post   '/volunteer/tasks/:id/complete', to: 'volunteer#complete_task'
+      post   '/volunteer/events/:id/checkin', to: 'volunteer#checkin_event'
+      delete '/volunteer/events/:id/checkin', to: 'volunteer#remove_checkin'
 
-      resources :volunteer_tasks do
-        member do
-          post :complete
+      namespace :admin do
+        resources :cards, only: [:new, :create, :index, :update]
+        resources :checkins, only: [:index]
+        resources :rejections, only: [:index]
+        resources :audit_logs, only: [:index]
+        resources :invoices, only: [:index, :create, :update, :destroy] do
+          member do
+            post :force_cancel
+          end
+        end
+        resources :invoice_options, only: [:create, :update, :destroy]
+
+        # Tool checkout management
+        resources :shops, only: [:index, :create, :update, :destroy]
+        resources :tools, only: [:index, :create, :update, :destroy]
+        resources :tool_checkouts, only: [:index, :create, :destroy]
+        resources :checkout_approvers, only: [:index, :create, :update, :destroy]
+
+        # Rentals — admin manage + approve/deny
+        resources :rentals, only: [:create, :update, :destroy, :index] do
+          member do
+            post :approve
+            post :deny
+          end
+        end
+
+        # Rental spots catalog — admin CRUD
+        resources :rental_spots, only: [:index, :create, :update, :destroy]
+
+        # Rental types — admin CRUD
+        resources :rental_types, only: [:index, :create, :update, :destroy]
+
+        resources :members, only: [:create, :update] do
+          member do
+            post :update_password
+            post :send_password_reset
+            post :invite_slack
+            post :invite_google_drive
+            get  'mailtrap_events', to: 'admin/members/mailtrap_events#index'
+          end
+        end
+
+        # Admin TOTP reset
+        namespace :members do
+          delete '/:member_id/totp', to: 'totp#destroy'
+        end
+        resources :groups, only: [:index, :show, :create, :destroy] do
+          member do
+            post :add_member
+            delete :remove_member
+          end
+          collection do
+            get :for_member
+          end
+        end
+        resources :permissions, only: [:index, :update]
+        resources :analytics, only: [:index]
+
+        # Member Portal Settings
+        resources :system_configs, only: [:index] do
+          collection do
+            put  :update_flag
+            put  :update_setting
+            post :run_job
+          end
+        end
+
+        namespace :billing do
+          resources :subscriptions, only: [:index, :destroy]
+          resources :transactions, only: [:show, :index, :destroy]
+          resources :receipts, only: [:show], defaults: { format: :html }
+        end
+
+        resources :earned_memberships, only: [:index, :show, :create, :update] do
+          scope module: :earned_memberships do
+            resources :reports, only: [:index]
+          end
+        end
+
+        # Volunteer credits — admin/RM manage
+        resources :volunteer_credits, only: [:index, :create, :destroy] do
+          member do
+            post :approve
+            post :reject
+            post :reverse
+          end
+        end
+
+        # Volunteer bounty tasks — admin/RM manage
+        resources :volunteer_tasks, only: [:index, :create, :update, :destroy] do
+          member do
+            post :complete
+            post :cancel
+            post :release
+            post :reject_pending
+            post :reset_cooldown
+          end
+        end
+
+        # Volunteer events — admin/RM manage
+        resources :volunteer_events, only: [:index, :create, :show, :destroy] do
+          member do
+            post   :close
+            post   :add_attendee
+            delete :remove_attendee
+          end
         end
       end
-
-      resources :volunteer_events do
-        member do
-          post :close
-        end
-      end
-
-      resources :volunteer_credits, only: [:index, :create, :destroy]
-
-      namespace :checkins do
-        get '/', to: 'checkins#index'
-      end
-
-      resources :checkins,   only: [:index]
-      resources :rejections, only: [:index]
-    end
-
-    # Client config (Firebase keys etc.) — authenticated read
-    authenticate :member do
-      get '/config', to: 'client_config#show'
     end
   end
+
+  get '*path', to: 'application#application'
 end
