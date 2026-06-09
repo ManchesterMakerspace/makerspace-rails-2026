@@ -41,7 +41,7 @@ class Admin::Members::MailtrapEventsController < AdminOrRmController
   end
 
   def find_member
-    @member = Member.find(params[:member_id])
-    raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: params[:member_id] }) if @member.nil?
+    @member = Member.find(params[:id])
+    raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: params[:id] }) if @member.nil?
   end
 end
