@@ -1,100 +1,87 @@
 class MailtrapController < ApplicationController
-  protect_from_forgery except: [:webhooks]
+  skip_before_action :verify_authenticity_token
 
+  # POST /mailtrap_listener
   def webhooks
-    raw_body = request.raw_post
+    raw_body = request.body.read
     return unless valid_mailtrap_signature?(raw_body)
 
-    payload = JSON.parse(raw_body)
-    process_events(Array.wrap(payload["events"]))
+    events = parse_events(params)
+    events.each { |event| process_event(event) }
 
-    render json: {}, status: :ok and return
-  rescue JSON::ParserError => e
-    Rails.logger.error("[Mailtrap] Failed to parse webhook payload: #{e.message}")
-    render json: { error: "Invalid JSON payload" }, status: :bad_request and return
+    render json: { received: events.length }, status: :ok
   end
 
   private
 
-  def valid_mailtrap_signature?(raw_body)
-    secret = ENV["MAILTRAP_WEBHOOK_SIGNATURE"].to_s
-    return true if secret.blank?
-
-    provided_signature = request.headers["Mailtrap-Signature"].to_s
-    computed_signature = OpenSSL::HMAC.hexdigest("SHA256", secret, raw_body)
-    return true if secure_compare(provided_signature, computed_signature)
-
-    Rails.logger.error("[Mailtrap] Webhook signature validation failed")
-    render json: { error: "Invalid signature" }, status: :unauthorized and return false
-  end
-
-  def secure_compare(left, right)
-    return false if left.blank? || right.blank? || left.bytesize != right.bytesize
-
-    ActiveSupport::SecurityUtils.secure_compare(left, right)
-  end
-
-  # Higher index = higher priority. Negative events always win over positive
-  # so admins can see bounces/spam even if a delivery was recorded earlier.
-  EVENT_PRIORITY = {
-    'delivery'    => 1,
-    'open'        => 2,
-    'click'       => 3,
-    'unsubscribe' => 10,
-    'soft bounce' => 10,
-    'spam'        => 10,
-    'bounce'      => 11,
-    'suspension'  => 11,
-    'reject'      => 11,
-  }.freeze
-
-  def process_events(events)
-    events.each do |event|
-      next unless event.is_a?(Hash)
-
-      recipient_email = event['email'].to_s.strip
-      next if recipient_email.blank?
-
-      member = Member.where(email: /\A#{Regexp.escape(recipient_email)}\z/i).first
-      next unless member
-
-      mailtrap_event = MailtrapEvent.create!(mailtrap_attributes(event).merge(member_id: member.id))
-
-      # Only update the member's displayed event if this one outranks the current one.
-      # This prevents a bot-triggered 'open' from overwriting a clean 'delivery' record,
-      # but always lets negative events (bounce, spam) surface.
-      current_event = member.mailtrap_event
-      new_priority     = EVENT_PRIORITY.fetch(mailtrap_event.event.to_s, 0)
-      current_priority = current_event ? EVENT_PRIORITY.fetch(current_event.event.to_s, 0) : -1
-
-      member.set(mailtrap_id: mailtrap_event.id) if new_priority >= current_priority
+  def parse_events(params)
+    # Mailtrap sends either a single event or an array
+    if params[:events].present?
+      params[:events]
+    elsif params[:event].present?
+      [params]
+    else
+      []
     end
   end
 
-  def mailtrap_attributes(event)
-    attributes = event.deep_dup.deep_transform_keys(&:underscore)
-    attributes["status"] = attributes["status"].presence || attributes["event"]
-    attributes["occurred_at"] = parse_timestamp(attributes["timestamp"])
-    attributes["raw_payload"] = attributes.deep_dup
-    attributes.slice(
-      "email",
-      "status",
-      "occurred_at",
-      "event",
-      "event_id",
-      "message_id",
-      "response",
-      "sending_stream",
-      "sending_domain_name",
-      "timestamp",
-      "raw_payload"
+  def process_event(event)
+    email      = event[:email].to_s.downcase.strip
+    event_id   = event[:event_id].to_s
+    message_id = event[:message_id].to_s
+    status     = event[:status].to_s
+    occurred_at = event[:occurred_at] ? Time.parse(event[:occurred_at].to_s) : Time.now
+
+    return if email.blank? || event_id.blank?
+
+    # Find the member by email
+    member = Member.where(email: email).first
+    return unless member
+
+    # Attempt to match the send-time MailtrapMessage record by message_id
+    # so the event can surface the subject. Nil is acceptable — webhooks may
+    # arrive for emails sent before this feature was deployed.
+    mailtrap_message = message_id.present? ? MailtrapMessage.where(message_id: message_id).first : nil
+
+    # Create the delivery event record
+    mailtrap_event = MailtrapEvent.create(
+      email:               email,
+      status:              status,
+      event:               event[:event].to_s,
+      event_id:            event_id,
+      message_id:          message_id,
+      occurred_at:         occurred_at,
+      sending_stream:      event[:sending_stream].to_s,
+      sending_domain_name: event[:sending_domain_name].to_s,
+      timestamp:           event[:timestamp],
+      member_id:           member.id,
+      mailtrap_message_id: mailtrap_message&.id,
+      raw_payload:         event.to_unsafe_h
     )
+
+    # Keep mailtrap_id pointing at the latest event for the status icon on member list
+    member.set(mailtrap_id: mailtrap_event.id)
+  rescue => e
+    Rails.logger.error("[MailtrapController] process_event failed for event_id=#{event[:event_id]}: #{e.message}")
+    Honeybadger.notify(e) if defined?(Honeybadger)
   end
 
-  def parse_timestamp(value)
-    return if value.blank?
+  def valid_mailtrap_signature?(raw_body)
+    secret = ENV['MAILTRAP_WEBHOOK_SIGNATURE']
+    return true if secret.blank?
 
-    zone = Time.zone || ActiveSupport::TimeZone["UTC"]
-    zone.at(value.to_i)
+    signature = request.headers['Signature'] || request.headers['X-Mailtrap-Signature']
+    if signature.blank?
+      render json: { error: 'Missing signature' }, status: :unauthorized
+      return false
+    end
+
+    expected = OpenSSL::HMAC.hexdigest('SHA256', secret, raw_body)
+    unless ActiveSupport::SecurityUtils.secure_compare(expected, signature)
+      render json: { error: 'Invalid signature' }, status: :unauthorized
+      return false
+    end
+
+    true
   end
 end
