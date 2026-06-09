@@ -151,7 +151,7 @@ Rails.application.routes.draw do
             post :send_password_reset
             post :invite_slack
             post :invite_google_drive
-            get  'mailtrap_events', to: 'admin/members/mailtrap_events#index'
+            get  'mailtrap_events', to: 'members/mailtrap_events#index'
           end
         end
 
