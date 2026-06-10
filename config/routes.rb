@@ -169,7 +169,13 @@ Rails.application.routes.draw do
           end
         end
         resources :permissions, only: [:index, :update]
-        resources :analytics, only: [:index]
+        resources :analytics, only: [:index] do
+          collection do
+            get :member_growth
+            get :active_members
+            get :volunteer_summary
+          end
+        end
 
         # Member Portal Settings
         resources :system_configs, only: [:index] do
