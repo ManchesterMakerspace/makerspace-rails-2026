@@ -31,7 +31,9 @@ jobs:
             - bundle-v3-
       - run:
           name: Bundle install
-          command: bundle install --path vendor/bundle --jobs 4 --retry 3
+          command: |
+            bundle config set path vendor/bundle
+            bundle install --jobs 4 --retry 3
       - save_cache:
           key: bundle-v3-{{ checksum "Gemfile.lock" }}
           paths:
@@ -82,7 +84,9 @@ jobs:
             - bundle-v3-
       - run:
           name: Bundle install
-          command: bundle install --path vendor/bundle --jobs 4 --retry 3
+          command: |
+            bundle config set path vendor/bundle
+            bundle install --jobs 4 --retry 3
       - save_cache:
           key: bundle-v3-{{ checksum "Gemfile.lock" }}
           paths:
