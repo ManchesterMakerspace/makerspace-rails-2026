@@ -7,9 +7,15 @@ jobs:
           username: $DOCKERHUB_USERNAME
           password: $DOCKERHUB_PASSWORD
       - image: mongo:7.0
+        auth:
+          username: $DOCKERHUB_USERNAME
+          password: $DOCKERHUB_PASSWORD
         environment:
           MONGO_INITDB_DATABASE: makerspace_test
       - image: redis
+        auth:
+          username: $DOCKERHUB_USERNAME
+          password: $DOCKERHUB_PASSWORD
     resource_class: large
     steps:
       - checkout
@@ -45,6 +51,15 @@ jobs:
       - run:
           name: Wait for MongoDB
           command: |
+            mongosh --version
+            if [ $? -ne 0 ] ; then
+              echo "Candygram for Mongo..."
+              curl -L -O https://downloads.mongodb.com/compass/mongodb-mongosh_2.1.1_amd64.deb
+              sudo dpkg -i mongodb-mongosh_2.1.1_amd64.deb
+              sudo apt-get update
+              sudo apt-get install -f -y
+              mongosh --version || echo "Mongo only pawn in game of life"
+            fi
             for i in $(seq 1 30); do
               mongosh --eval "db.runCommand({ ping: 1 })" --quiet && break
               echo "Waiting for mongo... ($i)"
