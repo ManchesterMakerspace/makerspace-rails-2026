@@ -33,6 +33,48 @@ namespace :db do
     puts "Seeding complete, done."
   end
 
+  # Seed N approved volunteer credits for a member.
+  # Used by E2E tests to bring a member to the discount threshold
+  # without going through the full task claim/verify UI flow.
+  #
+  # Usage: rake "db:seed_volunteer_credits[member@email.com,2]"
+  # Defaults to 1 credit if count not specified.
+  task :seed_volunteer_credits, [:member_email, :count] => :environment do |t, args|
+    email = args[:member_email]
+    count = (args[:count] || 1).to_i
+
+    if email.blank?
+      puts "Usage: rake \"db:seed_volunteer_credits[member@email.com,2]\""
+      exit 1
+    end
+
+    member = Member.find_by(email: email)
+    if member.nil?
+      puts "Member not found: #{email}"
+      exit 1
+    end
+
+    admin = Member.find_by(email: "admin_member0@test.com")
+    if admin.nil?
+      puts "admin_member0@test.com not found — seed not run?"
+      exit 1
+    end
+
+    count.times do |i|
+      credit = VolunteerCredit.new(
+        member_id:    member.id,
+        issued_by_id: admin.id,
+        description:  "E2E test credit #{i + 1}",
+        credit_value: 1.0,
+        status:       'approved'
+      )
+      credit.save!(validate: false)
+    end
+
+    year_total = VolunteerCredit.year_count_for(member.id)
+    puts "Seeded #{count} credits for #{member.fullname}. Year total: #{year_total}"
+  end
+
   task :reject_card, [:number] => :environment do |t, args|
     require 'factory_bot'
     Dir[Rails.root.join('spec/support/**/*.rb')].each { |f| require f }
