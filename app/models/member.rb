@@ -242,6 +242,41 @@ class Member
 
   def remove_subscription
     self.update_attributes!({ subscription_id: nil, subscription: false })
+    notify_orphaned_rental_subscriptions
+  end
+
+  # Fires immediately when a membership subscription is cancelled or lapses.
+  # Checks whether the member has any active rental subscriptions that are
+  # now orphaned — i.e. the member is still being billed for a rental despite
+  # having no active membership.
+  #
+  # Does NOT cancel the rental automatically — payment failures can cause
+  # temporary lapses and we want admin review before taking destructive action.
+  # The weekly member_review task surfaces these for follow-up.
+  def notify_orphaned_rental_subscriptions
+    orphaned = rentals.select do |r|
+      r.subscription_id.present? &&
+      %w[active vacating pending_agreement].include?(r.status)
+    end
+    return if orphaned.empty?
+
+    now_ms    = Time.now.to_i * 1000
+    lapsed    = expirationTime.nil? ||
+                expirationTime < now_ms ||
+                status != 'activeMember'
+    return unless lapsed
+
+    member_url = "#{Rails.configuration.action_mailer.default_url_options[:host]}/members/#{id}"
+    rental_list = orphaned.map { |r| "##{r.number}" }.join(', ')
+
+    ::Service::SlackConnector.send_slack_message(
+      "⚠️ Membership subscription cancelled for <#{member_url}|#{fullname}> — " \
+      "but they have active rental subscription(s): #{rental_list}. " \
+      "The rental subscription(s) are still billing. Manual review required.",
+      ::Service::SlackConnector.members_relations_channel
+    )
+  rescue => e
+    Honeybadger.notify(e) if defined?(Honeybadger)
   end
 
   def get_permissions
