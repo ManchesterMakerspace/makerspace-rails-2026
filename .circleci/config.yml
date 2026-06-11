@@ -23,6 +23,7 @@ jobs:
           name: Check environment
           command: |
             set +e
+            echo 'export REACT_BRANCH="${REACT_BRANCH:-master}"' >> $BASH_ENV
             google-chrome --version
             chromedriver --version
             node -v
