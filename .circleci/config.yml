@@ -13,11 +13,13 @@ jobs:
       - run:
           name: Check environment
           command: |
-            ruby -v
-            which ruby
+            set +e
             google-chrome --version
             chromedriver --version
             node -v
+            set -e
+            ruby -v
+            which ruby
       - run:
           name: Install Bundler
           command: |
