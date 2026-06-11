@@ -46,7 +46,34 @@ class Rental
   end
 
   def remove_subscription
-    self.update_attributes!({ subscription_id: nil })
+    return unless subscription_id.present?
+
+    expiry_str = expiration ?
+      Time.at(expiration / 1000).strftime("%B %-d, %Y") :
+      "the end of your current rental period"
+
+    update_attributes!({ subscription_id: nil, status: "vacating" })
+
+    m          = member
+    slack_user = SlackUser.find_by(member_id: m.id) if m
+
+    if slack_user
+      ::Service::SlackConnector.send_slack_message(
+        "Your rental of *#{number}* will end on #{expiry_str}. " \
+        "Your subscription has been cancelled. Please ensure you have vacated by then.",
+        slack_user.slack_id
+      )
+    end
+
+    ::Service::SlackConnector.send_slack_message(
+      "🟡 #{m&.fullname}'s rental of *#{number}* is vacating — " \
+      "subscription cancelled, expires #{expiry_str}.",
+      ::Service::SlackConnector.members_relations_channel
+    )
+
+    RentalMailer.rental_vacating(m.id.to_s, id.to_s, expiry_str).deliver_later if m
+  rescue => e
+    Honeybadger.notify(e) if defined?(Honeybadger)
   end
 
   def contract_on_file=(onFile)
