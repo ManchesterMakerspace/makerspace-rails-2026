@@ -240,5 +240,6 @@ Rails.application.routes.draw do
     end
   end
 
+  get '/favicon.ico', to: proc { [204, {}, []] }
   get '*path', to: 'application#application'
 end
