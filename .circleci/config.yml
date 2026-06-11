@@ -3,10 +3,19 @@ jobs:
   build:
     docker:
       - image: cimg/3.2.9-browsers
+          auth:
+            username: $DOCKERHUB_USERNAME
+            password: $DOCKERHUB_PASSWORD
       - image: mongo:7.0
+          auth:
+            username: $DOCKERHUB_USERNAME
+            password: $DOCKERHUB_PASSWORD
         environment:
           MONGO_INITDB_DATABASE: makerspace_test
       - image: redis
+          auth:
+            username: $DOCKERHUB_USERNAME
+            password: $DOCKERHUB_PASSWORD
     resource_class: large
     steps:
       - checkout
@@ -71,6 +80,9 @@ jobs:
   publish:
     docker:
       - image: cimg/ruby:3.2.9-browsers
+          auth:
+            username: $DOCKERHUB_USERNAME
+            password: $DOCKERHUB_PASSWORD
     resource_class: large
     steps:
       - checkout
