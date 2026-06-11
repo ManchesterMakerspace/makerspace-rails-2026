@@ -1,4 +1,4 @@
-class Admin::CheckoutApproversController < AdminController
+class Admin::CheckoutApproversController < AdminOrRmController
   before_action :find_approver, only: [:update, :destroy]
 
   def index
