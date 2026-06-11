@@ -40,8 +40,8 @@ class MembersController < AuthenticationController
 
     def update
         raise Error::NotFound.new unless defined?(@member.id)
-        #  We are in the non-admin path, and Non admins can only update themselves
-        if @member.id != current_member.id
+        # Admins and board members can update any member, non-admins can only update themselves
+        unless @member.id == current_member.id || is_admin? || is_board_member? || is_resource_manager?
             Rails.logger.warn("Calling update for #{@member.id} while logged in as #{@current_member.id}!")
             raise Error::Forbidden.new
         end
@@ -49,40 +49,40 @@ class MembersController < AuthenticationController
       before = @member.attributes.dup
 
       if signature_params[:signature]
-        encoded_signature = signature_params[:signature].split(",")[1]
-        DocumentUploadJob.perform_later(encoded_signature, "member_contract", @member.id.as_json)
-        @member.update_attributes!(member_contract_signed_date: Date.today)
+         encoded_signature = signature_params[:signature].split(",")[1]
+         DocumentUploadJob.perform_later(encoded_signature, "member_contract", @member.id.as_json)
+         @member.update_attributes!(member_contract_signed_date: Date.today)
 
-        # Log contract signature — no Slack, pure audit trail
-        Service::AuditLogger.log(
-          log_type:        'member',
-          event_type:      'contract_signed',
-          resource_type:   'Member',
-          resource_id:     @member.id,
-          actor:           current_member,
-          subject:         @member,
-          before_snapshot: before,
-          after_snapshot:  @member.reload.attributes
-        )
-      else
-        @member.update_attributes!(member_params)
+         # Log contract signature — no Slack, pure audit trail
+         Service::AuditLogger.log(
+           log_type:        'member',
+           event_type:      'contract_signed',
+           resource_type:   'Member',
+           resource_id:     @member.id,
+           actor:           current_member,
+           subject:         @member,
+           before_snapshot: before,
+           after_snapshot:  @member.reload.attributes
+         )
+       else
+         @member.update_attributes!(member_params)
 
-        # Log member self-service update — no Slack, pure audit trail
-        Service::AuditLogger.log(
-          log_type:        'member',
-          event_type:      'member_updated',
-          resource_type:   'Member',
-          resource_id:     @member.id,
-          actor:           current_member,
-          subject:         @member,
-          field_changes:   @member.previous_changes,
-          before_snapshot: before,
-          after_snapshot:  @member.reload.attributes
-        )
-      end
+         # Log member self-service update — no Slack, pure audit trail
+         Service::AuditLogger.log(
+           log_type:        'member',
+           event_type:      'member_updated',
+           resource_type:   'Member',
+           resource_id:     @member.id,
+           actor:           current_member,
+           subject:         @member,
+           field_changes:   @member.previous_changes,
+           before_snapshot: before,
+           after_snapshot:  @member.reload.attributes
+         )
+       end
 
-      render json: @member, adapter: :attributes and return
-    end
+       render json: @member, adapter: :attributes and return
+     end
 
     private
     def set_member
