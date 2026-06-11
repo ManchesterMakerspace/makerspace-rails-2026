@@ -187,8 +187,10 @@ class VolunteerTask
       task_id:      id,
       description:  "Completed bounty task: #{effective_title}",
       credit_value: credit_value,
-      status:       'pending'
+      status:       'approved'
     )
+    credit.send(:notify_member_credit_awarded)
+    credit.send(:check_discount_threshold!)
 
     notify_task_verified(verifier)
   end

@@ -177,6 +177,16 @@ Rails.application.routes.draw do
           end
         end
 
+        resources :space_usage, only: [:index] do
+          collection do
+            get :date_range
+          end
+        end
+
+        # Space usage — unique member checkins per day/month
+        get '/space_usage',            to: 'space_usage#index'
+        get '/space_usage/date_range', to: 'space_usage#date_range'
+
         # Member Portal Settings
         resources :system_configs, only: [:index] do
           collection do
