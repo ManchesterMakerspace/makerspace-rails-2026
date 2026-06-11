@@ -2,7 +2,7 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/ruby:3.2-browsers
+      - image: cimg/3.2.9-browsers
       - image: mongo:7.0
         environment:
           MONGO_INITDB_DATABASE: makerspace_test
@@ -69,7 +69,7 @@ jobs:
           path: ./tmp/makerspace-react/tmp/screenshots
   publish:
     docker:
-      - image: cimg/ruby:3.2-browsers
+      - image: cimg/ruby:3.2.9-browsers
     resource_class: large
     steps:
       - checkout
