@@ -1,10 +1,31 @@
 class Admin::RejectionsController < AuthenticationController
+  before_action :authenticate_member!
+  before_action :authorize_rejection_access
+
   def index
     rejections = RejectionCard.where(rejections_query).map(&:attributes)
     render json: { rejections: rejections } and return
   end
 
   private
+
+  def authorize_rejection_access
+    # Admins can see all rejection cards
+    # Members can only see their own rejection cards
+    return if is_admin?
+    
+    # Non-admin members can only query their own card
+    parsed = JSON.parse(params.require(:uids))
+    raise Error::UnprocessableEntity.new('uids must be an array') unless parsed.is_a?(Array)
+    
+    member_cards = current_member.access_cards.map(&:uid)
+    requested_uids = parsed.map(&:to_s)
+    
+    unless requested_uids.all? { |uid| member_cards.include?(uid) }
+      Rails.logger.warn("Non-admin member #{current_member.id} attempted to view rejection cards they don't own")
+      raise Error::Forbidden.new
+    end
+  end
 
   def rejections_query
     query = { :uid.in => query_uids }
