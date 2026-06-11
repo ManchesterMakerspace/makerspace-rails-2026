@@ -51,8 +51,8 @@ jobs:
       - run:
           name: Wait for MongoDB
           command: |
-            mongosh --version
-            if [ $? -ne 0 ] ; then
+            set +e
+            if ! command -v mongosh > /dev/null 2>&1 ; then
               echo "Candygram for Mongo..."
               curl -L -O https://downloads.mongodb.com/compass/mongodb-mongosh_2.1.1_amd64.deb
               sudo dpkg -i mongodb-mongosh_2.1.1_amd64.deb
@@ -60,6 +60,7 @@ jobs:
               sudo apt-get install -f -y
               mongosh --version || echo "Mongo only pawn in game of life"
             fi
+            set -e
             for i in $(seq 1 30); do
               mongosh --eval "db.runCommand({ ping: 1 })" --quiet && break
               echo "Waiting for mongo... ($i)"
