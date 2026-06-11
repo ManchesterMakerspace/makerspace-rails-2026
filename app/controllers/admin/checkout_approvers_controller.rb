@@ -8,22 +8,54 @@ class Admin::CheckoutApproversController < AdminController
 
   def create
     approver = CheckoutApprover.find_or_initialize_by(member_id: approver_params[:member_id])
-    # Merge incoming shop IDs with any existing ones (React sends full list on edit,
-    # but merge here as a safety net against accidental data loss)
     incoming = approver_params[:shop_ids] || []
     approver.shop_ids = (approver.shop_ids + incoming).uniq
     approver.save!
+
+    ::Service::AuditLogger.log(
+      log_type:       'portal',
+      event_type:     'checkout_approver_created',
+      resource_type:  'CheckoutApprover',
+      resource_id:    approver.id,
+      actor:          current_member,
+      after_snapshot: approver.attributes
+    )
+
     render json: approver, serializer: CheckoutApproverSerializer, adapter: :attributes
   end
 
   def update
-    # PUT replaces the shop list entirely — used for explicit edit from the UI
+    before = @approver.attributes.dup
     @approver.update_attributes!(approver_params)
+
+    ::Service::AuditLogger.log(
+      log_type:        'portal',
+      event_type:      'checkout_approver_updated',
+      resource_type:   'CheckoutApprover',
+      resource_id:     @approver.id,
+      actor:           current_member,
+      field_changes:   @approver.previous_changes,
+      before_snapshot: before,
+      after_snapshot:  @approver.attributes
+    )
+
     render json: @approver, serializer: CheckoutApproverSerializer, adapter: :attributes
   end
 
   def destroy
+    before = @approver.attributes.dup
     @approver.destroy
+
+    ::Service::AuditLogger.log(
+      log_type:        'portal',
+      event_type:      'checkout_approver_deleted',
+      resource_type:   'CheckoutApprover',
+      resource_id:     before['_id'],
+      actor:           current_member,
+      before_snapshot: before,
+      after_snapshot:  {}
+    )
+
     render json: {}, status: 204
   end
 

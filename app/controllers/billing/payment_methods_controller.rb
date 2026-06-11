@@ -39,6 +39,16 @@ class Billing::PaymentMethodsController < BillingController
     raise Error::Braintree::Result.new(result) unless result.success?
     payment_method = result.try(:payment_method) ? result.payment_method : result.customer.payment_methods.first
 
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'payment_method_added',
+      resource_type:  'PaymentMethod',
+      resource_id:    current_member.id,
+      actor:          current_member,
+      subject:        current_member,
+      after_snapshot: { token: payment_method.token, last_4: payment_method.try(:last_4) }
+    )
+
     render json: payment_method, serializer: BraintreeService::PaymentMethodSerializer, adapter: :attributes, status: 200 and return
   end
 
@@ -85,6 +95,17 @@ class Billing::PaymentMethodsController < BillingController
       invoice = Invoice.find_by(subscription_id: id)
       Invoice.process_cancellation(invoice.id)
     end
+
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'payment_method_removed',
+      resource_type:  'PaymentMethod',
+      resource_id:    current_member.id,
+      actor:          current_member,
+      subject:        current_member,
+      after_snapshot: { token: payment_method.token,
+                        subscriptions_cancelled: sub_ids }
+    )
 
     render json: {}, status: 204 and return
   end

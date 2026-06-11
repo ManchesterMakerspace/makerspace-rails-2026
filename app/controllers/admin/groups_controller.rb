@@ -52,6 +52,18 @@ class Admin::GroupsController < AdminController
     # Link primary member to the group
     primary.update_attributes!(groupName: primary.id.to_s)
 
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'household_created',
+      resource_type:  'Group',
+      resource_id:    group.id,
+      actor:          current_member,
+      subject:        primary,
+      after_snapshot: { groupName: group.groupName, groupRep: group.groupRep,
+                        primary_member_id: primary.id.to_s },
+      slack_channel:  ::Service::SlackConnector.members_relations_channel
+    )
+
     render json: group, serializer: GroupSerializer, adapter: :attributes, status: 201 and return
   end
 
@@ -63,6 +75,19 @@ class Admin::GroupsController < AdminController
     raise ::Error::UnprocessableEntity.new("Member is already part of a household") if secondary.groupName.present?
 
     @group.add_subordinate(secondary)
+
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'household_member_added',
+      resource_type:  'Group',
+      resource_id:    @group.id,
+      actor:          current_member,
+      subject:        secondary,
+      after_snapshot: { groupName: @group.groupName, secondary_member_id: secondary.id.to_s,
+                        secondary_name: secondary.fullname },
+      slack_channel:  ::Service::SlackConnector.members_relations_channel
+    )
+
     render json: @group, serializer: GroupSerializer, adapter: :attributes and return
   end
 
@@ -79,12 +104,27 @@ class Admin::GroupsController < AdminController
     end
 
     @group.remove_subordinate(secondary)
+
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'household_member_removed',
+      resource_type:  'Group',
+      resource_id:    @group.id,
+      actor:          current_member,
+      subject:        secondary,
+      after_snapshot: { groupName: @group.groupName, secondary_member_id: secondary.id.to_s,
+                        secondary_name: secondary.fullname },
+      slack_channel:  ::Service::SlackConnector.members_relations_channel
+    )
+
     render json: @group, serializer: GroupSerializer, adapter: :attributes and return
   end
 
   # DELETE /api/admin/groups/:id
   # Dissolves the entire household, reverts all members
   def destroy
+    before = @group.attributes.dup
+
     # Revert all secondary members
     @group.active_members.where(:id.ne => @group.groupName).each do |m|
       @group.remove_subordinate(m)
@@ -95,6 +135,19 @@ class Admin::GroupsController < AdminController
     primary.update_attributes!(groupName: nil) if primary
 
     @group.destroy
+
+    ::Service::AuditLogger.log(
+      log_type:        'member',
+      event_type:      'household_dissolved',
+      resource_type:   'Group',
+      resource_id:     before['_id'],
+      actor:           current_member,
+      subject:         primary,
+      before_snapshot: before,
+      after_snapshot:  {},
+      slack_channel:   ::Service::SlackConnector.members_relations_channel
+    )
+
     render json: {}, status: 204 and return
   end
 

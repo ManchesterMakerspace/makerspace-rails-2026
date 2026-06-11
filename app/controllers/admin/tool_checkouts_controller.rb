@@ -45,6 +45,18 @@ class Admin::ToolCheckoutsController < AdminOrRmController
     checkout.save!
     checkout.send_checkout_slack_notification
 
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'tool_checkout_created',
+      resource_type:  'ToolCheckout',
+      resource_id:    checkout.id,
+      actor:          current_member,
+      subject:        member,
+      after_snapshot: { member_id: member.id.to_s, tool_id: tool.id.to_s,
+                        tool_name: tool.name, approved_by: current_member.fullname },
+      slack_channel:  ::Service::SlackConnector.logs_channel
+    )
+
     render json: checkout.as_json(
       serializer: ToolCheckoutSerializer,
       adapter: :attributes
@@ -69,6 +81,18 @@ class Admin::ToolCheckoutsController < AdminOrRmController
       revocation_reason: reason
     )
     @checkout.send_revocation_slack_notification
+
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'tool_checkout_revoked',
+      resource_type:  'ToolCheckout',
+      resource_id:    @checkout.id,
+      actor:          current_member,
+      subject:        @checkout.member,
+      after_snapshot: { tool_id: @checkout.tool_id.to_s, revocation_reason: reason },
+      slack_channel:  ::Service::SlackConnector.logs_channel
+    )
+
     render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes
   end
 

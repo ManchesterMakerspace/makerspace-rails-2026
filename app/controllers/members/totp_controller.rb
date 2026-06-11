@@ -37,6 +37,16 @@ class Members::TotpController < AuthenticationController
     )
     session.delete(:totp_pending_secret)
 
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'totp_enabled',
+      resource_type:  'Member',
+      resource_id:    @member.id,
+      actor:          current_member,
+      subject:        @member,
+      slack_channel:  ::Service::SlackConnector.logs_channel
+    )
+
     render json: { message: 'Two-factor authentication enabled.' }, status: :ok
   end
 
@@ -48,6 +58,17 @@ class Members::TotpController < AuthenticationController
       otp_required_for_login: false,
       otp_enabled_at:         nil
     )
+
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'totp_disabled',
+      resource_type:  'Member',
+      resource_id:    @member.id,
+      actor:          current_member,
+      subject:        @member,
+      slack_channel:  ::Service::SlackConnector.logs_channel
+    )
+
     render json: { message: 'Two-factor authentication disabled.' }, status: :ok
   end
 

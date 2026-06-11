@@ -13,6 +13,16 @@ class Admin::Members::TotpController < AdminController
       session_token:          SecureRandom.hex(32)  # rotate token to invalidate sessions
     )
 
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'totp_reset',
+      resource_type:  'Member',
+      resource_id:    @member.id,
+      actor:          current_member,
+      subject:        @member,
+      slack_channel:  ::Service::SlackConnector.logs_channel
+    )
+
     render json: { message: "TOTP reset for #{@member.fullname}." }, status: :ok
   end
 

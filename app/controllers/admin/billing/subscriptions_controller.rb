@@ -7,6 +7,18 @@ class Admin::Billing::SubscriptionsController < Admin::BillingController
   def destroy
     subscription = ::BraintreeService::Subscription.get_subscription(@gateway, params[:id])
     ::BraintreeService::Subscription.cancel(@gateway, params[:id])
+
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'subscription_cancelled',
+      resource_type:  'Subscription',
+      resource_id:    subscription.member&.id || current_member.id,
+      actor:          current_member,
+      subject:        subscription.member,
+      after_snapshot: { subscription_id: params[:id] },
+      slack_channel:  ::Service::SlackConnector.logs_channel
+    )
+
     render json: {}, status: 204 and return
   end
 

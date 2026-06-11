@@ -8,6 +8,16 @@ class Members::PasswordsController < AuthenticationController
 
     current_member.password = password
     current_member.save!
+
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'password_changed',
+      resource_type:  'Member',
+      resource_id:    current_member.id,
+      actor:          current_member,
+      subject:        current_member
+    )
+
     render json: {}, status: 204 and return
   end
 

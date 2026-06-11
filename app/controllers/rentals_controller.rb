@@ -46,6 +46,17 @@ class RentalsController < AuthenticationController
       notify_admin_pending(@rental, spot)
     end
 
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'rental_requested',
+      resource_type:  'Rental',
+      resource_id:    @rental.id,
+      actor:          current_member,
+      subject:        current_member,
+      after_snapshot: { number: @rental.number, status: @rental.status,
+                        rental_spot_id: @rental.rental_spot_id }
+    )
+
     render json: @rental, serializer: RentalSerializer, adapter: :attributes, status: 201
   end
 
@@ -82,6 +93,17 @@ class RentalsController < AuthenticationController
       end
 
       RentalMailer.rental_claimed(member.id.to_s, @rental.id.to_s).deliver_later
+
+      ::Service::AuditLogger.log(
+        log_type:       'member',
+        event_type:     'rental_agreement_signed',
+        resource_type:  'Rental',
+        resource_id:    @rental.id,
+        actor:          current_member,
+        subject:        current_member,
+        after_snapshot: { number: @rental.number, status: @rental.status,
+                          contract_signed_date: @rental.contract_signed_date.to_s }
+      )
     end
 
     render json: @rental, adapter: :attributes
@@ -103,6 +125,16 @@ class RentalsController < AuthenticationController
       enque_message("Your rental claim for *#{@rental.number}* has been cancelled because the rental agreement was not signed.", slack_user.slack_id)
     end
     enque_message("❌ #{member.fullname} declined the rental agreement for *#{@rental.number}*. Rental voided.")
+
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'rental_agreement_declined',
+      resource_type:  'Rental',
+      resource_id:    @rental.id,
+      actor:          current_member,
+      subject:        current_member,
+      after_snapshot: { number: @rental.number, status: @rental.status }
+    )
 
     render json: @rental, serializer: RentalSerializer, adapter: :attributes
   end
@@ -134,6 +166,16 @@ class RentalsController < AuthenticationController
       notify_rental_vacating(@rental, expiry)
     end
 
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'rental_cancelled',
+      resource_type:  'Rental',
+      resource_id:    @rental.id,
+      actor:          current_member,
+      subject:        current_member,
+      after_snapshot: { number: @rental.number, status: @rental.status, vacated: vacated }
+    )
+
     render json: @rental, serializer: RentalSerializer, adapter: :attributes
   end
 
@@ -149,6 +191,16 @@ class RentalsController < AuthenticationController
 
     @rental.update_attributes!(status: "cancelled")
     notify_rental_ended(@rental)
+
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'rental_vacated',
+      resource_type:  'Rental',
+      resource_id:    @rental.id,
+      actor:          current_member,
+      subject:        @rental.member,
+      after_snapshot: { number: @rental.number, status: @rental.status }
+    )
 
     render json: @rental, serializer: RentalSerializer, adapter: :attributes
   end

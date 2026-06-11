@@ -6,16 +6,51 @@ class Admin::InvoiceOptionsController < AdminOrRmController
   def create
     invoice_option = InvoiceOption.new(create_params)
     invoice_option.save!
+
+    ::Service::AuditLogger.log(
+      log_type:       'portal',
+      event_type:     'invoice_option_created',
+      resource_type:  'InvoiceOption',
+      resource_id:    invoice_option.id,
+      actor:          current_member,
+      after_snapshot: invoice_option.attributes
+    )
+
     render json: invoice_option, each_serializer: InvoiceOptionSerializer, adapter: :attributes and return
   end
 
   def update
+    before = @invoice_option.attributes.dup
     @invoice_option.update_attributes!(invoice_params)
+
+    ::Service::AuditLogger.log(
+      log_type:        'portal',
+      event_type:      'invoice_option_updated',
+      resource_type:   'InvoiceOption',
+      resource_id:     @invoice_option.id,
+      actor:           current_member,
+      field_changes:   @invoice_option.previous_changes,
+      before_snapshot: before,
+      after_snapshot:  @invoice_option.attributes
+    )
+
     render json: @invoice_option, adapter: :attributes and return
   end
 
   def destroy
+    before = @invoice_option.attributes.dup
     @invoice_option.destroy
+
+    ::Service::AuditLogger.log(
+      log_type:        'portal',
+      event_type:      'invoice_option_deleted',
+      resource_type:   'InvoiceOption',
+      resource_id:     before['_id'],
+      actor:           current_member,
+      before_snapshot: before,
+      after_snapshot:  {}
+    )
+
     render json: {}, status: 204 and return
   end
 

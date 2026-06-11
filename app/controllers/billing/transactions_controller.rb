@@ -32,6 +32,18 @@ class Billing::TransactionsController < BillingController
         Proc.new { invoice.submit_for_settlement(@gateway, transaction_params[:payment_method_id]) }
       )
 
+      ::Service::AuditLogger.log(
+        log_type:       'member',
+        event_type:     'transaction_created',
+        resource_type:  'Invoice',
+        resource_id:    invoice.id,
+        actor:          current_member,
+        subject:        invoice.member,
+        after_snapshot: { invoice_id: invoice.id.to_s, amount: invoice.amount,
+                          plan_id: invoice.plan_id, resource_class: invoice.resource_class },
+        slack_channel:  ::Service::SlackConnector.logs_channel
+      )
+
       render json: transaction, serializer: BraintreeService::TransactionSerializer, adapter: :attributes, status: 200 and return
     end
 
@@ -51,6 +63,18 @@ class Billing::TransactionsController < BillingController
 
       description = invoice.name || invoice.description
       invoice.request_refund
+
+      ::Service::AuditLogger.log(
+        log_type:       'member',
+        event_type:     'refund_requested',
+        resource_type:  'Invoice',
+        resource_id:    invoice.id,
+        actor:          current_member,
+        subject:        invoice.member,
+        after_snapshot: { transaction_id: transaction.id, amount: invoice.amount,
+                          description: description },
+        slack_channel:  ::Service::SlackConnector.logs_channel
+      )
 
       render json: {}, status: 204 and return
     end

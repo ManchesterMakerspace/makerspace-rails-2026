@@ -21,6 +21,18 @@ class RegistrationsController < ApplicationController
     @member.reload
     sign_in(@member)
     MemberMailer.member_registered(@member.id.to_s).deliver_later
+
+    ::Service::AuditLogger.log(
+      log_type:       'member',
+      event_type:     'member_registered',
+      resource_type:  'Member',
+      resource_id:    @member.id,
+      actor:          @member,
+      subject:        @member,
+      after_snapshot: { email: @member.email, firstname: @member.firstname,
+                        lastname: @member.lastname }
+    )
+
     render json: @member, adapter: :attributes and return
   end
 
