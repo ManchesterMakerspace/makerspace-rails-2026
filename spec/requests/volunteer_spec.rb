@@ -260,18 +260,42 @@ RSpec.describe 'Admin Volunteer Credits endpoints', type: :request do
   end
 
   describe 'POST /api/admin/volunteer_credits' do
-    it 'awards a credit to an active member' do
+    it 'awards a credit to an active member as pending, with the given credit value' do
       post '/api/admin/volunteer_credits',
-           params: { member_id: active.id.to_s, description: 'Helped with cleanup' }
+           params: { member_id: active.id.to_s, description: 'Helped with cleanup', credit_value: 2.5 }
       expect(response).to have_http_status(:ok)
       expect(VolunteerCredit.where(member_id: active.id).count).to eq(1)
+
+      credit = VolunteerCredit.find_by(member_id: active.id)
+      expect(credit.status).to eq('pending')
+      expect(credit.credit_value).to eq(2.5)
     end
 
     it 'returns 403 when awarding to a non-active member' do
       post '/api/admin/volunteer_credits',
-           params: { member_id: inactive.id.to_s, description: 'Test' }
+           params: { member_id: inactive.id.to_s, description: 'Test', credit_value: 1 }
       expect(response).to have_http_status(:forbidden)
       expect(JSON.parse(response.body)['error']).to match(/not an active member/i)
+    end
+
+    it 'returns 422 when credit_value is missing or not positive' do
+      post '/api/admin/volunteer_credits',
+           params: { member_id: active.id.to_s, description: 'Test' }
+      expect(response).to have_http_status(:unprocessable_entity)
+
+      post '/api/admin/volunteer_credits',
+           params: { member_id: active.id.to_s, description: 'Test', credit_value: 0 }
+      expect(response).to have_http_status(:unprocessable_entity)
+
+      post '/api/admin/volunteer_credits',
+           params: { member_id: active.id.to_s, description: 'Test', credit_value: -1 }
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+
+    it 'returns 422 when description is blank' do
+      post '/api/admin/volunteer_credits',
+           params: { member_id: active.id.to_s, description: '', credit_value: 1 }
+      expect(response).to have_http_status(:unprocessable_entity)
     end
   end
 end
