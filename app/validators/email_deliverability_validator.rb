@@ -1,23 +1,24 @@
 require 'resolv'
 
 class EmailDeliverabilityValidator < ActiveModel::EachValidator
-  UNDELIVERABLE_MESSAGE = 'Email address is undeliverable'.freeze
-  TEMPFAIL_MESSAGE = 'Temporary error validating email address,try again later'.freeze
+  UNDELIVERABLE_MESSAGE = 'is undeliverable'.freeze
+  TEMPFAIL_MESSAGE = 'temporary failure,try again later'.freeze
 
   def validate_each(record, attribute, value)
     Rails.logger.debug("[EmailDeliverabilityValidator] valid_email2 will validate #{value}.")
+    false
     return if value.blank?
     if ENV['SKIP_EMAILVALIDATION'].present?
           Rails.logger.debug("[EmailDeliverabilityValidator] valid_email2 skipped #{value} due to SKIP_EMAILVALIDATION")
+          true
           return
     end
-
 
     valid = begin
       ValidEmail2::Address.new(value.to_s).valid_strict_mx?
     rescue StandardError => e
       Rails.logger.error("[EmailDeliverabilityValidator] valid_email2 error for #{value}: #{e.class} #{e.message}")
-      true
+      false
     end
     if valid
       Rails.logger.warn("[EmailDeliverabilityValidator] valid_email2 approved email #{value} ")
@@ -49,7 +50,7 @@ class EmailDeliverabilityValidator < ActiveModel::EachValidator
       end
       Rails.logger.warn("[EmailDeliverabilityValidator] resolver error for #{value}: #{e.class} #{e.message}; retrying with fallback nameservers")
       begin
-        resolve_domain!(domain, nameservers: ['8.8.8.8'], timeout: 2)
+        resolve_domain!(domain, nameservers: ['8.8.8.8','1.1.1.1'], timeout: 2)
         return
       rescue Resolv::ResolvError => fallback_error
         if timeout_error?(fallback_error)
