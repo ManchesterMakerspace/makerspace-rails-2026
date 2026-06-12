@@ -10,6 +10,10 @@ class Admin::VolunteerCreditsController < AdminOrRmController
   end
 
   # POST /api/admin/volunteer_credits
+  #
+  # Manual credit awards (by an admin or RM) always land as 'pending'.
+  # Notifications and discount-threshold checks only fire when the credit
+  # is later approved via the existing approve! flow — never at creation.
   def create
     member = Member.find(credit_params[:member_id])
     raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: credit_params[:member_id] }) if member.nil?
@@ -19,16 +23,23 @@ class Admin::VolunteerCreditsController < AdminOrRmController
       render json: { error: 'Cannot award a credit to a member who is not an active member' }, status: :forbidden and return
     end
 
+    if credit_params[:description].blank?
+      render json: { error: 'Description is required' }, status: :unprocessable_entity and return
+    end
+
+    credit_value = credit_params[:credit_value].to_f
+    if credit_value <= 0
+      render json: { error: 'Credit value must be a positive number' }, status: :unprocessable_entity and return
+    end
+
     credit = VolunteerCredit.new(
       member_id:    member.id,
       issued_by_id: current_member.id,
       description:  credit_params[:description],
-      credit_value: 1.0,
-      status:       'approved'
+      credit_value: credit_value,
+      status:       'pending'
     )
     credit.save!
-    credit.send(:notify_member_credit_awarded)
-    credit.send(:check_discount_threshold!)
 
     render json: credit, serializer: VolunteerCreditSerializer, adapter: :attributes
   end
@@ -79,6 +90,6 @@ class Admin::VolunteerCreditsController < AdminOrRmController
   end
 
   def credit_params
-    params.permit(:member_id, :description)
+    params.permit(:member_id, :description, :credit_value)
   end
 end
