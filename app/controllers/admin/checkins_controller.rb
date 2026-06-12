@@ -13,21 +13,14 @@ class Admin::CheckinsController < AuthenticationController
   def checkins_query
     query = {}
 
-    # Build time range — support both timeOf (current) and legacy time field
+    # Build time range — checks timeOf and time fields under BOTH unit
+    # interpretations (seconds and milliseconds), since either field may
+    # store either unit depending on the record. See CheckinTimeHelper.
     if query_start_time || query_end_time
-      time_range = {}
-      time_range['$gte'] = query_start_time if query_start_time
-      time_range['$lte'] = query_end_time   if query_end_time
-
       # Use $and to safely combine uid filter with $or time field conditions
       query['$and'] = [
         { 'uid' => { '$in' => query_uids } },
-        {
-          '$or' => [
-            { 'timeOf' => time_range },
-            { 'time'   => time_range }
-          ]
-        }
+        { '$or' => CheckinTimeHelper.dual_unit_or_query(query_start_time, query_end_time) }
       ]
     else
       query['uid'] = { '$in' => query_uids }

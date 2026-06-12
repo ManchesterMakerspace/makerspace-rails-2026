@@ -49,28 +49,25 @@ class Admin::SpaceUsageController < AdminController
       uid_to_member[doc['uid'].to_s] = doc['member_id'].to_s if doc['uid'].present? && doc['member_id'].present?
     end
 
-    # Fetch raw checkins in range
-    # Query both timeOf (newer Doorboto) and time (legacy field) for full coverage
+    # Fetch raw checkins in range — query both timeOf and time fields under
+    # BOTH unit interpretations, since either field may store seconds or
+    # milliseconds depending on the record. See CheckinTimeHelper.
     raw = checkins_col.find(
-      '$or' => [
-        { 'timeOf' => { '$gte' => start_time, '$lte' => end_time } },
-        { 'time'   => { '$gte' => start_time, '$lte' => end_time } }
-      ]
+      '$or' => CheckinTimeHelper.dual_unit_or_query(start_time, end_time)
     ).projection(uid: 1, timeOf: 1, time: 1).to_a
 
     # Deduplicate: one entry per (member_id, date_bucket)
-    # timeOf is stored as milliseconds since epoch
     seen = {}
     raw.each do |doc|
       uid       = doc['uid'].to_s
       member_id = uid_to_member[uid]
       next if member_id.blank?
 
-      # Use presence to treat empty string same as nil, then skip zero timestamps
-      ts_raw = doc['timeOf'].presence || doc['time']
-      next if ts_raw.blank? || ts_raw.to_i == 0
-      ts   = Time.at(ts_raw.to_i / 1000.0).utc
-      date = ts.to_date
+      ts_raw  = doc['timeOf'].presence || doc['time']
+      seconds = CheckinTimeHelper.normalize_to_seconds(ts_raw)
+      next if seconds.nil?
+
+      date = Time.at(seconds).utc.to_date
       key  = granularity == :day ? date.strftime('%Y-%m-%d') : date.strftime('%Y-%m')
 
       seen[key] ||= Set.new
@@ -85,32 +82,31 @@ class Admin::SpaceUsageController < AdminController
   end
 
   # GET /api/admin/space_usage/date_range
-  # Returns the earliest and latest checkin timestamps so the UI
+  # Returns the earliest and latest checkin dates so the UI
   # can populate the year/month selectors accurately.
+  #
+  # Can't use .sort(field: 1).limit(1) to find earliest/latest — under mixed
+  # units, a 2018 record stored in milliseconds (~1.5e12) sorts AFTER a 2023
+  # record stored in seconds (~1.7e9), even though 2018 is chronologically
+  # earlier. Instead, fetch all distinct values, normalize each to seconds,
+  # and take min/max of the normalized values. distinct() over a few thousand
+  # values is fast.
   def date_range
     checkins_col = Mongoid.default_client[:checkins]
 
-    # Check both time and timeOf fields for oldest/newest record
-    earliest_timeof = checkins_col.find('timeOf' => { '$exists' => true, '$ne' => nil }).sort(timeOf: 1).limit(1).first
-    earliest_time   = checkins_col.find('time'   => { '$exists' => true, '$ne' => nil }).sort(time: 1).limit(1).first
-    latest_timeof   = checkins_col.find('timeOf' => { '$exists' => true, '$ne' => nil }).sort(timeOf: -1).limit(1).first
-    latest_time     = checkins_col.find('time'   => { '$exists' => true, '$ne' => nil }).sort(time: -1).limit(1).first
+    all_seconds = %w[timeOf time].flat_map do |field|
+      checkins_col.find(field => { '$exists' => true, '$ne' => nil })
+                  .distinct(field)
+                  .map { |raw| CheckinTimeHelper.normalize_to_seconds(raw) }
+                  .compact
+    end
 
-    if earliest_timeof.nil? && earliest_time.nil?
+    if all_seconds.empty?
       render plain: { earliest_year: Date.today.year, latest_year: Date.today.year }.to_json, content_type: "application/json" and return
     end
 
-    earliest_ts = [
-      (earliest_timeof&.dig('timeOf').presence&.to_i || Float::INFINITY),
-      (earliest_time&.dig('time').presence&.to_i     || Float::INFINITY)
-    ].min
-    latest_ts = [
-      (latest_timeof&.dig('timeOf').presence&.to_i || 0),
-      (latest_time&.dig('time').presence&.to_i     || 0)
-    ].max
-
-    earliest_year = Time.at(earliest_ts.to_i / 1000.0).utc.year
-    latest_year   = Time.at(latest_ts.to_i / 1000.0).utc.year
+    earliest_year = Time.at(all_seconds.min).utc.year
+    latest_year   = Time.at(all_seconds.max).utc.year
 
     render plain: { earliest_year: earliest_year, latest_year: latest_year }.to_json, content_type: "application/json"
   end
