@@ -39,6 +39,17 @@ class SeedData
 
   # ── Entry Point ───────────────────────────────────────────────────────────
 
+  # Braintree sandbox volunteer discount ID.
+  # Must contain 'volunteer' — matched by BraintreeService::Discount.get_volunteer_discounts.
+  # This discount must exist in the Braintree sandbox control panel.
+  VOLUNTEER_DISCOUNT_ID = "volunteer_discount_10".freeze
+
+  # Threshold set low for E2E testing so tests don't need to create 8 credits.
+  VOLUNTEER_CREDITS_PER_DISCOUNT = 2
+
+  # Max discounts per year — keep at 2 to test the cap.
+  VOLUNTEER_MAX_DISCOUNTS_PER_YEAR = 2
+
   def call
     create_permissions
     create_members
@@ -53,6 +64,7 @@ class SeedData
     create_invoice_options
     create_subscriptions
     create_member_cards
+    create_volunteer_discount_config
     # Historical analytics data — order matters
     create_historical_members
     create_historical_invoices
@@ -414,6 +426,27 @@ class SeedData
     member.update!(subscription_id: subscription_id, subscription: true, expirationTime: (Time.now + invoice_option.quantity.months).to_i * 1000)
     invoice.update!(subscription_id: subscription_id, settled_at: Time.now)
     puts "  [seed] Created subscription for #{member.fullname}: #{subscription_id}"
+  end
+
+  # ── Volunteer Discount System Config ─────────────────────────────────────
+  #
+  # Seeds the three SystemConfig keys that drive the volunteer credit/discount
+  # system. Without these the discount UI is hidden (discount_active: false)
+  # and check_discount_threshold! is a no-op.
+  #
+  # VOLUNTEER_CREDITS_PER_DISCOUNT is set to 2 (not the production default of 8)
+  # so E2E tests only need to award two credits to trigger a discount.
+
+  def create_volunteer_discount_config
+    {
+      'volunteer_discount_id'            => VOLUNTEER_DISCOUNT_ID,
+      'volunteer_credits_per_discount'   => VOLUNTEER_CREDITS_PER_DISCOUNT.to_s,
+      'volunteer_max_discounts_per_year' => VOLUNTEER_MAX_DISCOUNTS_PER_YEAR.to_s,
+    }.each do |key, value|
+      SystemConfig.set(key, value) unless SystemConfig.get(key).present?
+    end
+    puts "  [seed] Volunteer discount config: discount_id=#{VOLUNTEER_DISCOUNT_ID}, " \
+         "threshold=#{VOLUNTEER_CREDITS_PER_DISCOUNT}, max=#{VOLUNTEER_MAX_DISCOUNTS_PER_YEAR}"
   end
 
   # ── Historical Members ────────────────────────────────────────────────────
