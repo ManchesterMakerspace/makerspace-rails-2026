@@ -21,8 +21,7 @@ class RentalSpotsController < AuthenticationController
   end
 
   def show
-    @spot = RentalSpot.find(params[:id])
-    raise ::Mongoid::Errors::DocumentNotFound.new(RentalSpot, { id: params[:id] }) if @spot.nil?
+    @spot = find_rental_spot(params[:id])
     render json: @spot, serializer: RentalSpotSerializer, adapter: :attributes
   end
 
@@ -30,8 +29,19 @@ class RentalSpotsController < AuthenticationController
   # Used for deep-link/QR landing pages. Returns only non-sensitive,
   # already-public-facing info (the same a member sees in the catalog).
   def public_show
-    @spot = RentalSpot.find(params[:id])
-    raise ::Mongoid::Errors::DocumentNotFound.new(RentalSpot, { id: params[:id] }) if @spot.nil?
+    @spot = find_rental_spot(params[:id])
     render json: @spot, serializer: RentalSpotPublicSerializer, adapter: :attributes
+  end
+
+  private
+
+  # Deep links may reference a spot by its Mongo id OR by its human-readable
+  # `number` (e.g. "LR-Tote-1") so admins can build/print/QR a link using the
+  # number shown in the catalog without looking up the underlying id.
+  def find_rental_spot(identifier)
+    spot = BSON::ObjectId.legal?(identifier) ? RentalSpot.where(id: identifier).first : nil
+    spot ||= RentalSpot.find_by(number: identifier)
+    raise ::Mongoid::Errors::DocumentNotFound.new(RentalSpot, { id: identifier }) if spot.nil?
+    spot
   end
 end
