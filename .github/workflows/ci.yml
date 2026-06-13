@@ -110,6 +110,7 @@ jobs:
 
     env:
       RAILS_ENV: test
+      SKIP_EMAILVALIDATION: "true"
       MLAB_URI: mongodb://localhost:27017/makerspace_test
       REDIS_URL: redis://localhost:6379/0
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
@@ -225,6 +226,7 @@ jobs:
 
     env:
       RAILS_ENV: test
+      SKIP_EMAILVALIDATION: "true"
       PORT: 3035
       MLAB_URI: mongodb://localhost:27017/makerspace_test
       REDIS_URL: redis://localhost:6379/0

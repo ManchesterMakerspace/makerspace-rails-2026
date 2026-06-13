@@ -1,6 +1,11 @@
 require "database_cleaner/mongoid"
 # This file is copied to spec/ when you run 'rails generate rspec:install'
 ENV['RAILS_ENV'] ||= 'test'
+# Factory-created members use @example.com addresses, which the
+# EmailDeliverabilityValidator's DNS/MX checks treat as undeliverable.
+# Skip those checks for the whole test run unless a spec explicitly stubs
+# ENV['SKIP_EMAILVALIDATION'] itself (e.g. email_deliverability_validator_spec.rb).
+ENV['SKIP_EMAILVALIDATION'] ||= 'true'
 if ENV['RAILS_ENV'] == 'test' && ENV['LOG_COVERAGE'] then
   require 'simplecov'
   SimpleCov.start
