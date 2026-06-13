@@ -14,7 +14,9 @@ class RentalSpot
 
   search_in :number, :location, :description
 
-  validates :number,         presence: true, uniqueness: true
+  validates :number,         presence: true, uniqueness: true,
+                              format: { with: /\A[A-Za-z0-9_-]+\z/,
+                                        message: "can only contain letters, numbers, hyphens, and underscores (no spaces or special characters), so it can be used in a rental deep link" }
   validates :location,       presence: true
   validates :rental_type_id, presence: true
 
