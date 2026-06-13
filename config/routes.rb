@@ -38,6 +38,9 @@ Rails.application.routes.draw do
     resources :shops, only: [:index]
     resources :tools, only: [:index]
 
+    # Public rental spot info — unauthenticated deep-link/QR landing
+    get '/rental_spots/:id/public', to: 'rental_spots#public_show'
+
     namespace :billing do
       resources :plans, only: [:index]
       resources :discounts, only: [:index]
