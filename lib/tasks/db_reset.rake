@@ -69,6 +69,8 @@ namespace :db do
         status:       'approved'
       )
       credit.save!(validate: false)
+      # Manually trigger discount check since save!(validate: false) skips callbacks
+      credit.send(:check_and_apply_discount!) rescue nil
     end
 
     year_total = VolunteerCredit.year_count_for(member.id)
