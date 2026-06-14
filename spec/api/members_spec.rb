@@ -140,6 +140,47 @@ describe 'Members API', type: :request do
         let(:id) { 'invalid' }
         run_test!
       end
+
+      context 'when updating email for the logged-in member' do
+        let(:current_member) { create(:member, email: 'current@example.com') }
+        let(:id) { current_member.id }
+
+        before { sign_in current_member }
+
+        it 'normalizes and persists a valid new email' do
+          put "/members/#{id}", params: { email: '  New.Email@Example.COM  ' }, as: :json
+
+          expect(response).to have_http_status(:ok)
+          expect(current_member.reload.email).to eq('new.email@example.com')
+        end
+
+        it 'invokes EmailDeliverabilityValidator against the new submitted email value' do
+          new_email = 'new-submitted@example.com'
+
+          expect_any_instance_of(EmailDeliverabilityValidator)
+            .to receive(:validate_each)
+            .with(instance_of(Member), :email, new_email)
+            .and_call_original
+
+          put "/members/#{id}", params: { email: new_email }, as: :json
+
+          expect(response).to have_http_status(:ok)
+        end
+
+        it 'returns an error response for an undeliverable new email and leaves the previous email persisted' do
+          previous_email = current_member.email
+          undeliverable_email = 'undeliverable@example.invalid'
+
+          allow_any_instance_of(EmailDeliverabilityValidator).to receive(:validate_each) do |_validator, record, attribute, value|
+            record.errors.add(attribute, EmailDeliverabilityValidator::UNDELIVERABLE_MESSAGE) if value == undeliverable_email
+          end
+
+          put "/members/#{id}", params: { email: undeliverable_email }, as: :json
+
+          expect(response).to have_http_status(:unprocessable_entity)
+          expect(current_member.reload.email).to eq(previous_email)
+        end
+      end
     end
   end
 end
