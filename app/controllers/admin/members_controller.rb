@@ -155,10 +155,8 @@ class Admin::MembersController < AdminController
   end
 
   def update_member_params
-    # Email intentionally excluded — changing email requires its own validation flow
-    # and including it triggers Mongoid uniqueness re-validation on unchanged values
     params.permit(:firstname, :lastname, :role, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
-      :silence_emails, :phone, :subscription, address: [:street, :unit, :city, :state, :postal_code])
+      :silence_emails, :phone, :subscription, :email, address: [:street, :unit, :city, :state, :postal_code])
   end
 
   def password_params
