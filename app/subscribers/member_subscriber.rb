@@ -43,6 +43,9 @@ module MemberSubscriber
       invite_to_slack(member.email, member.lastname, member.firstname)
     rescue Error::NotAllowed
       # Slack invites disabled in this environment — silent skip
+    rescue Slack::Web::Api::Errors::NotAllowedTokenType
+      # Token type doesn't support users.admin.invite (e.g. bot token in dev/test)
+      Rails.logger.warn("[MemberSubscriber] Slack invite skipped for #{member.email}: token type not allowed")
     rescue => err
       ::Service::SlackConnector.send_slack_message("Error inviting #{member.fullname} to Slack. Error: #{err}")
     end
