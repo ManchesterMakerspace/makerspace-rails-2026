@@ -33,8 +33,8 @@ class FirebaseAuthController < ApplicationController
 
     if member
       # Block revoked/suspended members — mirrors password login's active_for_authentication? check
-      unless member.active_for_authentication?
-        return render json: { message: I18n.t("devise.failure.#{member.inactive_message}") }, status: :unauthorized
+      unless member.send(:active_for_authentication?)
+        return render json: { message: I18n.t("devise.failure.#{member.send(:inactive_message)}") }, status: :unauthorized
       end
 
       # Link firebase_uid if not already set

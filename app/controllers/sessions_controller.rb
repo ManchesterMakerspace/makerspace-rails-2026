@@ -6,8 +6,25 @@ class SessionsController < Devise::SessionsController
     # Explicitly check active_for_authentication? — warden.authenticate! with :recall
     # does not raise on inactive members, it just calls the recall action and continues.
     # Without this check, revoked/suspended members can still complete sign-in.
-    unless resource&.active_for_authentication?
-      message = resource ? I18n.t("devise.failure.#{resource.inactive_message}") : I18n.t('devise.failure.invalid', authentication_keys: 'email')
+    # active_for_authentication? is protected in Devise so we use send.
+    unless resource&.send(:active_for_authentication?)
+      if resource
+        message = I18n.t("devise.failure.#{resource.send(:inactive_message)}")
+        # Security audit — log and notify on blocked login attempts
+        Rails.logger.warn("[Security] Blocked login attempt for #{resource.status} member: #{resource.email}")
+        AuditLog.create!(
+          event_type:  'blocked_login_attempt',
+          actor_id:    resource.id,
+          actor_name:  resource.fullname,
+          description: "Login blocked — member status: #{resource.status}"
+        ) rescue nil
+        ::Service::SlackConnector.send_slack_message(
+          "🚫 #{resource.status.capitalize} member #{resource.fullname} (#{resource.email}) attempted portal login",
+          ::Service::SlackConnector.logs_channel
+        ) rescue nil
+      else
+        message = I18n.t('devise.failure.invalid', authentication_keys: 'email')
+      end
       render json: { message: message }, status: :unauthorized and return
     end
 
