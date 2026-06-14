@@ -3,7 +3,8 @@ class Admin::RejectionsController < AuthenticationController
   before_action :authorize_rejection_access
 
   def index
-    rejections = mask_uids(RejectionCard.where(rejections_query).map(&:attributes))
+    #rejections = mask_uids(RejectionCard.where(rejections_query).map(&:attributes))
+    rejections = RejectionCard.where(rejections_query).map(&:attributes)
     render json: { rejections: rejections } and return
   end
 
