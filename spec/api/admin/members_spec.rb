@@ -92,15 +92,49 @@ describe 'Admin::Members API', type: :request do
 
         schema '$ref' => '#/components/schemas/Member'
 
+        let(:new_email) { "New.Email@example.com" }
+        let(:member) { create(:member, email: "original@example.com") }
         let(:updateMemberDetails) {{
           firstname: "first",
           lastname: "last",
-          email: "foo@foo.com",
+          email: new_email,
           expirationTime: Time.now.to_i * 1000,
           memberContractOnFile: true
         }}
-        let(:id) { create(:member).id }
-        run_test!
+        let(:id) { member.id }
+
+        run_test! do
+          expect(member.reload.email).to eq(new_email.downcase)
+        end
+      end
+
+      response '422', 'invalid email rejected' do
+        before do
+          sign_in admin
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SKIP_EMAILVALIDATION").and_return(nil)
+          address = instance_double(ValidEmail2::Address, valid_strict_mx?: false)
+          allow(ValidEmail2::Address).to receive(:new).with(invalid_email).and_return(address)
+          allow(Resolv::DNS).to receive(:open).and_raise(Resolv::ResolvError, "NXDOMAIN")
+        end
+
+        schema '$ref' => '#/components/schemas/error'
+
+        let(:original_email) { "original@example.com" }
+        let(:invalid_email) { "person@example.invalid" }
+        let(:member) { create(:member, email: original_email) }
+        let(:updateMemberDetails) {{
+          firstname: "first",
+          lastname: "last",
+          email: invalid_email,
+          expirationTime: Time.now.to_i * 1000,
+          memberContractOnFile: true
+        }}
+        let(:id) { member.id }
+
+        run_test! do
+          expect(member.reload.email).to eq(original_email)
+        end
       end
 
       response '403', 'User unauthorized' do
