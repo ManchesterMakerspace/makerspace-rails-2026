@@ -3,7 +3,7 @@ class Admin::RejectionsController < AuthenticationController
   before_action :authorize_rejection_access
 
   def index
-    rejections = RejectionCard.where(rejections_query).map(&:attributes)
+    rejections = mask_uids(RejectionCard.where(rejections_query).map(&:attributes))
     render json: { rejections: rejections } and return
   end
 
@@ -12,19 +12,11 @@ class Admin::RejectionsController < AuthenticationController
   def authorize_rejection_access
     # Admins can see all rejection cards
     # Members can only see their own rejection cards
-    return if is_admin?
-    
-    # Non-admin members can only query their own card
-    parsed = JSON.parse(params.require(:uids))
-    raise Error::UnprocessableEntity.new('uids must be an array') unless parsed.is_a?(Array)
-    
-    member_cards = current_member.access_cards.map(&:uid)
-    requested_uids = parsed.map(&:to_s)
-    
-    unless requested_uids.all? { |uid| member_cards.include?(uid) }
-      Rails.logger.warn("Non-admin member #{current_member.id} attempted to view rejection cards they don't own")
-      raise Error::Forbidden.new
-    end
+    return if is_admin? || is_resource_manager? || is_board_member?
+
+    # Regular members may only see their own cards. Ignore requested UIDs instead
+    # of rejecting so callers cannot probe other members' cards.
+    params.delete(:uids)
   end
 
   def rejections_query
@@ -39,9 +31,25 @@ class Admin::RejectionsController < AuthenticationController
 
   def query_uids
     @query_uids ||= begin
-      parsed = JSON.parse(params.require(:uids))
-      raise Error::UnprocessableEntity.new('uids must be an array') unless parsed.is_a?(Array)
-      parsed.map(&:to_s)
+      if is_admin? || is_resource_manager? || is_board_member?
+        parsed = JSON.parse(params.require(:uids))
+        raise Error::UnprocessableEntity.new('uids must be an array') unless parsed.is_a?(Array)
+        parsed.map(&:to_s)
+      else
+        current_member.access_cards.map(&:uid).map(&:to_s)
+      end
+    end
+  end
+
+  def mask_uids(records)
+    return records if is_admin? || is_board_member?
+
+    uid_map = Card.where(:uid.in => records.map { |record| record['uid'].to_s }).to_a.index_by { |card| card.uid.to_s }
+    records.map do |record|
+      masked = record.dup
+      card = uid_map[masked['uid'].to_s]
+      masked['uid'] = card.id.to_s if card
+      masked
     end
   end
 

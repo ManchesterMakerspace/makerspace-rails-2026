@@ -65,7 +65,7 @@ class MembersController < AuthenticationController
            after_snapshot:  @member.reload.attributes
          )
        else
-         @member.update_attributes!(member_params)
+         @member.update_attributes!(member_update_params)
 
          # Log member self-service update — no Slack, pure audit trail
          Service::AuditLogger.log(
@@ -94,8 +94,11 @@ class MembersController < AuthenticationController
       params.permit(:signature)
     end
 
-    def member_params
-      params.permit(:firstname, :lastname, :email, :phone, :silence_emails, address: [:street, :unit, :city, :state, :postal_code])
+    def member_update_params
+      permitted = params.permit(:firstname, :lastname, :email, :phone, :silence_emails, address: [:street, :unit, :city, :state, :postal_code])
+      update_params = params[:update].is_a?(ActionController::Parameters) ? params[:update].permit(:email) : {}
+      permitted[:email] = update_params[:email] if update_params.key?(:email)
+      permitted
     end
 
     def search_params

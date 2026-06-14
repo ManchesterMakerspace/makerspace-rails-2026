@@ -15,7 +15,7 @@ class Admin::MembersController < AdminController
     date = @member.expirationTime
     becoming_revoked = params[:status] == 'revoked' && @member.status != 'revoked'
 
-    @member.update!(get_camel_case_params(update_member_params()))
+    @member.update!(get_camel_case_params(update_member_params))
 
     if becoming_revoked
       handle_revocation
@@ -155,10 +155,13 @@ class Admin::MembersController < AdminController
   end
 
   def update_member_params
-    # Email intentionally excluded — changing email requires its own validation flow
-    # and including it triggers Mongoid uniqueness re-validation on unchanged values
-    params.permit(:firstname, :lastname, :role, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
-      :silence_emails, :phone, :subscription, address: [:street, :unit, :city, :state, :postal_code])
+    # If a nested update[email] is supplied, prefer it over any top-level email
+    # so validation runs against the intended new address only.
+    permitted = params.permit(:firstname, :lastname, :role, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
+      :silence_emails, :phone, :subscription, :email, address: [:street, :unit, :city, :state, :postal_code])
+    update_params = params[:update].is_a?(ActionController::Parameters) ? params[:update].permit(:email) : {}
+    permitted[:email] = update_params[:email] if update_params.key?(:email)
+    permitted
   end
 
   def password_params

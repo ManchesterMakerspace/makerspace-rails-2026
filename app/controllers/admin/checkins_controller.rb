@@ -1,6 +1,8 @@
 class Admin::CheckinsController < AuthenticationController
+  before_action :authorize_checkin_access
+
   def index
-    checkins = checkins_collection.find(checkins_query).to_a
+    checkins = mask_uids(checkins_collection.find(checkins_query).to_a)
     render json: { checkins: checkins } and return
   end
 
@@ -29,11 +31,35 @@ class Admin::CheckinsController < AuthenticationController
     query
   end
 
+  def authorize_checkin_access
+    return if is_admin? || is_resource_manager? || is_board_member?
+
+    # Regular members may only see their own card activity. Ignore any requested
+    # UIDs instead of rejecting so callers cannot probe other members' cards.
+    params.delete(:uids)
+  end
+
   def query_uids
     @query_uids ||= begin
-      parsed = JSON.parse(params.require(:uids))
-      raise Error::UnprocessableEntity.new('uids must be an array') unless parsed.is_a?(Array)
-      parsed.map(&:to_s)
+      if is_admin? || is_resource_manager? || is_board_member?
+        parsed = JSON.parse(params.require(:uids))
+        raise Error::UnprocessableEntity.new('uids must be an array') unless parsed.is_a?(Array)
+        parsed.map(&:to_s)
+      else
+        current_member.access_cards.map(&:uid).map(&:to_s)
+      end
+    end
+  end
+
+  def mask_uids(records)
+    return records if is_admin? || is_board_member?
+
+    uid_map = Card.where(:uid.in => records.map { |record| record['uid'].to_s }).to_a.index_by { |card| card.uid.to_s }
+    records.map do |record|
+      masked = record.dup
+      card = uid_map[masked['uid'].to_s]
+      masked['uid'] = card.id.to_s if card
+      masked
     end
   end
 
