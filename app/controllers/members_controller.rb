@@ -65,7 +65,8 @@ class MembersController < AuthenticationController
            after_snapshot:  @member.reload.attributes
          )
        else
-         @member.update_attributes!(member_params)
+         @member.assign_attributes(member_params)
+         @member.save!
 
          # Log member self-service update — no Slack, pure audit trail
          Service::AuditLogger.log(
