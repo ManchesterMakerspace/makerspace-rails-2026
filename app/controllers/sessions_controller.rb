@@ -3,6 +3,14 @@ class SessionsController < Devise::SessionsController
   def create
     resource = warden.authenticate!(:scope => resource_name, :recall => "#{controller_path}#new")
 
+    # Explicitly check active_for_authentication? — warden.authenticate! with :recall
+    # does not raise on inactive members, it just calls the recall action and continues.
+    # Without this check, revoked/suspended members can still complete sign-in.
+    unless resource&.active_for_authentication?
+      message = resource ? I18n.t("devise.failure.#{resource.inactive_message}") : I18n.t('devise.failure.invalid', authentication_keys: 'email')
+      render json: { message: message }, status: :unauthorized and return
+    end
+
     # Check if TOTP is enrolled — require code entry before issuing full session
     if resource.otp_required_for_login? && resource.otp_secret_encrypted.present?
       session[:totp_pending_member_id]      = resource.id.to_s
