@@ -139,6 +139,34 @@ describe 'Admin::Members API', type: :request do
         end
       end
 
+      response '200', 'revocation skips email deliverability validation' do
+        before do
+          sign_in admin
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SKIP_EMAILVALIDATION").and_return(nil)
+          expect(ValidEmail2::Address).not_to receive(:new)
+        end
+
+        schema '$ref' => '#/components/schemas/Member'
+
+        let(:member) do
+          build(:member, email: "current@example.invalid").tap do |member|
+            member.save!(validate: false)
+          end
+        end
+        let(:updateMemberDetails) {{
+          status: "revoked",
+          email: "new@example.invalid"
+        }}
+        let(:id) { member.id }
+
+        run_test! do
+          member.reload
+          expect(member.status).to eq("revoked")
+          expect(member.email).to eq("new@example.invalid")
+        end
+      end
+
       response '403', 'User unauthorized' do
         before { sign_in basic }
         schema '$ref' => '#/components/schemas/error'

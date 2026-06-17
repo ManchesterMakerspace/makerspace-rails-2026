@@ -56,7 +56,7 @@ class Member
   validates :firstname, presence: true
   validates :lastname, presence: true
   validates :email, uniqueness: true
-  validates :email, email_deliverability: true
+  validates :email, email_deliverability: true, unless: :skip_email_deliverability_validation
   validates :cardID, uniqueness: true, allow_nil: true
   validates_inclusion_of :status, in: ["activeMember", "nonMember", "revoked", "inactive", "suspended"]
   validates_inclusion_of :role, in: ["admin", "board_member", "resource_manager", "member"]
@@ -72,6 +72,8 @@ class Member
   has_many :invoices, class_name: "Invoice"
   has_many :access_cards, class_name: "Card", inverse_of: :member
   belongs_to :group, class_name: "Group", inverse_of: :active_members, optional: true, primary_key: 'groupName', foreign_key: "groupName"
+
+  attr_accessor :skip_email_deliverability_validation
 
   def household_role
     return nil unless groupName.present?
