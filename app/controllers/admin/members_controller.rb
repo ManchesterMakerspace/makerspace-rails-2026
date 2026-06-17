@@ -15,6 +15,8 @@ class Admin::MembersController < AdminController
     date = @member.expirationTime
     becoming_revoked = params[:status] == 'revoked' && @member.status != 'revoked'
 
+    @member.skip_email_deliverability_validation = true if becoming_revoked
+
     @member.update!(get_camel_case_params(update_member_params()))
 
     if becoming_revoked
