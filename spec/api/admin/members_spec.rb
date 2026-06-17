@@ -113,8 +113,10 @@ describe 'Admin::Members API', type: :request do
           sign_in admin
           allow(ENV).to receive(:[]).and_call_original
           allow(ENV).to receive(:[]).with("SKIP_EMAILVALIDATION").and_return(nil)
-          address = instance_double(ValidEmail2::Address, valid_strict_mx?: false)
-          allow(ValidEmail2::Address).to receive(:new).with(invalid_email).and_return(address)
+          passing_address = instance_double(ValidEmail2::Address, valid_strict_mx?: true)
+          allow(ValidEmail2::Address).to receive(:new).and_return(passing_address)
+          invalid_address = instance_double(ValidEmail2::Address, valid_strict_mx?: false)
+          allow(ValidEmail2::Address).to receive(:new).with(invalid_email).and_return(invalid_address)
           allow(Resolv::DNS).to receive(:open).and_raise(Resolv::ResolvError, "NXDOMAIN")
         end
 
