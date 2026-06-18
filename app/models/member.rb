@@ -394,8 +394,6 @@ class Member
   end
 
   def publish_update
-    # Invite to Slack, Google if email changed.
-    publish(:email_changed) if previous_changes.key?("email")
     publish(:billing_info_changed) if previous_changes.keys.any? { |attr| [:firstname, :lastname].include?(attr.to_sym) }
   end
 
