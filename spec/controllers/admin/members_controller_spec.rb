@@ -156,6 +156,15 @@ RSpec.describe Admin::MembersController, type: :controller do
           )
         end
 
+        it "invalidates active sessions when suspending a member" do
+          member = Member.create valid_attributes.merge(status: "activeMember", session_token: "current-token")
+
+          put :update, params: { id: member.to_param, status: "suspended" }, format: :json
+
+          expect(response).to have_http_status(200)
+          expect(member.reload.session_token).not_to eq("current-token")
+        end
+
         it "updates the Slack profile fullname when names change" do
           slack_admin_token = require_env!("SLACK_ADMIN_TOKEN")
           slack_profile_fullname = require_env!("SLACK_PROFILE_FULLNAME")

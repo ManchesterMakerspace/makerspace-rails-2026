@@ -14,6 +14,7 @@ class Admin::MembersController < AdminController
     before = @member.attributes.dup
     date = @member.expirationTime
     becoming_revoked = params[:status] == 'revoked' && @member.status != 'revoked'
+    becoming_suspended = params[:status] == 'suspended' && @member.status != 'suspended'
 
     @member.skip_email_deliverability_validation = true if becoming_revoked
 
@@ -21,6 +22,8 @@ class Admin::MembersController < AdminController
 
     if becoming_revoked
       handle_revocation
+    elsif becoming_suspended
+      invalidate_member_sessions
     end
 
     notify_renewal(date)
@@ -146,7 +149,12 @@ class Admin::MembersController < AdminController
     # Silence all email/slack notifications to the member
     @member.update_attribute(:silence_emails, true)
 
-    # Rotate session token to invalidate any active portal sessions
+    invalidate_member_sessions
+  end
+
+  # Rotate session token to invalidate any active portal sessions
+  # when a member is blocked from authentication.
+  def invalidate_member_sessions
     @member.update_attribute(:session_token, SecureRandom.hex)
   end
 
