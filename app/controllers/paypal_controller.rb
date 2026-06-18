@@ -3,7 +3,6 @@ class PaypalController < ApplicationController
   before_action :build_payment, only: [:notify]
 
   def notify
-    configure_messages
     if Rails.env.production?
       if ::PayPal::SDK::Core::API::IPN.valid?(request.raw_post)
         save_and_notify
@@ -43,6 +42,8 @@ class PaypalController < ApplicationController
   end
 
   def save_and_notify
+    configure_messages
+
     unless @payment.save
       enque_message("Error saving payment: $#{@payment.amount} for #{@payment.product} from #{@payment.firstname} #{@payment.lastname} ~ email: #{@payment.payer_email}")
       enque_message("Messages related to error: #{@payment.errors.full_messages.join("\n")}")

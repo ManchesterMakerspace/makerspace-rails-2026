@@ -69,6 +69,19 @@ RSpec.describe PaypalController, type: :controller do
         expect(member.subscription).to be_falsey
       end
 
+      it "does not process cancellation for invalid production IPN requests" do
+        invoice = create(:invoice, member: member, subscription_id: "forged-subscription-id")
+        valid_attributes[:txn_type] = "subscr_cancel"
+        valid_attributes[:recurring_payment_id] = invoice.subscription_id
+
+        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+        allow(::PayPal::SDK::Core::API::IPN).to receive(:valid?).and_return(false)
+
+        expect(Invoice).not_to receive(:process_cancellation)
+
+        post :notify, params: valid_attributes, format: :json
+      end
+
       it "Notifies of duplicate txn_ids" do
         ActiveJob::Base.queue_adapter = :test
         post :notify, params: valid_attributes, format: :json
