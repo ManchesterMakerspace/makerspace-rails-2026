@@ -1,7 +1,7 @@
 class Admin::CheckinsController < AuthenticationController
   def index
     checkins = checkins_collection.find(checkins_query).to_a
-    render json: { checkins: checkins } and return
+    render json: { checkins: serialized_checkins(checkins) } and return
   end
 
   private
@@ -19,14 +19,44 @@ class Admin::CheckinsController < AuthenticationController
     if query_start_time || query_end_time
       # Use $and to safely combine uid filter with $or time field conditions
       query['$and'] = [
-        { 'uid' => { '$in' => query_uids } },
+        { 'uid' => { '$in' => permitted_query_uids } },
         { '$or' => CheckinTimeHelper.dual_unit_or_query(query_start_time, query_end_time) }
       ]
     else
-      query['uid'] = { '$in' => query_uids }
+      query['uid'] = { '$in' => permitted_query_uids }
     end
 
     query
+  end
+
+  def serialized_checkins(checkins)
+    return checkins if privileged_access?
+
+    checkins.map { |checkin| redact_uid(checkin) }
+  end
+
+  def redact_uid(record)
+    attributes = record.respond_to?(:attributes) ? record.attributes : record
+    attributes = attributes.as_json if attributes.respond_to?(:as_json)
+    attributes = attributes.to_h if attributes.respond_to?(:to_h)
+    attributes = attributes.dup
+
+    uid_key = attributes.key?('uid') ? 'uid' : :uid
+    attributes[uid_key] = attributes[uid_key].to_s.hash if attributes.key?(uid_key)
+    attributes
+  end
+
+  def permitted_query_uids
+    @permitted_query_uids ||= begin
+      return query_uids if privileged_access?
+
+      member_card_uids = current_member.access_cards.map { |card| card.uid.to_s }
+      query_uids & member_card_uids
+    end
+  end
+
+  def privileged_access?
+    is_privileged?
   end
 
   def query_uids
