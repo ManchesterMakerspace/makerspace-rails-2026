@@ -217,15 +217,17 @@ RSpec.describe Member, type: :model do
         member.update!({ firstname: "foo_changed" })
       end
 
-      it "Reinvites to services if email changes" do
+      it "does not reinvite to services if email changes" do
         new_email = "foo_changed@test.com"
         # Force member creation before setting expectations so the :create
-        # event's send_slack_invite call doesn't satisfy the expectation
-        member # evaluate let to trigger create
-        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
-        expect(MemberSubscriber).to receive(:send_slack_invite).and_call_original
-        allow(MemberSubscriber).to receive(:invite_to_slack).and_return(nil)
+        # event's send_slack_invite call doesn't satisfy the expectation.
+        member
+        expect(MemberSubscriber).not_to receive(:send_google_invite)
+        expect(MemberSubscriber).not_to receive(:send_slack_invite)
+
         member.update!({ email: new_email })
+
+        expect(member.reload.email).to eq(new_email)
       end
 
       it "Updates billing if a customer" do 
