@@ -17,6 +17,28 @@ jobs:
           username: $DOCKERHUB_USERNAME
           password: $DOCKERHUB_PASSWORD
     resource_class: large
+    environment:
+      RAILS_ENV: test
+      RACK_ENV: test
+      MLAB_URI: mongodb://localhost:27017/makerspace_test
+      REDIS_URL: redis://localhost:6379/1
+      USERNAME: ci_dummy_username
+      PASSPHRASE: ci_dummy_passphrase
+      NPM_TOKEN: ci_dummy_npm_token
+      SLACK_ADMIN_TOKEN: ci_dummy_slack_admin_token
+      SLACK_SIGNING_SECRET: ci_dummy_slack_signing_secret
+      GOOGLE_ID: ci_dummy_google_id
+      GOOGLE_SECRET: ci_dummy_google_secret
+      GOOGLE_TOKEN: ci_dummy_google_token
+      HONEYBADGER_API_KEY: ci_dummy_honeybadger_key
+      PAYPAL_CLIENT_ID: ci_dummy_paypal_client_id
+      PAYPAL_SECRET: ci_dummy_paypal_secret
+      BT_ENV: sandbox
+      BT_MERCHANT_ID: ci_dummy_bt_merchant_id
+      BT_PUBLIC_KEY: ci_dummy_bt_public_key
+      BT_PRIVATE_KEY: ci_dummy_bt_private_key
+      SECRET_KEY_BASE: ci_dummy_secret_key_base
+      OTP_SECRET_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
     steps:
       - checkout
       - run:
@@ -70,7 +92,7 @@ jobs:
       - run:
           name: Create mongoid_search indexes
           command: |
-            bundle exec rails runner "
+            RAILS_ENV=test bundle exec rails runner "
               Mongoid.purge!
               Member.create_indexes
               Payment.create_indexes
