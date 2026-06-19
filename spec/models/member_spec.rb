@@ -274,5 +274,18 @@ RSpec.describe Member, type: :model do
         expect(Rental.all.length).to eq(0)
       end
     end
+
+    describe "renewal Slack notifications" do
+      it "queues renewal messages instead of synchronously posting to Slack" do
+        member = create(:member)
+        SlackUser.create!(member: member, slack_id: "U123")
+
+        expect(Service::SlackConnector).not_to receive(:send_slack_message)
+        expect(Service::SlackConnector).to receive(:enque_message).with(anything, "U123", anything)
+        expect(Service::SlackConnector).to receive(:enque_message).with(anything, Service::SlackConnector.members_relations_channel, anything)
+
+        member.send_renewal_slack_message
+      end
+    end
   end
 end
