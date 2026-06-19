@@ -10,7 +10,7 @@ describe 'Documents API', type: :request do
       operationId 'getDocument'
       parameter name: :id, in: :path, type: :string
       parameter name: :saved, in: :query, type: :boolean, required: false
-      parameter name: :resourceId, in: :query, type: :string, required: false
+      parameter name: :resource_id, in: :query, type: :string, required: false
       
       response '200', 'Document found' do 
         before do
@@ -23,6 +23,33 @@ describe 'Documents API', type: :request do
       # This is an HTML request so they'll just be redirected to the login page if not auth'd
       response '302', 'User not authenticated' do
         let(:id) { "code_of_conduct" }
+        run_test!
+      end
+
+
+      response '403', 'Saved rental agreement belongs to another member' do
+        before do
+          sign_in customer
+        end
+
+        let(:id) { "rental_agreement" }
+        let(:saved) { true }
+        let(:resource_id) { create(:rental).id.to_s }
+
+        run_test!
+      end
+
+      response '200', 'Saved rental agreement belongs to current member' do
+        before do
+          sign_in customer
+          file = Tempfile.new(["rental_agreement", ".pdf"])
+          allow(::Service::GoogleDrive).to receive(:get_document).and_return(file)
+        end
+
+        let(:id) { "rental_agreement" }
+        let(:saved) { true }
+        let(:resource_id) { create(:rental, member: customer).id.to_s }
+
         run_test!
       end
 

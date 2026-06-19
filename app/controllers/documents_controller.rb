@@ -32,6 +32,7 @@ class DocumentsController < AuthenticationController
     when "rental_agreement"
       rental = Rental.find(resource_params[:resource_id]) unless resource_params[:resource_id].nil?
       raise ::Error::NotFound.new() if rental.nil?
+      raise ::Error::Forbidden.new unless rental.member_id.to_s == current_member.id.to_s || is_privileged?
       rental
     end
   end
