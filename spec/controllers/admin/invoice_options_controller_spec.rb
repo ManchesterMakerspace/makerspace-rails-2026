@@ -99,4 +99,26 @@ RSpec.describe Admin::InvoiceOptionsController, type: :controller do
       end
     end
   end
+
+  describe "resource manager authorization" do
+    login_resource_manager
+
+    it "forbids changing fee options into non-fee options" do
+      fee_option = create(:invoice_option, resource_class: "fee")
+
+      put :update, params: { id: fee_option.to_param, resource_class: "member" }, format: :json
+
+      expect(response).to have_http_status(403)
+      expect(fee_option.reload.resource_class).to eq("fee")
+    end
+
+    it "forbids updating non-fee options" do
+      member_option = create(:invoice_option, resource_class: "member")
+
+      put :update, params: { id: member_option.to_param, quantity: 2 }, format: :json
+
+      expect(response).to have_http_status(403)
+    end
+  end
+
 end

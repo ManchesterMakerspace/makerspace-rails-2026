@@ -214,4 +214,45 @@ RSpec.describe Admin::InvoicesController, type: :controller do
       end
     end
   end
+
+  describe "resource manager authorization" do
+    login_resource_manager
+
+    it "only lists fee invoices" do
+      fee_invoice = create(:invoice, resource_class: "fee", resource_id: member.id)
+      create(:invoice, resource_class: "member", resource_id: member.id)
+
+      get :index, format: :json
+
+      parsed_response = JSON.parse(response.body)
+      expect(response).to have_http_status(200)
+      expect(parsed_response.map { |invoice| invoice['id'] }).to eq([fee_invoice.id.to_s])
+    end
+
+    it "forbids updating non-fee invoices" do
+      invoice = create(:invoice, resource_class: "member", resource_id: member.id)
+
+      put :update, params: { id: invoice.to_param, amount: 1.00 }, format: :json
+
+      expect(response).to have_http_status(403)
+    end
+
+    it "forbids changing fee invoices into non-fee invoices" do
+      invoice = create(:invoice, resource_class: "fee", resource_id: member.id)
+
+      put :update, params: { id: invoice.to_param, resource_class: "member" }, format: :json
+
+      expect(response).to have_http_status(403)
+    end
+
+    it "forbids deleting non-fee invoices" do
+      invoice = create(:invoice, resource_class: "member", resource_id: member.id)
+
+      expect {
+        delete :destroy, params: { id: invoice.to_param }, format: :json
+      }.not_to change(Invoice, :count)
+      expect(response).to have_http_status(403)
+    end
+  end
+
 end
