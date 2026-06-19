@@ -54,3 +54,4 @@ end
 gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw, :jruby]
 gem 'honeybadger', '~> 6.9'
 gem 'valid_email2'
+gem 'cloudflare-rails'
