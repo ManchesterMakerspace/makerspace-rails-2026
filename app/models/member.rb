@@ -88,19 +88,19 @@ class Member
   # Regex.escape prevents special characters from breaking the query.
   # Returns Mongoid criteria matching members by full name "Firstname Lastname"
   # Used as fallback when Atlas Search is unavailable (local/CI).
-  def self.name_search_criteria(searchTerms)
+  def self.name_search_criteria(searchTerms, criteria = Mongoid::Criteria.new(Member))
     terms = searchTerms.strip.split(/\s+/, 2)
     if terms.length == 2
       first_regex = /#{::Regexp.escape(terms[0])}/i
       last_regex  = /#{::Regexp.escape(terms[1])}/i
       # Match "Firstname Lastname" or "Lastname Firstname"
-      Member.any_of(
+      criteria.any_of(
         { firstname: first_regex, lastname: last_regex },
         { firstname: last_regex,  lastname: first_regex }
       )
     else
       regex = /#{::Regexp.escape(searchTerms)}/i
-      Member.any_of({ lastname: regex }, { firstname: regex }, { email: regex })
+      criteria.any_of({ lastname: regex }, { firstname: regex }, { email: regex })
     end
   end
 
@@ -135,13 +135,13 @@ class Member
         result_ids = results.collect { |r| r[:_id] }
         if result_ids.empty?
           # Atlas Search returned nothing — fall back to regex contains match
-          return Member.any_of({ email: regex })
+          return criteria.any_of({ email: regex })
         end
-        members = Member.where(id: { :$in => result_ids })
+        members = criteria.where(id: { :$in => result_ids })
         return members.sort_by { |m| result_ids.to_a.index m.id }
       rescue Mongo::Error::OperationFailure
         # Atlas Search not available (local/CI) — fall back to regex contains match
-        return Member.any_of({ email: regex })
+        return criteria.any_of({ email: regex })
       end
     else
       # Name/general search
@@ -172,13 +172,13 @@ class Member
         result_ids = results.collect { |r| r[:_id] }
         if result_ids.empty?
           # Atlas Search returned nothing — fall back to name search
-          return Member.name_search_criteria(searchTerms)
+          return Member.name_search_criteria(searchTerms, criteria)
         end
-        members = Member.where(id: { :$in => result_ids })
+        members = criteria.where(id: { :$in => result_ids })
         return members.sort_by { |m| result_ids.to_a.index m.id }
       rescue Mongo::Error::OperationFailure
         # Atlas Search not available (local/CI) — fall back to name search
-        return Member.name_search_criteria(searchTerms)
+        return Member.name_search_criteria(searchTerms, criteria)
       end
     end
   end

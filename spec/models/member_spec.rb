@@ -57,6 +57,32 @@ RSpec.describe Member, type: :model do
     expect(build(:member)).to be_valid
   end
 
+  describe ".search" do
+    let(:criteria) { double("scoped criteria") }
+
+    before do
+      allow(Member).to receive_message_chain(:collection, :aggregate).and_raise(Mongo::Error::OperationFailure.new("no atlas search"))
+    end
+
+    it "preserves supplied criteria when falling back for email searches" do
+      scoped_result = double("scoped email fallback")
+      expect(criteria).to receive(:any_of).with({ email: /alice@example\.com/i }).and_return(scoped_result)
+
+      expect(Member.search("alice@example.com", criteria)).to eq(scoped_result)
+    end
+
+    it "preserves supplied criteria when falling back for general searches" do
+      scoped_result = double("scoped name fallback")
+      expect(criteria).to receive(:any_of).with(
+        { lastname: /alice/i },
+        { firstname: /alice/i },
+        { email: /alice/i }
+      ).and_return(scoped_result)
+
+      expect(Member.search("alice", criteria)).to eq(scoped_result)
+    end
+  end
+
   # Need this because we store things in milliseconds instead of ruby seconds
   def conv_to_ms(time)
     time.to_i * 1000
