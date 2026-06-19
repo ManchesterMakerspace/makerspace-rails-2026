@@ -37,8 +37,8 @@ class Rental
 
   def send_renewal_slack_message(current_user = nil)
     slack_user = SlackUser.find_by(member_id: member_id)
-    ::Service::SlackConnector.send_slack_message(get_renewal_slack_message, slack_user.slack_id) unless slack_user.nil?
-    ::Service::SlackConnector.send_slack_message(get_renewal_slack_message(current_user), ::Service::SlackConnector.members_relations_channel)
+    enque_message(get_renewal_slack_message, slack_user.slack_id) unless slack_user.nil?
+    enque_message(get_renewal_slack_message(current_user), ::Service::SlackConnector.members_relations_channel)
   end
 
   def self.search(searchTerms, criteria = Mongoid::Criteria.new(Rental))
