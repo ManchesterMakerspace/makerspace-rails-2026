@@ -38,6 +38,8 @@ class Payment
   end
 
   def find_member
+    return unless self.valid?
+
     unless !!self.member
       # Use direct field queries instead of Member.search (which requires Atlas Search index)
       self.member = Member.find_by(email: self.payer_email.to_s.downcase) unless self.payer_email.nil?
