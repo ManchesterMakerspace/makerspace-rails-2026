@@ -79,6 +79,20 @@ RSpec.describe PaypalController, type: :controller do
         sorted_messages = messages.sort_by { |payload| Time.parse(JSON.load(payload)["timestamp"]) }
         expect(JSON.load(sorted_messages.last)["message"]).to include("already been taken")
       end
+
+      it "does not process cancellations for invalid production IPNs" do
+        invoice = create(:invoice, subscription_id: "member_#{member.id}_123")
+        allow(Rails.env).to receive(:production?).and_return(true)
+        allow(::PayPal::SDK::Core::API::IPN).to receive(:valid?).and_return(false)
+        expect(Invoice).not_to receive(:process_cancellation)
+
+        post :notify, params: valid_attributes.merge(
+          txn_type: 'mp_cancel',
+          recurring_payment_id: invoice.subscription_id
+        ), format: :json
+
+        expect(Invoice.find(invoice.id)).to be_present
+      end
     end
   end
 end
