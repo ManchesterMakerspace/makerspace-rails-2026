@@ -5,12 +5,13 @@ class Admin::InvoicesController < AdminOrRmController
 
   # Allow Resource Managers to create shop fee invoices (resource_class: "fee" only).
   # Full admin access remains for all invoice types.
-  before_action :authorize_invoice_action, only: [:create]
+  before_action :authorize_invoice_action, only: [:index, :create, :update, :destroy]
 
   def index
     # Special case: orphaned invoices (subscription cancelled but invoices not cleaned up)
     if invoice_query_params[:orphaned] == 'true'
       orphaned = Invoice.orphaned
+      orphaned = fee_invoices_only(orphaned) unless invoice_admin?
       return render json: orphaned, each_serializer: InvoiceSerializer, adapter: :attributes
     end
 
@@ -53,6 +54,7 @@ class Admin::InvoicesController < AdminOrRmController
     end
 
     invoices = @queries.length > 0 ? Invoice.where(@queries.reduce(&:merge)) : Invoice.all
+    invoices = fee_invoices_only(invoices) unless invoice_admin?
     invoices = query_resource(invoices) # Query with the usual sorting, paging and searching
 
     return render_with_total_items(invoices, { each_serializer: InvoiceSerializer, adapter: :attributes })
@@ -155,10 +157,38 @@ class Admin::InvoicesController < AdminOrRmController
   # Admins can create any invoice type.
   # Resource Managers can only create fee invoices (shop charges).
   def authorize_invoice_action
-    return if is_admin? || is_board_member?
-    resource_class = params[:resource_class]
-    unless resource_class == "fee"
-      render json: { error: "Resource managers may only create shop fee invoices" }, status: 403
+    return if invoice_admin?
+
+    case action_name
+    when "index"
+      return
+    when "create"
+      resource_class = requested_invoice_resource_class
+      error_message = "Resource managers may only create shop fee invoices"
+    else
+      resource_class = @invoice&.resource_class
+      requested_class = params[:resource_class]
+      error_message = "Resource managers may only manage shop fee invoices"
+    end
+
+    unless resource_class == "fee" && (requested_class.blank? || requested_class == "fee")
+      render json: { error: error_message }, status: 403
+    end
+  end
+
+  def invoice_admin?
+    is_admin? || is_board_member?
+  end
+
+  def fee_invoices_only(invoices)
+    invoices.where(resource_class: "fee")
+  end
+
+  def requested_invoice_resource_class
+    if params[:id]
+      InvoiceOption.find(params[:id]).resource_class
+    else
+      params[:resource_class]
     end
   end
 
