@@ -57,6 +57,30 @@ RSpec.describe Member, type: :model do
     expect(build(:member)).to be_valid
   end
 
+  describe ".search" do
+    let!(:current_member) { create(:member, firstname: "Current", lastname: "Member", email: "current@example.com") }
+    let!(:other_member) { create(:member, firstname: "Other", lastname: "Member", email: "other@example.com") }
+    let(:scoped_criteria) { Member.where(id: current_member.id) }
+
+    it "keeps the provided criteria when Atlas name search returns ids outside the scope" do
+      allow(Member.collection).to receive(:aggregate).and_return([{ _id: other_member.id }])
+
+      expect(Member.search("Other", scoped_criteria)).to be_empty
+    end
+
+    it "keeps the provided criteria when falling back to name search" do
+      allow(Member.collection).to receive(:aggregate).and_return([])
+
+      expect(Member.search("Other", scoped_criteria)).to be_empty
+    end
+
+    it "keeps the provided criteria when searching by email" do
+      allow(Member.collection).to receive(:aggregate).and_return([{ _id: other_member.id }])
+
+      expect(Member.search(other_member.email, scoped_criteria)).to be_empty
+    end
+  end
+
   # Need this because we store things in milliseconds instead of ruby seconds
   def conv_to_ms(time)
     time.to_i * 1000
