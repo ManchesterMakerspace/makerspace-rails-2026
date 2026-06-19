@@ -5,6 +5,8 @@ class Group
   field :groupRep            # primary member's fullname (display only)
   field :groupName, type: String  # primary member's MongoDB ID (unique key)
   field :expiry, type: Integer    # expiration in ms, propagated to all household members
+  field :subscription_id, type: String
+  field :subscription, type: Boolean, default: false
 
   belongs_to :member, primary_key: 'fullname', foreign_key: "groupRep"
   has_many :active_members, class_name: "Member", inverse_of: :group, primary_key: 'groupName', foreign_key: "groupName"
@@ -61,6 +63,22 @@ class Group
     self.active_members.where(:id.ne => self.groupName).each do |m|
       m.update_attributes!(expirationTime: new_expiration)
     end
+  end
+
+  def send_renewal_slack_message(current_user = nil)
+    slack_user = SlackUser.find_by(member_id: member.id) if member
+    ::Service::SlackConnector.send_slack_message(get_renewal_slack_message, slack_user.slack_id) unless slack_user.nil?
+    ::Service::SlackConnector.send_slack_message(get_renewal_slack_message(current_user), ::Service::SlackConnector.members_relations_channel)
+  end
+
+  def send_renewal_reversal_slack_message
+    slack_user = SlackUser.find_by(member_id: member.id) if member
+    ::Service::SlackConnector.send_slack_message(get_renewal_reversal_slack_message, slack_user.slack_id) unless slack_user.nil?
+    ::Service::SlackConnector.send_slack_message(get_renewal_reversal_slack_message, ::Service::SlackConnector.members_relations_channel)
+  end
+
+  def remove_subscription
+    update_attributes!({ subscription_id: nil, subscription: false })
   end
 
   private
