@@ -13,12 +13,21 @@ class Admin::MembersController < AdminController
   def update
     before = @member.attributes.dup
     date = @member.expirationTime
-    becoming_revoked = params[:status] == 'revoked' && @member.status != 'revoked'
+    becoming_revoked   = params[:status] == 'revoked'   && @member.status != 'revoked'
     becoming_suspended = params[:status] == 'suspended' && @member.status != 'suspended'
 
     @member.skip_email_deliverability_validation = true if becoming_revoked
 
     @member.update!(get_camel_case_params(update_member_params()))
+
+    # Capture field changes from THIS save immediately — handle_revocation
+    # and invalidate_member_sessions below perform their own saves (e.g.
+    # session_token rotation), which would otherwise overwrite
+    # previous_changes by the time the audit log reads it below, causing
+    # the status change to be lost and the rotated session_token to leak
+    # into field_changes (which AuditLogger does not scrub, unlike
+    # before/after snapshots).
+    member_field_changes = @member.previous_changes
 
     if becoming_revoked
       handle_revocation
@@ -39,7 +48,7 @@ class Admin::MembersController < AdminController
         resource_id:     @member.id,
         actor:           current_member,
         subject:         @member,
-        field_changes:   @member.previous_changes,
+        field_changes:   member_field_changes,
         before_snapshot: before,
         after_snapshot:  @member.attributes,
         slack_channel:   ::Service::SlackConnector.logs_channel
@@ -52,7 +61,7 @@ class Admin::MembersController < AdminController
         resource_id:     @member.id,
         actor:           current_member,
         subject:         @member,
-        field_changes:   @member.previous_changes,
+        field_changes:   member_field_changes,
         before_snapshot: before,
         after_snapshot:  @member.attributes,
         slack_channel:   ::Service::SlackConnector.logs_channel
@@ -149,6 +158,7 @@ class Admin::MembersController < AdminController
     # Silence all email/slack notifications to the member
     @member.update_attribute(:silence_emails, true)
 
+    # Rotate session token to invalidate any active portal sessions
     invalidate_member_sessions
   end
 

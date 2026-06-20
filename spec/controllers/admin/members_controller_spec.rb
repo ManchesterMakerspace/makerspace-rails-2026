@@ -158,11 +158,32 @@ RSpec.describe Admin::MembersController, type: :controller do
 
         it "invalidates active sessions when suspending a member" do
           member = Member.create valid_attributes.merge(status: "activeMember", session_token: "current-token")
-
           put :update, params: { id: member.to_param, status: "suspended" }, format: :json
-
           expect(response).to have_http_status(200)
           expect(member.reload.session_token).not_to eq("current-token")
+        end
+
+        it "logs the status transition in field_changes, not the session_token rotation" do
+          member = Member.create valid_attributes.merge(status: "activeMember", session_token: "current-token")
+
+          expect(Service::AuditLogger).to receive(:log) do |**kwargs|
+            expect(kwargs[:field_changes]).to have_key("status")
+            expect(kwargs[:field_changes]["status"]).to eq(["activeMember", "suspended"])
+            expect(kwargs[:field_changes]).not_to have_key("session_token")
+          end.and_call_original
+
+          put :update, params: { id: member.to_param, status: "suspended" }, format: :json
+          expect(response).to have_http_status(200)
+        end
+
+        it "does not persist session_token in the audit log entry even if a caller fails to exclude it" do
+          member = Member.create valid_attributes.merge(status: "activeMember", session_token: "current-token")
+          put :update, params: { id: member.to_param, status: "suspended" }, format: :json
+
+          entry = AuditLog.where(resource_id: member.id, event_type: "member_updated").last
+          expect(entry).to be_present
+          expect(entry.field_changes).not_to have_key("session_token")
+          expect(entry.slack_message).not_to include("current-token")
         end
 
         it "updates the Slack profile fullname when names change" do

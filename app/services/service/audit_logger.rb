@@ -76,9 +76,10 @@ module Service
       subject_id   = subject&.id
       subject_name = subject&.fullname
 
-      # Scrub snapshots before storage
+      # Scrub snapshots and field_changes before storage
       clean_before = scrub(before_snapshot)
       clean_after  = scrub(after_snapshot)
+      clean_field_changes = scrub_field_changes(field_changes)
 
       # Always generate the Slack message — stored even when not posted
       message = generate_message(
@@ -86,7 +87,7 @@ module Service
         actor_name:    actor_name,
         subject_name:  subject_name,
         resource_type: resource_type,
-        field_changes: field_changes
+        field_changes: clean_field_changes
       )
 
       # Attempt Slack post if a channel was provided
@@ -102,7 +103,7 @@ module Service
         subject_name:    subject_name,
         resource_type:   resource_type,
         resource_id:     to_object_id(resource_id),
-        field_changes:   field_changes,
+        field_changes:   clean_field_changes,
         before_snapshot: clean_before,
         after_snapshot:  clean_after,
         slack_channel:   slack_channel,
@@ -151,6 +152,19 @@ module Service
     def self.scrub(snapshot)
       return nil if snapshot.nil?
       snapshot.reject { |k, _| SCRUBBED_FIELDS.include?(k.to_s) }
+    end
+
+    # Removes sensitive fields from a field_changes hash. Shape differs from
+    # snapshot()'s input — { "field" => [before, after] } rather than a flat
+    # { "field" => value } — so this needs its own filter rather than reusing
+    # scrub(). This is a defense-in-depth safeguard: callers should already
+    # avoid feeding sensitive-field diffs into field_changes (e.g. by
+    # capturing previous_changes before any save that rotates a credential
+    # like session_token), but this ensures a leak can't occur here even if
+    # a caller gets that ordering wrong in the future.
+    def self.scrub_field_changes(field_changes)
+      return nil if field_changes.nil?
+      field_changes.reject { |k, _| SCRUBBED_FIELDS.include?(k.to_s) }
     end
 
     # Generates a human-readable Slack message from structured data.
