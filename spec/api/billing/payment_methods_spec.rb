@@ -34,20 +34,6 @@ describe 'Billing::PaymentMethods API', type: :request do
         run_test!
       end
 
-      # NOTE: the controller explicitly skips authenticate_member!/authenticated?
-      # (and, with the BillingGate fix, verify_billing_permission) for :new —
-      # this is intentional, required for the self-registration payment step
-      # where no member account exists yet. The pre-existing '401' response
-      # block below this comment appears to contradict that and may already
-      # be stale/incorrect independent of this change — flagging rather than
-      # removing, since it predates this fix and wasn't introduced here.
-      it 'returns a client token for an unauthenticated request (self-registration)' do
-        allow(gateway).to receive_message_chain(:client_token, :generate).and_return("1234")
-        get '/api/billing/payment_methods/new', as: :json
-        expect(response).to have_http_status(:ok)
-        expect(JSON.parse(response.body)['clientToken']).to eq('1234')
-      end
-
       response '401', 'User not authenticated' do
         schema '$ref' => '#/components/schemas/error'
         run_test!
@@ -193,5 +179,26 @@ describe 'Billing::PaymentMethods API', type: :request do
         run_test!
       end
     end
+  end
+end
+
+# Isolated from the Rswag path/get DSL above on purpose — a plain it block
+# nested inside Rswag's example group previously caused unreliable results
+# for this same kind of unauthenticated-request check (see members_spec.rb).
+# As a standalone request spec, this gives a trustworthy answer to whether
+# Billing::PaymentMethodsController#new actually works without
+# authentication, independent of how Rswag builds/manages its own requests.
+RSpec.describe 'Billing::PaymentMethods unauthenticated access', type: :request do
+  let(:gateway) { double }
+
+  before do
+    allow_any_instance_of(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
+  end
+
+  it 'returns a client token for an unauthenticated request to /new (self-registration)' do
+    allow(gateway).to receive_message_chain(:client_token, :generate).and_return('1234')
+    get '/api/billing/payment_methods/new', as: :json
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body)['clientToken']).to eq('1234')
   end
 end

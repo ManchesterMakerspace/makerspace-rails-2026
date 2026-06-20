@@ -84,22 +84,22 @@ RSpec.describe Invoice, type: :model do
         expect(second_invoice).to_not be_valid
       end
 
-      it "cleans up unused member invoices if non subscription" do 
+      it "prevents duplicate unused member invoices without deleting the existing invoice" do
         first_invoice = create(
           :invoice, 
           member: member, 
           resource_id: member.id, 
           resource_class: "member",
         )
-        second_invoice = create(
+        second_invoice = build(
           :invoice, 
           member: member, 
           resource_id: member.id, 
           resource_class: "member"
         )
+        expect(second_invoice).to_not be_valid
         expect(Invoice.where(resource_id: member.id).size).to eq(1)
-        expect(Invoice.find(first_invoice.id)).to be_nil
-        expect(Invoice.find(second_invoice.id)).to be_truthy
+        expect(Invoice.find(first_invoice.id)).to be_truthy
       end
 
       it "does not restrict to one per rental" do
@@ -390,7 +390,7 @@ RSpec.describe Invoice, type: :model do
     it "allows a member invoice to be created even if the member has an existing unpaid fee invoice" do
       # Fee invoices store resource_id == member_id with resource_class: "fee" —
       # this must not be mistaken for a duplicate membership invoice.
-      create(:invoice, member: member, resource_class: "fee", resource_id: member.id, operation: "charge=")
+      create(:invoice, member: member, resource_class: "fee", resource_id: member.id)
 
       membership_invoice = build(:invoice, member: member, resource_class: "member", resource_id: member.id)
       expect(membership_invoice).to be_valid
