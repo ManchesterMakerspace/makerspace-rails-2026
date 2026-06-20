@@ -28,7 +28,12 @@ RSpec.describe FirebaseAuthController, type: :controller do
       expect(JSON.parse(response.body)).to eq('totp_required' => true)
       expect(session[:totp_pending_member_id]).to eq(member.id.to_s)
       expect(session[:totp_pending_expires_at]).to be_present
-      expect(controller.current_member).to be_nil
+      # A real Devise session exists at this point — sign_in runs before the
+      # TOTP gate, matching SessionsController's password-login order. The
+      # session is fully established; it's the app/UI layer that should
+      # treat the member as not-yet-fully-authenticated based on the
+      # totp_required flag, not the controller's session state.
+      expect(controller.current_member).to eq(member)
     end
 
     it 'preserves role-based TOTP enrollment prompts for Firebase sign-in' do

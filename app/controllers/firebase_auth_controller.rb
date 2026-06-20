@@ -39,12 +39,6 @@ class FirebaseAuthController < ApplicationController
 
       # Link firebase_uid if not already set
       member.set(firebase_uid: firebase_uid) if member.firebase_uid.blank?
-
-      if member.otp_required_for_login? && member.otp_secret_encrypted.present?
-        session[:totp_pending_member_id]      = member.id.to_s
-        session[:totp_pending_expires_at]     = 10.minutes.from_now.to_i
-        return render json: { totp_required: true }, status: :accepted
-      end
     else
       # Parse name from token — 'profile' scope required for name fields to appear.
       # Defensive fallback: if name is absent or single-word, use email prefix
@@ -68,6 +62,18 @@ class FirebaseAuthController < ApplicationController
     end
 
     sign_in(:member, member)
+
+    # Check if TOTP is enrolled — require code entry before granting full
+    # app access. A real Devise session already exists at this point (set
+    # by sign_in above), matching SessionsController's password-login order
+    # — this mirrors that flow exactly so /api/members/totp_sessions (which
+    # requires an authenticated member to reach) is reachable to complete
+    # the challenge.
+    if member.otp_required_for_login? && member.otp_secret_encrypted.present?
+      session[:totp_pending_member_id]      = member.id.to_s
+      session[:totp_pending_expires_at]     = 10.minutes.from_now.to_i
+      return render json: { totp_required: true }, status: :accepted
+    end
 
     if totp_enrollment_required?(member) && !member.otp_required_for_login?
       member_json = ActiveModelSerializers::SerializableResource.new(
