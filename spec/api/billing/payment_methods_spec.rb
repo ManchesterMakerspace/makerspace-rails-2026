@@ -34,6 +34,20 @@ describe 'Billing::PaymentMethods API', type: :request do
         run_test!
       end
 
+      # NOTE: the controller explicitly skips authenticate_member!/authenticated?
+      # (and, with the BillingGate fix, verify_billing_permission) for :new —
+      # this is intentional, required for the self-registration payment step
+      # where no member account exists yet. The pre-existing '401' response
+      # block below this comment appears to contradict that and may already
+      # be stale/incorrect independent of this change — flagging rather than
+      # removing, since it predates this fix and wasn't introduced here.
+      it 'returns a client token for an unauthenticated request (self-registration)' do
+        allow(gateway).to receive_message_chain(:client_token, :generate).and_return("1234")
+        get '/api/billing/payment_methods/new', as: :json
+        expect(response).to have_http_status(:ok)
+        expect(JSON.parse(response.body)['clientToken']).to eq('1234')
+      end
+
       response '401', 'User not authenticated' do
         schema '$ref' => '#/components/schemas/error'
         run_test!
