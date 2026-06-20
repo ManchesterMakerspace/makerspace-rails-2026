@@ -114,7 +114,7 @@ jobs:
       MLAB_URI: mongodb://localhost:27017/makerspace_test
       REDIS_URL: redis://localhost:6379/0
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
-      OTP_SECRET_KEY: ci_dummy_otp_secret
+      OTP_SECRET_KEY: fZ4zRjsUzonEkqfj1zEB1NuxGcLR1VviOY5Oit5CtqI=
       APP_DOMAIN: http://localhost:3035
       SLACK_ADMIN_TOKEN: dummy
       SLACK_SIGNING_SECRET: dummy
@@ -160,7 +160,7 @@ jobs:
       RAILS_ENV: production
       SECRET_KEY_BASE: ci_dummy_secret_key_base
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
-      OTP_SECRET_KEY: ci_dummy_otp_secret
+      OTP_SECRET_KEY: fZ4zRjsUzonEkqfj1zEB1NuxGcLR1VviOY5Oit5CtqI=
       MLAB_URI: mongodb://localhost:27017/makerspace_production
       APP_DOMAIN: http://localhost:3035
       SLACK_ADMIN_TOKEN: dummy
@@ -231,7 +231,7 @@ jobs:
       MLAB_URI: mongodb://localhost:27017/makerspace_test
       REDIS_URL: redis://localhost:6379/0
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
-      OTP_SECRET_KEY: ci_dummy_otp_secret
+      OTP_SECRET_KEY: fZ4zRjsUzonEkqfj1zEB1NuxGcLR1VviOY5Oit5CtqI=
       APP_DOMAIN: http://localhost:3035
       RAILS_SERVE_STATIC_FILES: 'true'
       SLACK_ADMIN_TOKEN: dummy
