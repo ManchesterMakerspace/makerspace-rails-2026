@@ -278,9 +278,17 @@ class Invoice
     self.save!
   end
 
-  # Prevent duplicate active member invoices without mutating existing billing records.
+  # Prevent duplicate active member invoices without mutating existing
+  # billing records. Scoped to resource_class: "member" — fee invoices
+  # (resource_class: "fee") store resource_id == member_id too (see
+  # ShopFee), so an unscoped query here would treat an unrelated unpaid
+  # shop fee as a "duplicate membership" and block legitimate membership
+  # invoice creation. The :resource_class.ne => 'fee' pattern already used
+  # elsewhere in this file (see active_invoice_for_resource below) is the
+  # established precedent for this exact scoping concern.
   def one_active_invoice_per_resource
-    active = Invoice.where(resource_id: resource_id, settled_at: nil, transaction_id: nil)
+    active = Invoice.where(resource_id: resource_id, resource_class: "member", settled_at: nil, transaction_id: nil)
+
     errors.add(:base, "Cannot create duplicate memberships for same user") if active.exists?
   end
 

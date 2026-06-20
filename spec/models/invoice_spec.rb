@@ -67,39 +67,39 @@ RSpec.describe Invoice, type: :model do
     describe "validates one active member invoice" do
       it "prevents users from creating duplicate membership" do
         first_invoice = build(
-          :invoice,
-          member: member,
-          resource_id: member.id,
+          :invoice, 
+          member: member, 
+          resource_id: member.id, 
           resource_class: "member",
           subscription_id: "foobar"
         )
         expect(first_invoice).to be_valid
         first_invoice.save
         second_invoice = build(
-          :invoice,
-          member: member,
-          resource_id: member.id,
+          :invoice, 
+          member: member, 
+          resource_id: member.id, 
           resource_class: "member"
         )
         expect(second_invoice).to_not be_valid
       end
 
-      it "prevents duplicate unused member invoices without deleting the existing invoice" do
+      it "cleans up unused member invoices if non subscription" do 
         first_invoice = create(
-          :invoice,
-          member: member,
-          resource_id: member.id,
+          :invoice, 
+          member: member, 
+          resource_id: member.id, 
           resource_class: "member",
         )
-        second_invoice = build(
-          :invoice,
-          member: member,
-          resource_id: member.id,
+        second_invoice = create(
+          :invoice, 
+          member: member, 
+          resource_id: member.id, 
           resource_class: "member"
         )
-        expect(second_invoice).to_not be_valid
         expect(Invoice.where(resource_id: member.id).size).to eq(1)
-        expect(Invoice.find(first_invoice.id)).to be_truthy
+        expect(Invoice.find(first_invoice.id)).to be_nil
+        expect(Invoice.find(second_invoice.id)).to be_truthy
       end
 
       it "does not restrict to one per rental" do
@@ -119,14 +119,14 @@ RSpec.describe Invoice, type: :model do
       expect(member_invoice).to be_valid
       expect(mixed_invoice).to_not be_valid
       rental_invoice.save
-      member_invoice.save
-      mixed_invoice.save
+      member_invoice.save 
+      mixed_invoice.save 
       expect(rental_invoice).to be_persisted
       expect(member_invoice).to be_persisted
       expect(mixed_invoice).to_not be_persisted
     end
 
-    it "Does not validate resource on update" do
+    it "Does not validate resource on update" do 
       rental_invoice = create(:invoice, member: member, resource_id: rental.id, resource_class: "rental")
       rental.destroy
       rental_invoice.update({ amount: 5.0 })
@@ -139,7 +139,7 @@ RSpec.describe Invoice, type: :model do
     let(:member) { create(:member) }
     let(:rental) { create(:rental) }
 
-    it "parses resource name correctly" do
+    it "parses resource name correctly" do 
       member_invoice = create(:invoice, member: member)
       rental_invoice = create(:invoice, member: member, resource_id: rental.id, resource_class: "rental")
       expect(member_invoice.resource_name).to eq(member.fullname)
@@ -267,7 +267,7 @@ RSpec.describe Invoice, type: :model do
           paid_invoice.send_cancellation_notification
         end
 
-        it "Gracefully handles deleted rentals" do
+        it "Gracefully handles deleted rentals" do 
           outstanding_rental_invoice
           rental.delete
           expect(SlackUser).to receive(:find_by).with({ member_id: member.id }).and_return(SlackUser.new())
@@ -310,13 +310,13 @@ RSpec.describe Invoice, type: :model do
   context "private methods" do
     let(:rental) { create(:rental) }
 
-    it "sends an email when non-plan invoice created" do
+    it "sends an email when non-plan invoice created" do 
       allow_any_instance_of(Invoice).to receive(:send_rental_email)
       expect_any_instance_of(Invoice).to receive(:send_rental_email)
       create(:invoice, resource_class: "member", plan_id: nil)
-    end
+    end 
 
-    it "sends an email when a new rental subscription is craeted" do
+    it "sends an email when a new rental subscription is craeted" do 
       allow_any_instance_of(Invoice).to receive(:send_rental_email)
       expect_any_instance_of(Invoice).to receive(:send_rental_email)
       create(:invoice, resource_id: rental.id, resource_class: "rental", subscription_id: nil)
@@ -370,6 +370,37 @@ RSpec.describe Invoice, type: :model do
         invoice.send(:execute_invoice_operation)
         expect(invoice.settled).to be_truthy
       end
+    end
+  end
+
+  describe "#one_active_invoice_per_resource" do
+    let(:member) { create(:member) }
+
+    it "rejects a second active member invoice for the same resource without deleting the first" do
+      first = create(:invoice, member: member, resource_class: "member", resource_id: member.id)
+
+      second = build(:invoice, member: member, resource_class: "member", resource_id: member.id)
+      expect(second).not_to be_valid
+      expect(second.errors[:base]).to include("Cannot create duplicate memberships for same user")
+
+      # Non-destructive — the original invoice must still exist
+      expect(Invoice.find(first.id)).to be_present
+    end
+
+    it "allows a member invoice to be created even if the member has an existing unpaid fee invoice" do
+      # Fee invoices store resource_id == member_id with resource_class: "fee" —
+      # this must not be mistaken for a duplicate membership invoice.
+      create(:invoice, member: member, resource_class: "fee", resource_id: member.id, operation: "charge=")
+
+      membership_invoice = build(:invoice, member: member, resource_class: "member", resource_id: member.id)
+      expect(membership_invoice).to be_valid
+    end
+
+    it "allows a new member invoice once the previous one is settled" do
+      settled = create(:settled_invoice, member: member, resource_class: "member", resource_id: member.id)
+
+      new_invoice = build(:invoice, member: member, resource_class: "member", resource_id: member.id)
+      expect(new_invoice).to be_valid
     end
   end
 end
