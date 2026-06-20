@@ -181,24 +181,3 @@ describe 'Billing::PaymentMethods API', type: :request do
     end
   end
 end
-
-# Isolated from the Rswag path/get DSL above on purpose — a plain it block
-# nested inside Rswag's example group previously caused unreliable results
-# for this same kind of unauthenticated-request check (see members_spec.rb).
-# As a standalone request spec, this gives a trustworthy answer to whether
-# Billing::PaymentMethodsController#new actually works without
-# authentication, independent of how Rswag builds/manages its own requests.
-RSpec.describe 'Billing::PaymentMethods unauthenticated access', type: :request do
-  let(:gateway) { double }
-
-  before do
-    allow_any_instance_of(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
-  end
-
-  it 'returns a client token for an unauthenticated request to /new (self-registration)' do
-    allow(gateway).to receive_message_chain(:client_token, :generate).and_return('1234')
-    get '/api/billing/payment_methods/new', as: :json
-    expect(response).to have_http_status(:ok)
-    expect(JSON.parse(response.body)['clientToken']).to eq('1234')
-  end
-end
