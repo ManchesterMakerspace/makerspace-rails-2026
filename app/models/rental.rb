@@ -37,8 +37,21 @@ class Rental
 
   def send_renewal_slack_message(current_user = nil)
     slack_user = SlackUser.find_by(member_id: member_id)
-    enque_message(get_renewal_slack_message, slack_user.slack_id) unless slack_user.nil?
-    enque_message(get_renewal_slack_message(current_user), ::Service::SlackConnector.members_relations_channel)
+    # See Member#send_renewal_slack_message for why distinct uniquifiers
+    # are required here — both calls share a method name and request_id,
+    # so without this the second enque_message overwrites the first.
+    unless slack_user.nil?
+      enque_message(
+        get_renewal_slack_message,
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("send_renewal_slack_message.member.#{id}")
+      )
+    end
+    enque_message(
+      get_renewal_slack_message(current_user),
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("send_renewal_slack_message.management.#{id}")
+    )
   end
 
   def self.search(searchTerms, criteria = Mongoid::Criteria.new(Rental))

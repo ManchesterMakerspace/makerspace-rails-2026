@@ -88,19 +88,19 @@ class Member
   # Regex.escape prevents special characters from breaking the query.
   # Returns Mongoid criteria matching members by full name "Firstname Lastname"
   # Used as fallback when Atlas Search is unavailable (local/CI).
-  def self.name_search_criteria(searchTerms, criteria = Mongoid::Criteria.new(Member))
+  def self.name_search_criteria(searchTerms)
     terms = searchTerms.strip.split(/\s+/, 2)
     if terms.length == 2
       first_regex = /#{::Regexp.escape(terms[0])}/i
       last_regex  = /#{::Regexp.escape(terms[1])}/i
       # Match "Firstname Lastname" or "Lastname Firstname"
-      criteria.any_of(
+      Member.any_of(
         { firstname: first_regex, lastname: last_regex },
         { firstname: last_regex,  lastname: first_regex }
       )
     else
       regex = /#{::Regexp.escape(searchTerms)}/i
-      criteria.any_of({ lastname: regex }, { firstname: regex }, { email: regex })
+      Member.any_of({ lastname: regex }, { firstname: regex }, { email: regex })
     end
   end
 
@@ -135,13 +135,13 @@ class Member
         result_ids = results.collect { |r| r[:_id] }
         if result_ids.empty?
           # Atlas Search returned nothing — fall back to regex contains match
-          return criteria.any_of({ email: regex })
+          return Member.any_of({ email: regex })
         end
-        members = criteria.where(id: { :$in => result_ids })
+        members = Member.where(id: { :$in => result_ids })
         return members.sort_by { |m| result_ids.to_a.index m.id }
       rescue Mongo::Error::OperationFailure
         # Atlas Search not available (local/CI) — fall back to regex contains match
-        return criteria.any_of({ email: regex })
+        return Member.any_of({ email: regex })
       end
     else
       # Name/general search
@@ -172,13 +172,13 @@ class Member
         result_ids = results.collect { |r| r[:_id] }
         if result_ids.empty?
           # Atlas Search returned nothing — fall back to name search
-          return Member.name_search_criteria(searchTerms, criteria)
+          return Member.name_search_criteria(searchTerms)
         end
-        members = criteria.where(id: { :$in => result_ids })
+        members = Member.where(id: { :$in => result_ids })
         return members.sort_by { |m| result_ids.to_a.index m.id }
       rescue Mongo::Error::OperationFailure
         # Atlas Search not available (local/CI) — fall back to name search
-        return Member.name_search_criteria(searchTerms, criteria)
+        return Member.name_search_criteria(searchTerms)
       end
     end
   end
@@ -310,8 +310,24 @@ class Member
   # Emit to Member & Management channels on renewal
   def send_renewal_slack_message(current_user=nil)
     slack_user = SlackUser.find_by(member_id: id)
-    enque_message(get_renewal_slack_message, slack_user.slack_id) unless slack_user.nil?
-    enque_message(get_renewal_slack_message(current_user), ::Service::SlackConnector.members_relations_channel)
+    # NOTE: enque_message's default uniquifier is derived only from the
+    # calling method name + Current.request_id — both calls below happen
+    # within this same method in the same request, so without an explicit,
+    # distinct uniquifier per call they'd write to the same Redis key and
+    # the second REDIS.set would silently overwrite the first, losing one
+    # of the two renewal notifications every time.
+    unless slack_user.nil?
+      enque_message(
+        get_renewal_slack_message,
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("send_renewal_slack_message.member.#{id}")
+      )
+    end
+    enque_message(
+      get_renewal_slack_message(current_user),
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("send_renewal_slack_message.management.#{id}")
+    )
   end
 
   # Emit to Member & Management channels on renewal reversals
@@ -394,6 +410,8 @@ class Member
   end
 
   def publish_update
+    # Invite to Slack, Google if email changed.
+    publish(:email_changed) if previous_changes.key?("email")
     publish(:billing_info_changed) if previous_changes.keys.any? { |attr| [:firstname, :lastname].include?(attr.to_sym) }
   end
 

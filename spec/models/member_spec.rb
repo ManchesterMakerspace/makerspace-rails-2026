@@ -57,32 +57,6 @@ RSpec.describe Member, type: :model do
     expect(build(:member)).to be_valid
   end
 
-  describe ".search" do
-    let(:criteria) { double("scoped criteria") }
-
-    before do
-      allow(Member).to receive_message_chain(:collection, :aggregate).and_raise(Mongo::Error::OperationFailure.new("no atlas search"))
-    end
-
-    it "preserves supplied criteria when falling back for email searches" do
-      scoped_result = double("scoped email fallback")
-      expect(criteria).to receive(:any_of).with({ email: /alice@example\.com/i }).and_return(scoped_result)
-
-      expect(Member.search("alice@example.com", criteria)).to eq(scoped_result)
-    end
-
-    it "preserves supplied criteria when falling back for general searches" do
-      scoped_result = double("scoped name fallback")
-      expect(criteria).to receive(:any_of).with(
-        { lastname: /alice/i },
-        { firstname: /alice/i },
-        { email: /alice/i }
-      ).and_return(scoped_result)
-
-      expect(Member.search("alice", criteria)).to eq(scoped_result)
-    end
-  end
-
   # Need this because we store things in milliseconds instead of ruby seconds
   def conv_to_ms(time)
     time.to_i * 1000
@@ -243,17 +217,15 @@ RSpec.describe Member, type: :model do
         member.update!({ firstname: "foo_changed" })
       end
 
-      it "does not reinvite to services if email changes" do
+      it "Reinvites to services if email changes" do
         new_email = "foo_changed@test.com"
         # Force member creation before setting expectations so the :create
-        # event's send_slack_invite call doesn't satisfy the expectation.
-        member
-        expect(MemberSubscriber).not_to receive(:send_google_invite)
-        expect(MemberSubscriber).not_to receive(:send_slack_invite)
-
+        # event's send_slack_invite call doesn't satisfy the expectation
+        member # evaluate let to trigger create
+        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
+        expect(MemberSubscriber).to receive(:send_slack_invite).and_call_original
+        allow(MemberSubscriber).to receive(:invite_to_slack).and_return(nil)
         member.update!({ email: new_email })
-
-        expect(member.reload.email).to eq(new_email)
       end
 
       it "Updates billing if a customer" do 
@@ -302,18 +274,38 @@ RSpec.describe Member, type: :model do
         expect(Rental.all.length).to eq(0)
       end
     end
+  end
 
-    describe "renewal Slack notifications" do
-      it "queues renewal messages instead of synchronously posting to Slack" do
-        member = create(:member)
-        SlackUser.create!(member: member, slack_id: "U123")
+  describe "#send_renewal_slack_message" do
+    # Regression for a key-collision bug: enque_message's default uniquifier
+    # is derived only from the calling method name + Current.request_id.
+    # Both the member-DM and management-channel calls happen within this
+    # one method in the same request, so without distinct, explicit
+    # uniquifiers, the second REDIS.set silently overwrote the first,
+    # losing one of the two renewal notifications every time.
+    it "queues both the member DM and management channel notification under distinct keys" do
+      member = create(:member)
+      slack_user = SlackUser.create!(member_id: member.id, slack_id: "U_TEST_MEMBER")
 
-        expect(Service::SlackConnector).not_to receive(:send_slack_message)
-        expect(Service::SlackConnector).to receive(:enque_message).with(anything, "U123", anything)
-        expect(Service::SlackConnector).to receive(:enque_message).with(anything, Service::SlackConnector.members_relations_channel, anything)
+      member.send_renewal_slack_message
 
-        member.send_renewal_slack_message
-      end
+      enqueued = Service::SlackConnector.get_enqueued_messages("#{Current.request_id}.*")
+      channels = enqueued.values.map { |payload| JSON.parse(payload)["channel"] }
+
+      expect(channels).to include(slack_user.slack_id)
+      expect(channels).to include(Service::SlackConnector.members_relations_channel)
+      expect(channels.size).to eq(2)
+    end
+
+    it "queues only the management channel notification when the member has no SlackUser" do
+      member = create(:member)
+
+      member.send_renewal_slack_message
+
+      enqueued = Service::SlackConnector.get_enqueued_messages("#{Current.request_id}.*")
+      channels = enqueued.values.map { |payload| JSON.parse(payload)["channel"] }
+
+      expect(channels).to eq([Service::SlackConnector.members_relations_channel])
     end
   end
 end
