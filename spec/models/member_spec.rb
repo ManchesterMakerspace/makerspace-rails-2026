@@ -68,7 +68,7 @@ RSpec.describe Member, type: :model do
     it "preserves supplied criteria for email fallback searches" do
       scoped_results = double("scoped email results")
 
-      expect(criteria).to receive(:any_of).with(email: /member@example\.com/i).and_return(scoped_results)
+      expect(criteria).to receive(:any_of).with({ email: /member@example\.com/i }).and_return(scoped_results)
 
       expect(Member.search("member@example.com", criteria)).to eq(scoped_results)
     end
