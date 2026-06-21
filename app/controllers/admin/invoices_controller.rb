@@ -3,15 +3,19 @@ class Admin::InvoicesController < AdminOrRmController
   include BraintreeGateway
   before_action :find_invoice, only: [:update, :destroy, :force_cancel]
 
-  # Allow Resource Managers to create shop fee invoices (resource_class: "fee" only).
-  # Full admin access remains for all invoice types.
+  # Allow Resource Managers to manage shop fee invoices (resource_class: "fee") only.
+  # Full admin/board access remains for all invoice types and actions.
   before_action :authorize_invoice_action, only: [:index, :create, :update, :destroy]
 
   def index
     # Special case: orphaned invoices (subscription cancelled but invoices not cleaned up)
     if invoice_query_params[:orphaned] == 'true'
       orphaned = Invoice.orphaned
-      orphaned = fee_invoices_only(orphaned) unless invoice_admin?
+      # Invoice.orphaned uses Array#select internally, so it returns a plain
+      # Array, not a chainable Mongoid::Criteria — fee_invoices_only's
+      # .where call would raise NoMethodError on an Array. Filter with
+      # Array#select here instead for this one path.
+      orphaned = orphaned.select { |invoice| invoice.resource_class == "fee" } unless invoice_admin?
       return render json: orphaned, each_serializer: InvoiceSerializer, adapter: :attributes
     end
 
@@ -154,23 +158,24 @@ class Admin::InvoicesController < AdminOrRmController
 
   private
 
-  # Admins can create any invoice type.
-  # Resource Managers can only create fee invoices (shop charges).
+  # Admins/board can manage any invoice type and action.
+  # Resource Managers can only create/view/update/delete fee invoices
+  # (shop charges) — and cannot change an existing invoice's resource_class
+  # away from "fee" to escape the restriction.
   def authorize_invoice_action
     return if invoice_admin?
-
     case action_name
     when "index"
       return
     when "create"
       resource_class = requested_invoice_resource_class
+      requested_class = params[:resource_class]
       error_message = "Resource managers may only create shop fee invoices"
     else
       resource_class = @invoice&.resource_class
       requested_class = params[:resource_class]
       error_message = "Resource managers may only manage shop fee invoices"
     end
-
     unless resource_class == "fee" && (requested_class.blank? || requested_class == "fee")
       render json: { error: error_message }, status: 403
     end
@@ -185,11 +190,7 @@ class Admin::InvoicesController < AdminOrRmController
   end
 
   def requested_invoice_resource_class
-    if params[:id]
-      InvoiceOption.find(params[:id]).resource_class
-    else
-      params[:resource_class]
-    end
+    params[:resource_class]
   end
 
   def update_invoice_params
