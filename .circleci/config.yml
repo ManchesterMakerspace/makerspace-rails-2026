@@ -17,11 +17,7 @@ global_env: &global_env
   SMTP_USERNAME: "dummy@example.com"
   SMTP_PASSWORD: "dummy"
   SMTP_FROM: "dummy@example.com"
-  HONEYBADGER_API_KEY: "dummy"
   BT_ENV: "sandbox"
-  BT_MERCHANT_ID: "dummy"
-  BT_PUBLIC_KEY: "dummy"
-  BT_PRIVATE_KEY: "dummy"
 
 jobs:
   build:
