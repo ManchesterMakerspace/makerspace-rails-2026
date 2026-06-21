@@ -100,7 +100,7 @@ jobs:
       - run:
           name: Clear React cache
           command: rm -rf tmp/makerspace-react && echo "React cache cleared"
-        - run:
+      - run:
           name: UT
           command: bundle exec rspec
       - run:
