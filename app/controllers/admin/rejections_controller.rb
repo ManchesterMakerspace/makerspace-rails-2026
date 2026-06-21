@@ -18,7 +18,6 @@ class Admin::RejectionsController < AuthenticationController
 
   def serialized_rejections(rejections)
     return rejections if privileged_access?
-
     rejections.map { |rejection| redact_uid(rejection) }
   end
 
@@ -26,16 +25,22 @@ class Admin::RejectionsController < AuthenticationController
     attributes = attributes.as_json if attributes.respond_to?(:as_json)
     attributes = attributes.to_h if attributes.respond_to?(:to_h)
     attributes = attributes.dup
-
     uid_key = attributes.key?('uid') ? 'uid' : :uid
-    attributes[uid_key] = attributes[uid_key].to_s.hash if attributes.key?(uid_key)
+    attributes[uid_key] = redacted_uid_digest(attributes[uid_key]) if attributes.key?(uid_key)
     attributes
+  end
+
+  # See Admin::CheckinsController#redacted_uid_digest — identical logic,
+  # kept consistent across both endpoints so a member's UID redacts to the
+  # same value whether viewed via checkins or rejections.
+  def redacted_uid_digest(uid)
+    require 'openssl'
+    OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base, uid.to_s)[0, 12]
   end
 
   def permitted_query_uids
     @permitted_query_uids ||= begin
       return query_uids if privileged_access?
-
       member_card_uids = current_member.access_cards.map { |card| card.uid.to_s }
       query_uids & member_card_uids
     end

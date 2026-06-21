@@ -31,7 +31,6 @@ class Admin::CheckinsController < AuthenticationController
 
   def serialized_checkins(checkins)
     return checkins if privileged_access?
-
     checkins.map { |checkin| redact_uid(checkin) }
   end
 
@@ -40,16 +39,26 @@ class Admin::CheckinsController < AuthenticationController
     attributes = attributes.as_json if attributes.respond_to?(:as_json)
     attributes = attributes.to_h if attributes.respond_to?(:to_h)
     attributes = attributes.dup
-
     uid_key = attributes.key?('uid') ? 'uid' : :uid
-    attributes[uid_key] = attributes[uid_key].to_s.hash if attributes.key?(uid_key)
+    attributes[uid_key] = redacted_uid_digest(attributes[uid_key]) if attributes.key?(uid_key)
     attributes
+  end
+
+  # Deterministic, keyed digest — stable across requests, workers, and
+  # restarts (unlike String#hash, which uses a per-process random seed and
+  # would render the same UID as a different value every time, breaking
+  # any correlation of a member's own checkins over time or with the
+  # matching rejections endpoint). Truncated to 12 hex chars: short enough
+  # to be a clean display value, long enough that collisions among the
+  # small set of real card UIDs in use are not a practical concern.
+  def redacted_uid_digest(uid)
+    require 'openssl'
+    OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base, uid.to_s)[0, 12]
   end
 
   def permitted_query_uids
     @permitted_query_uids ||= begin
       return query_uids if privileged_access?
-
       member_card_uids = current_member.access_cards.map { |card| card.uid.to_s }
       query_uids & member_card_uids
     end
