@@ -5,6 +5,17 @@ RSpec.describe Group, type: :model do
     let(:member) { create(:member) }
     let(:group) { create(:group, member: member, groupRep: member.fullname, groupName: member.id.to_s) }
 
+    # See spec/models/member_spec.rb's #send_renewal_slack_message block for
+    # why this is needed — Current.request_id is never set in a plain model
+    # spec, so without an explicit, unique value per test, the wildcard
+    # lookup below would match every key in Redis across the whole suite run.
+    around do |example|
+      Current.request_id = SecureRandom.uuid
+      example.run
+      REDIS.keys("#{Current.request_id}.*").each { |key| REDIS.del(key) }
+      Current.request_id = nil
+    end
+
     describe '#send_renewal_slack_message' do
       it 'queues both the member DM and management channel notification under distinct keys' do
         slack_user = SlackUser.create!(member_id: member.id, slack_id: "U_TEST_GROUP_MEMBER")

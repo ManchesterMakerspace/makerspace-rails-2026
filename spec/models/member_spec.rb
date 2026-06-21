@@ -283,6 +283,22 @@ RSpec.describe Member, type: :model do
     # one method in the same request, so without distinct, explicit
     # uniquifiers, the second REDIS.set silently overwrote the first,
     # losing one of the two renewal notifications every time.
+    #
+    # NOTE: Current.request_id is only ever set by SetCurrentRequestDetails
+    # in real requests — in a plain model spec nothing sets it, so it stays
+    # nil for the whole suite run unless set explicitly here. Without an
+    # explicit, unique value per test, the wildcard lookup below would match
+    # every key in Redis (since nil.to_s + ".*" == ".*"), including leftover
+    # keys from any other test in the suite — exactly what caused this test
+    # to see 6 channels instead of 2 once other tests in the suite also
+    # enqueued messages with the same unset request_id.
+    around do |example|
+      Current.request_id = SecureRandom.uuid
+      example.run
+      REDIS.keys("#{Current.request_id}.*").each { |key| REDIS.del(key) }
+      Current.request_id = nil
+    end
+
     it "queues both the member DM and management channel notification under distinct keys" do
       member = create(:member)
       slack_user = SlackUser.create!(member_id: member.id, slack_id: "U_TEST_MEMBER")
