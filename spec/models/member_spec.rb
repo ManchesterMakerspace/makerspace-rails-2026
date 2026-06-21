@@ -57,6 +57,60 @@ RSpec.describe Member, type: :model do
     expect(build(:member)).to be_valid
   end
 
+  describe ".search" do
+    let(:criteria) { double("scoped criteria") }
+
+    before do
+      allow(Member).to receive_message_chain(:collection, :aggregate)
+        .and_raise(Mongo::Error::OperationFailure.new("Atlas Search unavailable"))
+    end
+
+    it "preserves supplied criteria for email fallback searches" do
+      scoped_results = double("scoped email results")
+
+      expect(criteria).to receive(:any_of).with(email: /member@example\.com/i).and_return(scoped_results)
+
+      expect(Member.search("member@example.com", criteria)).to eq(scoped_results)
+    end
+
+    it "preserves supplied criteria for single-term name fallback searches" do
+      scoped_results = double("scoped name results")
+
+      expect(criteria).to receive(:any_of)
+        .with({ lastname: /smith/i }, { firstname: /smith/i }, { email: /smith/i })
+        .and_return(scoped_results)
+
+      expect(Member.search("smith", criteria)).to eq(scoped_results)
+    end
+
+    it "preserves supplied criteria for full-name fallback searches" do
+      scoped_results = double("scoped full-name results")
+
+      expect(criteria).to receive(:any_of)
+        .with(
+          { firstname: /jane/i, lastname: /smith/i },
+          { firstname: /smith/i, lastname: /jane/i }
+        )
+        .and_return(scoped_results)
+
+      expect(Member.search("jane smith", criteria)).to eq(scoped_results)
+    end
+
+    it "preserves supplied criteria for Atlas Search result ids" do
+      first_member = double("first member", id: BSON::ObjectId.new)
+      second_member = double("second member", id: BSON::ObjectId.new)
+      result_ids = [first_member.id, second_member.id]
+
+      allow(Member).to receive_message_chain(:collection, :aggregate)
+        .and_return(result_ids.map { |id| { _id: id } })
+      expect(criteria).to receive(:where)
+        .with(id: { :$in => result_ids })
+        .and_return([second_member, first_member])
+
+      expect(Member.search("smith", criteria)).to eq([first_member, second_member])
+    end
+  end
+
   # Need this because we store things in milliseconds instead of ruby seconds
   def conv_to_ms(time)
     time.to_i * 1000
