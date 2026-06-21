@@ -308,4 +308,36 @@ RSpec.describe Member, type: :model do
       expect(channels).to eq([Service::SlackConnector.members_relations_channel])
     end
   end
+
+  describe "#find_subscribed_resource" do
+    # Regression for the gap flagged on #92: once Group gained its own
+    # subscription_id (for household billing), find_subscribed_resource
+    # still only checked the member's own subscription_id and rentals —
+    # never the member's household group. A primary household member
+    # managing their own household_* subscription via self-service
+    # (Billing::SubscriptionsController#verify_own_subscription) would
+    # get a 404 without this.
+    it "finds the member's household group subscription when the member's own and rental subscriptions don't match" do
+      member = create(:member)
+      group = create(:group, member: member, groupRep: member.fullname, groupName: member.id.to_s)
+      group.update!(subscription_id: "household_sub_123")
+      member.update!(groupName: group.groupName)
+
+      expect(member.find_subscribed_resource("household_sub_123")).to eq(group)
+    end
+
+    it "still prefers the member's own subscription over the group's when both are present" do
+      member = create(:member, subscription_id: "member_sub_123")
+      group = create(:group, member: member, groupRep: member.fullname, groupName: member.id.to_s)
+      group.update!(subscription_id: "household_sub_123")
+      member.update!(groupName: group.groupName)
+
+      expect(member.find_subscribed_resource("member_sub_123")).to eq(member)
+    end
+
+    it "returns nil when neither the member, rentals, nor group match" do
+      member = create(:member)
+      expect(member.find_subscribed_resource("nonexistent_sub")).to be_nil
+    end
+  end
 end

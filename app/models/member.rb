@@ -239,7 +239,12 @@ class Member
   # to verify ownership
   def find_subscribed_resource(id)
     resource = self if self.subscription_id && self.subscription_id == id
-    resource = self.rentals.detect { |r| r.subscription_id == id }  unless resource || self.rentals.nil?
+    resource = self.rentals.detect { |r| r.subscription_id == id } unless resource || self.rentals.nil?
+    # Household subscriptions are billed on the Group, not the Member —
+    # without this, a primary household member managing their own
+    # household_* subscription via self-service (Billing::SubscriptionsController)
+    # would 404, since their group was never considered here.
+    resource = self.group if resource.nil? && self.group && self.group.subscription_id == id
     resource
   end
 
@@ -333,8 +338,18 @@ class Member
   # Emit to Member & Management channels on renewal reversals
   def send_renewal_reversal_slack_message
     slack_user = SlackUser.find_by(member_id: id)
-    ::Service::SlackConnector.send_slack_message(get_renewal_reversal_slack_message, slack_user.slack_id) unless slack_user.nil?
-    ::Service::SlackConnector.send_slack_message(get_renewal_reversal_slack_message, ::Service::SlackConnector.members_relations_channel)
+    unless slack_user.nil?
+      enque_message(
+        get_renewal_reversal_slack_message,
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("send_renewal_reversal_slack_message.member.#{id}")
+      )
+    end
+    enque_message(
+      get_renewal_reversal_slack_message,
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("send_renewal_reversal_slack_message.management.#{id}")
+    )
   end
 
   protected

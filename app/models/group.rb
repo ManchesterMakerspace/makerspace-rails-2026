@@ -1,6 +1,7 @@
 class Group
   include Mongoid::Document
   include InvoiceableResource
+  include Service::SlackConnector
 
   field :groupRep            # primary member's fullname (display only)
   field :groupName, type: String  # primary member's MongoDB ID (unique key)
@@ -65,16 +66,40 @@ class Group
     end
   end
 
+  # Emit to Member & Management channels on renewal. Matches the pattern
+  # used by Member/Rental — queued via enque_message with distinct
+  # uniquifiers per recipient, not the synchronous send_slack_message this
+  # codebase has been moving away from (see #91).
   def send_renewal_slack_message(current_user = nil)
     slack_user = SlackUser.find_by(member_id: member.id) if member
-    ::Service::SlackConnector.send_slack_message(get_renewal_slack_message, slack_user.slack_id) unless slack_user.nil?
-    ::Service::SlackConnector.send_slack_message(get_renewal_slack_message(current_user), ::Service::SlackConnector.members_relations_channel)
+    unless slack_user.nil?
+      enque_message(
+        get_renewal_slack_message,
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("send_renewal_slack_message.member.#{id}")
+      )
+    end
+    enque_message(
+      get_renewal_slack_message(current_user),
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("send_renewal_slack_message.management.#{id}")
+    )
   end
 
   def send_renewal_reversal_slack_message
     slack_user = SlackUser.find_by(member_id: member.id) if member
-    ::Service::SlackConnector.send_slack_message(get_renewal_reversal_slack_message, slack_user.slack_id) unless slack_user.nil?
-    ::Service::SlackConnector.send_slack_message(get_renewal_reversal_slack_message, ::Service::SlackConnector.members_relations_channel)
+    unless slack_user.nil?
+      enque_message(
+        get_renewal_reversal_slack_message,
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("send_renewal_reversal_slack_message.member.#{id}")
+      )
+    end
+    enque_message(
+      get_renewal_reversal_slack_message,
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("send_renewal_reversal_slack_message.management.#{id}")
+    )
   end
 
   def remove_subscription
