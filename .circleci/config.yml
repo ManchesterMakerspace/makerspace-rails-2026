@@ -1,4 +1,28 @@
 version: 2.1
+
+# 1. Define your global environment variables using a YAML anchor
+global_env: &global_env
+  RAILS_ENV: "test"
+  SKIP_EMAILVALIDATION: "true"
+  MLAB_URI: "mongodb://localhost:27017/makerspace_test"
+  REDIS_URL: "redis://localhost:6379/0"
+  DEVISE_SECRET_KEY: "ci_dummy_devise_secret"
+  APP_DOMAIN: "http://localhost:3035"
+  SLACK_ADMIN_TOKEN: "dummy"
+  SLACK_SIGNING_SECRET: "dummy"
+  FIREBASE_API_KEY: "dummy"
+  FIREBASE_PROJECT_ID: "dummy"
+  SMTP_ADDRESS: "smtp.example.com"
+  SMTP_PORT: "587"
+  SMTP_USERNAME: "dummy@example.com"
+  SMTP_PASSWORD: "dummy"
+  SMTP_FROM: "dummy@example.com"
+  HONEYBADGER_API_KEY: "dummy"
+  BT_ENV: "sandbox"
+  BT_MERCHANT_ID: "dummy"
+  BT_PUBLIC_KEY: "dummy"
+  BT_PRIVATE_KEY: "dummy"
+
 jobs:
   build:
     docker:
@@ -17,6 +41,8 @@ jobs:
           username: $DOCKERHUB_USERNAME
           password: $DOCKERHUB_PASSWORD
     resource_class: large
+    environment:
+      <<: *global_env
     steps:
       - checkout
       - run:
@@ -87,46 +113,46 @@ jobs:
           command: bundle exec rspec
       - store_artifacts:
           path: ./tmp/makerspace-react/tmp/screenshots
-  publish:
-    docker:
-      - image: cimg/ruby:3.2.9-browsers
-        auth:
-          username: $DOCKERHUB_USERNAME
-          password: $DOCKERHUB_PASSWORD
-    resource_class: large
-    steps:
-      - checkout
-      - run:
-          name: Install Bundler
-          command: |
-            gem install bundler
-            bundle -v
-      - restore_cache:
-          keys:
-            - bundle-v3-{{ checksum "Gemfile.lock" }}
-            - bundle-v3-
-      - run:
-          name: Bundle install
-          command: |
-            bundle config set path vendor/bundle
-            bundle install --jobs 4 --retry 3
-      - save_cache:
-          key: bundle-v3-{{ checksum "Gemfile.lock" }}
-          paths:
-            - vendor/bundle
-      - run:
-          name: Publish
-          command: |
-            git config --global user.email circleci@circleci
-            git config --global user.name CircleCI
-            bundle exec rake publish
+ # publish:
+#    docker:
+#      - image: cimg/ruby:3.2.9-browsers
+#        auth:
+#          username: $DOCKERHUB_USERNAME
+#          password: $DOCKERHUB_PASSWORD
+#    resource_class: large
+#    steps:
+#      - checkout
+#      - run:
+#          name: Install Bundler
+#          command: |
+#            gem install bundler
+#            bundle -v
+#      - restore_cache:
+#          keys:
+#            - bundle-v3-{{ checksum "Gemfile.lock" }}
+#            - bundle-v3-
+#      - run:
+#          name: Bundle install
+#          command: |
+#            bundle config set path vendor/bundle
+#            bundle install --jobs 4 --retry 3
+#      - save_cache:
+#          key: bundle-v3-{{ checksum "Gemfile.lock" }}
+#          paths:
+#            - vendor/bundle
+#      - run:
+#          name: Publish
+#          command: |
+#            git config --global user.email circleci@circleci
+#            git config --global user.name CircleCI
+#            bundle exec rake publish
 workflows:
   workflow:
     jobs:
       - build
-      - publish:
-          filters:
-            branches:
-              only: master
-          requires:
-            - build
+#      - publish:
+#          filters:
+#            branches:
+#              only: master
+#          requires:
+#            - build
