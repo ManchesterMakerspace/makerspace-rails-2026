@@ -100,13 +100,13 @@ jobs:
       - run:
           name: Clear React cache
           command: rm -rf tmp/makerspace-react && echo "React cache cleared"
+        - run:
+          name: UT
+          command: bundle exec rspec
       - run:
           name: E2E
           command: bundle exec rake integration
           no_output_timeout: 30m
-      - run:
-          name: UT
-          command: bundle exec rspec
       - store_artifacts:
           path: ./tmp/makerspace-react/tmp/screenshots
  # publish:
