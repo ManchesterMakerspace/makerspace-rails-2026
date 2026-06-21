@@ -97,10 +97,18 @@ class Admin::RentalsController < AdminController
 
     member = @rental.member
     if member
-      enque_message("🔴 Admin cancelled *#{member.fullname}*'s rental of *#{@rental.number}*.")
+      enque_message(
+        "🔴 Admin cancelled *#{member.fullname}*'s rental of *#{@rental.number}*.",
+        ::Service::SlackConnector.members_relations_channel,
+        ::Service::SlackConnector.request_caller_id("rentals.destroy.management.#{@rental.id}")
+      )
       slack_user = SlackUser.find_by(member_id: member.id)
       unless slack_user.nil?
-        enque_message("An admin has cancelled your rental of *#{@rental.number}*. If you have questions please contact us.", slack_user.slack_id)
+        enque_message(
+          "An admin has cancelled your rental of *#{@rental.number}*. If you have questions please contact us.",
+          slack_user.slack_id,
+          ::Service::SlackConnector.request_caller_id("rentals.destroy.member.#{@rental.id}")
+        )
       end
       RentalMailer.rental_ended(member.id.to_s, @rental.id.to_s).deliver_later
     end
@@ -125,11 +133,19 @@ class Admin::RentalsController < AdminController
     host = Rails.configuration.action_mailer.default_url_options[:host]
     profile_url = "#{host}/members/#{member.id}/rentals"
 
-    enque_message("✅ *#{member.fullname}*'s rental request for *#{@rental.number}* has been approved — awaiting agreement signature.")
+    enque_message(
+      "✅ *#{member.fullname}*'s rental request for *#{@rental.number}* has been approved — awaiting agreement signature.",
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("rentals.approve.management.#{@rental.id}")
+    )
 
     slack_user = SlackUser.find_by(member_id: member.id)
     unless slack_user.nil?
-      enque_message("Your rental request for *#{@rental.number}* has been approved! Please visit your profile to sign the rental agreement: #{profile_url}", slack_user.slack_id)
+      enque_message(
+        "Your rental request for *#{@rental.number}* has been approved! Please visit your profile to sign the rental agreement: #{profile_url}",
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("rentals.approve.member.#{@rental.id}")
+      )
     end
 
     RentalMailer.rental_request_approved(member.id.to_s, @rental.id.to_s).deliver_later
@@ -155,11 +171,19 @@ class Admin::RentalsController < AdminController
     )
 
     member = @rental.member
-    enque_message("❌ *#{member.fullname}*'s rental request for *#{@rental.number}* has been denied.")
+    enque_message(
+      "❌ *#{member.fullname}*'s rental request for *#{@rental.number}* has been denied.",
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("rentals.deny.management.#{@rental.id}")
+    )
 
     slack_user = SlackUser.find_by(member_id: member.id)
     unless slack_user.nil?
-      enque_message("Your rental request for *#{@rental.number}* was not approved. Reason: #{reason}", slack_user.slack_id)
+      enque_message(
+        "Your rental request for *#{@rental.number}* was not approved. Reason: #{reason}",
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("rentals.deny.member.#{@rental.id}")
+      )
     end
 
     RentalMailer.rental_request_denied(member.id.to_s, @rental.id.to_s, reason).deliver_later

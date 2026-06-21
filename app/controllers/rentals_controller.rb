@@ -122,9 +122,17 @@ class RentalsController < AuthenticationController
     member = current_member
     slack_user = SlackUser.find_by(member_id: member.id)
     unless slack_user.nil?
-      enque_message("Your rental claim for *#{@rental.number}* has been cancelled because the rental agreement was not signed.", slack_user.slack_id)
+      enque_message(
+        "Your rental claim for *#{@rental.number}* has been cancelled because the rental agreement was not signed.",
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("rentals.decline_agreement.member.#{@rental.id}")
+      )
     end
-    enque_message("❌ #{member.fullname} declined the rental agreement for *#{@rental.number}*. Rental voided.")
+    enque_message(
+      "❌ #{member.fullname} declined the rental agreement for *#{@rental.number}*. Rental voided.",
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("rentals.decline_agreement.management.#{@rental.id}")
+    )
 
     ::Service::AuditLogger.log(
       log_type:       'member',
@@ -222,11 +230,19 @@ class RentalsController < AuthenticationController
     host = Rails.configuration.action_mailer.default_url_options[:host]
     admin_rentals_url = "#{host}/admin/rentals"
     admin_message = "🔔 New rental request from *#{member.fullname}* for *#{spot.number}* (#{spot.rental_type&.display_name} — #{spot.location}). <#{admin_rentals_url}|Review rental requests>"
-    enque_message(admin_message)
+    enque_message(
+      admin_message,
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("rentals.notify_admin_pending.management.#{rental.id}")
+    )
 
     slack_user = SlackUser.find_by(member_id: member.id)
     unless slack_user.nil?
-      enque_message("Your rental request for *#{spot.number}* has been received and is pending admin approval. You will be notified once reviewed.", slack_user.slack_id)
+      enque_message(
+        "Your rental request for *#{spot.number}* has been received and is pending admin approval. You will be notified once reviewed.",
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("rentals.notify_admin_pending.member.#{rental.id}")
+      )
     end
 
     RentalMailer.rental_request_pending(member.id.to_s, rental.id.to_s, spot.id.to_s).deliver_later
@@ -236,9 +252,17 @@ class RentalsController < AuthenticationController
     member = rental.member
     slack_user = SlackUser.find_by(member_id: member.id)
     unless slack_user.nil?
-      enque_message("Your rental of *#{rental.number}* has ended. The space is now available for other members.", slack_user.slack_id)
+      enque_message(
+        "Your rental of *#{rental.number}* has ended. The space is now available for other members.",
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("rentals.notify_rental_ended.member.#{rental.id}")
+      )
     end
-    enque_message("🔴 #{member.fullname}'s rental of *#{rental.number}* has been cancelled.")
+    enque_message(
+      "🔴 #{member.fullname}'s rental of *#{rental.number}* has been cancelled.",
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("rentals.notify_rental_ended.management.#{rental.id}")
+    )
     RentalMailer.rental_ended(member.id.to_s, rental.id.to_s).deliver_later
   end
 
@@ -246,9 +270,17 @@ class RentalsController < AuthenticationController
     member = rental.member
     slack_user = SlackUser.find_by(member_id: member.id)
     unless slack_user.nil?
-      enque_message("Your rental of *#{rental.number}* will end on #{expiry}. Please ensure you have vacated by then.", slack_user.slack_id)
+      enque_message(
+        "Your rental of *#{rental.number}* will end on #{expiry}. Please ensure you have vacated by then.",
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("rentals.notify_rental_vacating.member.#{rental.id}")
+      )
     end
-    enque_message("🟡 #{member.fullname}'s rental of *#{rental.number}* is vacating — expires #{expiry}.")
+    enque_message(
+      "🟡 #{member.fullname}'s rental of *#{rental.number}* is vacating — expires #{expiry}.",
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("rentals.notify_rental_vacating.management.#{rental.id}")
+    )
     RentalMailer.rental_vacating(member.id.to_s, rental.id.to_s, expiry).deliver_later
   end
 end

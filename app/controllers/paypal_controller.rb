@@ -44,8 +44,16 @@ class PaypalController < ApplicationController
 
   def save_and_notify
     unless @payment.save
-      enque_message("Error saving payment: $#{@payment.amount} for #{@payment.product} from #{@payment.firstname} #{@payment.lastname} ~ email: #{@payment.payer_email}")
-      enque_message("Messages related to error: #{@payment.errors.full_messages.join("\n")}")
+      enque_message(
+        "Error saving payment: $#{@payment.amount} for #{@payment.product} from #{@payment.firstname} #{@payment.lastname} ~ email: #{@payment.payer_email}",
+        ::Service::SlackConnector.members_relations_channel,
+        ::Service::SlackConnector.request_caller_id("paypal.save_and_notify.summary.#{@payment.txn_id}")
+      )
+      enque_message(
+        "Messages related to error: #{@payment.errors.full_messages.join("\n")}",
+        ::Service::SlackConnector.members_relations_channel,
+        ::Service::SlackConnector.request_caller_id("paypal.save_and_notify.details.#{@payment.txn_id}")
+      )
     end
   end
 
