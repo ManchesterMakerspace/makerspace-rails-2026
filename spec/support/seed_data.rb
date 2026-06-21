@@ -363,12 +363,17 @@ class SeedData
         puts "  [seed] Reused subscription for #{member.fullname}: #{active_sub.id}"
         return
       end
-      token = existing_customer.payment_methods.first&.token
-      if token
-        member.update!(customer_id: existing_customer.id)
-        create_braintree_subscription(member, invoice_option, token, gateway)
-        return
-      end
+      # NOTE: previously this fell through to creating a new subscription on
+      # the SAME existing customer/payment method when no active subscription
+      # was found. Braintree subscriptions cannot be deleted or reactivated
+      # once cancelled, so every seed run that found a cancelled subscription
+      # here left it behind permanently and created another — across months
+      # of CI/local runs this accumulated 130+ cancelled subscriptions on a
+      # single sandbox customer, which appears to interfere with Braintree's
+      # subscription search results for that customer (e.g. via
+      # Admin::Billing::SubscriptionsController's search-scoped query).
+      # Creating a fresh customer instead avoids growing that history further.
+      puts "  [seed] No active subscription for #{member.fullname} — creating fresh Braintree customer instead of reusing #{existing_customer.id}"
     end
     result = gateway.customer.create(
       first_name: member.firstname, last_name: member.lastname,
