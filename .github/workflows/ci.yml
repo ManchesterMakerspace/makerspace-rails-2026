@@ -20,10 +20,10 @@ jobs:
     name: Build UI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Checkout react repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.REACT_REPO }}
           ref: ${{ env.REACT_BRANCH }}
@@ -57,10 +57,10 @@ jobs:
     name: Jest (UI unit tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Checkout react repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.REACT_REPO }}
           ref: ${{ env.REACT_BRANCH }}
@@ -132,7 +132,7 @@ jobs:
       BT_PRIVATE_KEY: dummy
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Ruby 3.2.9
         uses: ruby/setup-ruby@v1
@@ -179,7 +179,7 @@ jobs:
       BT_PRIVATE_KEY: dummy
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Ruby 3.2.9
         uses: ruby/setup-ruby@v1
@@ -252,10 +252,10 @@ jobs:
       APP_URL: http://localhost:3035
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Checkout react repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.REACT_REPO }}
           ref: ${{ env.REACT_BRANCH }}
