@@ -108,7 +108,13 @@ class Member
     end
   end
 
-  def self.search(searchTerms, criteria = Mongoid::Criteria.new(Member))
+  # SECURITY: `criteria` MUST be scoped to the caller's authorization context.
+  # The default (Member.all) is intentionally unscoped for the one legitimate
+  # admin-only callsite (Admin::Billing::SubscriptionsController) that needs
+  # to search across all members. Any new callsite that does not pass an
+  # explicit criteria will silently search all members regardless of the
+  # caller's role — always pass a scoped criteria from the controller.
+  def self.search(searchTerms, criteria = Member.all)
     regex = /#{::Regexp.escape(searchTerms)}/i
 
     if !!(searchTerms =~ URI::MailTo::EMAIL_REGEXP)
