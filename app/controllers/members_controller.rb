@@ -16,7 +16,7 @@ class MembersController < AuthenticationController
             ]
           })
         else
-          search = Mongoid::Criteria.new(base_query)
+          search = base_query
         end
       else
         # Regular members can only see themselves
