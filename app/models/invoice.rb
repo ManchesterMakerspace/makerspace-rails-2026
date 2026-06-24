@@ -214,7 +214,7 @@ class Invoice
   end
 
   def resource
-    found_resource ||= self.class.resource(self.resource_class, self.resource_id)
+    self.found_resource ||= self.class.resource(self.resource_class, self.resource_id)
   end
 
   def resource_name

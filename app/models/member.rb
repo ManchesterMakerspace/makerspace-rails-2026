@@ -203,15 +203,18 @@ class Member
 
   
   def verify_group_expiry
-    if self.group
-      # Primary member drives the group expiry — don't overwrite their expiration
-      return if household_role == :primary
-      #make sure member benefits from group expTime
-      if benefits_from_group
-        self.expirationTime = self.group.expiry
-        self.save
-      end
-    end
+    return unless self.group
+    # Primary member drives the group expiry — don't overwrite their expiration
+    return if household_role == :primary
+    # Only sync if this is a persisted record and the value actually needs updating.
+    # after_initialize fires on every instantiation (including reads), so without
+    # this guard save + all after_update callbacks (update_card, publish_update, etc.)
+    # would fire on every Member.find.
+    return unless persisted? && benefits_from_group
+    new_expiry = self.group.expiry
+    return if self.expirationTime == new_expiry
+    self.expirationTime = new_expiry
+    self.save
   end
 
   def address=(address_hash)
