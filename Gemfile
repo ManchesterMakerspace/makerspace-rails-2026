@@ -24,7 +24,7 @@ gem 'braintree', '~> 4.39'
 gem 'slack-ruby-client', '~> 2.0'
 # Google Drive
 gem 'multi_json', '~> 1.15'
-gem 'faraday', '~> 2.12'
+gem 'faraday', '~> 2.14'
 gem 'google-apis-drive_v3'
 gem 'google-apis-sheets_v4'
 gem 'mini_magick', '~> 5.3'
