@@ -23,7 +23,7 @@ class Member
 
   field :status,                         default: "activeMember" # activeMember, nonMember, revoked, inactive
   field :expirationTime,  type: Integer  #pre-calcualted time of expiration
-  field :startDate, default: Time.now
+  field :startDate, default: -> { Time.now }
   field :groupName, type: String #potentially member is in a group/partner membership
   field :role,                          default: "member" #admin,board_member,resource_manager,member
   field :firebase_uid,                   type: String
@@ -82,6 +82,10 @@ class Member
   end
 
   has_one :earned_membership, class_name: 'EarnedMembership', dependent: :destroy
+  has_one :slack_user, class_name: 'SlackUser'
+  # mailtrap_id on Member points to MailtrapEvent._id — modelled as belongs_to
+  # so includes(:mailtrap_event) can bulk-load in one query instead of one per member.
+  belongs_to :mailtrap_event, class_name: 'MailtrapEvent', foreign_key: :mailtrap_id, optional: true
 
   # Searches members using Atlas $search if available, falls back to case-insensitive
   # regex queries for local/CI environments where Atlas Search is not supported.
@@ -196,11 +200,7 @@ class Member
     self.email = self.email.to_s.strip.downcase
   end
 
-  def mailtrap_event
-    return nil if mailtrap_id.blank?
-    # We have an updated email result from Mailtrap
-    MailtrapEvent.where(id: mailtrap_id).first
-  end
+
   
   def verify_group_expiry
     if self.group
