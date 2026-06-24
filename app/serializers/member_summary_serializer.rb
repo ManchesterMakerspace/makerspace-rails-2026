@@ -35,7 +35,7 @@ class MemberSummarySerializer < ActiveModel::Serializer
   end
 
   def slack
-    slack_user = SlackUser.find_by(member_id: object.id)
+    slack_user = object.slack_user
     return nil unless slack_user
 
     {

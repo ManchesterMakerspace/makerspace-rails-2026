@@ -3,7 +3,7 @@ class MembersController < AuthenticationController
     before_action :set_member, only: [:show, :update]
 
     def index
-      base_query = Member.includes(:access_cards).includes(:earned_membership)
+      base_query = Member.includes(:access_cards).includes(:earned_membership).includes(:slack_user).includes(:mailtrap_event)
 
       if is_admin? || is_board_member? || is_resource_manager?
         # Admins and Resource Managers can see all members,
