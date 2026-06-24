@@ -20,7 +20,7 @@ class Invoice
   field :name, type: String
   # Any details about the invoice. Also shown on receipt
   field :description, type: String
-  field :created_at, type: Time, default: Time.now
+  field :created_at, type: Time, default: -> { Time.now }
   # When payment submitted.
   field :settled_at, type: Time
   field :due_date # Intentionally don't define type. Mongoid is coercing string so TZ not being applied
