@@ -25,6 +25,7 @@ RSpec.describe PaypalController, type: :controller do
         member
         REDIS.flushall
         sleep(5.seconds)
+        allow(::PayPal::SDK::Core::API::IPN).to receive(:valid?).and_return(true)
       end 
       it "creates a new Paypal" do
         expect {
