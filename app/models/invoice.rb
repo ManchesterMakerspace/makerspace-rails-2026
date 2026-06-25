@@ -218,9 +218,9 @@ class Invoice
   def self.resource(class_name, id)
     Invoice::OPERATION_RESOURCES[class_name].find(id) unless Invoice::OPERATION_RESOURCES[class_name].nil? || id.nil?
   end
-
+  
   def resource
-    self.found_resource ||= self.class.resource(self.resource_class, self.resource_id)
+    self.class.resource(self.resource_class, self.resource_id)
   end
 
   def resource_name
