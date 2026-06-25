@@ -8,6 +8,7 @@ class ApplicationController < ActionController::Base
   after_action :set_csrf_cookie_for_ng
   before_action :configure_permitted_parameters, if: :devise_controller?
   before_action :filter_requests
+  before_action :require_completed_totp_challenge
   before_action :allow_only_html_requests, only: [:application]
 
   def application
@@ -54,5 +55,12 @@ class ApplicationController < ActionController::Base
     if params[:format] && (/html|json/ =~ params[:format]).nil?
       raise Error::NotFound.new
     end
+  end
+
+  def require_completed_totp_challenge
+    return unless member_signed_in? && session[:totp_pending_member_id].present?
+    return if controller_path == 'members/totp_sessions' && action_name == 'create'
+
+    render json: { error: 'TOTP verification required.' }, status: :unauthorized
   end
 end
