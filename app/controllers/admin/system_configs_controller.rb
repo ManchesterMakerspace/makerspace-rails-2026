@@ -25,6 +25,8 @@ class Admin::SystemConfigsController < AdminController
     'volunteer_bounty_token',
     'volunteer_rolling_days',
     'volunteer_leaderboard_top',
+    # Security settings
+    'devise_timeout_minutes',
   ].freeze
 
   ALL_EDITABLE_KEYS = (FLAG_KEYS + SETTING_KEYS).freeze
@@ -73,12 +75,17 @@ class Admin::SystemConfigsController < AdminController
       require_totp_rm:    SystemConfig.enabled?('require_totp_rm'),
     }
 
+    security = {
+      devise_timeout_minutes: SystemConfig.get('devise_timeout_minutes') || '30',
+    }
+
     render json: {
       flags:     flags,
       jobs:      jobs,
       slack:     slack,
       volunteer: volunteer,
       totp:      totp,
+      security:  security,
     }, status: :ok
   end
 
@@ -121,6 +128,7 @@ class Admin::SystemConfigsController < AdminController
     end
 
     old_value = SystemConfig.get(key).to_s
+    return unless valid_setting_value?(key, value)
 
     if key == 'volunteer_discount_id'
       SystemConfig.set(key, value)
@@ -184,6 +192,19 @@ class Admin::SystemConfigsController < AdminController
     ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.treasurer_channel)
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
+  end
+
+  def valid_setting_value?(key, value)
+    return true unless key == 'devise_timeout_minutes'
+
+    timeout_minutes = Integer(value)
+    return true if timeout_minutes.positive?
+
+    raise ArgumentError, 'must be greater than 0'
+  rescue ArgumentError
+    render json: { error: 'devise_timeout_minutes must be a positive whole number of minutes' },
+           status: :unprocessable_entity
+    false
   end
 
   # Returns a human-readable label for a Braintree discount ID.
