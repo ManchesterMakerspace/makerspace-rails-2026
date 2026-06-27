@@ -201,6 +201,50 @@ RSpec.describe MembersController, type: :controller do
       expect(response).to have_http_status(403)
     end
 
+    it "raises forbidden when a resource manager updates another member" do
+      resource_manager = create(:member, :resource_manager)
+      member = create(:member)
+      sign_in resource_manager
+
+      put :update, params: { id: member.id, firstname: "Resource" }, format: :json
+
+      expect(response).to have_http_status(403)
+      expect(member.reload.firstname).not_to eq("Resource")
+    end
+
+    it "raises forbidden when a resource manager signs another member's contract" do
+      resource_manager = create(:member, :resource_manager)
+      member = create(:member, member_contract_signed_date: nil)
+      sign_in resource_manager
+
+      put :update, params: { id: member.id, signature: "data:image/png;base64,abc123" }, format: :json
+
+      expect(response).to have_http_status(403)
+      expect(member.reload.member_contract_signed_date).to be_nil
+    end
+
+    it "allows an admin to update another member" do
+      admin = create(:member, :admin)
+      member = create(:member)
+      sign_in admin
+
+      put :update, params: { id: member.id, firstname: "Admin" }, format: :json
+
+      expect(response).to have_http_status(200)
+      expect(member.reload.firstname).to eq("Admin")
+    end
+
+    it "allows a board member to update another member" do
+      board_member = create(:member, :board_member)
+      member = create(:member)
+      sign_in board_member
+
+      put :update, params: { id: member.id, firstname: "Board" }, format: :json
+
+      expect(response).to have_http_status(200)
+      expect(member.reload.firstname).to eq("Board")
+    end
+
     it "raises not found if member doesn't exist" do
       put :update, params: {id: "foo" }, format: :json
       expect(response).to have_http_status(404)
