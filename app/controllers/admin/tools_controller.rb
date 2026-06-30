@@ -1,8 +1,11 @@
-class Admin::ToolsController < AdminOrRmController
+class Admin::ToolsController < ApplicationController
+  before_action :authenticate_member!
+  before_action :authorized?
   before_action :find_tool, only: [:update, :destroy]
 
   def index
     tools = params[:shop_id] ? Tool.where(shop_id: params[:shop_id]) : Tool.all
+    tools = tools.where(:shop_id.in => current_approver_shop_ids) unless is_privileged?
     tools = tools.order_by(name: :asc)
     render json: tools, each_serializer: ToolSerializer, adapter: :attributes
   end
@@ -59,6 +62,21 @@ class Admin::ToolsController < AdminOrRmController
   end
 
   private
+
+  def authorized?
+    return if is_privileged?
+    return if action_name == 'index' && active_checkout_approver?
+
+    raise ::Error::Forbidden.new
+  end
+
+  def active_checkout_approver?
+    ToolCheckoutRequest.active_member?(current_member) && CheckoutApprover.exists?(member_id: current_member.id)
+  end
+
+  def current_approver_shop_ids
+    CheckoutApprover.find_by(member_id: current_member.id).try(:shop_ids) || []
+  end
 
   def tool_params
     params.permit(:name, :description, :shop_id, :disabled, :announce, :announce_channel, prerequisite_ids: [])

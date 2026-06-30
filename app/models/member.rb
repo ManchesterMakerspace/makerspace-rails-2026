@@ -297,7 +297,11 @@ class Member
   end
 
   def get_permissions
-    Hash[permissions.map { |p| [p.name.to_sym, p.enabled] }]
+    permission_hash = Hash[permissions.map { |p| [p.name.to_sym, p.enabled] }]
+    if ToolCheckoutRequest.active_member?(self) && CheckoutApprover.exists?(member_id: id)
+      permission_hash[:tool_checkouts] = true
+    end
+    permission_hash
   end
 
   def update_permissions(permissions_collection)
