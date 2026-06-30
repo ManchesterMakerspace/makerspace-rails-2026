@@ -54,6 +54,7 @@ class ToolCheckoutRequestsController < ApplicationController
   end
 
   def destroy
+    replace_request_announcement(@request) if @request.message_id.present?
     @request.destroy
     render json: {}, status: 204
   end
@@ -85,6 +86,11 @@ class ToolCheckoutRequestsController < ApplicationController
     message = "*#{request.member.fullname}* requested checkout on *#{request.tool.name}*.#{request.note.present? ? " Note: #{request.note}" : ''}"
     response = ::Service::SlackConnector.send_slack_message(message, announcement_channel(request.tool))
     response.try(:[], 'ts') || response.try(:[], :ts) || response.try(:ts)
+  end
+
+  def replace_request_announcement(request)
+    message = "Checkout request canceled: *#{request.member.fullname}* no longer requests checkout on *#{request.tool.name}*."
+    ::Service::SlackConnector.update_slack_message(message, announcement_channel(request.tool), request.message_id)
   end
 
   def announcement_channel(tool)
