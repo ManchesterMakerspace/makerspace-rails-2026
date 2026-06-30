@@ -73,6 +73,11 @@ Rails.application.routes.draw do
 
       # Member sees their own checkouts
       resources :tool_checkouts, only: [:index]
+      resources :tool_checkout_requests, only: [:index, :create, :update, :destroy] do
+        collection do
+          get :available_tools
+        end
+      end
 
       # Rentals — member self-service
       resources :rentals, only: [:show, :index, :update, :create] do
@@ -132,6 +137,7 @@ Rails.application.routes.draw do
         resources :shops, only: [:index, :create, :update, :destroy]
         resources :tools, only: [:index, :create, :update, :destroy]
         resources :tool_checkouts, only: [:index, :create, :destroy]
+        resources :tool_checkout_requests, only: [:index]
         resources :checkout_approvers, only: [:index, :create, :update, :destroy]
 
         # Rentals — admin manage + approve/deny

@@ -61,7 +61,7 @@ class Admin::ToolsController < AdminOrRmController
   private
 
   def tool_params
-    params.permit(:name, :description, :shop_id, :disabled, prerequisite_ids: [])
+    params.permit(:name, :description, :shop_id, :disabled, :announce, :announce_channel, prerequisite_ids: [])
   end
 
   def find_tool

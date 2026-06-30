@@ -73,6 +73,11 @@ module Service
         end
       end
     end
+
+    def self.update_slack_message(message, channel, message_id)
+      return if Rails.env.test?
+      client.chat_update(channel: safe_channel(channel), ts: message_id, text: message)
+    end
     def invite_to_slack(email, lastname, firstname)
       ::Service::SlackConnector.invite_to_slack(email, lastname, firstname)
     end

@@ -15,8 +15,32 @@ class ToolCheckout
   validates :member, presence: true
   validates :tool, presence: true
 
+
+  after_create :close_open_checkout_request
+
   def active?
     revoked_at.nil?
+  end
+
+
+  def close_open_checkout_request
+    request = ToolCheckoutRequest.where(member_id: member_id, tool_id: tool_id, status: 'open').order_by(created_at: :asc).first
+    return unless request
+
+    request.update_attributes!(status: 'closed', checked_out: id)
+    announce_checkout_success(request) if tool.announce?
+  end
+
+  def announce_checkout_success(request)
+    channel = tool.announce_channel.presence || tool.shop.try(:slack_channel)
+    message = "*#{member.fullname}* was checked out on *#{tool.name}*."
+    if request.message_id.present?
+      ::Service::SlackConnector.update_slack_message(message, channel, request.message_id)
+    else
+      response = ::Service::SlackConnector.send_slack_message(message, channel)
+      message_id = response.try(:[], 'ts') || response.try(:[], :ts) || response.try(:ts)
+      request.update_attributes!(message_id: message_id) if message_id.present?
+    end
   end
 
   # Notify member via Slack DM when checked out

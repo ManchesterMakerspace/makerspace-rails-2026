@@ -1,5 +1,5 @@
 class ToolSerializer < ActiveModel::Serializer
-  attributes :id, :name, :description, :disabled, :shop_id, :prerequisite_ids
+  attributes :id, :name, :description, :disabled, :announce, :announce_channel, :shop_id, :prerequisite_ids
 
   attribute :shop_name do
     object.shop.try(:name)
