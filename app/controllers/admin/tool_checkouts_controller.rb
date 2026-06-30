@@ -1,10 +1,16 @@
-class Admin::ToolCheckoutsController < AdminOrRmController
+class Admin::ToolCheckoutsController < ApplicationController
   include Service::SlackConnector
+  before_action :authenticate_member!
+  before_action :authorized?
   before_action :find_checkout, only: [:update, :destroy]
   before_action :authorize_approver, only: [:create, :destroy]
 
   def index
     checkouts = ToolCheckout.all
+
+    unless is_privileged?
+      checkouts = checkouts.where(:tool_id.in => approver_visible_tool_ids)
+    end
 
     # Filter by member, tool, shop, active status
     checkouts = checkouts.where(member_id: params[:member_id]) if params[:member_id].present?
@@ -26,8 +32,10 @@ class Admin::ToolCheckoutsController < AdminOrRmController
     member = Member.find(checkout_params[:member_id])
     tool   = Tool.find(checkout_params[:tool_id])
 
-    # Warn if prerequisites not met — but do not block
     unmet = unmet_prerequisites(member, tool)
+    if unmet.present? && !is_privileged?
+      render json: { error: 'Prerequisites are not met', unmet_prerequisites: unmet.map(&:name) }, status: 422 and return
+    end
 
     # Prevent duplicate active checkout
     existing = ToolCheckout.find_by(member_id: member.id, tool_id: tool.id, revoked_at: nil)
@@ -112,21 +120,40 @@ class Admin::ToolCheckoutsController < AdminOrRmController
     raise ::Mongoid::Errors::DocumentNotFound.new(ToolCheckout, { id: params[:id] }) if @checkout.nil?
   end
 
-  # Admins can approve anything. RMs and checkout approvers are shop-scoped.
+  def authorized?
+    return if is_privileged?
+    raise ::Error::Forbidden.new unless active_checkout_approver?
+  end
+
+  # Admins can approve/revoke anything. RMs and checkout approvers are shop-scoped.
   def authorize_approver
     return if is_admin? || is_board_member?
-    tool = Tool.find(params[:tool_id])
+    tool = params[:tool_id].present? ? Tool.find(params[:tool_id]) : @checkout.tool
     shop_id = tool.try(:shop_id)
 
-    if is_resource_manager?
-      # RMs have access to all tools — no shop restriction
-      return
-    end
+    return if is_resource_manager?
 
     approver = CheckoutApprover.find_by(member_id: current_member.id)
     unless approver && approver.can_approve_for_shop?(shop_id)
-      render json: { error: "You are not authorized to approve checkouts for this shop" }, status: 403
+      render json: { error: "You are not authorized to approve checkouts for this shop" }, status: 403 and return
     end
+
+    if action_name == 'destroy' && @checkout.approved_by_id.to_s != current_member.id.to_s
+      render json: { error: "You may only revoke checkouts you approved" }, status: 403
+    end
+  end
+
+  def active_checkout_approver?
+    ToolCheckoutRequest.active_member?(current_member) && CheckoutApprover.exists?(member_id: current_member.id)
+  end
+
+  def approver_visible_tool_ids
+    approver = CheckoutApprover.find_by(member_id: current_member.id)
+    return [] unless approver
+
+    approved_tool_ids = Tool.where(:shop_id.in => approver.shop_ids).pluck(:id)
+    prerequisite_ids = Tool.where(:id.in => approved_tool_ids).pluck(:prerequisite_ids).flatten.compact
+    (approved_tool_ids + prerequisite_ids).uniq
   end
 
   def unmet_prerequisites(member, tool)

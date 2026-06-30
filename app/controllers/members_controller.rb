@@ -5,10 +5,10 @@ class MembersController < AuthenticationController
     def index
       base_query = Member.includes(:access_cards).includes(:earned_membership).includes(:slack_user).includes(:mailtrap_event)
 
-      if is_admin? || is_board_member? || is_resource_manager?
-        # Admins and Resource Managers can see all members,
+      if is_admin? || is_board_member? || is_resource_manager? || active_checkout_approver?
+        # Admins, Resource Managers, and checkout approvers can see active members,
         # filtered to current members only when requested
-        if to_bool(search_params[:current_members])
+        if active_checkout_approver? || to_bool(search_params[:current_members])
           search = base_query.where({
             :$or => [
               { :expirationTime.gte => ((Time.now + 3.days).strftime('%s').to_i * 1000) },
@@ -86,6 +86,10 @@ class MembersController < AuthenticationController
      end
 
     private
+
+    def active_checkout_approver?
+      ToolCheckoutRequest.active_member?(current_member) && CheckoutApprover.exists?(member_id: current_member.id)
+    end
     def set_member
       @member = Member.find(params[:id])
       raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: params[:id] }) if @member.nil?
