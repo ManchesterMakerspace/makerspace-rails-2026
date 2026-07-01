@@ -1,5 +1,7 @@
-class Admin::ToolCheckoutsController < AdminOrRmController
+class Admin::ToolCheckoutsController < ApplicationController
   include Service::SlackConnector
+  before_action :authenticate_member!
+  before_action :authorize_index, only: [:index]
   before_action :find_checkout, only: [:update, :destroy]
   before_action :authorize_approver, only: [:create, :destroy]
 
@@ -18,6 +20,12 @@ class Admin::ToolCheckoutsController < AdminOrRmController
       checkouts = checkouts.where(:tool_id.in => tool_ids)
     end
 
+    unless can_view_disabled_tools?
+      approver_shop_ids = CheckoutApprover.shops_for_member(current_member.id).map(&:id)
+      tool_ids = Tool.where(:shop_id.in => approver_shop_ids, :disabled.ne => true).pluck(:id)
+      checkouts = checkouts.where(:tool_id.in => tool_ids)
+    end
+
     checkouts = checkouts.order_by(checked_out_at: :desc)
     render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes
   end
@@ -25,6 +33,7 @@ class Admin::ToolCheckoutsController < AdminOrRmController
   def create
     member = Member.find(checkout_params[:member_id])
     tool   = Tool.find(checkout_params[:tool_id])
+    raise ::Error::Forbidden.new if tool.disabled? && !can_view_disabled_tools?
 
     # Warn if prerequisites not met — but do not block
     unmet = unmet_prerequisites(member, tool)
@@ -44,6 +53,7 @@ class Admin::ToolCheckoutsController < AdminOrRmController
     )
     checkout.save!
     checkout.send_checkout_slack_notification
+    checkout.announce_checkout_success
 
     ::Service::AuditLogger.log(
       log_type:       'member',
@@ -81,6 +91,7 @@ class Admin::ToolCheckoutsController < AdminOrRmController
       revocation_reason: reason
     )
     @checkout.send_revocation_slack_notification
+    @checkout.remove_member_from_users_channel
 
     ::Service::AuditLogger.log(
       log_type:       'member',
@@ -112,15 +123,25 @@ class Admin::ToolCheckoutsController < AdminOrRmController
     raise ::Mongoid::Errors::DocumentNotFound.new(ToolCheckout, { id: params[:id] }) if @checkout.nil?
   end
 
+  def authorize_index
+    raise ::Error::Forbidden.new unless can_view_disabled_tools? || is_valid_checkout_approver?
+  end
+
   # Admins can approve anything. RMs and checkout approvers are shop-scoped.
   def authorize_approver
     return if is_admin? || is_board_member?
-    tool = Tool.find(params[:tool_id])
-    shop_id = tool.try(:shop_id)
+    tool = @checkout.try(:tool) || Tool.find(params[:tool_id])
 
     if is_resource_manager?
       # RMs have access to all tools — no shop restriction
       return
+    end
+
+    return render json: { error: "You are not authorized to approve checkouts for disabled tools" }, status: 403 if tool.disabled?
+    shop_id = tool.try(:shop_id)
+
+    unless current_member.valid_for_checkout_request?
+      render json: { error: "You must be an active, unexpired member with a contract on file to approve checkouts" }, status: 403 and return
     end
 
     approver = CheckoutApprover.find_by(member_id: current_member.id)

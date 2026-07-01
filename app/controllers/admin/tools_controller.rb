@@ -1,8 +1,15 @@
-class Admin::ToolsController < AdminOrRmController
+class Admin::ToolsController < ApplicationController
+  before_action :authenticate_member!
+  before_action :authorize_index, only: [:index]
+  before_action :authorize_manage, only: [:create, :update, :destroy]
   before_action :find_tool, only: [:update, :destroy]
 
   def index
     tools = params[:shop_id] ? Tool.where(shop_id: params[:shop_id]) : Tool.all
+    unless can_view_disabled_tools?
+      approver_shop_ids = CheckoutApprover.shops_for_member(current_member.id).map(&:id)
+      tools = tools.where(:shop_id.in => approver_shop_ids, :disabled.ne => true)
+    end
     tools = tools.order_by(name: :asc)
     render json: tools, each_serializer: ToolSerializer, adapter: :attributes
   end
@@ -61,11 +68,22 @@ class Admin::ToolsController < AdminOrRmController
   private
 
   def tool_params
-    params.permit(:name, :description, :shop_id, :disabled, prerequisite_ids: [])
+    params.permit(:name, :description, :shop_id, :disabled, :announce,
+      :announce_channel, :users_channel, prerequisite_ids: [])
   end
 
   def find_tool
     @tool = Tool.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(Tool, { id: params[:id] }) if @tool.nil?
+  end
+
+  def authorize_index
+    unless can_view_disabled_tools? || is_valid_checkout_approver?
+      raise ::Error::Forbidden.new("User is not privileged or a checkout approver")
+    end
+  end
+
+  def authorize_manage
+    raise ::Error::Forbidden.new("User is not privileged") unless can_view_disabled_tools?
   end
 end

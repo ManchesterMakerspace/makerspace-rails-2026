@@ -5,6 +5,8 @@ class MembersController < AuthenticationController
     def index
       base_query = Member.includes(:access_cards).includes(:earned_membership).includes(:slack_user).includes(:mailtrap_event)
 
+      limited_checkout_approver_search = false
+
       if is_admin? || is_board_member? || is_resource_manager?
         # Admins and Resource Managers can see all members,
         # filtered to current members only when requested
@@ -18,6 +20,9 @@ class MembersController < AuthenticationController
         else
           search = base_query
         end
+      elsif is_valid_checkout_approver? && (search_params[:search].present? || search_params[:seach].present?)
+        search = base_query
+        limited_checkout_approver_search = true
       else
         # Regular members can only see themselves
         raise Error::NotFound.new unless defined?(@current_member)
@@ -25,6 +30,9 @@ class MembersController < AuthenticationController
       end
 
       @members = query_resource(search)
+      if limited_checkout_approver_search
+        return render_with_total_items(@members, { each_serializer: LimitedMemberSerializer, adapter: :attributes })
+      end
       return render_with_total_items(@members, { each_serializer: MemberSummarySerializer, adapter: :attributes })
     end
 
