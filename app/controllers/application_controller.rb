@@ -50,6 +50,14 @@ class ApplicationController < ActionController::Base
     is_admin? || is_board_member? || is_resource_manager?
   end
 
+  def is_valid_checkout_approver?
+    current_member.try(:valid_for_checkout_request?) && CheckoutApprover.exists?(member_id: current_member.id)
+  end
+
+  def can_view_disabled_tools?
+    is_admin? || is_board_member? || is_resource_manager?
+  end
+
   def filter_requests
     if params[:format] && (/html|json/ =~ params[:format]).nil?
       raise Error::NotFound.new

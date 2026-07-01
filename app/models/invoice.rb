@@ -62,6 +62,7 @@ class Invoice
 
   before_save :set_due_date
   after_create :send_rental_email, if: Proc.new { (resource_class == "rental" && subscription_id.nil?) || plan_id.nil? }
+  after_create :send_shop_charge_slack_notification, if: Proc.new { resource_class == "fee" }
 
   attr_accessor :found_resource, :payment_method_id
 
@@ -254,6 +255,19 @@ class Invoice
     # Only send new_invoice email for rental and fee invoices (not recurring membership)
     return unless resource_class == "rental" || resource_class == "fee"
     BillingMailer.new_invoice(self.member.email, self.id.as_json).deliver_later
+  end
+
+  def send_shop_charge_slack_notification
+    slack_user = SlackUser.find_by(member_id: member_id)
+    return if slack_user.nil? || member.try(:silence_emails)
+
+    base_url = Rails.configuration.action_mailer.default_url_options[:host]
+    portal_url = base_url.to_s.start_with?('http') ? base_url : "https://#{base_url}"
+    details = description.present? ? "\n#{description}" : ""
+    message = "A shop charge has been added to your member portal account: *#{name}* for *$#{format('%.2f', amount)}*.#{details}\n<#{portal_url}|Open the member portal>"
+    ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
+  rescue => e
+    Rails.logger.warn("send_shop_charge_slack_notification failed: #{e.message}")
   end
 
   def execute_invoice_operation

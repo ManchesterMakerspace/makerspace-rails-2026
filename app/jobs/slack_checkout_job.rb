@@ -89,6 +89,11 @@ class SlackCheckoutJob < ApplicationJob
         return
       end
 
+      if tool.disabled? && !privileged_invoker?(invoker)
+        post_response(response_url, :ephemeral, "You are not authorized to approve checkouts for disabled tools.")
+        return
+      end
+
       member = find_member_from_token(member_token)
       if member.nil? && (slack_mention?(member_token) || slack_username?(member_token))
         synced_slack_id = member_slack_id
@@ -163,6 +168,7 @@ class SlackCheckoutJob < ApplicationJob
 
       begin
         checkout.send_checkout_slack_notification
+        checkout.announce_checkout_success
       rescue => err
         Honeybadger.notify('Slack checkout saved but notification failed', context: {
           reason:           "send_checkout_slack_notification raised: #{err.message}",
@@ -231,15 +237,19 @@ class SlackCheckoutJob < ApplicationJob
     slack_user = SlackUser.find_by(slack_id: slack_id)
     return nil unless slack_user
     member = Member.find(slack_user.member_id)
-    return member if member.role.in?(%w[admin resource_manager])
-    return member if CheckoutApprover.is_approver?(member.id)
+    return member if privileged_invoker?(member)
+    return member if member.valid_for_checkout_request? && CheckoutApprover.is_approver?(member.id)
     nil
   end
 
   def can_approve_for_shop?(member, shop)
-    return true if member.role.in?(%w[admin resource_manager])
+    return true if privileged_invoker?(member)
     approver = CheckoutApprover.find_by(member_id: member.id)
-    approver && approver.can_approve_for_shop?(shop.id)
+    member.valid_for_checkout_request? && approver && approver.can_approve_for_shop?(shop.id)
+  end
+
+  def privileged_invoker?(member)
+    member.role.in?(%w[admin board_member resource_manager])
   end
 
   def unmet_prerequisites(member, tool)

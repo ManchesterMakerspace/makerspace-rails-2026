@@ -1,8 +1,12 @@
-class Admin::ToolsController < AdminOrRmController
+class Admin::ToolsController < ApplicationController
+  before_action :authenticate_member!
+  before_action :authorize_index, only: [:index]
+  before_action :authorize_manage, only: [:create, :update, :destroy]
   before_action :find_tool, only: [:update, :destroy]
 
   def index
     tools = params[:shop_id] ? Tool.where(shop_id: params[:shop_id]) : Tool.all
+    tools = tools.where(:disabled.ne => true) unless can_view_disabled_tools?
     tools = tools.order_by(name: :asc)
     render json: tools, each_serializer: ToolSerializer, adapter: :attributes
   end
@@ -61,11 +65,20 @@ class Admin::ToolsController < AdminOrRmController
   private
 
   def tool_params
-    params.permit(:name, :description, :shop_id, :disabled, prerequisite_ids: [])
+    params.permit(:name, :description, :shop_id, :disabled, :announce,
+      :announce_channel, :users_channel, prerequisite_ids: [])
   end
 
   def find_tool
     @tool = Tool.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(Tool, { id: params[:id] }) if @tool.nil?
+  end
+
+  def authorize_index
+    raise ::Error::Forbidden.new unless current_member.active_unexpired?
+  end
+
+  def authorize_manage
+    raise ::Error::Forbidden.new unless can_view_disabled_tools?
   end
 end

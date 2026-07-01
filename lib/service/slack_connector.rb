@@ -1,5 +1,7 @@
 module Service
   module SlackConnector
+    mattr_accessor :slack_team_id
+
     def enque_message(
         message,
         channel = ::Service::SlackConnector.members_relations_channel,
@@ -72,6 +74,43 @@ module Service
           raise e
         end
       end
+    end
+    def self.update_slack_message(channel, ts, message)
+      return if Rails.env.test?
+      client.chat_update(channel: safe_channel(channel), ts: ts, text: message)
+    end
+    def self.delete_slack_message(channel, ts)
+      return if Rails.env.test?
+      client.chat_delete(channel: safe_channel(channel), ts: ts)
+    end
+    def self.invite_to_channel(channel, slack_id)
+      return if Rails.env.test?
+      client.conversations_invite(channel: safe_channel(channel), users: slack_id)
+    end
+    def self.kick_from_channel(channel, slack_id)
+      return if Rails.env.test?
+      client.conversations_kick(channel: safe_channel(channel), user: slack_id)
+    end
+    def self.init_team_id
+      self.slack_team_id = ENV['SLACK_TEAM_ID'].presence
+      return slack_team_id if slack_team_id.present?
+      return if Rails.env.test?
+
+      response = client.team_info
+      self.slack_team_id = response.team.id if response.respond_to?(:team) && response.team.respond_to?(:id)
+      Rails.logger.warn("Slack team id could not be determined") if slack_team_id.blank?
+      slack_team_id
+    rescue => e
+      Rails.logger.warn("Slack team id could not be determined: #{e.message}")
+      nil
+    end
+    def self.team_id
+      slack_team_id.presence || init_team_id
+    end
+    def self.slack_user_url(slack_id)
+      id = team_id
+      return nil if id.blank? || slack_id.blank?
+      "slack://user?team=#{id}&id=#{slack_id}"
     end
     def invite_to_slack(email, lastname, firstname)
       ::Service::SlackConnector.invite_to_slack(email, lastname, firstname)

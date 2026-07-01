@@ -202,6 +202,14 @@ class Member
     return "#{self.firstname} #{self.lastname}"
   end
 
+  def active_unexpired?
+    status == 'activeMember' && expirationTime.present? && expirationTime > (Time.now.to_i * 1000)
+  end
+
+  def valid_for_checkout_request?
+    active_unexpired? && member_contract_signed_date.present?
+  end
+
   def normalize_email
     self.email = self.email.to_s.strip.downcase
   end

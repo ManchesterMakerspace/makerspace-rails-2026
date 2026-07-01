@@ -5,6 +5,9 @@ class Tool
   field :name, type: String
   field :description, type: String
   field :disabled, type: Boolean, default: false
+  field :announce, type: Boolean, default: false
+  field :announce_channel, type: String
+  field :users_channel, type: String
   # Optional prerequisite tool IDs — UI warns if member hasn't been checked out on these
   field :prerequisite_ids, type: Array, default: []
 
@@ -12,6 +15,11 @@ class Tool
 
   validates :name, presence: true
   validates :shop, presence: true
+
+  def disabled
+    value = read_attribute(:disabled)
+    value.nil? ? false : value
+  end
 
   # Human-readable prerequisite names for display
   def prerequisites
