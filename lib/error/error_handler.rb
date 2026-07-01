@@ -50,8 +50,24 @@ module Error
     private
 
     def respond(_error, _status, _message)
+      log_forbidden_to_stderr(_message) if _status.to_i == 403
       json = Error::Helpers::Render.json(_error, _status, _message)
       render json: json, status: _status and return
+    end
+
+    def log_forbidden_to_stderr(message)
+      return unless ENV['RAILS_LOG_TO_STDERR'].present?
+      return unless self.try(:current_member)
+
+      path = request.try(:path).to_s
+      return unless path.start_with?('/api')
+
+      STDERR.puts(
+        "[403] #{request.method} #{path} member_id=#{current_member.id} " \
+        "email=#{current_member.email} role=#{current_member.role} reason=#{message}"
+      )
+    rescue => e
+      Rails.logger.warn("Failed to log 403 to STDERR: #{e.message}")
     end
 
     # Sends the exception to Honeybadger with request context.

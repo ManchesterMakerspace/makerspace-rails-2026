@@ -14,6 +14,7 @@ class Tool
   belongs_to :shop
 
   validates :name, presence: true
+  validates :name, uniqueness: { scope: :shop_id, case_sensitive: false }
   validates :shop, presence: true
 
   def disabled

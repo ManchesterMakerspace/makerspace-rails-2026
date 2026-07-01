@@ -6,7 +6,7 @@ class ToolsController < AuthenticationController
     tools = Tool.where(:disabled.ne => true).where(:id.nin => excluded_tool_ids)
 
     render json: tools.order_by(name: :asc),
-      each_serializer: ToolSerializer,
+      each_serializer: ToolCatalogSerializer,
       adapter: :attributes,
       scope: current_member
   end

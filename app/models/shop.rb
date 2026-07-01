@@ -8,5 +8,5 @@ class Shop
 
   has_many :tools, dependent: :destroy
 
-  validates :name, presence: true, uniqueness: true
+  validates :name, presence: true, uniqueness: { case_sensitive: false }
 end

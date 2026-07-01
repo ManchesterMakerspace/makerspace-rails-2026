@@ -75,10 +75,12 @@ class Admin::ToolsController < ApplicationController
   end
 
   def authorize_index
-    raise ::Error::Forbidden.new unless current_member.active_unexpired?
+    unless can_view_disabled_tools? || is_valid_checkout_approver?
+      raise ::Error::Forbidden.new("User is not privileged or a checkout approver")
+    end
   end
 
   def authorize_manage
-    raise ::Error::Forbidden.new unless can_view_disabled_tools?
+    raise ::Error::Forbidden.new("User is not privileged") unless can_view_disabled_tools?
   end
 end

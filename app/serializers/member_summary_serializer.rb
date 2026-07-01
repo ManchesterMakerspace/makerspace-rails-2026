@@ -12,10 +12,15 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :notes,
              :mailtrap,
              :slack,
+             :checkout_approver_shop_ids,
              :firebase_uid
 
   attribute :is_checkout_approver do
     CheckoutApprover.exists?(member_id: object.id)
+  end
+
+  attribute :checkout_approver_shop_ids do
+    CheckoutApprover.find_by(member_id: object.id)&.shop_ids || []
   end
 
   def member_contract_on_file
