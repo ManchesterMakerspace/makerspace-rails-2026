@@ -20,6 +20,44 @@ class ToolCheckoutRequest
     status == "open"
   end
 
+  def self.table_query(criteria, params)
+    rows = criteria.to_a
+    search = params[:search].to_s.downcase.strip
+
+    if search.present?
+      rows = rows.select do |request|
+        [
+          request.tool.try(:name),
+          request.tool.try(:shop).try(:name),
+          request.member.try(:fullname),
+          request.member.try(:email),
+          request.note
+        ].compact.any? { |value| value.to_s.downcase.include?(search) }
+      end
+    end
+
+    sort_by = params[:order_by].presence || "request_date"
+    rows = rows.sort_by { |request| sortable_value_for(request, sort_by) }
+    params[:order].to_s.downcase == "desc" ? rows.reverse : rows
+  end
+
+  def self.sortable_value_for(request, sort_by)
+    case sort_by.to_s
+    when "toolName", "tool_name"
+      request.tool.try(:name).to_s.downcase
+    when "shopName", "shop_name"
+      request.tool.try(:shop).try(:name).to_s.downcase
+    when "memberName", "member_name"
+      request.member.try(:fullname).to_s.downcase
+    when "memberEmail", "member_email"
+      request.member.try(:email).to_s.downcase
+    when "note"
+      request.note.to_s.downcase
+    else
+      request.request_date || Time.at(0)
+    end
+  end
+
   def announce_request
     return unless tool.announce?
 

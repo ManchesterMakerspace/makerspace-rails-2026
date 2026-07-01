@@ -59,6 +59,19 @@ RSpec.describe 'Tools API', type: :request do
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body).map { |tool| tool['name'] }).to eq(['Bandsaw'])
     end
+
+    it 'scopes checkout approver tool lists to assigned shops' do
+      other_shop = Shop.create!(name: 'Metal Shop')
+      Tool.create!(name: 'MIG Welder', shop: other_shop)
+      approver = create(:member, :current)
+      CheckoutApprover.create!(member: approver, shop_ids: [shop.id])
+      sign_in approver
+
+      get '/api/admin/tools', params: { shop_id: other_shop.id.to_s }
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to eq([])
+    end
   end
 
   describe 'POST /api/admin/shops' do

@@ -6,7 +6,10 @@ class Admin::ToolsController < ApplicationController
 
   def index
     tools = params[:shop_id] ? Tool.where(shop_id: params[:shop_id]) : Tool.all
-    tools = tools.where(:disabled.ne => true) unless can_view_disabled_tools?
+    unless can_view_disabled_tools?
+      approver_shop_ids = CheckoutApprover.shops_for_member(current_member.id).map(&:id)
+      tools = tools.where(:shop_id.in => approver_shop_ids, :disabled.ne => true)
+    end
     tools = tools.order_by(name: :asc)
     render json: tools, each_serializer: ToolSerializer, adapter: :attributes
   end

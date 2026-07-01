@@ -14,7 +14,10 @@ class Admin::ToolCheckoutRequestsController < ApplicationController
       requests = requests.where(:tool_id.in => tool_ids, :member_id.in => valid_member_ids)
     end
 
-    render json: requests.order_by(request_date: :asc),
+    requests = ToolCheckoutRequest.table_query(requests, params)
+    response.set_header("total-items", requests.count)
+
+    render json: requests,
       each_serializer: ToolCheckoutRequestSerializer,
       adapter: :attributes
   end

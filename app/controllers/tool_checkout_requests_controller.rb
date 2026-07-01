@@ -6,7 +6,10 @@ class ToolCheckoutRequestsController < AuthenticationController
     visible_tool_ids = Tool.where(:disabled.ne => true).pluck(:id)
     requests = requests.where(:tool_id.in => visible_tool_ids)
 
-    render json: requests.order_by(request_date: :desc),
+    requests = ToolCheckoutRequest.table_query(requests, params)
+    response.set_header("total-items", requests.count)
+
+    render json: requests,
       each_serializer: ToolCheckoutRequestSerializer,
       adapter: :attributes
   end

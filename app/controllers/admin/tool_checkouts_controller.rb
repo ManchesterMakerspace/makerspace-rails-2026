@@ -131,13 +131,14 @@ class Admin::ToolCheckoutsController < ApplicationController
   def authorize_approver
     return if is_admin? || is_board_member?
     tool = @checkout.try(:tool) || Tool.find(params[:tool_id])
-    return render json: { error: "You are not authorized to approve checkouts for disabled tools" }, status: 403 if tool.disabled?
-    shop_id = tool.try(:shop_id)
 
     if is_resource_manager?
       # RMs have access to all tools — no shop restriction
       return
     end
+
+    return render json: { error: "You are not authorized to approve checkouts for disabled tools" }, status: 403 if tool.disabled?
+    shop_id = tool.try(:shop_id)
 
     unless current_member.valid_for_checkout_request?
       render json: { error: "You must be an active, unexpired member with a contract on file to approve checkouts" }, status: 403 and return
