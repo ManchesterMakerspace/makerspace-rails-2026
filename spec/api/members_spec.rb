@@ -44,7 +44,7 @@ describe 'Members API', type: :request do
 
           expect(response).to have_http_status(:ok)
           expect(JSON.parse(response.body).length).to eq(50)
-          expect(response.headers['total-items']).to eq('56')
+          expect(response.headers['total-items'].to_i).to eq(56)
         end
 
         it 'returns the next page for pageNum 1' do
@@ -57,7 +57,7 @@ describe 'Members API', type: :request do
 
           expect(response).to have_http_status(:ok)
           expect(JSON.parse(response.body).length).to eq(6)
-          expect(response.headers['total-items']).to eq('56')
+          expect(response.headers['total-items'].to_i).to eq(56)
         end
       end
     end
