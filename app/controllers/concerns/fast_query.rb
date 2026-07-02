@@ -1,6 +1,6 @@
 module FastQuery
   extend ActiveSupport::Concern
-  @@items_per_page = 20
+  @@items_per_page = 50
 
   protected
   def query_params
@@ -11,7 +11,7 @@ module FastQuery
   def render_with_total_items(current_query, render_options = nil)
     render_payload = { :json => current_query }
     render_payload = render_payload.merge(render_options) if render_options.is_a?(Hash)
-    response.set_header("total-items", current_query.count)
+    response.set_header("total-items", @total_items || current_query.count)
     render render_payload and return
   end
 
@@ -47,10 +47,24 @@ module FastQuery
       order = query_criteria[:order].nil? || query_criteria[:order].empty? ? :asc : query_criteria[:order].to_sym
 
       # Search if needed. Raises error if search doesnt exist on class
-      unless query_criteria[:search].nil? || query_criteria[:search].empty?
-        return current_query.klass.search(query_criteria[:search], current_query)
+      result_query = if query_criteria[:search].nil? || query_criteria[:search].empty?
+        current_query.order_by(sort_by => order)
       else
-        return current_query.order_by(sort_by => order)
+        current_query.klass.search(query_criteria[:search], current_query)
+      end
+
+      @total_items = result_query.count
+      paginate_resource(result_query, query_criteria[:page_num])
+    end
+
+    def paginate_resource(current_query, page_num)
+      page = [page_num.to_i, 0].max
+      offset = page * @@items_per_page
+
+      if current_query.respond_to?(:skip) && current_query.respond_to?(:limit)
+        current_query.skip(offset).limit(@@items_per_page)
+      else
+        current_query.slice(offset, @@items_per_page) || []
       end
     end
 

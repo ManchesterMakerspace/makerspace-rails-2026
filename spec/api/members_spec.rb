@@ -27,6 +27,39 @@ describe 'Members API', type: :request do
         let(:id) { create(:member).id }
         run_test!
       end
+
+      context 'pagination' do
+        before do
+          create_list(:member, 55)
+          sign_in create(:member, :admin)
+        end
+
+        it 'returns only one page while preserving the total item count' do
+          get '/api/members', params: {
+            pageNum: 0,
+            orderBy: '',
+            order: 'asc',
+            currentMembers: false
+          }
+
+          expect(response).to have_http_status(:ok)
+          expect(JSON.parse(response.body).length).to eq(50)
+          expect(response.headers['total-items']).to eq('56')
+        end
+
+        it 'returns the next page for pageNum 1' do
+          get '/api/members', params: {
+            pageNum: 1,
+            orderBy: '',
+            order: 'asc',
+            currentMembers: false
+          }
+
+          expect(response).to have_http_status(:ok)
+          expect(JSON.parse(response.body).length).to eq(6)
+          expect(response.headers['total-items']).to eq('56')
+        end
+      end
     end
   end
 
