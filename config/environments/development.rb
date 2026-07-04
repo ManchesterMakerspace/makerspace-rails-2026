@@ -63,7 +63,7 @@ Rails.application.configure do
   if config.public_file_server.enabled?
     Rails.logger.info '[config] RAILS_SERVE_STATIC_FILES=true'
   else
-    Rails.logger.warn '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hope you've got apache or nginx to do it for you!'
+    Rails.logger.warn '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hopefully apache or nginx will do it for you!'
   end
   
   if ENV['MAILTRAP_API_TOKEN'].present? && ENV['MAILTRAP_ACCOUNT_ID'].present?
