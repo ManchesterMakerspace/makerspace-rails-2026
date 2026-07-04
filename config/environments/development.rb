@@ -1,7 +1,7 @@
 Rails.application.configure do
 
   # Settings specified here will take precedence over those in config/application.rb.
-
+  config.public_file_server.enabled = true
   # In the development environment your application's code is reloaded on
   # every request. This slows down response time but is perfect for development
   # since you don't have to restart the web server when you make code changes.
@@ -59,6 +59,18 @@ Rails.application.configure do
   # config.action_controller.asset_host = "#{config.action_mailer.default_url_options[:host]}:#{config.action_mailer.default_url_options[:port]}"
   config.action_mailer.asset_host = config.action_controller.asset_host
 
+  # Serving static files from the `/public` folder if enabled.  If not enabled, check for ENV variable
+  if config.public_file_server.enabled
+     $stderr.puts '[config] config.public_file_server.enabled=true'
+  else
+    config.public_file_server.enabled = ENV['RAILS_SERVE_STATIC_FILES'].present?
+    if config.public_file_server.enabled
+      $stderr.puts '[config] RAILS_SERVE_STATIC_FILES=true'
+    else
+      $stderr.puts  '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hopefully apache or nginx will do it for you!!!'
+    end
+  end
+  
   if ENV['MAILTRAP_API_TOKEN'].present? && ENV['MAILTRAP_ACCOUNT_ID'].present?
     begin
       config.action_mailer.perform_deliveries = true

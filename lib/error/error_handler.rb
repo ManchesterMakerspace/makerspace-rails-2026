@@ -51,6 +51,7 @@ module Error
 
     def respond(_error, _status, _message)
       log_forbidden_to_stderr(_message) if _status.to_i == 403
+      log_not_found_file_lookup_context if _status.to_i == 404 && respond_to?(:log_not_found_file_lookup_context, true)
       json = Error::Helpers::Render.json(_error, _status, _message)
       render json: json, status: _status and return
     end

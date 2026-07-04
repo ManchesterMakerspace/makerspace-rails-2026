@@ -43,6 +43,7 @@ Rails.application.configure do
 
   # Configure public file server for tests with Cache-Control for performance.
   config.public_file_server.enabled = true
+  $stderr.puts '[config] RAILS_SERVE_STATIC_FILES=true'
   config.public_file_server.headers = {
     'Cache-Control' => 'public, max-age=3600'
   }
