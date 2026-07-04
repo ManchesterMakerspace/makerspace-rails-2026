@@ -90,7 +90,7 @@ class ApplicationController < ActionController::Base
   end
 
   def filter_requests
-    if params[:format] && (/html|json/ =~ params[:format]).nil?
+    if params[:format] && (/js|png|svg|txt|html|json/ =~ params[:format]).nil?
       Rails.logger.info("[filter_requests] #{params[:format]}.")
       raise Error::NotFound.new
     end
