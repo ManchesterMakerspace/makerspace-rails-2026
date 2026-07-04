@@ -61,7 +61,7 @@ Rails.application.configure do
   if config.public_file_server.enabled?
     Rails.logger.info '[config] RAILS_SERVE_STATIC_FILES=true'
   else
-    Rails.logger.warn '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hope you've got apache or nginx to do it for you!'
+    Rails.logger.warn '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, do you have apache or nginx to do it for you?!'
   end
   
   # Compress JavaScripts and CSS.
