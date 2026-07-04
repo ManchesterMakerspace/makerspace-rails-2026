@@ -59,12 +59,16 @@ Rails.application.configure do
   # config.action_controller.asset_host = "#{config.action_mailer.default_url_options[:host]}:#{config.action_mailer.default_url_options[:port]}"
   config.action_mailer.asset_host = config.action_controller.asset_host
 
-  # Serving static files from the `/public` folder by default unless Apache or NGINX already handles this.
-  config.public_file_server.enabled = ENV['RAILS_SERVE_STATIC_FILES'].present?
+  # Serving static files from the `/public` folder if enabled.  If not enabled, check for ENV variable
   if config.public_file_server.enabled?
-    $stderr.puts '[config] RAILS_SERVE_STATIC_FILES=true'
+     $stderr.puts '[config] config.public_file_server.enabled=true'
   else
-    $stderr.puts  '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hopefully apache or nginx will do it for you!'
+    config.public_file_server.enabled = ENV['RAILS_SERVE_STATIC_FILES'].present?
+    if config.public_file_server.enabled?
+      $stderr.puts '[config] RAILS_SERVE_STATIC_FILES=true'
+    else
+      $stderr.puts  '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hopefully apache or nginx will do it for you!'
+    end
   end
   
   if ENV['MAILTRAP_API_TOKEN'].present? && ENV['MAILTRAP_ACCOUNT_ID'].present?
