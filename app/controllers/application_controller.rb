@@ -26,7 +26,7 @@ class ApplicationController < ActionController::Base
 
     @logged_not_found_file_lookup_context = true
     Rails.logger.info(
-      "[404 file lookup] requested_path=#{request.original_fullpath} " \
+      "[404 file lookup] requested_path=#{request.path} " \
       "translated_locations=#{translated_file_lookup_locations.join(', ')}"
     )
   rescue => e
