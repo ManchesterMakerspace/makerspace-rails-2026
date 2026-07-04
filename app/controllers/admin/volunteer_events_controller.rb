@@ -62,13 +62,13 @@ class Admin::VolunteerEventsController < AdminOrRmController
     end
 
     unless @event.attendee_ids.include?(member.id)
-      render json: { error: "#{member.fullname} is not checked in to this event" }, status: :unprocessable_entity and return
+      render json: { error: "#{member.fullname} is not checked in to this event" }, status: :unprocessable_content and return
     end
 
     @event.remove_attendee!(member, current_member)
     render json: @event, serializer: VolunteerEventSerializer, adapter: :attributes
   rescue Error::Forbidden
-    render json: { error: 'Unable to remove attendee' }, status: :unprocessable_entity
+    render json: { error: 'Unable to remove attendee' }, status: :unprocessable_content
   end
 
   # DELETE /api/admin/volunteer_events/:id

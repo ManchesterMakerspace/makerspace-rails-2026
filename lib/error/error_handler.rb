@@ -21,8 +21,8 @@ module Error
           respond(:interal_server_error, 500, e.summary || "Internal Server Error")
         end
         rescue_from ::Mongoid::Errors::Validations do |e|
-          slack_alert(:unprocessable_entity, 422, e.summary || "Internal Server Error")
-          respond(:unprocessable_entity, 422, e.summary || "Internal Server Error")
+          slack_alert(:unprocessable_content, 422, e.summary || "Internal Server Error")
+          respond(:unprocessable_content, 422, e.summary || "Internal Server Error")
         end
         rescue_from ::Mongoid::Errors::DocumentNotFound do |e|
           slack_alert(:not_found, 404, e.problem || "Resource not found")
@@ -32,8 +32,8 @@ module Error
           respond(:unauthorized, 401, "Unauthorized")
         end
         rescue_from ::ActionController::ParameterMissing do |e|
-          slack_alert(:unprocessable_entity, 422, e.message)
-          respond(:unprocessable_entity, 422, e.message)
+          slack_alert(:unprocessable_content, 422, e.message)
+          respond(:unprocessable_content, 422, e.message)
         end
         rescue_from ::Braintree::NotFoundError do |e|
           slack_alert(:not_found, 404, "Braintree resource not found")

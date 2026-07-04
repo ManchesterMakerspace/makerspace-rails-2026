@@ -108,10 +108,10 @@ class Admin::MembersController < AdminController
     invite_gdrive(@member.email)
     render json: {}, status: 204 and return
   rescue Error::NotAllowed => e
-    render json: { message: e.message }, status: :unprocessable_entity and return
+    render json: { message: e.message }, status: :unprocessable_content and return
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
-    render json: { message: e.message }, status: :unprocessable_entity and return
+    render json: { message: e.message }, status: :unprocessable_content and return
   end
 
   # POST /api/admin/members/:id/invite_slack
@@ -122,10 +122,10 @@ class Admin::MembersController < AdminController
     ::Service::SlackConnector.invite_to_slack(@member.email, @member.lastname, @member.firstname)
     render json: {}, status: 204 and return
   rescue Error::NotAllowed => e
-    render json: { message: e.message }, status: :unprocessable_entity and return
+    render json: { message: e.message }, status: :unprocessable_content and return
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
-    render json: { message: e.message }, status: :unprocessable_entity and return
+    render json: { message: e.message }, status: :unprocessable_content and return
   end
 
   private
