@@ -33,12 +33,19 @@ COPY Gemfile Gemfile.lock ./
 RUN bundle install
 
 ARG ENVIRONMENT="production"
+ARG APP_DOMAIN="members.manchestermakerspace.org"
 ENV RAILS_ENV=$ENVIRONMENT
 ENV RACK_ENV=$ENVIRONMENT
+ENV RAILS_SERVE_STATIC_FILES=true
 
 COPY . .
 
 RUN mkdir -p /app/app/assets/builds
 COPY --from=ui /react/dist/ /app/app/assets/builds/
+RUN rm -f /app/app/assets/builds/manifest.js
+COPY --from=ui /react/dist/manifest.js /app/app/assets/config/manifest.js
+
+RUN SECRET_KEY_BASE_DUMMY=1 APP_DOMAIN=${APP_DOMAIN} bundle exec rails assets:precompile
+RUN cp -r /app/app/assets/builds/. /app/public/assets/ && rm -f /app/public/assets/manifest.js
 
 CMD ["bundle", "exec", "rails", "server", "-b", "0.0.0.0"]

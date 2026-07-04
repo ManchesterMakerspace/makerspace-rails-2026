@@ -58,7 +58,7 @@ Rails.application.configure do
   # Disable serving static files from the `/public` folder by default since
   # Apache or NGINX already handles this.
   config.public_file_server.enabled = ENV['RAILS_SERVE_STATIC_FILES'].present?
-  if config.public_file_server.enabled?
+  if config.public_file_server.enabled
     $stderr.puts '[config] RAILS_SERVE_STATIC_FILES=true'
   else
     $stderr.puts '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, do you have apache or nginx to do it for you?!'
