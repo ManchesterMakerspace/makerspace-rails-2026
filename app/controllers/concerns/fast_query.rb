@@ -48,7 +48,7 @@ module FastQuery
 
       # Search if needed. Raises error if search doesnt exist on class
       result_query = if query_criteria[:search].nil? || query_criteria[:search].empty?
-        current_query.order_by(sort_by => order)
+        order_query(current_query, sort_by, order)
       else
         current_query.klass.search(query_criteria[:search], current_query)
       end
@@ -66,6 +66,22 @@ module FastQuery
       else
         current_query.slice(offset, @@items_per_page) || []
       end
+    end
+
+    def order_query(current_query, sort_by, order)
+      if current_query.klass == Member && sort_by == :expirationTime
+        sorted_members = current_query.to_a.sort_by { |member| member_expiration_sort_value(member) }
+        order == :desc ? sorted_members.reverse : sorted_members
+      else
+        current_query.order_by(sort_by => order)
+      end
+    end
+
+    def member_expiration_sort_value(member)
+      return member.expirationTime if member.expirationTime.present?
+      return member.startDate.to_time.to_i * 1000 if member.startDate.present?
+
+      Float::INFINITY
     end
 
     def query_array_by_name(param, db_name)

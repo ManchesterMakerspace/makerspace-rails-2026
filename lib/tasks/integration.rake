@@ -1,5 +1,13 @@
 require 'git'
 require 'shellwords'
+
+def copy_integration_assets(source_pattern, destination)
+  matches = Dir.glob(source_pattern)
+  raise "No integration assets matched #{source_pattern}" if matches.empty?
+
+  FileUtils.cp(matches, destination)
+end
+
 desc 'Run integration tests for frontend library'
 task :integration do
   rails_repo_dir = File.expand_path(".")
@@ -36,13 +44,13 @@ task :integration do
   Dir.chdir(react_repo_dir)
   system("PORT=3035 yarn && PORT=3035 yarn build") || exit(-1)
   FileUtils.mkdir_p(File.join(rails_repo_dir, "app/assets/builds"))
-  FileUtils.cp(File.join(react_repo_dir, "dist/*.js"), File.join(rails_repo_dir, "app/assets/builds"))
-  FileUtils.cp(File.join(react_repo_dir, "dist/*.css"), File.join(rails_repo_dir, "app/assets/builds"))
+  copy_integration_assets(File.join(react_repo_dir, "dist/*.js"), File.join(rails_repo_dir, "app/assets/builds"))
+  copy_integration_assets(File.join(react_repo_dir, "dist/*.css"), File.join(rails_repo_dir, "app/assets/builds"))
   FileUtils.cp(File.join(react_repo_dir, "dist/favicon.png"), File.join(rails_repo_dir, "app/assets/builds"))
-  FileUtils.cp(File.join(react_repo_dir, "dist/*.html"), File.join(rails_repo_dir, "app/assets/builds"))
-  FileUtils.cp(File.join(react_repo_dir, "dist/*.LICENSE.txt"), File.join(rails_repo_dir, "app/assets/builds"))
+  copy_integration_assets(File.join(react_repo_dir, "dist/*.html"), File.join(rails_repo_dir, "app/assets/builds"))
+  copy_integration_assets(File.join(react_repo_dir, "dist/*.LICENSE.txt"), File.join(rails_repo_dir, "app/assets/builds"))
   FileUtils.mkdir_p(File.join(rails_repo_dir, "app/assets/builds/assets"))
-  FileUtils.cp(File.join(react_repo_dir, "dist/assets/*.csv"), File.join(rails_repo_dir, "app/assets/builds/assets"))
+  copy_integration_assets(File.join(react_repo_dir, "dist/assets/*.csv"), File.join(rails_repo_dir, "app/assets/builds/assets"))
   Dir.chdir(rails_repo_dir)
   server_started = system("RAILS_ENV=test rake 'db:db_reset[subscriptions,payment_methods]' && RAILS_ENV=test rails runner db/seeds_rental_spots.rb && RAILS_ENV=test rails s -b 0.0.0.0 -p 3035 -d")
   if server_started
