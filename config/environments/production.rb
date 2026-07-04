@@ -37,7 +37,7 @@ Rails.application.configure do
     }
   else
     config.action_mailer.perform_deliveries = false
-    Rails.logger.warn '[Mailer] WARNING: No mail provider configured — email delivery disabled'
+    $stderr.puts '[Mailer] WARNING: No mail provider configured — email delivery disabled'
   end
 
   # Code is not reloaded between requests.
@@ -59,9 +59,9 @@ Rails.application.configure do
   # Apache or NGINX already handles this.
   config.public_file_server.enabled = ENV['RAILS_SERVE_STATIC_FILES'].present?
   if config.public_file_server.enabled?
-    Rails.logger.info '[config] RAILS_SERVE_STATIC_FILES=true'
+    $stderr.puts '[config] RAILS_SERVE_STATIC_FILES=true'
   else
-    Rails.logger.warn '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, do you have apache or nginx to do it for you?!'
+    $stderr.puts '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, do you have apache or nginx to do it for you?!'
   end
   
   # Compress JavaScripts and CSS.
