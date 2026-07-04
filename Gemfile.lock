@@ -507,6 +507,7 @@ DEPENDENCIES
   mongoid-rspec (~> 4.1)
   mongoid_search (~> 0.4)
   multi_json (~> 1.15)
+  nokogiri (~> 1.19.4)
   paypal-sdk-rest (~> 1.7)
   puma (~> 8.0)
   rack-cors (~> 3.0)
