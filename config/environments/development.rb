@@ -60,6 +60,7 @@ Rails.application.configure do
   config.action_mailer.asset_host = config.action_controller.asset_host
 
   # Serving static files from the `/public` folder by default unless Apache or NGINX already handles this.
+  config.public_file_server.enabled = ENV['RAILS_SERVE_STATIC_FILES'].present?
   if config.public_file_server.enabled?
     $stderr.puts '[config] RAILS_SERVE_STATIC_FILES=true'
   else
