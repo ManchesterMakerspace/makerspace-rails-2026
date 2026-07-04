@@ -11,7 +11,7 @@ gem 'redis', '~> 5.0'
 gem 'connection_pool', '~> 2.4'
 gem 'redis-actionpack'
 # Authentication
-gem 'devise', '~> 4.9'
+gem 'devise', '~> 5.0'
 gem 'rotp',    '~> 6.0'
 gem 'rqrcode', '~> 3.2'
 gem 'bcrypt', '~> 3.1'
