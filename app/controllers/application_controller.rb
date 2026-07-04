@@ -44,7 +44,9 @@ class ApplicationController < ActionController::Base
       lookup_roots += Array(Rails.application.config.assets.paths)
     end
 
-    lookup_roots.map { |root| File.join(root.to_s, clean_relative_path) }.uniq
+    lookup_roots.map do |root|
+      clean_relative_path.present? ? File.join(root.to_s, clean_relative_path) : root.to_s
+    end.uniq
   end
 
   def allow_only_html_requests
