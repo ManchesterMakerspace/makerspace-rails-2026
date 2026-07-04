@@ -61,9 +61,9 @@ Rails.application.configure do
 
   # Serving static files from the `/public` folder by default unless Apache or NGINX already handles this.
   if config.public_file_server.enabled?
-    Rails.logger.info '[config] RAILS_SERVE_STATIC_FILES=true'
+    $stderr.puts '[config] RAILS_SERVE_STATIC_FILES=true'
   else
-    Rails.logger.warn '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hopefully apache or nginx will do it for you!'
+    $stderr.puts  '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hopefully apache or nginx will do it for you!'
   end
   
   if ENV['MAILTRAP_API_TOKEN'].present? && ENV['MAILTRAP_ACCOUNT_ID'].present?
