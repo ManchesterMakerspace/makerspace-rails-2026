@@ -2,7 +2,8 @@
 FROM node:22-bookworm AS ui
 
 ARG REACT_REPO_URL
-ARG REACT_BRANCH=master
+#ARG REACT_BRANCH=master
+ARG REACT_BRANCH=codex/remove-inline-serving-of-filledlaserablelogo.svg-abo78c
 
 RUN apt-get update -qq && apt-get install -y -qq git
 
