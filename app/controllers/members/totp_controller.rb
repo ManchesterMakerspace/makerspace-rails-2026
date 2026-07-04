@@ -22,11 +22,11 @@ class Members::TotpController < AuthenticationController
     code         = params[:code].to_s.strip
 
     if plain_secret.blank?
-      render json: { error: 'Setup session expired. Please start over.' }, status: :unprocessable_entity and return
+      render json: { error: 'Setup session expired. Please start over.' }, status: :unprocessable_content and return
     end
 
     unless TotpService.valid?(code, TotpService.encrypt(plain_secret))
-      render json: { error: 'Invalid code. Please try again.' }, status: :unprocessable_entity and return
+      render json: { error: 'Invalid code. Please try again.' }, status: :unprocessable_content and return
     end
 
     # Activate TOTP

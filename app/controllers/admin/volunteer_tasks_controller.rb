@@ -68,7 +68,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
   # POST /api/admin/volunteer_tasks/:id/reset_cooldown
   def reset_cooldown
     unless @task.status == 'recurring'
-      render json: { error: 'Only recurring tasks have a cooldown to reset' }, status: :unprocessable_entity and return
+      render json: { error: 'Only recurring tasks have a cooldown to reset' }, status: :unprocessable_content and return
     end
     @task.update!(next_available: nil, claimed_at: nil)
     render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes

@@ -184,7 +184,7 @@ describe 'Members API', type: :request do
 
         put "/api/members/#{id}", params: { email: undeliverable_email }, as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(current_member.reload.email).to eq(previous_email)
       end
     end

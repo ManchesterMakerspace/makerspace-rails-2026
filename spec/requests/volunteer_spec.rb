@@ -100,7 +100,7 @@ RSpec.describe 'Volunteer endpoints', type: :request do
         task = VolunteerTask.create!(task_attrs.merge(status: 'reusable'))
         post "/api/volunteer/tasks/#{task.id}/claim"
         post "/api/volunteer/tasks/#{task.id}/claim"
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(JSON.parse(response.body)['error']).to match(/already claimed/i)
       end
 
@@ -109,7 +109,7 @@ RSpec.describe 'Volunteer endpoints', type: :request do
           status: 'recurring', days: 7, next_available: Date.tomorrow
         ))
         post "/api/volunteer/tasks/#{task.id}/claim"
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(JSON.parse(response.body)['error']).to match(/not yet available/i)
       end
     end
@@ -141,7 +141,7 @@ RSpec.describe 'Volunteer endpoints', type: :request do
       other = create(:member)
       task  = VolunteerTask.create!(task_attrs.merge(status: 'claimed', claimed_by_id: other.id))
       post "/api/volunteer/tasks/#{task.id}/complete"
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
     end
   end
 
@@ -167,7 +167,7 @@ RSpec.describe 'Volunteer endpoints', type: :request do
       sign_in active_member
       post "/api/volunteer/events/#{event.id}/checkin"
       post "/api/volunteer/events/#{event.id}/checkin"
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
     end
   end
 end
@@ -193,7 +193,7 @@ RSpec.describe 'Admin Volunteer Tasks endpoints', type: :request do
     it 'returns 422 without a reason (correct error class)' do
       task = VolunteerTask.create!(task_attrs.merge(status: 'claimed', claimed_by_id: member.id))
       post "/api/admin/volunteer_tasks/#{task.id}/release"
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
     end
 
     it 'releases a claimed task with a reason' do
@@ -243,7 +243,7 @@ RSpec.describe 'Admin Volunteer Tasks endpoints', type: :request do
     it 'returns 422 for non-recurring tasks' do
       task = VolunteerTask.create!(task_attrs)
       post "/api/admin/volunteer_tasks/#{task.id}/reset_cooldown"
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
     end
   end
 end
@@ -281,21 +281,21 @@ RSpec.describe 'Admin Volunteer Credits endpoints', type: :request do
     it 'returns 422 when credit_value is missing or not positive' do
       post '/api/admin/volunteer_credits',
            params: { member_id: active.id.to_s, description: 'Test' }
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
 
       post '/api/admin/volunteer_credits',
            params: { member_id: active.id.to_s, description: 'Test', credit_value: 0 }
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
 
       post '/api/admin/volunteer_credits',
            params: { member_id: active.id.to_s, description: 'Test', credit_value: -1 }
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
     end
 
     it 'returns 422 when description is blank' do
       post '/api/admin/volunteer_credits',
            params: { member_id: active.id.to_s, description: '', credit_value: 1 }
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
     end
   end
 end

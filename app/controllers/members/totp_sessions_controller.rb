@@ -23,7 +23,7 @@ class Members::TotpSessionsController < ApplicationController
     end
 
     unless TotpService.valid?(code, member.otp_secret_encrypted)
-      render json: { error: 'Invalid code. Please try again.' }, status: :unprocessable_entity and return
+      render json: { error: 'Invalid code. Please try again.' }, status: :unprocessable_content and return
     end
 
     # Code valid — clean up pending state and issue full session
