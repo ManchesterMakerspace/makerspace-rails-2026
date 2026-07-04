@@ -36,9 +36,10 @@ jobs:
           cache: yarn
           cache-dependency-path: ui/yarn.lock
 
+      # Using --production=true ensures minified webpack. Flag will need o be changed for yarn2
       - name: Install UI dependencies
         working-directory: ui
-        run: yarn install --frozen-lockfile --ignore-engines
+        run: yarn install --frozen-lockfile --ignore-engines  --production=true
 
       - name: Build UI
         working-directory: ui
@@ -75,7 +76,7 @@ jobs:
 
       - name: Install UI dependencies
         working-directory: ui
-        run: yarn install --frozen-lockfile --ignore-engines
+        run: yarn install --frozen-lockfile --ignore-engines --production=true
 
       - name: Run Jest
         working-directory: ui
@@ -276,7 +277,7 @@ jobs:
 
       - name: Install UI dependencies
         working-directory: ui
-        run: yarn install --frozen-lockfile --ignore-engines
+        run: yarn install --frozen-lockfile --ignore-engines --production=true
 
       - name: Download built UI assets
         uses: actions/download-artifact@v8
