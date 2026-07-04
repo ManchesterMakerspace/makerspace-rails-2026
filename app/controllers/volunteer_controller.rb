@@ -117,11 +117,11 @@ class VolunteerController < AuthenticationController
     render_target = result.is_a?(VolunteerTask) ? result : task
     render json: render_target, serializer: VolunteerTaskSerializer, adapter: :attributes
   rescue Error::AlreadyClaimed
-    render json: { error: 'You have already claimed this task' }, status: :unprocessable_entity
+    render json: { error: 'You have already claimed this task' }, status: :unprocessable_content
   rescue Error::CoolingDown
-    render json: { error: 'This task is not yet available to claim again' }, status: :unprocessable_entity
+    render json: { error: 'This task is not yet available to claim again' }, status: :unprocessable_content
   rescue Error::Forbidden
-    render json: { error: 'Task is no longer available' }, status: :unprocessable_entity
+    render json: { error: 'Task is no longer available' }, status: :unprocessable_content
   end
 
   # POST /api/volunteer/tasks/:id/complete
@@ -138,7 +138,7 @@ class VolunteerController < AuthenticationController
 
     render json: task, serializer: VolunteerTaskSerializer, adapter: :attributes
   rescue Error::Forbidden
-    render json: { error: 'You cannot mark this task as complete' }, status: :unprocessable_entity
+    render json: { error: 'You cannot mark this task as complete' }, status: :unprocessable_content
   end
 
   # POST /api/volunteer/events/:id/checkin
@@ -151,21 +151,21 @@ class VolunteerController < AuthenticationController
     end
 
     if event.status != 'open'
-      render json: { error: 'Event is not open for check-in' }, status: :unprocessable_entity and return
+      render json: { error: 'Event is not open for check-in' }, status: :unprocessable_content and return
     end
 
     if event.event_date.present? && event.event_date < Date.today
-      render json: { error: 'Check-in is no longer available after the event date.' }, status: :unprocessable_entity and return
+      render json: { error: 'Check-in is no longer available after the event date.' }, status: :unprocessable_content and return
     end
 
     if event.attendee_ids.include?(current_member.id)
-      render json: { error: 'You are already checked in to this event' }, status: :unprocessable_entity and return
+      render json: { error: 'You are already checked in to this event' }, status: :unprocessable_content and return
     end
 
     event.checkin!(current_member)
     render json: event, serializer: VolunteerEventSerializer, adapter: :attributes
   rescue Error::Forbidden
-    render json: { error: 'Unable to check in to this event' }, status: :unprocessable_entity
+    render json: { error: 'Unable to check in to this event' }, status: :unprocessable_content
   end
 
   # DELETE /api/volunteer/events/:id/checkin
@@ -174,16 +174,16 @@ class VolunteerController < AuthenticationController
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerEvent, { id: params[:id] }) if event.nil?
 
     unless event.attendee_ids.include?(current_member.id)
-      render json: { error: 'You are not checked in to this event' }, status: :unprocessable_entity and return
+      render json: { error: 'You are not checked in to this event' }, status: :unprocessable_content and return
     end
 
     if event.event_date.present? && event.event_date < Date.today
-      render json: { error: 'Check-in removal is no longer available after the event date.' }, status: :unprocessable_entity and return
+      render json: { error: 'Check-in removal is no longer available after the event date.' }, status: :unprocessable_content and return
     end
 
     event.remove_attendee!(current_member, current_member)
     render json: event, serializer: VolunteerEventSerializer, adapter: :attributes
   rescue Error::Forbidden
-    render json: { error: 'Unable to remove check-in. The event may already be closed.' }, status: :unprocessable_entity
+    render json: { error: 'Unable to remove check-in. The event may already be closed.' }, status: :unprocessable_content
   end
 end

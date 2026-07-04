@@ -135,7 +135,7 @@ class Admin::InvoicesController < AdminOrRmController
     end
 
     unless @invoice.subscription_id.present?
-      render json: { error: 'Invoice has no subscription_id — nothing to clean up' }, status: :unprocessable_entity and return
+      render json: { error: 'Invoice has no subscription_id — nothing to clean up' }, status: :unprocessable_content and return
     end
 
     before = @invoice.attributes.dup
@@ -153,7 +153,7 @@ class Admin::InvoicesController < AdminOrRmController
     render json: {}, status: 204 and return
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
-    render json: { error: e.message }, status: :unprocessable_entity and return
+    render json: { error: e.message }, status: :unprocessable_content and return
   end
 
   private

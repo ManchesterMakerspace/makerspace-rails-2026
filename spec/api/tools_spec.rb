@@ -83,7 +83,7 @@ RSpec.describe 'Tools API', type: :request do
         slack_channel: 'shop-woodshop-alt'
       }
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
       expect(Shop.where(name: 'woodSHOP')).not_to exist
       expect(Shop.count).to eq(1)
     end
@@ -98,7 +98,7 @@ RSpec.describe 'Tools API', type: :request do
         shop_id: shop.id.to_s
       }
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
       expect(Tool.where(name: 'bandSAW', shop_id: shop.id)).not_to exist
       expect(Tool.where(shop_id: shop.id).count).to eq(2)
     end

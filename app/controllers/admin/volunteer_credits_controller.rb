@@ -24,12 +24,12 @@ class Admin::VolunteerCreditsController < AdminOrRmController
     end
 
     if credit_params[:description].blank?
-      render json: { error: 'Description is required' }, status: :unprocessable_entity and return
+      render json: { error: 'Description is required' }, status: :unprocessable_content and return
     end
 
     credit_value = credit_params[:credit_value].to_f
     if credit_value <= 0
-      render json: { error: 'Credit value must be a positive number' }, status: :unprocessable_entity and return
+      render json: { error: 'Credit value must be a positive number' }, status: :unprocessable_content and return
     end
 
     credit = VolunteerCredit.new(
@@ -67,7 +67,7 @@ class Admin::VolunteerCreditsController < AdminOrRmController
     end
     reason = params[:reason].to_s.strip
     if reason.blank?
-      render json: { error: 'A reason is required to reverse a credit' }, status: :unprocessable_entity and return
+      render json: { error: 'A reason is required to reverse a credit' }, status: :unprocessable_content and return
     end
     reversal = @credit.reverse!(current_member, reason)
     render json: reversal, serializer: VolunteerCreditSerializer, adapter: :attributes

@@ -41,7 +41,7 @@ class Admin::ToolCheckoutsController < ApplicationController
     # Prevent duplicate active checkout
     existing = ToolCheckout.find_by(member_id: member.id, tool_id: tool.id, revoked_at: nil)
     if existing
-      render json: { error: "Member is already checked out on this tool" }, status: 422 and return
+      render json: { error: "Member is already checked out on this tool" }, status: :unprocessable_content and return
     end
 
     checkout = ToolCheckout.new(

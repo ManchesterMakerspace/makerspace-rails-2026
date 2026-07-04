@@ -89,7 +89,7 @@ class Admin::SystemConfigsController < AdminController
     value = params[:value]
 
     unless FLAG_KEYS.include?(key)
-      render json: { error: "Unknown flag key: #{key}" }, status: :unprocessable_entity and return
+      render json: { error: "Unknown flag key: #{key}" }, status: :unprocessable_content and return
     end
 
     old_value = SystemConfig.enabled?(key).to_s
@@ -117,7 +117,7 @@ class Admin::SystemConfigsController < AdminController
     value = params[:value].to_s.strip
 
     unless SETTING_KEYS.include?(key)
-      render json: { error: "Unknown setting key: #{key}" }, status: :unprocessable_entity and return
+      render json: { error: "Unknown setting key: #{key}" }, status: :unprocessable_content and return
     end
 
     old_value = SystemConfig.get(key).to_s
@@ -150,7 +150,7 @@ class Admin::SystemConfigsController < AdminController
     job_key = params[:key]
 
     unless SystemConfig::JOB_KEYS.key?(job_key)
-      render json: { error: "Unknown job: #{job_key}" }, status: :unprocessable_entity and return
+      render json: { error: "Unknown job: #{job_key}" }, status: :unprocessable_content and return
     end
 
     case job_key
