@@ -39,6 +39,6 @@ ENV RACK_ENV=$ENVIRONMENT
 COPY . .
 
 RUN mkdir -p /app/app/assets/builds
-COPY --from=ui /react/dist/makerspace-react.js /react/dist/makerspace-react.css /app/app/assets/builds/
+COPY --from=ui /react/dist/ /app/app/assets/builds/
 
 CMD ["bundle", "exec", "rails", "server", "-b", "0.0.0.0"]
