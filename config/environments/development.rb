@@ -67,7 +67,7 @@ Rails.application.configure do
     if config.public_file_server.enabled?
       $stderr.puts '[config] RAILS_SERVE_STATIC_FILES=true'
     else
-      $stderr.puts  '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hopefully apache or nginx will do it for you!'
+      $stderr.puts  '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hopefully apache or nginx will do it for you!!!'
     end
   end
   
