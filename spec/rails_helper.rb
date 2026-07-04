@@ -1,6 +1,7 @@
 require "database_cleaner/mongoid"
 # This file is copied to spec/ when you run 'rails generate rspec:install'
-ENV['RAILS_ENV'] ||= 'test'
+ENV['RAILS_ENV'] = 'test'
+ENV['RACK_ENV'] = 'test'
 # Factory-created members use @example.com addresses, which the
 # EmailDeliverabilityValidator's DNS/MX checks treat as undeliverable.
 # Skip those checks for the whole test run unless a spec explicitly stubs
@@ -21,6 +22,26 @@ require 'devise'
 require 'base64'
 require 'bcrypt'
 require 'securerandom'
+
+SAFE_DATABASE_CLEANER_MLAB_URI_SUBSTRINGS = [
+  "127.0.0.1",
+  "://mongo:27017/",
+  "localhost",
+  "dev",
+  "test"
+].freeze
+
+def ensure_safe_database_cleaner_mlab_uri!
+  mlab_uri = ENV["MLAB_URI"].to_s
+  return if mlab_uri.present? && SAFE_DATABASE_CLEANER_MLAB_URI_SUBSTRINGS.any? { |safe_value| mlab_uri.include?(safe_value) }
+
+  message = "Refusing to run DatabaseCleaner: MLAB_URI must be set and contain one of " \
+            "#{SAFE_DATABASE_CLEANER_MLAB_URI_SUBSTRINGS.join(', ')}."
+  Rails.logger.error(message)
+  warn(message)
+  raise message
+end
+
 # Add additional requires below this line. Rails is not loaded until this point!
 # Requires supporting ruby files with custom matchers and macros, etc, in
 # spec/support/ and its subdirectories. Files matching `spec/**/*_spec.rb` are
@@ -49,13 +70,16 @@ RSpec.configure do |config|
   # Clean/Reset Mongoid DB prior to running each test.
   config.use_transactional_fixtures = false
   config.before(:suite) do
+    ensure_safe_database_cleaner_mlab_uri!
     DatabaseCleaner[:mongoid].clean_with(:deletion)
   end
   config.before(:each) do |example|
+    ensure_safe_database_cleaner_mlab_uri!
     DatabaseCleaner[:mongoid].strategy = :deletion
     DatabaseCleaner[:mongoid].start
   end
   config.after(:each) do
+    ensure_safe_database_cleaner_mlab_uri!
     DatabaseCleaner[:mongoid].clean
   end
   # RSpec Rails can automatically mix in different behaviours to your tests

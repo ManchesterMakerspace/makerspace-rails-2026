@@ -26,6 +26,22 @@ RSpec.describe MembersController, type: :controller do
           expect(m['expirationTime']).to be >= ((Time.now).to_i * 1000)
         end
       end
+
+      it "sorts members without expirationTime by startDate when ordering by expirationTime" do
+        older_started_member = create(:member, expirationTime: nil, startDate: Time.zone.parse("2024-01-01"))
+        newer_started_member = create(:member, expirationTime: nil, startDate: Time.zone.parse("2024-02-01"))
+        expiring_member = create(:member, expirationTime: Time.zone.parse("2024-03-01").to_i * 1000)
+
+        get :index, params: { order_by: "expirationTime", order: "asc" }, format: :json
+
+        parsed_response = JSON.parse(response.body)
+        sorted_ids = parsed_response.map { |member| member["id"] }
+        expect(sorted_ids & [older_started_member.id.as_json, newer_started_member.id.as_json, expiring_member.id.as_json]).to eq([
+          older_started_member.id.as_json,
+          newer_started_member.id.as_json,
+          expiring_member.id.as_json
+        ])
+      end
     end
 
     context "as a resource manager" do
