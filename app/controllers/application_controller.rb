@@ -51,6 +51,7 @@ class ApplicationController < ActionController::Base
 
   def allow_only_html_requests
     if params[:format] && params[:format] != "html"
+      Rails.logger.info("[allow_only_html] #{params[:format]}.")
       render plain: "Not Found", status: 404
     end
   end
@@ -90,6 +91,7 @@ class ApplicationController < ActionController::Base
 
   def filter_requests
     if params[:format] && (/html|json/ =~ params[:format]).nil?
+      Rails.logger.info("[filter_requests] #{params[:format]}.")
       raise Error::NotFound.new
     end
   end
