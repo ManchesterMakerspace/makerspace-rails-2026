@@ -329,13 +329,13 @@ RSpec.describe Member, type: :model do
       expect(MemberMailer).to have_received(:household_disbanded).with(secondary.id.to_s, primary.id.to_s, false)
     end
 
-    it "keeps the household together when the primary expiration is synced from a household invoice" do
+    it "keeps the household together when the primary expiration is synced from a member-backed household invoice" do
       primary = create(:member, expirationTime: 1.month.from_now.to_i * 1000)
       secondary = create(:member, expirationTime: primary.expirationTime)
       group = create(:group, member: primary, groupRep: primary.fullname, groupName: primary.id.to_s, expiry: primary.expirationTime)
       primary.update!(groupName: group.groupName)
       secondary.update!(groupName: group.groupName)
-      household_invoice = build(:invoice, member: primary, resource_id: group.id.to_s, resource_class: "household", plan_id: "household-membership-one-month-recurring")
+      household_invoice = build(:invoice, member: primary, resource_id: primary.id.to_s, resource_class: "member", plan_id: "household-membership-one-month-recurring")
 
       primary.current_invoice_operation = household_invoice
       primary.update!(expirationTime: 2.months.from_now.to_i * 1000)
@@ -344,6 +344,41 @@ RSpec.describe Member, type: :model do
       expect(group.reload.expiry).to eq(primary.reload.expirationTime)
       expect(secondary.reload.groupName).to eq(group.groupName)
       expect(secondary.expirationTime).to eq(primary.expirationTime)
+    end
+
+    it "syncs non-invoice primary expiration edits instead of disbanding the household" do
+      primary = create(:member, expirationTime: 1.month.from_now.to_i * 1000)
+      secondary = create(:member, expirationTime: primary.expirationTime)
+      group = create(:group, member: primary, groupRep: primary.fullname, groupName: primary.id.to_s, expiry: primary.expirationTime)
+      primary.update!(groupName: group.groupName)
+      secondary.update!(groupName: group.groupName)
+
+      primary.update!(expirationTime: 2.months.from_now.to_i * 1000)
+
+      expect(Group.where(id: group.id)).to exist
+      expect(group.reload.expiry).to eq(primary.reload.expirationTime)
+      expect(secondary.reload.groupName).to eq(group.groupName)
+      expect(secondary.expirationTime).to eq(primary.expirationTime)
+    end
+
+    it "cancels the active household subscription before destroying the group" do
+      primary = create(:member, expirationTime: 1.month.from_now.to_i * 1000)
+      secondary = create(:member, expirationTime: primary.expirationTime)
+      group = create(:group, member: primary, groupRep: primary.fullname, groupName: primary.id.to_s, expiry: primary.expirationTime)
+      group.update!(subscription_id: "household_sub_123", subscription: true)
+      primary.update!(groupName: group.groupName)
+      secondary.update!(groupName: group.groupName)
+      allow(::Service::SlackConnector).to receive(:send_slack_message)
+      allow(MemberMailer).to receive_message_chain(:household_disbanded, :deliver_later)
+      allow(::Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
+      allow(::BraintreeService::Subscription).to receive(:cancel)
+
+      individual_invoice = build(:invoice, member: primary, resource_id: primary.id.to_s, resource_class: "member", plan_id: "standard-membership-one-month-recurring")
+      primary.current_invoice_operation = individual_invoice
+      primary.update!(expirationTime: 2.months.from_now.to_i * 1000)
+
+      expect(::BraintreeService::Subscription).to have_received(:cancel).with(gateway, "household_sub_123")
+      expect(Group.where(id: group.id)).to be_empty
     end
     end
 

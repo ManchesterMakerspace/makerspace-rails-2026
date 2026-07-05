@@ -416,7 +416,7 @@ class Member
     group = self.group
     return unless group
 
-    if household_invoice_operation? || group.expiry == self.expirationTime
+    if current_invoice_operation.nil? || household_invoice_operation? || group.expiry == self.expirationTime
       group.update_expiration(self.expirationTime)
     else
       disband_household_after_individual_renewal(group)
@@ -424,13 +424,14 @@ class Member
   end
 
   def household_invoice_operation?
-    current_invoice_operation&.resource_class == "household" &&
-      current_invoice_operation&.plan_id.to_s.include?("household")
+    current_invoice_operation&.plan_id.to_s.include?("household")
   end
 
   def disband_household_after_individual_renewal(group)
     members = group.active_members.to_a
     old_expiry = group.expiry
+
+    cancel_active_household_subscription(group)
 
     members.each do |member|
       if member.id == self.id
@@ -442,6 +443,13 @@ class Member
 
     group.destroy
     notify_household_disbanded(members)
+  end
+
+  def cancel_active_household_subscription(group)
+    return unless group.subscription_id.present?
+
+    gateway = ::Service::BraintreeGateway.connect_gateway
+    ::BraintreeService::Subscription.cancel(gateway, group.subscription_id)
   end
 
   def notify_household_disbanded(members)
