@@ -59,11 +59,17 @@ class Group
   end
 
   def update_expiration(new_expiration)
-    self.update_attributes!(expiry: new_expiration)
-    self.member.update_attributes!(expirationTime: new_expiration) if self.member
-    self.active_members.where(:id.ne => self.groupName).each do |m|
-      m.update_attributes!(expirationTime: new_expiration)
-    end
+    household_key = groupName.to_s
+    member_ids = Member.where(groupName: household_key).pluck(:id)
+
+    Group.collection.find(_id: id).update_one("$set" => { expiry: new_expiration })
+    self.expiry = new_expiration
+    Member.collection.find(_id: { "$in" => member_ids }).update_many(
+      "$set" => { expirationTime: new_expiration, groupName: household_key }
+    )
+    Card.where(:member_id.in => member_ids).update_all(expiry: new_expiration)
+
+    true
   end
 
   # Emit to Member & Management channels on renewal. Matches the pattern

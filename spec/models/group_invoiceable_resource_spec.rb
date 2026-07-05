@@ -60,5 +60,12 @@ RSpec.describe Group, type: :model do
       expect { group.remove_subscription }.to change { group.reload.subscription_id }.to(nil)
       expect(group.subscription).to be(false)
     end
+
+    it 'returns a truthy value when renewing household expiration' do
+      new_expiration = group.expiry + 1.month.to_i * 1000
+
+      expect(group.update_expiration(new_expiration)).to eq(true)
+      expect(group.reload.expiry).to eq(new_expiration)
+    end
   end
 end
