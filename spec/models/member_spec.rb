@@ -314,19 +314,21 @@ RSpec.describe Member, type: :model do
       SlackUser.create!(member_id: primary.id, slack_id: "U_PRIMARY")
       SlackUser.create!(member_id: secondary.id, slack_id: "U_SECONDARY")
       allow(::Service::SlackConnector).to receive(:send_slack_message)
-      allow(MemberMailer).to receive_message_chain(:household_disbanded, :deliver_later)
+      mail_delivery = instance_double(ActionMailer::MessageDelivery, deliver_later: true)
+      allow(MemberMailer).to receive(:household_disbanded).and_return(mail_delivery)
 
       individual_invoice = build(:invoice, member: primary, resource_id: primary.id.to_s, resource_class: "member", plan_id: "standard-membership-one-month-recurring")
       primary.current_invoice_operation = individual_invoice
       primary.update!(expirationTime: 2.months.from_now.to_i * 1000)
 
-      expect(Group.where(id: group.id)).to be_empty
+      expect(Group.where(id: group.id).count).to eq(0)
       expect(primary.reload.groupName).to be_nil
       expect(secondary.reload.groupName).to be_nil
       expect(::Service::SlackConnector).to have_received(:send_slack_message).with(/individual membership plan/, "U_PRIMARY")
       expect(::Service::SlackConnector).to have_received(:send_slack_message).with(/elect a new membership plan/, "U_SECONDARY")
       expect(MemberMailer).to have_received(:household_disbanded).with(primary.id.to_s, primary.id.to_s, true)
       expect(MemberMailer).to have_received(:household_disbanded).with(secondary.id.to_s, primary.id.to_s, false)
+      expect(mail_delivery).to have_received(:deliver_later).twice
     end
 
     it "keeps the household together when the primary expiration is synced from a member-backed household invoice" do
@@ -340,7 +342,7 @@ RSpec.describe Member, type: :model do
       primary.current_invoice_operation = household_invoice
       primary.update!(expirationTime: 2.months.from_now.to_i * 1000)
 
-      expect(Group.where(id: group.id)).to exist
+      expect(Group.where(id: group.id).exists?).to be(true)
       expect(group.reload.expiry).to eq(primary.reload.expirationTime)
       expect(secondary.reload.groupName).to eq(group.groupName)
       expect(secondary.expirationTime).to eq(primary.expirationTime)
@@ -355,7 +357,7 @@ RSpec.describe Member, type: :model do
 
       primary.update!(expirationTime: 2.months.from_now.to_i * 1000)
 
-      expect(Group.where(id: group.id)).to exist
+      expect(Group.where(id: group.id).exists?).to be(true)
       expect(group.reload.expiry).to eq(primary.reload.expirationTime)
       expect(secondary.reload.groupName).to eq(group.groupName)
       expect(secondary.expirationTime).to eq(primary.expirationTime)
@@ -369,7 +371,8 @@ RSpec.describe Member, type: :model do
       primary.update!(groupName: group.groupName)
       secondary.update!(groupName: group.groupName)
       allow(::Service::SlackConnector).to receive(:send_slack_message)
-      allow(MemberMailer).to receive_message_chain(:household_disbanded, :deliver_later)
+      mail_delivery = instance_double(ActionMailer::MessageDelivery, deliver_later: true)
+      allow(MemberMailer).to receive(:household_disbanded).and_return(mail_delivery)
       allow(::Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
       allow(::BraintreeService::Subscription).to receive(:cancel)
 
@@ -378,7 +381,7 @@ RSpec.describe Member, type: :model do
       primary.update!(expirationTime: 2.months.from_now.to_i * 1000)
 
       expect(::BraintreeService::Subscription).to have_received(:cancel).with(gateway, "household_sub_123")
-      expect(Group.where(id: group.id)).to be_empty
+      expect(Group.where(id: group.id).count).to eq(0)
     end
     end
 
