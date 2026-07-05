@@ -58,9 +58,17 @@ class ApplicationController < ActionController::Base
   end
 
   def require_completed_totp_challenge
+    return unless request.path.start_with?('/api/')
     return unless member_signed_in? && session[:totp_pending_member_id].present?
-    return if controller_path == 'members/totp_sessions' && action_name == 'create'
+    return if totp_challenge_exempt_request?
 
     render json: { error: 'TOTP verification required.' }, status: :unauthorized
+  end
+
+  def totp_challenge_exempt_request?
+    return true if controller_path == 'members/totp_sessions' && action_name == 'create'
+    return true if controller_path == 'client_config' && action_name == 'index'
+
+    false
   end
 end

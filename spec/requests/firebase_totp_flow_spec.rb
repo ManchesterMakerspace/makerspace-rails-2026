@@ -42,6 +42,14 @@ RSpec.describe 'Firebase TOTP login flow', type: :request do
     expect(response).to have_http_status(:accepted)
     expect(JSON.parse(response.body)).to eq('totp_required' => true)
 
+    get '/api/config', as: :json
+
+    expect(response).to have_http_status(:ok)
+
+    get '/'
+
+    expect(response).to have_http_status(:ok)
+
     # The pending session must not grant access to normal authenticated
     # routes until the TOTP challenge is completed.
     get "/api/members/#{member.id}", as: :json
