@@ -68,6 +68,8 @@ class Group
       "$set" => { expirationTime: new_expiration, groupName: household_key }
     )
     Card.where(:member_id.in => member_ids).update_all(expiry: new_expiration)
+
+    true
   end
 
   # Emit to Member & Management channels on renewal. Matches the pattern
