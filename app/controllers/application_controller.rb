@@ -9,6 +9,7 @@ class ApplicationController < ActionController::Base
   after_action :log_not_found_file_lookup_context, if: -> { response.status == 404 }
   before_action :configure_permitted_parameters, if: :devise_controller?
   before_action :filter_requests
+  before_action :require_completed_totp_challenge
   before_action :allow_only_html_requests, only: [:application]
 
   def application
@@ -94,5 +95,32 @@ class ApplicationController < ActionController::Base
       Rails.logger.info("[filter_requests] #{params[:format]}.")
       raise Error::NotFound.new
     end
+  end
+
+  def require_completed_totp_challenge
+    return unless request.path.start_with?('/api/')
+    return unless member_signed_in? && session[:totp_pending_member_id].present?
+
+    expire_stale_totp_challenge
+    return unless member_signed_in? && session[:totp_pending_member_id].present?
+    return if totp_challenge_exempt_request?
+
+    render json: { error: 'TOTP verification required.' }, status: :unauthorized
+  end
+
+  def expire_stale_totp_challenge
+    expires_at = session[:totp_pending_expires_at].to_i
+    return if expires_at.zero? || Time.now.to_i <= expires_at
+
+    session.delete(:totp_pending_member_id)
+    session.delete(:totp_pending_expires_at)
+    sign_out(:member)
+  end
+
+  def totp_challenge_exempt_request?
+    return true if controller_path == 'members/totp_sessions' && action_name == 'create'
+    return true if controller_path == 'client_config' && action_name == 'index'
+
+    false
   end
 end
