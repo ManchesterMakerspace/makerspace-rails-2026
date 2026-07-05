@@ -60,8 +60,10 @@ class Group
 
   def update_expiration(new_expiration)
     self.update_attributes!(expiry: new_expiration)
-    self.member.update_attributes!(expirationTime: new_expiration) if self.member
-    self.active_members.where(:id.ne => self.groupName).each do |m|
+
+    member_ids = self.active_members.pluck(:id)
+    member_ids << self.member.id if self.member
+    Member.where(:id.in => member_ids.uniq).each do |m|
       m.update_attributes!(expirationTime: new_expiration)
     end
   end

@@ -73,7 +73,7 @@ class Member
   has_many :access_cards, class_name: "Card", inverse_of: :member
   belongs_to :group, class_name: "Group", inverse_of: :active_members, optional: true, primary_key: 'groupName', foreign_key: "groupName"
 
-  attr_accessor :skip_email_deliverability_validation
+  attr_accessor :skip_email_deliverability_validation, :current_invoice_operation
 
   def household_role
     return nil unless groupName.present?
@@ -261,7 +261,7 @@ class Member
     # without this, a primary household member managing their own
     # household_* subscription via self-service (Billing::SubscriptionsController)
     # would 404, since their group was never considered here.
-    resource = self.group if resource.nil? && self.group && self.group.subscription_id == id
+    resource = self.group if resource.nil? && household_role == :primary && self.group && self.group.subscription_id == id
     resource
   end
 
@@ -415,7 +415,63 @@ class Member
     return unless household_role == :primary
     group = self.group
     return unless group
-    group.update_expiration(self.expirationTime)
+
+    if current_invoice_operation.nil? || household_invoice_operation? || group.expiry == self.expirationTime
+      group.update_expiration(self.expirationTime)
+    else
+      disband_household_after_individual_renewal(group)
+    end
+  end
+
+  def household_invoice_operation?
+    current_invoice_operation&.plan_id.to_s.include?("household")
+  end
+
+  def disband_household_after_individual_renewal(group)
+    members = group.active_members.to_a
+    old_expiry = group.expiry
+
+    cancel_active_household_subscription(group)
+
+    members.each do |member|
+      if member.id == self.id
+        member.update_attributes!(groupName: nil)
+      else
+        member.update_attributes!(groupName: nil, expirationTime: old_expiry)
+      end
+    end
+
+    group.destroy
+    notify_household_disbanded(members)
+  end
+
+  def cancel_active_household_subscription(group)
+    return unless group.subscription_id.present?
+
+    gateway = ::Service::BraintreeGateway.connect_gateway
+    ::BraintreeService::Subscription.cancel(gateway, group.subscription_id)
+  end
+
+  def notify_household_disbanded(members)
+    members.each do |member|
+      primary = member.id == self.id
+      message = if primary
+                  "Your Manchester Makerspace household membership has been disbanded because your account was renewed with an individual membership plan."
+                else
+                  "Your Manchester Makerspace household membership has been disbanded because the primary household member renewed with an individual membership plan. Please elect a new membership plan before your current expiration date."
+                end
+
+      slack_user = SlackUser.find_by(member_id: member.id)
+      ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id) if slack_user
+      MemberMailer.household_disbanded(member.id.to_s, self.id.to_s, primary).deliver_later unless member.silence_emails
+    end
+
+    ::Service::SlackConnector.send_slack_message(
+      "#{fullname}'s household membership was disbanded after renewal with an individual membership plan.",
+      ::Service::SlackConnector.members_relations_channel
+    )
+  rescue => e
+    Honeybadger.notify(e) if defined?(Honeybadger)
   end
 
   def benefits_from_group

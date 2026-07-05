@@ -30,6 +30,18 @@ RSpec.describe Group, type: :model do
   # end
 
   describe "private methods" do
+    it "updates the primary expiration even when the primary is not linked as an active member" do
+      primary = create(:member, expirationTime: 1.month.from_now.to_i * 1000, groupName: nil)
+      secondary = create(:member, expirationTime: primary.expirationTime, groupName: primary.id.to_s)
+      group = create(:group, groupRep: primary.fullname, groupName: primary.id.to_s, expiry: primary.expirationTime)
+      new_expiration = 2.months.from_now.to_i * 1000
+
+      group.update_expiration(new_expiration)
+
+      expect(primary.reload.expirationTime).to eq(new_expiration)
+      expect(secondary.reload.expirationTime).to eq(new_expiration)
+    end
+
     it "Updates group expiration and access card" do
       primary = create(:member)
       expired_member = create(:member, :expired, groupName: primary.id.to_s)
