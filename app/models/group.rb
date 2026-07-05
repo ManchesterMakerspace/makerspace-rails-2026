@@ -60,7 +60,7 @@ class Group
 
   def update_expiration(new_expiration)
     household_key = groupName.to_s
-    member_ids = Member.where(groupName: household_key).pluck(:id)
+    member_ids = (Member.where(groupName: household_key).pluck(:id) + [member&.id]).compact.uniq
 
     Group.collection.find(_id: id).update_one("$set" => { expiry: new_expiration })
     self.expiry = new_expiration
