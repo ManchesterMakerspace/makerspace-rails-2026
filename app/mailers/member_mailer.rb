@@ -66,6 +66,13 @@ class MemberMailer < ApplicationMailer
     mail to: @member.email, subject: "Action Required - Manchester Makerspace"
   end
 
+  def household_disbanded(member_id, primary_member_id, primary_recipient)
+    @member = Member.find(member_id)
+    @primary_member = Member.find(primary_member_id)
+    @primary_recipient = primary_recipient
+    mail to: @member.email, subject: "Manchester Makerspace Household Membership Update"
+  end
+
   def contract_updated(member_id)
     @member = Member.find(member_id)
     document_name = ::Service::GoogleDrive.get_document_name(@member, "Code of Conduct")

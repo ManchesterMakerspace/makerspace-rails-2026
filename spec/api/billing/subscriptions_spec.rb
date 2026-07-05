@@ -55,6 +55,24 @@ describe 'Billing::Subscriptions API', type: :request do
         let(:id) { subscription.id }
         run_test!
       end
+
+      response '404', 'secondary household member cannot access household subscription' do
+        let(:primary) { create(:member, customer_id: "primary_customer") }
+        let(:secondary) { create(:member, customer_id: "secondary_customer") }
+        let(:household_subscription_id) { "household_sub_123" }
+        let(:id) { household_subscription_id }
+
+        before do
+          create(:permission, member: secondary, name: :billing, enabled: true)
+          group = create(:group, member: primary, groupRep: primary.fullname, groupName: primary.id.to_s)
+          group.update!(subscription_id: household_subscription_id)
+          secondary.update!(groupName: group.groupName)
+          sign_in secondary
+        end
+
+        schema '$ref' => '#/components/schemas/error'
+        run_test!
+      end
     end
 
     put "Update a subscription" do
@@ -143,6 +161,24 @@ describe 'Billing::Subscriptions API', type: :request do
         before { sign_in customer }
         schema '$ref' => '#/components/schemas/error'
         let(:id) { subscription.id }
+        run_test!
+      end
+
+      response '404', 'secondary household member cannot cancel household subscription' do
+        let(:primary) { create(:member, customer_id: "primary_customer") }
+        let(:secondary) { create(:member, customer_id: "secondary_customer") }
+        let(:household_subscription_id) { "household_sub_123" }
+        let(:id) { household_subscription_id }
+
+        before do
+          create(:permission, member: secondary, name: :billing, enabled: true)
+          group = create(:group, member: primary, groupRep: primary.fullname, groupName: primary.id.to_s)
+          group.update!(subscription_id: household_subscription_id)
+          secondary.update!(groupName: group.groupName)
+          sign_in secondary
+        end
+
+        schema '$ref' => '#/components/schemas/error'
         run_test!
       end
     end
