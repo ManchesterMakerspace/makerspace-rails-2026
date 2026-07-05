@@ -67,5 +67,21 @@ RSpec.describe Group, type: :model do
       expect(group.update_expiration(new_expiration)).to eq(true)
       expect(group.reload.expiry).to eq(new_expiration)
     end
+
+    it 'renews the primary member and card when only secondaries are linked by groupName' do
+      secondary = create(:member, groupName: member.id.to_s)
+      primary_card = create(:card, member: member)
+      secondary_card = create(:card, member: secondary)
+      new_expiration = group.expiry + 1.month.to_i * 1000
+
+      member.update!(groupName: nil)
+      group.update_expiration(new_expiration)
+
+      expect(member.reload.expirationTime).to eq(new_expiration)
+      expect(member.groupName).to eq(member.id.to_s)
+      expect(secondary.reload.expirationTime).to eq(new_expiration)
+      expect(primary_card.reload.expiry).to eq(new_expiration)
+      expect(secondary_card.reload.expiry).to eq(new_expiration)
+    end
   end
 end
