@@ -61,7 +61,7 @@ class Member
   validates_inclusion_of :status, in: ["activeMember", "nonMember", "revoked", "inactive", "suspended"]
   validates_inclusion_of :role, in: ["admin", "board_member", "resource_manager", "member"]
 
-  before_validation :normalize_email
+  before_validation :normalize_email, :normalize_group_name
   after_initialize :verify_group_expiry
   after_create :apply_default_permissions, :publish_create
   after_update :update_card, :publish_update, :check_household_exit, :sync_expiration_to_group
@@ -74,6 +74,15 @@ class Member
   belongs_to :group, class_name: "Group", inverse_of: :active_members, optional: true, primary_key: 'groupName', foreign_key: "groupName"
 
   attr_accessor :skip_email_deliverability_validation, :current_invoice_operation
+
+  def groupName
+    value = read_attribute(:groupName)
+    value.present? ? value.to_s : value
+  end
+
+  def groupName=(value)
+    write_attribute(:groupName, value.present? ? value.to_s : nil)
+  end
 
   def household_role
     return nil unless groupName.present?
@@ -214,6 +223,10 @@ class Member
     self.email = self.email.to_s.strip.downcase
   end
 
+  def normalize_group_name
+    self.groupName = self.groupName.to_s if self.groupName.present?
+  end
+
 
   
   def verify_group_expiry
@@ -261,7 +274,8 @@ class Member
     # without this, a primary household member managing their own
     # household_* subscription via self-service (Billing::SubscriptionsController)
     # would 404, since their group was never considered here.
-    resource = self.group if resource.nil? && household_role == :primary && self.group && self.group.subscription_id == id
+    group = Group.find_by(groupName: groupName) if resource.nil? && household_role == :primary
+    resource = group if resource.nil? && group && group.subscription_id == id
     resource
   end
 
@@ -401,19 +415,19 @@ class Member
 
   def check_household_exit
     # If a secondary household member just got their own subscription, remove them from the household
-    return unless subscription_id_changed? && subscription_id.present?
+    return unless previous_changes.key?("subscription_id") && subscription_id.present?
     return unless household_role == :secondary
 
-    group = self.group
+    group = Group.find_by(groupName: groupName)
     return unless group
 
     group.remove_subordinate(self)
   end
 
   def sync_expiration_to_group
-    return unless expirationTime_changed?
+    return unless previous_changes.key?("expirationTime")
     return unless household_role == :primary
-    group = self.group
+    group = Group.find_by(groupName: groupName)
     return unless group
 
     if current_invoice_operation.nil? || household_invoice_operation? || group.expiry == self.expirationTime
