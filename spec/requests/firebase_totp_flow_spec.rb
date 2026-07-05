@@ -105,4 +105,26 @@ RSpec.describe 'Firebase TOTP login flow', type: :request do
 
     expect(response).to have_http_status(:ok)
   end
+
+  it 'expires stale pending TOTP gates so Firebase login can issue a fresh challenge' do
+    create(
+      :member,
+      email:                 email,
+      firebase_uid:          firebase_uid,
+      otp_required_for_login: true,
+      otp_secret_encrypted:   TotpService.encrypt(totp_secret)
+    )
+
+    post '/api/auth/firebase_login', params: { id_token: 'firebase-token' }, as: :json
+
+    expect(response).to have_http_status(:accepted)
+    expect(JSON.parse(response.body)).to eq('totp_required' => true)
+
+    travel 11.minutes do
+      post '/api/auth/firebase_login', params: { id_token: 'firebase-token' }, as: :json
+    end
+
+    expect(response).to have_http_status(:accepted)
+    expect(JSON.parse(response.body)).to eq('totp_required' => true)
+  end
 end

@@ -60,9 +60,21 @@ class ApplicationController < ActionController::Base
   def require_completed_totp_challenge
     return unless request.path.start_with?('/api/')
     return unless member_signed_in? && session[:totp_pending_member_id].present?
+
+    expire_stale_totp_challenge
+    return unless member_signed_in? && session[:totp_pending_member_id].present?
     return if totp_challenge_exempt_request?
 
     render json: { error: 'TOTP verification required.' }, status: :unauthorized
+  end
+
+  def expire_stale_totp_challenge
+    expires_at = session[:totp_pending_expires_at].to_i
+    return if expires_at.zero? || Time.now.to_i <= expires_at
+
+    session.delete(:totp_pending_member_id)
+    session.delete(:totp_pending_expires_at)
+    sign_out(:member)
   end
 
   def totp_challenge_exempt_request?
