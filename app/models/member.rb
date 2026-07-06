@@ -47,7 +47,7 @@ class Member
   field :customer_id, type: String # Braintree customer relation
   field :subscription_id, type: String # Braintree relation
   field :mailtrap_id, type: BSON::ObjectId
-  field :silence_emails, type: Boolean # Stop all slack and email notifications to user
+  field :silence_emails, type: Boolean # Stop marketing emails to user
   field :notes, type: String
 
   search_in :email, :lastname
@@ -88,6 +88,10 @@ class Member
     return nil unless groupName.present?
     return :primary if self.id.to_s == groupName.to_s
     :secondary
+  end
+
+  def direct_notifications_suppressed?
+    %w[revoked suspended].include?(status)
   end
 
   has_one :earned_membership, class_name: 'EarnedMembership', dependent: :destroy
@@ -477,7 +481,7 @@ class Member
 
       slack_user = SlackUser.find_by(member_id: member.id)
       ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id) if slack_user
-      MemberMailer.household_disbanded(member.id.to_s, self.id.to_s, primary).deliver_later unless member.silence_emails
+      MemberMailer.household_disbanded(member.id.to_s, self.id.to_s, primary).deliver_later
     end
 
     ::Service::SlackConnector.send_slack_message(

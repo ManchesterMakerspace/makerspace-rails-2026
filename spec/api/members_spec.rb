@@ -43,13 +43,26 @@ describe 'Members API', type: :request do
           }
 
           expect(response).to have_http_status(:ok)
-          expect(JSON.parse(response.body).length).to eq(50)
+          expect(JSON.parse(response.body).length).to eq(25)
           expect(response.headers['total-items'].to_i).to eq(56)
         end
 
         it 'returns the next page for pageNum 1' do
           get '/api/members', params: {
             pageNum: 1,
+            orderBy: '',
+            order: 'asc',
+            currentMembers: false
+          }
+
+          expect(response).to have_http_status(:ok)
+          expect(JSON.parse(response.body).length).to eq(25)
+          expect(response.headers['total-items'].to_i).to eq(56)
+        end
+
+        it 'returns the final partial page for pageNum 2' do
+          get '/api/members', params: {
+            pageNum: 2,
             orderBy: '',
             order: 'asc',
             currentMembers: false

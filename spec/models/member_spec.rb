@@ -307,7 +307,7 @@ RSpec.describe Member, type: :model do
 
     it "disbands the household when the primary renews with an individual member invoice" do
       primary = create(:member, expirationTime: 1.month.from_now.to_i * 1000)
-      secondary = create(:member, expirationTime: primary.expirationTime)
+      secondary = create(:member, expirationTime: primary.expirationTime, silence_emails: true)
       group = create(:group, member: primary, groupRep: primary.fullname, groupName: primary.id.to_s, expiry: primary.expirationTime)
       primary.update!(groupName: group.groupName)
       secondary.update!(groupName: group.groupName)
