@@ -1,6 +1,11 @@
 module FastQuery
   extend ActiveSupport::Concern
-  ITEMS_PER_PAGE = 25
+  env_items_per_page = ENV["ITEMS_PER_PAGE"]
+  ITEMS_PER_PAGE = if env_items_per_page&.match?(/\A\d+\z/) && env_items_per_page.to_i > 1
+    env_items_per_page.to_i
+  else
+    50
+  end
 
   protected
   def query_params
