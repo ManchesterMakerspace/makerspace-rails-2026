@@ -1,11 +1,14 @@
 module FastQuery
   extend ActiveSupport::Concern
-  @@items_per_page = 50
+  ITEMS_PER_PAGE = 25
 
   protected
   def query_params
     # page_num is deprecated
-    params.permit(:order_by, :order, :page_num, :search)
+    permitted = params.permit(:order_by, :orderBy, :order, :page_num, :pageNum, :search)
+    permitted[:order_by] ||= permitted[:orderBy]
+    permitted[:page_num] ||= permitted[:pageNum]
+    permitted
   end
 
   def render_with_total_items(current_query, render_options = nil)
@@ -59,12 +62,12 @@ module FastQuery
 
     def paginate_resource(current_query, page_num)
       page = [page_num.to_i, 0].max
-      offset = page * @@items_per_page
+      offset = page * ITEMS_PER_PAGE
 
       if current_query.respond_to?(:skip) && current_query.respond_to?(:limit)
-        current_query.skip(offset).limit(@@items_per_page)
+        current_query.skip(offset).limit(ITEMS_PER_PAGE)
       else
-        current_query.slice(offset, @@items_per_page) || []
+        current_query.slice(offset, ITEMS_PER_PAGE) || []
       end
     end
 

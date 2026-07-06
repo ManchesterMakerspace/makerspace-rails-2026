@@ -10,7 +10,7 @@ class MembersController < AuthenticationController
       if is_admin? || is_board_member? || is_resource_manager?
         # Admins and Resource Managers can see all members,
         # filtered to current members only when requested
-        if to_bool(search_params[:current_members])
+        if to_bool(search_params[:current_members] || search_params[:currentMembers])
           search = base_query.where({
             :$or => [
               { :expirationTime.gte => ((Time.now + 3.days).strftime('%s').to_i * 1000) },
@@ -108,6 +108,6 @@ class MembersController < AuthenticationController
     end
 
     def search_params
-      params.permit(:current_members, :format, :member, :page_num, :order_by, :order, :search)
+      params.permit(:current_members, :currentMembers, :format, :member, :page_num, :pageNum, :order_by, :orderBy, :order, :search)
     end
 end
