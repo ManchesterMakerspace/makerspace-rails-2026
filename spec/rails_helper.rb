@@ -25,7 +25,7 @@ require 'securerandom'
 
 SAFE_DATABASE_CLEANER_MLAB_URI_SUBSTRINGS = [
   "127.0.0.1",
-  "://mongo:27017/",
+  "://mongo:2701",
   "localhost",
   "dev",
   "test"
@@ -35,8 +35,13 @@ def ensure_safe_database_cleaner_mlab_uri!
   mlab_uri = ENV["MLAB_URI"].to_s
   return if mlab_uri.present? && SAFE_DATABASE_CLEANER_MLAB_URI_SUBSTRINGS.any? { |safe_value| mlab_uri.include?(safe_value) }
 
-  message = "Refusing to run DatabaseCleaner: MLAB_URI must be set and contain one of " \
+  if mlab_uri.present?
+    message = "Refusing to run DatabaseCleaner: MLAB_URI must contain one of " \
             "#{SAFE_DATABASE_CLEANER_MLAB_URI_SUBSTRINGS.join(', ')}."
+  else
+    message = "Refusing to run DatabaseCleaner: MLAB_URI is not set, set MLAB_URI to contain one of " \
+            "#{SAFE_DATABASE_CLEANER_MLAB_URI_SUBSTRINGS.join(', ')}."
+  end
   Rails.logger.error(message)
   warn(message)
   raise message
