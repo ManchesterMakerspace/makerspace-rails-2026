@@ -50,11 +50,24 @@ module Service
         client.users_admin_setInactive(user: slack_id)
         { status: :ok, message: "Deactivated Slack user for #{member.email}" }
       rescue Slack::Web::Api::Errors::UsersNotFound
-        { status: :not_found, message: "No Slack user found for #{member.email}" }
+        revoke_stored_slack_id(client, member, slack_id)
       rescue => e
         alert_manual_slack_revocation_required(member, slack_id, e.message)
         { status: :error, message: e.message }
       end
+    end
+
+
+    def self.revoke_stored_slack_id(client, member, slack_id)
+      unless slack_id.present?
+        return { status: :not_found, message: "No Slack user found for #{member.email}" }
+      end
+
+      client.users_admin_setInactive(user: slack_id)
+      { status: :ok, message: "Deactivated stored Slack user #{slack_id} for #{member.email}" }
+    rescue => e
+      alert_manual_slack_revocation_required(member, slack_id, e.message)
+      { status: :error, message: e.message }
     end
 
     def self.alert_manual_slack_revocation_required(member, slack_id, reason)
