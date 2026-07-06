@@ -22,7 +22,7 @@ class ApplicationMailer < ActionMailer::Base
   end
 
   def household_secondary_exempt_member_mailer_action?
-    %w[household_disbanded password_changed admin_password_reset].include?(action_name)
+    %w[household_disbanded password_changed admin_password_reset send_document].include?(action_name)
   end
 
   def delivery_recipient_member

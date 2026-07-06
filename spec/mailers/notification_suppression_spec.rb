@@ -63,6 +63,15 @@ RSpec.describe 'notification suppression', type: :mailer do
 
       expect(message.perform_deliveries).to be(true)
     end
+
+    it 'sends signed document receipts to secondary household members' do
+      primary = create(:member)
+      secondary = create(:member, groupName: primary.id.to_s)
+
+      message = described_class.send_document('member_contract', secondary.id.to_s, 'signed pdf content').deliver_now
+
+      expect(message.perform_deliveries).to be(true)
+    end
   end
 
   describe RentalMailer do
