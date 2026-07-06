@@ -81,7 +81,8 @@ RSpec.describe 'notification suppression', type: :mailer do
     it 'sends billing mail to secondary household members for their own invoices' do
       primary = create(:member)
       secondary = create(:member, groupName: primary.id.to_s)
-      invoice = create(:invoice, member: secondary, resource_class: 'rental')
+      rental = create(:rental, member: secondary)
+      invoice = create(:invoice, member: secondary, resource_class: 'rental', resource_id: rental.id.to_s)
 
       message = described_class._new_invoice(secondary, invoice).deliver_now
 
