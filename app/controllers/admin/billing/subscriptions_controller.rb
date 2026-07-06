@@ -39,6 +39,9 @@ class Admin::Billing::SubscriptionsController < Admin::BillingController
           resources = Rental.where(subscription_id: query_params[:search])
         end
         if resources.count == 0
+          resources = Group.where(subscription_id: query_params[:search])
+        end
+        if resources.count == 0
           resources = Member.search(query_params[:search])
         end
         sub_ids = resources.map(&:subscription_id).reject { |m| m.nil? }
