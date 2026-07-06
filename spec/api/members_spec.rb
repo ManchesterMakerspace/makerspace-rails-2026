@@ -29,8 +29,11 @@ describe 'Members API', type: :request do
       end
 
       context 'pagination' do
+        let(:items_per_page) { FastQuery::ITEMS_PER_PAGE }
+        let(:total_items) { (items_per_page * 2) + 6 }
+
         before do
-          create_list(:member, 55)
+          create_list(:member, total_items - 1)
           sign_in create(:member, :admin)
         end
 
@@ -43,8 +46,8 @@ describe 'Members API', type: :request do
           }
 
           expect(response).to have_http_status(:ok)
-          expect(JSON.parse(response.body).length).to eq(25)
-          expect(response.headers['total-items'].to_i).to eq(56)
+          expect(JSON.parse(response.body).length).to eq(items_per_page)
+          expect(response.headers['total-items'].to_i).to eq(total_items)
         end
 
         it 'returns the next page for pageNum 1' do
@@ -56,8 +59,8 @@ describe 'Members API', type: :request do
           }
 
           expect(response).to have_http_status(:ok)
-          expect(JSON.parse(response.body).length).to eq(25)
-          expect(response.headers['total-items'].to_i).to eq(56)
+          expect(JSON.parse(response.body).length).to eq(items_per_page)
+          expect(response.headers['total-items'].to_i).to eq(total_items)
         end
 
         it 'returns the final partial page for pageNum 2' do
@@ -70,7 +73,7 @@ describe 'Members API', type: :request do
 
           expect(response).to have_http_status(:ok)
           expect(JSON.parse(response.body).length).to eq(6)
-          expect(response.headers['total-items'].to_i).to eq(56)
+          expect(response.headers['total-items'].to_i).to eq(total_items)
         end
       end
     end
