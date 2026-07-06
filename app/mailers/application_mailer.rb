@@ -15,8 +15,8 @@ class ApplicationMailer < ActionMailer::Base
       return
     end
 
-    return if mailer_name == "marketing_mailer"
-    return if mailer_name == "member_mailer" && action_name == "household_disbanded"
+    return unless mailer_name == "member_mailer"
+    return if action_name == "household_disbanded"
 
     mail.perform_deliveries = false if member.household_role == :secondary
   end

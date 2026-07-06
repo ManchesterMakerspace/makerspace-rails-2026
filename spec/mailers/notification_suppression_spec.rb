@@ -46,4 +46,29 @@ RSpec.describe 'notification suppression', type: :mailer do
       expect(message.perform_deliveries).to be(true)
     end
   end
+
+  describe RentalMailer do
+    it 'sends rental mail to secondary household members for their own rentals' do
+      primary = create(:member)
+      secondary = create(:member, groupName: primary.id.to_s)
+      rental = create(:rental, member: secondary)
+
+      message = described_class.rental_vacating(secondary.id.to_s, rental.id.to_s, 'the end of the current rental period').deliver_now
+
+      expect(message.perform_deliveries).to be(true)
+    end
+  end
+
+  describe BillingMailer do
+    it 'sends billing mail to secondary household members for their own invoices' do
+      primary = create(:member)
+      secondary = create(:member, groupName: primary.id.to_s)
+      invoice = create(:invoice, member: secondary, resource_class: 'rental')
+
+      message = described_class._new_invoice(secondary, invoice).deliver_now
+
+      expect(message.perform_deliveries).to be(true)
+    end
+  end
+
 end
