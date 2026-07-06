@@ -16,9 +16,13 @@ class ApplicationMailer < ActionMailer::Base
     end
 
     return unless mailer_name == "member_mailer"
-    return if action_name == "household_disbanded"
+    return if household_secondary_exempt_member_mailer_action?
 
     mail.perform_deliveries = false if member.household_role == :secondary
+  end
+
+  def household_secondary_exempt_member_mailer_action?
+    %w[household_disbanded password_changed admin_password_reset].include?(action_name)
   end
 
   def delivery_recipient_member

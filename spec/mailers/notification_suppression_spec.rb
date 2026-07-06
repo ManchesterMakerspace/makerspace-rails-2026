@@ -45,6 +45,24 @@ RSpec.describe 'notification suppression', type: :mailer do
 
       expect(message.perform_deliveries).to be(true)
     end
+
+    it 'sends password changed security notices to secondary household members' do
+      primary = create(:member)
+      secondary = create(:member, groupName: primary.id.to_s)
+
+      message = described_class.password_changed(secondary.id.to_s).deliver_now
+
+      expect(message.perform_deliveries).to be(true)
+    end
+
+    it 'sends admin password reset security notices to secondary household members' do
+      primary = create(:member)
+      secondary = create(:member, groupName: primary.id.to_s)
+
+      message = described_class.admin_password_reset(secondary.email, 'reset-token').deliver_now
+
+      expect(message.perform_deliveries).to be(true)
+    end
   end
 
   describe RentalMailer do
