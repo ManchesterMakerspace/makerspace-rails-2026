@@ -155,7 +155,7 @@ class Admin::MembersController < AdminController
       )
     end
 
-    # Silence all email/slack notifications to the member
+    # Keep marketing mail silenced; revoked status suppresses direct member email/Slack notifications.
     @member.update_attribute(:silence_emails, true)
 
     # Rotate session token to invalidate any active portal sessions

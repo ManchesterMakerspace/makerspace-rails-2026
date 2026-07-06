@@ -259,7 +259,7 @@ class Invoice
 
   def send_shop_charge_slack_notification
     slack_user = SlackUser.find_by(member_id: member_id)
-    return if slack_user.nil?
+    return if slack_user.nil? || member&.direct_notifications_suppressed?
 
     base_url = Rails.configuration.action_mailer.default_url_options[:host]
     portal_url = base_url.to_s.start_with?('http') ? base_url : "https://#{base_url}"

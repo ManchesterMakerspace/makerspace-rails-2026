@@ -24,7 +24,7 @@ class ToolCheckout
   # Notify member via Slack DM when checked out
   def send_checkout_slack_notification
     slack_user = SlackUser.find_by(member_id: self.member_id)
-    return if slack_user.nil?
+    return if slack_user.nil? || member.direct_notifications_suppressed?
 
     shop_name = self.tool.shop.try(:name) || "the shop"
     tool_name = self.tool.name
@@ -36,7 +36,7 @@ class ToolCheckout
   # Notify member via Slack DM when revoked
   def send_revocation_slack_notification
     slack_user = SlackUser.find_by(member_id: self.member_id)
-    return if slack_user.nil?
+    return if slack_user.nil? || member.direct_notifications_suppressed?
 
     shop_name = self.tool.shop.try(:name) || "the shop"
     tool_name = self.tool.name

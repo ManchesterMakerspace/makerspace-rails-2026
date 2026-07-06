@@ -2,16 +2,23 @@ class ApplicationMailer < ActionMailer::Base
   default from: ENV.fetch('SMTP_FROM', 'contact@manchestermakerspace.org')
   layout 'mailer'
 
-  after_action :suppress_secondary_household_member_delivery
+  after_action :suppress_member_delivery
 
   private
 
-  def suppress_secondary_household_member_delivery
+  def suppress_member_delivery
+    member = delivery_recipient_member
+    return unless member
+
+    if member.direct_notifications_suppressed?
+      mail.perform_deliveries = false
+      return
+    end
+
     return if mailer_name == "marketing_mailer"
     return if mailer_name == "member_mailer" && action_name == "household_disbanded"
 
-    member = delivery_recipient_member
-    mail.perform_deliveries = false if member&.household_role == :secondary
+    mail.perform_deliveries = false if member.household_role == :secondary
   end
 
   def delivery_recipient_member

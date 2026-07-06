@@ -90,6 +90,10 @@ class Member
     :secondary
   end
 
+  def direct_notifications_suppressed?
+    %w[revoked suspended].include?(status)
+  end
+
   has_one :earned_membership, class_name: 'EarnedMembership', dependent: :destroy
   has_one :slack_user, class_name: 'SlackUser'
   # mailtrap_id on Member points to MailtrapEvent._id — modelled as belongs_to
