@@ -133,6 +133,8 @@ class BraintreeService::Subscription < Braintree::Subscription
       @resource = Invoice.resource(resource_class, resource_id)
       set_member unless @resource.nil?
     end
+    set_resource_from_subscription_id if @resource.nil?
+    set_member unless @resource.nil? || @member
   end
 
   def set_member
@@ -141,5 +143,11 @@ class BraintreeService::Subscription < Braintree::Subscription
     else
       @member = resource.member
     end
+  end
+
+  def set_resource_from_subscription_id
+    @resource = Member.find_by(subscription_id: id) ||
+                Rental.find_by(subscription_id: id) ||
+                Group.find_by(subscription_id: id)
   end
 end

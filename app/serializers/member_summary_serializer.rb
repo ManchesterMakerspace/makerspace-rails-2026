@@ -10,6 +10,7 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :member_contract_on_file,
              :totp_enabled,
              :notes,
+             :household,
              :mailtrap,
              :slack,
              :checkout_approver_shop_ids,
@@ -29,6 +30,19 @@ class MemberSummarySerializer < ActiveModel::Serializer
 
   def totp_enabled
     object.otp_required_for_login? && object.otp_secret_encrypted.present?
+  end
+
+  def household
+    group = object.group
+    return nil unless group
+
+    {
+      group_name: group.groupName,
+      display_name: group.group_display_name,
+      role: object.household_role,
+      primary_member_name: group.groupRep,
+      member_count: group.active_members.count
+    }
   end
 
   def mailtrap
