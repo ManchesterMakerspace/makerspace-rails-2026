@@ -79,6 +79,12 @@ module Service
       return if Rails.env.test?
       client.chat_update(channel: safe_channel(channel), ts: ts, text: message)
     end
+    def self.pin_slack_message(channel, ts)
+      return if Rails.env.test?
+      return if ts.blank?
+
+      client.pins_add(channel: safe_channel(channel), timestamp: ts)
+    end
     def self.delete_slack_message(channel, ts)
       return if Rails.env.test?
       client.chat_delete(channel: safe_channel(channel), ts: ts)
