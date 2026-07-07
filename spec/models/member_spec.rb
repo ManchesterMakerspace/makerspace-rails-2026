@@ -57,6 +57,15 @@ RSpec.describe Member, type: :model do
     expect(build(:member)).to be_valid
   end
 
+  it "sanitizes untyped string fields using the runtime value" do
+    member = build(:member, firstname: "<b>Jo\u0301</b><script>alert(1)</script>", lastname: "<i>User</i>")
+
+    member.valid?
+
+    expect(member.firstname).to eq("<b>Jó</b>alert(1)")
+    expect(member.lastname).to eq("<i>User</i>")
+  end
+
   describe ".search" do
     let(:criteria) { double("scoped criteria") }
 

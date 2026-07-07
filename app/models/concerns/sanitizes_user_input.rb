@@ -20,9 +20,7 @@ module SanitizesUserInput
   private
 
   def sanitize_string_attributes
-    self.class.fields.each do |field_name, field|
-      next unless field.type == String
-
+    self.class.fields.each_key do |field_name|
       value = read_attribute(field_name)
       write_attribute(field_name, self.class.scrub_user_input(value)) if value.is_a?(String)
     end
