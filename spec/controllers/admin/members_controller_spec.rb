@@ -135,6 +135,15 @@ RSpec.describe Admin::MembersController, type: :controller do
           expect(member.reload.silence_emails).to be true
         end
 
+        it "skips silence email authorization when admins leave revoked members unchanged" do
+          member = Member.create valid_attributes.merge(status: 'revoked', silence_emails: true)
+
+          put :update, params: { id: member.to_param, silenceEmails: true }, format: :json
+
+          expect(response).to have_http_status(200)
+          expect(member.reload.silence_emails).to be true
+        end
+
         it "Sends a slack notification" do
           member = Member.create valid_attributes.merge({ expirationTime: ((Time.now + 1.month).strftime('%s').to_i * 1000)})
           initial_expiration = member.pretty_time
@@ -289,6 +298,15 @@ RSpec.describe Admin::MembersController, type: :controller do
 
         expect(response).to have_http_status(403)
         expect(member.reload.silence_emails).to be true
+      end
+
+      it "skips silence email authorization when board members leave another member's flag unchanged" do
+        member = Member.create valid_attributes.merge(silence_emails: false)
+
+        put :update, params: { id: member.to_param, silenceEmails: false }, format: :json
+
+        expect(response).to have_http_status(200)
+        expect(member.reload.silence_emails).to be false
       end
 
       it "allows board members to set and clear their own marketing email silence flag" do

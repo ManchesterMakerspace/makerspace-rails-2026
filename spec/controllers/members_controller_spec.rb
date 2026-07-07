@@ -189,6 +189,15 @@ RSpec.describe MembersController, type: :controller do
       expect(current_user.reload.silence_emails).to be true
     end
 
+    it "skips silence email authorization when a regular member leaves their flag unchanged" do
+      current_user.set(silence_emails: false)
+
+      put :update, params: { id: current_user.id, silenceEmails: false }, format: :json
+
+      expect(response).to have_http_status(200)
+      expect(current_user.reload.silence_emails).to be false
+    end
+
     it "raises forbidden if not updating current member" do
       member = create(:member)
       put :update, params: { id: member.id, member: member_params }, format: :json
@@ -224,6 +233,15 @@ RSpec.describe MembersController, type: :controller do
 
       expect(response).to have_http_status(403)
       expect(member.reload.silence_emails).to be true
+    end
+
+    it "skips silence email authorization when a board member leaves another member's flag unchanged" do
+      sign_in create(:member, :board_member)
+
+      put :update, params: { id: member.id, silenceEmails: false }, format: :json
+
+      expect(response).to have_http_status(200)
+      expect(member.reload.silence_emails).to be false
     end
 
     it "allows an admin to set and clear another non-revoked member's marketing email silence flag" do
@@ -275,6 +293,15 @@ RSpec.describe MembersController, type: :controller do
       put :update, params: { id: resource_manager.id, silenceEmails: false }, format: :json
       expect(response).to have_http_status(200)
       expect(resource_manager.reload.silence_emails).to be false
+    end
+
+    it "skips silence email authorization when a resource manager leaves another member's flag unchanged" do
+      sign_in create(:member, :resource_manager)
+
+      put :update, params: { id: member.id, silenceEmails: false }, format: :json
+
+      expect(response).to have_http_status(200)
+      expect(member.reload.silence_emails).to be false
     end
 
     it "does not allow an admin to change a revoked member's marketing email silence flag" do

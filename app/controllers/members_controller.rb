@@ -109,7 +109,10 @@ class MembersController < AuthenticationController
     def authorize_silence_emails_change!(permitted_params)
       return unless permitted_params.key?(:silence_emails)
 
-      requested_value = ActiveModel::Type::Boolean.new.cast(permitted_params[:silence_emails])
+      boolean_type = ActiveModel::Type::Boolean.new
+      requested_value = boolean_type.cast(permitted_params[:silence_emails])
+      current_value = boolean_type.cast(@member.silence_emails)
+      return if requested_value == current_value
       updating_self = @member.id == current_member.id
 
       return if updating_self && (is_admin? || is_board_member? || is_resource_manager?)
