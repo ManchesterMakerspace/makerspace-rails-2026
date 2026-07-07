@@ -57,6 +57,23 @@ RSpec.describe Member, type: :model do
     expect(build(:member)).to be_valid
   end
 
+  it "sanitizes untyped string fields using the runtime value" do
+    member = build(:member, firstname: "<b>Jo\u0301</b><script>alert(1)</script>", lastname: "<i>User</i>")
+
+    member.valid?
+
+    expect(member.firstname).to eq("<b>Jó</b>alert(1)")
+    expect(member.lastname).to eq("<i>User</i>")
+  end
+
+  it "sanitizes ASCII-8BIT encoded runtime string fields" do
+    firstname = "<b>Jo\u0301</b><script>alert(1)</script>".dup.force_encoding(Encoding::ASCII_8BIT)
+    member = build(:member, firstname: firstname)
+
+    expect { member.valid? }.not_to raise_error
+    expect(member.firstname).to eq("<b>Jó</b>alert(1)")
+  end
+
   describe ".search" do
     let(:criteria) { double("scoped criteria") }
 
@@ -271,15 +288,19 @@ RSpec.describe Member, type: :model do
         member.update!({ firstname: "foo_changed" })
       end
 
-      it "Reinvites to services if email changes" do
+      it "does not reinvite services if email changes and invalidates external auth/session state" do
         new_email = "foo_changed@test.com"
-        # Force member creation before setting expectations so the :create
-        # event's send_slack_invite call doesn't satisfy the expectation
-        member # evaluate let to trigger create
-        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
-        expect(MemberSubscriber).to receive(:send_slack_invite).and_call_original
-        allow(MemberSubscriber).to receive(:invite_to_slack).and_return(nil)
+        member.set(firebase_uid: "firebase-123", session_token: "old-token")
+
+        expect(MemberSubscriber).not_to receive(:send_google_invite)
+        expect(MemberSubscriber).not_to receive(:send_slack_invite)
+
         member.update!({ email: new_email })
+
+        member.reload
+        expect(member.firebase_uid).to be_nil
+        expect(member.session_token).to be_present
+        expect(member.session_token).not_to eq("old-token")
       end
 
       it "Updates billing if a customer" do 

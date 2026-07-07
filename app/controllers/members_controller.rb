@@ -33,7 +33,13 @@ class MembersController < AuthenticationController
       if limited_checkout_approver_search
         return render_with_total_items(@members, { each_serializer: LimitedMemberSerializer, adapter: :attributes })
       end
-      return render_with_total_items(@members, { each_serializer: MemberSummarySerializer, adapter: :attributes })
+
+      members = @members.to_a
+      return render_with_total_items(members, {
+        each_serializer: MemberSummarySerializer,
+        adapter: :attributes,
+        mailtrap_events_by_member_id_email: mailtrap_events_by_member_id_email(members)
+      })
     end
 
     def show
@@ -73,7 +79,10 @@ class MembersController < AuthenticationController
            after_snapshot:  @member.reload.attributes
          )
        else
-         @member.assign_attributes(member_params)
+         permitted_params = member_params
+         authorize_silence_emails_change!(permitted_params)
+
+         @member.assign_attributes(permitted_params)
          @member.save!
 
          # Log member self-service update — no Slack, pure audit trail
@@ -94,6 +103,21 @@ class MembersController < AuthenticationController
      end
 
     private
+    def mailtrap_events_by_member_id_email(members)
+      member_email_pairs = members.map { |member| [member.id, member.email.to_s.downcase] }
+      member_ids = member_email_pairs.map(&:first)
+      emails = member_email_pairs.map(&:last).reject(&:blank?)
+      return {} if member_ids.empty? || emails.empty?
+
+      MailtrapEvent
+        .where(:member_id.in => member_ids, :email.in => emails)
+        .desc(:occurred_at)
+        .each_with_object({}) do |event, events_by_key|
+          key = [event.member_id.to_s, event.email.to_s.downcase]
+          events_by_key[key] ||= event
+        end
+    end
+
     def set_member
       @member = Member.find(params[:id])
       raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: params[:id] }) if @member.nil?
@@ -101,6 +125,30 @@ class MembersController < AuthenticationController
 
     def signature_params
       params.permit(:signature)
+    end
+
+    def authorize_silence_emails_change!(permitted_params)
+      return unless permitted_params.key?(:silence_emails)
+
+      boolean_type = ActiveModel::Type::Boolean.new
+      requested_value = boolean_type.cast(permitted_params[:silence_emails]) || false
+      current_value = boolean_type.cast(@member.silence_emails) || false
+      return if requested_value == current_value
+      updating_self = @member.id == current_member.id
+
+      return if updating_self && (is_admin? || is_board_member? || is_resource_manager?)
+
+      if is_admin?
+        raise Error::Forbidden.new if @member.status == 'revoked'
+        return
+      end
+
+      if is_board_member?
+        raise Error::Forbidden.new unless requested_value == true
+        return
+      end
+
+      raise Error::Forbidden.new unless updating_self && requested_value == true
     end
 
     def member_params

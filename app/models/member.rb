@@ -1,5 +1,6 @@
 class Member
   include Mongoid::Document
+  include SanitizesUserInput
   include Mongoid::Search
   include ActiveModel::Serializers::JSON
   include InvoiceableResource
@@ -64,7 +65,7 @@ class Member
   before_validation :normalize_email, :normalize_group_name
   after_initialize :verify_group_expiry
   after_create :apply_default_permissions, :publish_create
-  after_update :update_card, :publish_update, :check_household_exit, :sync_expiration_to_group
+  after_update :update_card, :handle_successful_email_change, :publish_update, :check_household_exit, :sync_expiration_to_group
   after_destroy :publish_destroy
 
   has_many :permissions, class_name: 'Permission', dependent: :destroy, :autosave => true
@@ -516,9 +517,13 @@ class Member
   end
 
   def publish_update
-    # Invite to Slack, Google if email changed.
-    publish(:email_changed) if previous_changes.key?("email")
     publish(:billing_info_changed) if previous_changes.keys.any? { |attr| [:firstname, :lastname].include?(attr.to_sym) }
+  end
+
+  def handle_successful_email_change
+    return unless previous_changes.key?("email")
+
+    set(firebase_uid: nil, session_token: SecureRandom.hex)
   end
 
   def publish_destroy
