@@ -136,7 +136,7 @@ class MembersController < AuthenticationController
       return if requested_value == current_value
       updating_self = @member.id == current_member.id
 
-      return if updating_self && (is_admin? || is_board_member? || is_resource_manager?)
+      return if updating_self
 
       if is_admin?
         raise Error::Forbidden.new if @member.status == 'revoked'
