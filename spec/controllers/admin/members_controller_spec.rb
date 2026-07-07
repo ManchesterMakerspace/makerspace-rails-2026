@@ -281,6 +281,17 @@ RSpec.describe Admin::MembersController, type: :controller do
       sign_in create(:member, :board_member)
     end
 
+    describe "POST #create" do
+      it "allows board members to create members when silence_emails is explicitly false" do
+        expect do
+          post :create, params: valid_attributes.merge(silenceEmails: false), format: :json
+        end.to change(Member, :count).by(1)
+
+        expect(response).to have_http_status(200)
+        expect(Member.last.silence_emails).to be false
+      end
+    end
+
     describe "PUT #update" do
       it "allows board members to set another member's marketing email silence flag" do
         member = Member.create valid_attributes.merge(silence_emails: false)

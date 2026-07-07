@@ -110,8 +110,8 @@ class MembersController < AuthenticationController
       return unless permitted_params.key?(:silence_emails)
 
       boolean_type = ActiveModel::Type::Boolean.new
-      requested_value = boolean_type.cast(permitted_params[:silence_emails])
-      current_value = boolean_type.cast(@member.silence_emails)
+      requested_value = boolean_type.cast(permitted_params[:silence_emails]) || false
+      current_value = boolean_type.cast(@member.silence_emails) || false
       return if requested_value == current_value
       updating_self = @member.id == current_member.id
 
