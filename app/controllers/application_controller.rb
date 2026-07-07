@@ -3,6 +3,7 @@ class ApplicationController < ActionController::Base
   include ::Error::ErrorHandler
   include SlackService
   include SetCurrentRequestDetails
+  include ActionView::Helpers::SanitizeHelper
 
   protect_from_forgery with: :exception
   after_action :set_csrf_cookie_for_ng
@@ -52,7 +53,7 @@ class ApplicationController < ActionController::Base
 
   def allow_only_html_requests
     if params[:format] && params[:format] != "html"
-      Rails.logger.info("[allow_only_html] #{params[:format]}.")
+      Rails.logger.info("[allow_only_html] #{scrub_log_value(params[:format])}.")
       render plain: "Not Found", status: 404
     end
   end
@@ -92,9 +93,15 @@ class ApplicationController < ActionController::Base
 
   def filter_requests
     if params[:format] && (/js|png|svg|txt|html|json/ =~ params[:format]).nil?
-      Rails.logger.info("[filter_requests] #{params[:format]}.")
+      Rails.logger.info("[filter_requests] #{scrub_log_value(params[:format])}.")
       raise Error::NotFound.new
     end
+  end
+
+  def scrub_log_value(value)
+    return value unless value.is_a?(String)
+
+    sanitize(value.unicode_normalize)
   end
 
   def require_completed_totp_challenge

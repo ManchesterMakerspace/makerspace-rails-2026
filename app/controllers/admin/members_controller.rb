@@ -3,7 +3,10 @@ class Admin::MembersController < AdminController
   before_action :set_member, only: [:update, :update_password, :send_password_reset, :invite_google_drive, :invite_slack]
 
   def create
-    @member = Member.new(get_camel_case_params(create_member_params()))
+    permitted_params = get_camel_case_params(create_member_params())
+    authorize_silence_emails_change!(permitted_params, Member.new(status: permitted_params[:status]))
+
+    @member = Member.new(permitted_params)
     @member.save!
     @member.reload
     send_welcome_email
@@ -18,7 +21,10 @@ class Admin::MembersController < AdminController
 
     @member.skip_email_deliverability_validation = true if becoming_revoked
 
-    @member.update!(get_camel_case_params(update_member_params()))
+    permitted_params = get_camel_case_params(update_member_params())
+    authorize_silence_emails_change!(permitted_params, @member)
+
+    @member.update!(permitted_params)
 
     # Capture field changes from THIS save immediately — handle_revocation
     # and invalidate_member_sessions below perform their own saves (e.g.
@@ -166,6 +172,21 @@ class Admin::MembersController < AdminController
   # when a member is blocked from authentication.
   def invalidate_member_sessions
     @member.update_attribute(:session_token, SecureRandom.hex)
+  end
+
+  def authorize_silence_emails_change!(permitted_params, member)
+    return unless permitted_params.key?(:silence_emails)
+
+    requested_value = ActiveModel::Type::Boolean.new.cast(permitted_params[:silence_emails])
+
+    return if member.id == current_member.id && (is_admin? || is_board_member?)
+
+    if is_admin?
+      raise Error::Forbidden.new if member.status == 'revoked'
+      return
+    end
+
+    raise Error::Forbidden.new unless is_board_member? && requested_value == true
   end
 
   def create_member_params

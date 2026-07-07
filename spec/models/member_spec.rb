@@ -271,15 +271,19 @@ RSpec.describe Member, type: :model do
         member.update!({ firstname: "foo_changed" })
       end
 
-      it "Reinvites to services if email changes" do
+      it "does not reinvite services if email changes and invalidates external auth/session state" do
         new_email = "foo_changed@test.com"
-        # Force member creation before setting expectations so the :create
-        # event's send_slack_invite call doesn't satisfy the expectation
-        member # evaluate let to trigger create
-        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
-        expect(MemberSubscriber).to receive(:send_slack_invite).and_call_original
-        allow(MemberSubscriber).to receive(:invite_to_slack).and_return(nil)
+        member.set(firebase_uid: "firebase-123", session_token: "old-token")
+
+        expect(MemberSubscriber).not_to receive(:send_google_invite)
+        expect(MemberSubscriber).not_to receive(:send_slack_invite)
+
         member.update!({ email: new_email })
+
+        member.reload
+        expect(member.firebase_uid).to be_nil
+        expect(member.session_token).to be_present
+        expect(member.session_token).not_to eq("old-token")
       end
 
       it "Updates billing if a customer" do 

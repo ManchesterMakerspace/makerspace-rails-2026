@@ -1,5 +1,6 @@
 class RentalSpot
   include Mongoid::Document
+  include SanitizesUserInput
   include Mongoid::Search
   include ActiveModel::Serializers::JSON
 

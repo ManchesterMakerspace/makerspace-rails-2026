@@ -1,5 +1,8 @@
 module Service
   class EmailTemplate
+    SANITIZER = Class.new do
+      include ActionView::Helpers::SanitizeHelper
+    end.new
     # Map of email template names to their ENV var keys
     TEMPLATE_ENV_KEYS = {
       welcome_email:                  "EMAIL_WELCOME_ID",
@@ -38,10 +41,15 @@ module Service
       match ? match[1].strip : html
     end
 
+    def self.sanitize_template_value(value)
+      value = value.to_s
+      SANITIZER.sanitize(value.unicode_normalize)
+    end
+
     # Replace {{variable}} placeholders with values
     def self.substitute(content, variables)
       variables.each do |key, value|
-        content = content.gsub("{{#{key}}}", value.to_s)
+        content = content.gsub("{{#{key}}}", sanitize_template_value(value))
       end
       content
     end
