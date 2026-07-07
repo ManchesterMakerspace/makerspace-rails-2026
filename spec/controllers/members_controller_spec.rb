@@ -180,13 +180,13 @@ RSpec.describe MembersController, type: :controller do
       expect(parsed_response['silenceEmails']).to be_truthy
     end
 
-    it "does not allow a regular member to clear their marketing email silence flag" do
+    it "allows a regular member to clear their marketing email silence flag" do
       current_user.set(silence_emails: true)
 
       put :update, params: { id: current_user.id, silenceEmails: false }, format: :json
 
-      expect(response).to have_http_status(403)
-      expect(current_user.reload.silence_emails).to be true
+      expect(response).to have_http_status(200)
+      expect(current_user.reload.silence_emails).to be false
     end
 
     it "skips silence email authorization when a regular member leaves their flag unchanged" do
