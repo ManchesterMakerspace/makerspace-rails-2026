@@ -1,5 +1,6 @@
 class VolunteerTask
   include Mongoid::Document
+  include SanitizesUserInput
   include Mongoid::Timestamps
   include Service::SlackConnector
 

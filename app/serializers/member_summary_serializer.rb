@@ -46,14 +46,41 @@ class MemberSummarySerializer < ActiveModel::Serializer
   end
 
   def mailtrap
-    event = object.mailtrap_event
-    return nil unless event
+    event = current_email_mailtrap_event
+    return unknown_mailtrap_status unless event
 
     {
       id: event.id,
       timestamp: event.occurred_at&.in_time_zone("Eastern Time (US & Canada)")&.iso8601,
       email: event.email,
-      status: event.status
+      status: event.status,
+      value: event.status
+    }
+  end
+
+  def current_email_mailtrap_event
+    current_email = object.email.to_s.downcase
+    linked_event = object.mailtrap_event
+    return linked_event if linked_event&.email.to_s.downcase == current_email
+
+    if instance_options.key?(:mailtrap_events_by_member_id_email)
+      return preloaded_mailtrap_event(current_email)
+    end
+
+    MailtrapEvent.where(member_id: object.id, email: current_email).desc(:occurred_at).first
+  end
+
+  def preloaded_mailtrap_event(current_email)
+    instance_options[:mailtrap_events_by_member_id_email][[object.id.to_s, current_email]]
+  end
+
+  def unknown_mailtrap_status
+    {
+      id: nil,
+      timestamp: nil,
+      email: object.email,
+      status: "unknown",
+      value: "No attempts made"
     }
   end
 

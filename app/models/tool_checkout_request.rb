@@ -1,5 +1,6 @@
 class ToolCheckoutRequest
   include Mongoid::Document
+  include SanitizesUserInput
   include ActiveModel::Serializers::JSON
 
   field :note, type: String

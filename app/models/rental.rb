@@ -1,5 +1,6 @@
 class Rental
   include Mongoid::Document
+  include SanitizesUserInput
   include Mongoid::Search
   include InvoiceableResource
   include Service::SlackConnector
