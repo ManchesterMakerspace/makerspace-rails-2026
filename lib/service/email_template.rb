@@ -1,5 +1,8 @@
 module Service
   class EmailTemplate
+    SANITIZER = Class.new do
+      include ActionView::Helpers::SanitizeHelper
+    end.new
     # Map of email template names to their ENV var keys
     TEMPLATE_ENV_KEYS = {
       welcome_email:                  "EMAIL_WELCOME_ID",
@@ -38,10 +41,23 @@ module Service
       match ? match[1].strip : html
     end
 
+    def self.sanitize_template_value(value)
+      SANITIZER.sanitize(normalize_template_value(value.to_s))
+    end
+
+    def self.normalize_template_value(value)
+      normalized_value = value.dup
+      normalized_value.force_encoding(Encoding::UTF_8) if normalized_value.encoding == Encoding::ASCII_8BIT
+      normalized_value = normalized_value.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: '')
+      normalized_value.unicode_normalize
+    rescue Encoding::CompatibilityError, Encoding::InvalidByteSequenceError, Encoding::UndefinedConversionError
+      value.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: '').unicode_normalize
+    end
+
     # Replace {{variable}} placeholders with values
     def self.substitute(content, variables)
       variables.each do |key, value|
-        content = content.gsub("{{#{key}}}", value.to_s)
+        content = content.gsub("{{#{key}}}", sanitize_template_value(value))
       end
       content
     end

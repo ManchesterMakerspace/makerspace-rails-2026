@@ -114,6 +114,36 @@ RSpec.describe Admin::MembersController, type: :controller do
           expect(parsed_response['id']).to eq(member.id.as_json)
         end
 
+        it "allows admins to set and clear marketing email silence for non-revoked members" do
+          member = Member.create valid_attributes.merge(silence_emails: false)
+
+          put :update, params: { id: member.to_param, silenceEmails: true }, format: :json
+          expect(response).to have_http_status(200)
+          expect(member.reload.silence_emails).to be true
+
+          put :update, params: { id: member.to_param, silenceEmails: false }, format: :json
+          expect(response).to have_http_status(200)
+          expect(member.reload.silence_emails).to be false
+        end
+
+        it "does not allow admins to change marketing email silence for revoked members" do
+          member = Member.create valid_attributes.merge(status: 'revoked', silence_emails: true)
+
+          put :update, params: { id: member.to_param, silenceEmails: false }, format: :json
+
+          expect(response).to have_http_status(403)
+          expect(member.reload.silence_emails).to be true
+        end
+
+        it "skips silence email authorization when admins leave revoked members unchanged" do
+          member = Member.create valid_attributes.merge(status: 'revoked', silence_emails: true)
+
+          put :update, params: { id: member.to_param, silenceEmails: true }, format: :json
+
+          expect(response).to have_http_status(200)
+          expect(member.reload.silence_emails).to be true
+        end
+
         it "Sends a slack notification" do
           member = Member.create valid_attributes.merge({ expirationTime: ((Time.now + 1.month).strftime('%s').to_i * 1000)})
           initial_expiration = member.pretty_time
@@ -241,6 +271,66 @@ RSpec.describe Admin::MembersController, type: :controller do
           parsed_response = JSON.parse(response.body)
           expect(response).to have_http_status(404)
         end
+      end
+    end
+  end
+
+  describe "Authenticated board member" do
+    before(:each) do
+      @request.env["devise.mapping"] = Devise.mappings[:member]
+      sign_in create(:member, :board_member)
+    end
+
+    describe "POST #create" do
+      it "allows board members to create members when silence_emails is explicitly false" do
+        expect do
+          post :create, params: valid_attributes.merge(silenceEmails: false), format: :json
+        end.to change(Member, :count).by(1)
+
+        expect(response).to have_http_status(200)
+        expect(Member.last.silence_emails).to be false
+      end
+    end
+
+    describe "PUT #update" do
+      it "allows board members to set another member's marketing email silence flag" do
+        member = Member.create valid_attributes.merge(silence_emails: false)
+
+        put :update, params: { id: member.to_param, silenceEmails: true }, format: :json
+
+        expect(response).to have_http_status(200)
+        expect(member.reload.silence_emails).to be true
+      end
+
+      it "does not allow board members to clear another member's marketing email silence flag" do
+        member = Member.create valid_attributes.merge(silence_emails: true)
+
+        put :update, params: { id: member.to_param, silenceEmails: false }, format: :json
+
+        expect(response).to have_http_status(403)
+        expect(member.reload.silence_emails).to be true
+      end
+
+      it "skips silence email authorization when board members leave another member's flag unchanged" do
+        member = Member.create valid_attributes.merge(silence_emails: false)
+
+        put :update, params: { id: member.to_param, silenceEmails: false }, format: :json
+
+        expect(response).to have_http_status(200)
+        expect(member.reload.silence_emails).to be false
+      end
+
+      it "allows board members to set and clear their own marketing email silence flag" do
+        board_member = subject.current_member
+        board_member.set(silence_emails: false)
+
+        put :update, params: { id: board_member.to_param, silenceEmails: true }, format: :json
+        expect(response).to have_http_status(200)
+        expect(board_member.reload.silence_emails).to be true
+
+        put :update, params: { id: board_member.to_param, silenceEmails: false }, format: :json
+        expect(response).to have_http_status(200)
+        expect(board_member.reload.silence_emails).to be false
       end
     end
   end

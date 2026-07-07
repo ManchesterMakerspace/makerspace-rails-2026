@@ -19,6 +19,15 @@ RSpec.describe Rental, type: :model do
     expect(build(:rental)).to be_valid
   end
 
+  it "sanitizes untyped string fields using the runtime value without persisting HTML entities" do
+    rental = build(:rental, number: "<b>R-1</b><script>alert(1)</script>", description: "R&D storage: 2 < 3")
+
+    rental.valid?
+
+    expect(rental.number).to eq("R-1alert(1)")
+    expect(rental.description).to eq("R&D storage: 2 < 3")
+  end
+
   describe "renewal Slack notifications" do
     it "queues renewal messages instead of synchronously posting to Slack" do
       rental = create(:rental)
