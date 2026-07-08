@@ -1,4 +1,5 @@
 require 'rails_helper'
+require 'rails_helper'
 
 RSpec.describe MembersController, type: :controller do
   describe "GET #index" do
@@ -339,12 +340,12 @@ RSpec.describe MembersController, type: :controller do
       expect(resource_manager.reload.silence_emails).to be false
     end
 
-    it "skips silence email authorization when a resource manager leaves another member's flag unchanged" do
+    it "forbids a resource manager from updating another member at all, even a no-op silence_emails change" do
       sign_in create(:member, :resource_manager)
 
       put :update, params: { id: member.id, silenceEmails: false }, format: :json
 
-      expect(response).to have_http_status(200)
+      expect(response).to have_http_status(403)
       expect(member.reload.silence_emails).to be false
     end
 
