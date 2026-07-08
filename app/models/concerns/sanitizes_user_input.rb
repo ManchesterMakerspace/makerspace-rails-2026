@@ -19,8 +19,7 @@ module SanitizesUserInput
     end
 
     def sanitize_plain_text(value)
-      decoded_value = CGI.unescapeHTML(value)
-      CGI.unescapeHTML(SANITIZER.sanitize(decoded_value, tags: [], attributes: []))
+      CGI.unescapeHTML(SANITIZER.sanitize(value, tags: [], attributes: []))
     end
 
     def normalize_for_sanitization(value)

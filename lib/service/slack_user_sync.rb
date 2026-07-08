@@ -41,34 +41,21 @@ module Service
         return nil
       end
 
-      slack_user_attributes = sanitized_slack_user_attributes(
-        slack_email: slack_email,
-        name: name,
-        real_name: real_name
-      )
-
       existing = SlackUser.find_by(slack_id: slack_id)
       if existing
-        existing.set(slack_user_attributes)
+        existing.set(slack_email: slack_email, name: name, real_name: real_name)
       else
         slack_user = SlackUser.create!(
-          slack_user_attributes.merge(
-            slack_id: slack_id,
-            member: member
-          )
+          slack_id:    slack_id,
+          slack_email: slack_email,
+          name:        name,
+          real_name:   real_name,
+          member:      member
         )
         ::Service::SlackProfileSync.sync_one(member)
       end
 
       member
-    end
-
-    def self.sanitized_slack_user_attributes(slack_email:, name:, real_name:)
-      {
-        slack_email: SlackUser.scrub_user_input(slack_email),
-        name: SlackUser.scrub_user_input(name),
-        real_name: SlackUser.scrub_user_input(real_name)
-      }
     end
 
     def self.sync_all
@@ -130,23 +117,19 @@ module Service
             next
           end
 
-          slack_user_attributes = sanitized_slack_user_attributes(
-            slack_email: slack_email,
-            name: name,
-            real_name: real_name
-          )
           existing = SlackUser.find_by(slack_id: slack_id)
 
           if existing
-            existing.set(slack_user_attributes)
+            existing.set(slack_email: slack_email, name: name, real_name: real_name)
             puts "[Slack Sync] UPDATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
             updated_count += 1
           else
             slack_user = SlackUser.create!(
-              slack_user_attributes.merge(
-                slack_id: slack_id,
-                member: member
-              )
+              slack_id:    slack_id,
+              slack_email: slack_email,
+              name:        name,
+              real_name:   real_name,
+              member:      member
             )
             ::Service::SlackProfileSync.sync_one(member)
             puts "[Slack Sync] CREATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
