@@ -291,7 +291,9 @@ jobs:
         run: bundle exec rake db:db_reset
 
       - name: Start Rails server
-        run: bundle exec rails s -b 0.0.0.0 -p 3035 -d
+        run: |
+          mkdir -p log
+          bundle exec rails s -b 0.0.0.0 -p 3035 > log/e2e_rails_server.log 2>&1 &
         env:
           RAILS_LOG_TO_STDOUT: 'true'
 
@@ -320,4 +322,12 @@ jobs:
           path: |
             ui/tmp/playwright-results/
             ui/tmp/playwright-report/
+          retention-days: 7
+
+      - name: Upload Rails server log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rails-server-log
+          path: log/e2e_rails_server.log
           retention-days: 7
