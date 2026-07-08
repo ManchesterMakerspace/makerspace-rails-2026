@@ -1,6 +1,5 @@
 class SlackUser
   include Mongoid::Document
-  include SanitizesUserInput
   belongs_to :member, optional: true
 
   field :slack_email, type: String

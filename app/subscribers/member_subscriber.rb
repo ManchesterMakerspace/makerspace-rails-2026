@@ -10,6 +10,10 @@ module MemberSubscriber
       send_google_invite(event[:model])
     end
 
+    Member.subscribe(:email_changed) do |event|
+      send_slack_invite(event[:model])
+      send_google_invite(event[:model])
+    end
 
     Member.subscribe(:billing_info_changed) do |event|
       update_braintree_customer_info(event[:model])
