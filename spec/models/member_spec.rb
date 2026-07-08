@@ -74,6 +74,14 @@ RSpec.describe Member, type: :model do
     expect(member.firstname).to eq("Jóalert(1)")
   end
 
+  it "does not reintroduce entity-encoded markup while sanitizing" do
+    member = build(:member, firstname: "Alice &lt;img src=x onerror=alert(1)&gt; Smith")
+
+    member.valid?
+
+    expect(member.firstname).to eq("Alice  Smith")
+  end
+
   describe ".search" do
     let(:criteria) { double("scoped criteria") }
 
