@@ -82,6 +82,27 @@ RSpec.describe Member, type: :model do
     expect(member.firstname).to eq("Alice  Smith")
   end
 
+  it "does not sanitize encrypted credentials, tokens, or external IDs" do
+    binary_secret = "\xAA\xBB\xCC\xDD\xEE".dup.force_encoding(Encoding::ASCII_8BIT)
+    member = build(:member,
+      encrypted_password: binary_secret,
+      otp_secret_encrypted: binary_secret,
+      session_token: "abc<def>ghi",
+      reset_password_token: "abc<def>ghi",
+      firebase_uid: "abc<def>ghi",
+      customer_id: "abc<def>ghi"
+    )
+
+    member.valid?
+
+    expect(member.encrypted_password).to eq(binary_secret)
+    expect(member.otp_secret_encrypted).to eq(binary_secret)
+    expect(member.session_token).to eq("abc<def>ghi")
+    expect(member.reset_password_token).to eq("abc<def>ghi")
+    expect(member.firebase_uid).to eq("abc<def>ghi")
+    expect(member.customer_id).to eq("abc<def>ghi")
+  end
+
   describe ".search" do
     let(:criteria) { double("scoped criteria") }
 
