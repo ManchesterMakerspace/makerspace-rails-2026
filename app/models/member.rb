@@ -12,6 +12,18 @@ class Member
   devise :database_authenticatable, :registerable,
          :recoverable, :rememberable, :timeoutable, :validatable
 
+  # Overrides Devise::Models::Timeoutable#timeout_in so the idle-timeout
+  # duration is looked up fresh from SystemConfig on every request, instead
+  # of being fixed once at boot (see config/initializers/devise.rb). This
+  # lets admins change it from the settings UI without an app restart, and
+  # keeps the DB lookup out of app boot entirely.
+  def timeout_in
+    minutes = Integer(SystemConfig.get('devise_timeout_minutes').presence || 30)
+    [minutes, 1].max.minutes
+  rescue ArgumentError, TypeError
+    30.minutes
+  end
+
   field :cardID # TODO: I think this can be removed since its an assoc now. Doorboto checks card collection directly
   field :firstname
   field :lastname
