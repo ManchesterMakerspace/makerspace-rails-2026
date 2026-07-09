@@ -549,4 +549,34 @@ RSpec.describe Member, type: :model do
       expect(member.find_subscribed_resource("nonexistent_sub")).to be_nil
     end
   end
+
+  describe "#timeout_in" do
+    # Overrides Devise::Models::Timeoutable#timeout_in to look up the idle
+    # session timeout fresh from SystemConfig on every call, rather than a
+    # value fixed once at boot (see config/initializers/devise.rb and the
+    # PROD_CUTOVER_CHECKLIST discussion of #103). These specs cover the
+    # fallback/clamping behavior directly since Devise itself only calls
+    # this method internally on each authenticated request.
+    it "defaults to 30 minutes when devise_timeout_minutes is not configured" do
+      expect(create(:member).timeout_in).to eq(30.minutes)
+    end
+
+    it "uses the configured value when set to a valid positive integer" do
+      SystemConfig.set('devise_timeout_minutes', '45')
+      expect(create(:member).timeout_in).to eq(45.minutes)
+    end
+
+    it "clamps to a 1 minute minimum when the configured value is zero or negative" do
+      SystemConfig.set('devise_timeout_minutes', '0')
+      expect(create(:member).timeout_in).to eq(1.minute)
+
+      SystemConfig.set('devise_timeout_minutes', '-5')
+      expect(create(:member).timeout_in).to eq(1.minute)
+    end
+
+    it "falls back to 30 minutes when the configured value is not a valid integer" do
+      SystemConfig.set('devise_timeout_minutes', 'not-a-number')
+      expect(create(:member).timeout_in).to eq(30.minutes)
+    end
+  end
 end
