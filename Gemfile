@@ -1,5 +1,12 @@
 source 'https://rubygems.org'
 ruby '3.2.9'
+
+# Explicit for Ruby 3.4 forward-compatibility — these become bundled
+# gems (not default) in Ruby 3.4, and are used directly in
+# firebase_auth_controller.rb, totp_service.rb, and lib/service/analytics.rb.
+gem 'base64'
+gem 'csv'
+
 gem 'rails', '7.2.3.1'
 gem 'rack-cors', '~> 3.0'
 gem 'puma', '~> 8.0'
