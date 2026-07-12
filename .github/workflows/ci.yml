@@ -135,16 +135,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Ruby 3.2.9
+      - name: Set up Ruby 3.3
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2.9'
+          ruby-version: '3.3'
           bundler-cache: true
 
       - name: Create stub UI assets for RSpec
         run: |
           mkdir -p app/assets/builds
-          touch app/assets/builds/makerspace-react.js
+          touch app/asseyts/builds/makerspace-react.js
           touch app/assets/builds/makerspace-react.css
 
       - name: Run RSpec
@@ -183,10 +183,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Ruby 3.2.9
+      - name: Set up Ruby 3.3
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2.9'
+          ruby-version: '3.3'
           bundler-cache: true
 
       - name: Download built UI assets
@@ -264,10 +264,10 @@ jobs:
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 
-      - name: Set up Ruby 3.2.9
+      - name: Set up Ruby 3.3
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2.9'
+          ruby-version: '3.3'
           bundler-cache: true
 
       - name: Set up Node 22
