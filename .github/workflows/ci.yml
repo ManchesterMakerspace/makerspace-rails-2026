@@ -144,7 +144,7 @@ jobs:
       - name: Create stub UI assets for RSpec
         run: |
           mkdir -p app/assets/builds
-          touch app/asseyts/builds/makerspace-react.js
+          touch app/assets/builds/makerspace-react.js
           touch app/assets/builds/makerspace-react.css
 
       - name: Run RSpec
