@@ -1,5 +1,5 @@
 source 'https://rubygems.org'
-ruby '3.2.9'
+ruby '~> 3.3.0'
 
 # Explicit for Ruby 3.4 forward-compatibility — these become bundled
 # gems (not default) in Ruby 3.4, and are used directly in
