@@ -13,7 +13,7 @@ RUN git clone --branch ${REACT_BRANCH} ${REACT_REPO_URL} .
 RUN yarn install --ignore-engines && PORT=3000 yarn build
 
 # Build backend
-FROM ruby:3.3-bullseye
+FROM ruby:3.4-bullseye
 
 WORKDIR /app
 
