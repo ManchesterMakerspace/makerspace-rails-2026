@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
-      inputs:
+    inputs:
       react_branch:
         description: 'React branch to test against (leave blank for master)'
         required: false
