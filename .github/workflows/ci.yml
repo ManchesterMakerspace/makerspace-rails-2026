@@ -6,13 +6,18 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+      inputs:
+      react_branch:
+        description: 'React branch to test against (leave blank for master)'
+        required: false
+        default: 'master'
 
 # Which React repo/branch to pull for UI build and E2E.
 # REACT_REPO points at ManchesterMakerspace/makerspace-react-2026.
 # upstream PR is merged.
 env:
   REACT_REPO:   ManchesterMakerspace/makerspace-react-2026
-  REACT_BRANCH: master
+  REACT_BRANCH: ${{ github.event.inputs.react_branch || 'master' }}
 
 jobs:
   # -- 1. Build the React/TS UI ------------------------------------------------
