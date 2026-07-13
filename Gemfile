@@ -49,7 +49,7 @@ group :test do
   gem 'rspec-rails', '~> 7.1'
   gem 'mongoid-rspec', '~> 4.1'
   gem 'database_cleaner-mongoid'
-  gem 'simplecov', '~> 0.22'
+  gem 'simplecov', '~> 1.0'
   gem 'rswag-specs', '~> 2.14'
 end
 group :development do
