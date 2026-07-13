@@ -151,7 +151,7 @@ GEM
     ffi (1.17.4-x86_64-darwin)
     ffi (1.17.4-x86_64-linux-gnu)
     ffi (1.17.4-x86_64-linux-musl)
-    git (4.3.2)
+    git (4.4.0)
       activesupport (>= 5.0)
       addressable (~> 2.8)
       process_executer (~> 4.0)
@@ -230,7 +230,9 @@ GEM
     mini_magick (5.3.1)
       logger
     mini_mime (1.1.5)
-    minitest (5.27.0)
+    minitest (6.0.6)
+      drb (~> 2.0)
+      prism (~> 1.5)
     mongo (2.24.1)
       base64
       bson (>= 4.14.1, < 6.0.0)
@@ -486,7 +488,7 @@ DEPENDENCIES
   dotenv-rails
   factory_bot_rails (~> 6.0)
   faraday (~> 2.14)
-  git (~> 4.3)
+  git (~> 4.4)
   google-apis-drive_v3
   google-apis-sheets_v4
   honeybadger (~> 6.9)
@@ -577,7 +579,7 @@ CHECKSUMS
   ffi (1.17.4-x86_64-darwin) sha256=aa70390523cf3235096cf64962b709b4cfbd5c082a2cb2ae714eb0fe2ccda496
   ffi (1.17.4-x86_64-linux-gnu) sha256=9d3db14c2eae074b382fa9c083fe95aec6e0a1451da249eab096c34002bc752d
   ffi (1.17.4-x86_64-linux-musl) sha256=3fdf9888483de005f8ef8d1cf2d3b20d86626af206cbf780f6a6a12439a9c49e
-  git (4.3.2) sha256=a3b0706573bb8cdd9edc630c33e2611ca5cbdece086f7c142bef73bc38522907
+  git (4.4.0) sha256=93d4054467a04d9038be068d64f1b982bb26be8dbb1f7b391bd6df6e626639ec
   gli (2.22.2) sha256=580e8d6c88b0f0f0cb8e8b2ca18c3485ed0f742cece855de46bf8e36202f5db0
   globalid (1.4.0) sha256=037f12fbf1d9d7a014d501c2d5c77356fd4ddd96d7a7991d6700bba96706f427
   google-apis-core (1.2.4) sha256=da9d12dbc7a3fbf3a68fc461e23e6f23245e57ab3b47eb71137d4dcf61a686b3
@@ -606,7 +608,7 @@ CHECKSUMS
   mime-types-data (3.2026.0701) sha256=cd8811e1fb89d836499ba0582368a10ee74cef929ba956d1d5ddca045e6a730f
   mini_magick (5.3.1) sha256=29395dfd76badcabb6403ee5aff6f681e867074f8f28ce08d78661e9e4a351c4
   mini_mime (1.1.5) sha256=8681b7e2e4215f2a159f9400b5816d85e9d8c6c6b491e96a12797e798f8bccef
-  minitest (5.27.0) sha256=2d3b17f8a36fe7801c1adcffdbc38233b938eb0b4966e97a6739055a45fa77d5
+  minitest (6.0.6) sha256=153ea36d1d987a62942382b61075745042a2b3123b1cd48f4c3675af9cc7d6f1
   mongo (2.24.1) sha256=b6276ca2b7e8394f1cf27153977c736b21de83973b2a8e6fefef9ddad374ec48
   mongoid (8.1.12) sha256=c3f9ff2a6b5369544fd1b78ac23fe3ab05347f81a88d89b68ecf41747d0855c7
   mongoid-compatibility (1.0.0) sha256=08e5770d102258a3b8f39443057de42cde61d465980f182954b1b70d965465e8
