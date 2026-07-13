@@ -7,7 +7,7 @@ ruby '~> 3.4.0'
 gem 'base64'
 gem 'csv'
 
-gem 'rails', '7.2.3.1'
+gem 'rails', '8.0.0'
 gem 'rack-cors', '~> 3.0'
 gem 'puma', '~> 8.0'
 gem 'active_model_serializers', '~> 0.10.15'
