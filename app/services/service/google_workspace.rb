@@ -5,6 +5,32 @@ module Service
     DIRECTORY_SCOPE = "https://www.googleapis.com/auth/admin.directory.resource.calendar".freeze
     CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar".freeze
     DEFAULT_LABEL_COLOR = "#039be5".freeze
+    GOOGLE_CALENDAR_COLOR_NAMES = [
+      "Cocoa", "Flamingo", "Tomato", "Tangerine", "Pumpkin", "Mango",
+      "Eucalyptus", "Basil", "Pistachio", "Avocado", "Citron", "Banana",
+      "Sage", "Peacock", "Sky", "Blueberry", "Lavender", "Wisteria",
+      "Graphite", "Birch", "Beetroot", "Cherry Blossom", "Grape", "Amethyst"
+    ].freeze
+    FALLBACK_CALENDAR_COLORS = [
+      ["Black",  "#000000", "#ffffff"],
+      ["Red",    "#d50000", "#ffffff"],
+      ["Blue",   "#039be5", "#ffffff"],
+      ["Green",  "#33b679", "#ffffff"],
+      ["Yellow", "#f6bf26", "#000000"],
+      ["Orange", "#f4511e", "#ffffff"],
+      ["Brown",  "#795548", "#ffffff"],
+      ["Purple", "#8e24aa", "#ffffff"],
+      ["Gray",   "#616161", "#ffffff"],
+      ["Tan",    "#c0a36e", "#000000"],
+      ["Teal",   "#00897b", "#ffffff"]
+    ].each_with_index.map do |(name, background, foreground), index|
+      {
+        id: (index + 1).to_s,
+        name: name,
+        backgroundColor: background,
+        foregroundColor: foreground
+      }
+    end.freeze
 
     class << self
       def authorization(scopes)
@@ -38,15 +64,34 @@ module Service
 
       def calendar_colors
         execute_google_call(operation: "calendar.colors.get") do
-          definitions = calendar.get_colors
-          definitions.calendar.to_h.map do |id, definition|
+          service = calendar
+          definitions = if service.respond_to?(:get_colors)
+            service.get_colors
+          else
+            service.get_color
+          end
+          colors = definitions.calendar.to_h.map do |id, definition|
             {
               id: id.to_s,
+              name: GOOGLE_CALENDAR_COLOR_NAMES[id.to_i - 1] || "Color #{id}",
               backgroundColor: definition.background,
               foregroundColor: definition.foreground
             }
           end.sort_by { |definition| definition[:id].to_i }
+          raise "Google Calendar returned no calendar colors" if colors.empty?
+
+          colors
         end
+      rescue => error
+        Service::GoogleApiErrorReporter.report_if_permission_denied(
+          error,
+          operation: "calendar.colors.get",
+          resource_type: "GoogleCalendarColors"
+        )
+        Rails.logger.warn(
+          "[GoogleCalendarColors] Using fallback palette after #{error.class}: #{error.message}"
+        )
+        FALLBACK_CALENDAR_COLORS.map(&:dup)
       end
 
       def ensure_resource!(record, category)

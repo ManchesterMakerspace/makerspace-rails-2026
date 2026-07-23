@@ -4,10 +4,6 @@ class Admin::GoogleCalendarController < ApplicationController
 
   def colors
     render json: { colors: Service::GoogleWorkspace.calendar_colors.first(24) }
-  rescue Google::Apis::Error => error
-    raise ::Error::UnprocessableEntity.new(
-      "Google Calendar colors could not be loaded: #{error.message}"
-    )
   end
 
   private

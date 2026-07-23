@@ -118,6 +118,7 @@ RSpec.describe 'Tools API', type: :request do
       colors = 30.times.map do |index|
         {
           id: (index + 1).to_s,
+          name: "Color #{index + 1}",
           backgroundColor: "#000000",
           foregroundColor: "#ffffff"
         }
