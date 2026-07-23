@@ -280,6 +280,9 @@ RSpec.configure do |config|
         memberContractOnFile: { type: :boolean },
         silenceEmails: { type: :boolean, 'x-nullable': true },
         notes: { type: :string, 'x-nullable': true },
+        resourceManagerShopIds: { type: :array, items: { type: :string } },
+        checkoutApproverShopIds: { type: :array, items: { type: :string } },
+        checkoutApproverToolIds: { type: :array, items: { type: :string } },
       },
       required: [
         :firstname,
@@ -341,6 +344,7 @@ RSpec.configure do |config|
         memberContractOnFile: { type: :boolean },
         notes: { type: :string },
         silenceEmails: { type: :boolean },
+        resourceManagerShopIds: { type: :array, items: { type: :string } },
         phone: { type: :string },
         address: {
           type: :object,
@@ -367,6 +371,102 @@ RSpec.configure do |config|
           ]
         }
       ]
+    },
+    ReservationResourceConfig: {
+      type: :object,
+      properties: {
+        reservable: { type: :boolean, default: false },
+        maxConcurrentReservations: { type: :integer, minimum: 1, default: 1 },
+        reservationHorizonDays: { type: :integer, minimum: 0, default: 7 },
+        maxReservationDurationHours: { type: :number, minimum: 0.5, multipleOf: 0.5, default: 8 },
+        reservationRequiresApproval: { type: :boolean, default: false },
+        reservationPrerequisiteToolIds: { type: :array, items: { type: :string } }
+      }
+    },
+    Shop: {
+      allOf: [
+        { '$ref' => '#/components/schemas/ReservationResourceConfig' },
+        {
+          type: :object,
+          properties: {
+            id: { type: :string },
+            name: { type: :string },
+            slackChannel: { type: :string, 'x-nullable': true },
+            disabled: { type: :boolean }
+          },
+          required: [:id, :name, :reservable]
+        }
+      ]
+    },
+    Tool: {
+      allOf: [
+        { '$ref' => '#/components/schemas/ReservationResourceConfig' },
+        {
+          type: :object,
+          properties: {
+            id: { type: :string },
+            shopId: { type: :string },
+            name: { type: :string },
+            description: { type: :string, 'x-nullable': true },
+            disabled: { type: :boolean },
+            effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } }
+          },
+          required: [:id, :shopId, :name, :reservable]
+        }
+      ]
+    },
+    CheckoutApprover: {
+      type: :object,
+      properties: {
+        id: { type: :string },
+        memberId: { type: :string },
+        shopIds: { type: :array, items: { type: :string } },
+        toolIds: { type: :array, items: { type: :string } },
+        shopNames: { type: :array, items: { type: :string } },
+        toolNames: { type: :array, items: { type: :string } }
+      },
+      required: [:id, :memberId, :shopIds, :toolIds]
+    },
+    Reservation: {
+      type: :object,
+      properties: {
+        id: { type: :string },
+        title: { type: :string },
+        memberId: { type: :string },
+        memberName: { type: :string },
+        shopId: { type: :string },
+        shopName: { type: :string },
+        reservationScope: { type: :string, enum: %w[shop tools] },
+        toolIds: { type: :array, items: { type: :string } },
+        toolNames: { type: :array, items: { type: :string } },
+        startAt: { type: :string, format: 'date-time' },
+        endAt: { type: :string, format: 'date-time' },
+        status: { type: :string, enum: %w[pending approved denied canceled] },
+        approvalReasons: { type: :array, items: { type: :string } },
+        source: { type: :string, enum: %w[portal slack] },
+        calendarEventId: { type: :string, 'x-nullable': true },
+        calendarSyncStatus: { type: :string, 'x-nullable': true },
+        calendarSyncError: { type: :string, 'x-nullable': true }
+      },
+      required: [:id, :title, :memberId, :shopId, :reservationScope, :toolIds, :startAt, :endAt, :status]
+    },
+    ReservationPreview: {
+      type: :object,
+      properties: {
+        eligible: { type: :boolean },
+        errors: { type: :array, items: { type: :string } },
+        conflicts: { type: :array, items: { type: :string } },
+        missingPrerequisites: {
+          type: :array,
+          items: {
+            type: :object,
+            properties: { id: { type: :string }, name: { type: :string } }
+          }
+        },
+        requiresApproval: { type: :boolean },
+        approvalReasons: { type: :array, items: { type: :string } }
+      },
+      required: [:eligible, :errors, :conflicts, :missingPrerequisites, :requiresApproval, :approvalReasons]
     },
     PayPalAccount: {
       type: :object,

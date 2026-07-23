@@ -1,5 +1,5 @@
 class CheckoutApproverSerializer < ActiveModel::Serializer
-  attributes :id, :member_id, :shop_ids
+  attributes :id, :member_id, :shop_ids, :tool_ids
 
   attribute :member_name do
     object.member.try(:fullname)
@@ -11,5 +11,9 @@ class CheckoutApproverSerializer < ActiveModel::Serializer
 
   attribute :shop_names do
     object.shops.map(&:name)
+  end
+
+  attribute :tool_names do
+    object.tools.map(&:name)
   end
 end

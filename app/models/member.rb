@@ -39,6 +39,7 @@ class Member
   field :startDate, default: -> { Time.now }
   field :groupName, type: String #potentially member is in a group/partner membership
   field :role,                          default: "member" #admin,board_member,resource_manager,member
+  field :resource_manager_shop_ids, type: Array, default: []
   field :firebase_uid,                   type: String
 
   ## TOTP / Two-Factor Authentication
@@ -234,6 +235,11 @@ class Member
 
   def valid_for_checkout_request?
     active_unexpired? && member_contract_signed_date.present?
+  end
+
+  def manages_shop?(shop_or_id)
+    role == "resource_manager" &&
+      Array(resource_manager_shop_ids).map(&:to_s).include?(shop_or_id.try(:id).to_s.presence || shop_or_id.to_s)
   end
 
   def normalize_email

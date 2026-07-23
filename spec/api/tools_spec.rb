@@ -57,7 +57,10 @@ RSpec.describe 'Tools API', type: :request do
       get '/api/admin/tools'
 
       expect(response).to have_http_status(:ok)
-      expect(JSON.parse(response.body).map { |tool| tool['name'] }).to eq(['Bandsaw'])
+      body = JSON.parse(response.body)
+      expect(body.map { |tool| tool['name'] }).to eq(['Bandsaw'])
+      expect(body.first).not_to have_key('reservationRequiresApproval')
+      expect(body.first).not_to have_key('announceChannel')
     end
 
     it 'scopes checkout approver tool lists to assigned shops' do

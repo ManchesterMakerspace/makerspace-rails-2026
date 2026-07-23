@@ -4,7 +4,9 @@ RSpec.describe 'Tool Checkouts API', type: :request do
   let(:shop) { Shop.create!(name: 'Woodshop') }
   let(:tool) { Tool.create!(name: 'Disabled Bandsaw', shop: shop, disabled: true) }
   let(:member) { create(:member, :current) }
-  let(:resource_manager) { create(:member, :resource_manager, :current) }
+  let(:resource_manager) do
+    create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+  end
 
   before { sign_in resource_manager }
 

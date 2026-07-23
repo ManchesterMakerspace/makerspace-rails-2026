@@ -1,0 +1,80 @@
+require "rails_helper"
+
+RSpec.describe "Reservations API", type: :request do
+  let(:member) { create(:member, :current) }
+  let(:shop) { create(:shop, reservable: false) }
+  let(:tool) { create(:tool, shop: shop, reservable: true) }
+  let(:start_at) { 1.day.from_now.change(hour: 10, min: 0, sec: 0) }
+  let(:reservation_params) do
+    {
+      title: "Cabinet project",
+      shop_id: shop.id.to_s,
+      reservation_scope: "tools",
+      tool_ids: [tool.id.to_s],
+      start_at: start_at.iso8601,
+      end_at: (start_at + 1.hour).iso8601
+    }
+  end
+
+  before do
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
+    ActiveJob::Base.queue_adapter = :test
+    create(:tool_checkout, member: member, tool: tool)
+    sign_in member
+  end
+
+  it "previews and creates an eligible tool reservation" do
+    post "/api/reservations/preview", params: reservation_params
+
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body)).to include(
+      "eligible" => true,
+      "requiresApproval" => false
+    )
+
+    post "/api/reservations", params: reservation_params
+
+    expect(response).to have_http_status(:created)
+    expect(JSON.parse(response.body)).to include(
+      "title" => "Cabinet project",
+      "status" => "approved",
+      "toolIds" => [tool.id.to_s]
+    )
+  end
+
+  it "rejects a member without the selected tool checkout" do
+    ToolCheckout.where(member_id: member.id).delete_all
+
+    post "/api/reservations", params: reservation_params
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(Reservation.count).to eq(0)
+  end
+
+  it "allows only an assigned RM to approve a pending reservation" do
+    reservation = create(
+      :reservation,
+      member: member,
+      shop: shop,
+      reservation_scope: "tools",
+      tool_ids: [tool.id.to_s],
+      start_at: start_at,
+      end_at: start_at + 1.hour,
+      status: "pending"
+    )
+    assigned_rm = create(
+      :member,
+      :resource_manager,
+      :current,
+      resource_manager_shop_ids: [shop.id.to_s]
+    )
+    sign_out member
+    sign_in assigned_rm
+
+    post "/api/admin/reservations/#{reservation.id}/approve"
+
+    expect(response).to have_http_status(:ok)
+    expect(reservation.reload.status).to eq("approved")
+  end
+end

@@ -14,6 +14,8 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :mailtrap,
              :slack,
              :checkout_approver_shop_ids,
+             :checkout_approver_tool_ids,
+             :resource_manager_shop_ids,
              :firebase_uid
 
   attribute :is_checkout_approver do
@@ -22,6 +24,10 @@ class MemberSummarySerializer < ActiveModel::Serializer
 
   attribute :checkout_approver_shop_ids do
     CheckoutApprover.find_by(member_id: object.id)&.shop_ids || []
+  end
+
+  attribute :checkout_approver_tool_ids do
+    CheckoutApprover.find_by(member_id: object.id)&.tool_ids || []
   end
 
   def member_contract_on_file
