@@ -28,6 +28,22 @@ class Billing::SubscriptionsController < BillingController
     render json: subscription, serializer: BraintreeService::SubscriptionSerializer, adapter: :attributes and return
   end
 
+  def cancellation_impact
+    reservations = ReservationLifecycleService.cancellation_impact(@subscription_resource)
+    render json: {
+      reservationCount: reservations.length,
+      membershipExpiresAt: membership_expiration_for(@subscription_resource)&.iso8601,
+      reservations: reservations.map do |reservation|
+        {
+          id: reservation.id.to_s,
+          title: reservation.title,
+          startAt: reservation.start_at.iso8601,
+          endAt: reservation.end_at.iso8601
+        }
+      end
+    }
+  end
+
   def destroy
     result = ::BraintreeService::Subscription.cancel(@gateway, params[:id])
 
@@ -58,5 +74,15 @@ class Billing::SubscriptionsController < BillingController
 
   def verify_customer
     raise Error::Braintree::MissingCustomer.new unless current_member.customer_id
+  end
+
+  def membership_expiration_for(resource)
+    case resource
+    when Member
+      resource.membership_expires_at
+    when Group
+      return nil if resource.expiry.blank?
+      Time.at(resource.expiry.to_f / 1000).utc
+    end
   end
 end

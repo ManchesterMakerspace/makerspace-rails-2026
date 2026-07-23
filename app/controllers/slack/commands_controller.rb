@@ -69,10 +69,20 @@ class Slack::CommandsController < ApplicationController
     Service::SlackConnector.open_modal(params[:trigger_id], view)
     render json: { response_type: "ephemeral", text: "Opening reservation form…" }
   rescue ::Error::CustomError => error
+    Rails.logger.warn(
+      "[SlackReservationRejected] action=open_modal slack_user_id=#{params[:user_id]} reason=#{error.message}"
+    )
     render json: { response_type: "ephemeral", text: error.message }
   rescue => error
+    Rails.logger.error(
+      "[SlackReservationError] action=open_modal slack_user_id=#{params[:user_id]} " \
+      "error=#{error.class}: #{error.message}"
+    )
     Honeybadger.notify(error) if defined?(Honeybadger)
-    render json: { response_type: "ephemeral", text: "Unable to open the reservation form." }
+    render json: {
+      response_type: "ephemeral",
+      text: "The reservation form could not be opened. Please try again or use the Member Portal."
+    }
   end
 
   private

@@ -441,7 +441,7 @@ RSpec.configure do |config|
         toolNames: { type: :array, items: { type: :string } },
         startAt: { type: :string, format: 'date-time' },
         endAt: { type: :string, format: 'date-time' },
-        status: { type: :string, enum: %w[pending approved denied canceled] },
+        status: { type: :string, enum: %w[pending approved denied cancelled] },
         approvalReasons: { type: :array, items: { type: :string } },
         source: { type: :string, enum: %w[portal slack] },
         calendarEventId: { type: :string, 'x-nullable': true },
@@ -464,9 +464,34 @@ RSpec.configure do |config|
           }
         },
         requiresApproval: { type: :boolean },
-        approvalReasons: { type: :array, items: { type: :string } }
+        approvalReasons: { type: :array, items: { type: :string } },
+        maximumDurationHours: { type: :number, multipleOf: 0.5, minimum: 0 }
       },
-      required: [:eligible, :errors, :conflicts, :missingPrerequisites, :requiresApproval, :approvalReasons]
+      required: [
+        :eligible, :errors, :conflicts, :missingPrerequisites, :requiresApproval,
+        :approvalReasons, :maximumDurationHours
+      ]
+    },
+    SubscriptionCancellationImpact: {
+      type: :object,
+      properties: {
+        reservationCount: { type: :integer, minimum: 0 },
+        membershipExpiresAt: { type: :string, format: 'date-time', 'x-nullable': true },
+        reservations: {
+          type: :array,
+          items: {
+            type: :object,
+            properties: {
+              id: { type: :string },
+              title: { type: :string },
+              startAt: { type: :string, format: 'date-time' },
+              endAt: { type: :string, format: 'date-time' }
+            },
+            required: [:id, :title, :startAt, :endAt]
+          }
+        }
+      },
+      required: [:reservationCount, :reservations]
     },
     PayPalAccount: {
       type: :object,

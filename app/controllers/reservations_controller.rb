@@ -1,13 +1,17 @@
 class ReservationsController < ApplicationController
+  around_action :handle_unexpected_reservation_errors
   before_action :authenticate_member!
-  before_action :require_active_member
+  before_action :require_active_member, only: [:availability, :preview, :create, :update]
   before_action :find_reservation, only: [:update, :destroy]
   before_action :authorize_owner, only: [:update, :destroy]
 
   def index
     reservations = Reservation.where(member_id: current_member.id)
     reservations = reservations.where(shop_id: params[:shop_id]) if params[:shop_id].present?
-    reservations = reservations.where(status: params[:status]) if params[:status].present?
+    if params[:status].present?
+      statuses = params[:status] == "cancelled" ? %w[cancelled canceled] : [params[:status]]
+      reservations = reservations.where(:status.in => statuses)
+    end
     reservations = reservations.where(:end_at.gt => parse_time(params[:start_at])) if params[:start_at].present?
     reservations = reservations.where(:start_at.lt => parse_time(params[:end_at])) if params[:end_at].present?
     render json: reservations.order_by(start_at: :asc),
@@ -72,7 +76,9 @@ class ReservationsController < ApplicationController
   end
 
   def authorize_owner
-    raise ::Error::Forbidden.new unless @reservation.member_id.to_s == current_member.id.to_s
+    unless @reservation.member_id.to_s == current_member.id.to_s
+      raise ::Error::Forbidden.new("You may only edit or cancel reservations that you created")
+    end
   end
 
   def ensure_future!
@@ -82,12 +88,39 @@ class ReservationsController < ApplicationController
   end
 
   def require_active_member
-    raise ::Error::Forbidden.new("Active membership is required") unless current_member.active_unexpired?
+    unless current_member.active_unexpired?
+      raise ::Error::Forbidden.new(
+        "Your membership is inactive or expired. You may view and cancel existing reservations, but cannot create or edit reservations"
+      )
+    end
   end
 
   def parse_time(value)
     Time.iso8601(value.to_s)
   rescue ArgumentError
     raise ::Error::UnprocessableEntity.new("Invalid reservation date")
+  end
+
+  def handle_unexpected_reservation_error(error)
+    Rails.logger.error(
+      "[ReservationError] action=#{action_name} member_id=#{current_member&.id} " \
+      "error=#{error.class}: #{error.message}\n#{Array(error.backtrace).first(10).join("\n")}"
+    )
+    Honeybadger.notify(error) if defined?(Honeybadger)
+    render json: {
+      status: 500,
+      error: "internal_server_error",
+      message: "The reservation could not be #{action_name == 'destroy' ? 'cancelled' : 'processed'}. " \
+        "Please try again or contact an administrator with request ID #{Current.request_id}."
+    }, status: :internal_server_error
+  end
+
+  def handle_unexpected_reservation_errors
+    yield
+  rescue ::Error::CustomError, ::Mongoid::Errors::MongoidError,
+         ::ActionController::ParameterMissing, ::ActionController::InvalidAuthenticityToken
+    raise
+  rescue => error
+    handle_unexpected_reservation_error(error)
   end
 end

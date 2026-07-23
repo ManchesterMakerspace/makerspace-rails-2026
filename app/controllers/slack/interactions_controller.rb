@@ -36,15 +36,24 @@ class Slack::InteractionsController < ApplicationController
     )
     render json: { response_action: "clear" }
   rescue ::Error::CustomError => error
+    Rails.logger.warn(
+      "[SlackReservationRejected] action=create member_id=#{member&.id} reason=#{error.message}"
+    )
     render json: {
       response_action: "errors",
       errors: { "end_time" => error.message.to_s.first(150) }
     }
   rescue => error
+    Rails.logger.error(
+      "[SlackReservationError] action=create member_id=#{member&.id} " \
+      "error=#{error.class}: #{error.message}"
+    )
     Honeybadger.notify(error) if defined?(Honeybadger)
     render json: {
       response_action: "errors",
-      errors: { "end_time" => "Unable to create this reservation." }
+      errors: {
+        "end_time" => "The reservation could not be created. Please verify the times and use the Member Portal if the problem continues."
+      }
     }
   end
 

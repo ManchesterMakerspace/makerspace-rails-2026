@@ -22,7 +22,34 @@ class Admin::Billing::SubscriptionsController < Admin::BillingController
     render json: {}, status: 204 and return
   end
 
+  def cancellation_impact
+    subscription = ::BraintreeService::Subscription.get_subscription(@gateway, params[:id])
+    reservations = ReservationLifecycleService.cancellation_impact(subscription.resource)
+    render json: {
+      reservationCount: reservations.length,
+      membershipExpiresAt: membership_expiration_for(subscription.resource)&.iso8601,
+      reservations: reservations.map do |reservation|
+        {
+          id: reservation.id.to_s,
+          title: reservation.title,
+          startAt: reservation.start_at.iso8601,
+          endAt: reservation.end_at.iso8601
+        }
+      end
+    }
+  end
+
   private 
+  def membership_expiration_for(resource)
+    case resource
+    when Member
+      resource.membership_expires_at
+    when Group
+      return nil if resource.expiry.blank?
+      Time.at(resource.expiry.to_f / 1000).utc
+    end
+  end
+
   def construct_query
     Proc.new do |search|
       query_params = subscription_query_params

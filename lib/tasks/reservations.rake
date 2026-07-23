@@ -7,4 +7,10 @@ namespace :reservations do
       member.set(resource_manager_shop_ids: shop_ids)
     end
   end
+
+  desc "Normalize legacy reservation status spelling from canceled to cancelled"
+  task normalize_cancelled_status: :environment do
+    count = Reservation.where(status: "canceled").update_all(status: "cancelled")
+    puts "Updated #{count} reservation(s) to cancelled"
+  end
 end

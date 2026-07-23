@@ -14,7 +14,8 @@ class ReservationService
           conflicts: [],
           missingPrerequisites: [],
           requiresApproval: reservation.status == "pending",
-          approvalReasons: reasons
+          approvalReasons: reasons,
+          maximumDurationHours: ((reservation.end_at - reservation.start_at) / 1.hour).to_f
         }
       end
 
@@ -25,7 +26,8 @@ class ReservationService
         conflicts: evaluation[:conflicts],
         missingPrerequisites: evaluation[:missing_prerequisites],
         requiresApproval: evaluation[:approval_reasons].present?,
-        approvalReasons: evaluation[:approval_reasons]
+        approvalReasons: evaluation[:approval_reasons],
+        maximumDurationHours: evaluation[:maximum_duration_hours]
       }
     end
 
@@ -33,7 +35,12 @@ class ReservationService
       normalized = normalize(attributes)
       with_shop_lock(normalized[:shop_id]) do
         evaluation = evaluate(member: member, attributes: normalized)
-        raise_for_evaluation!(evaluation)
+        raise_for_evaluation!(
+          evaluation,
+          member: member,
+          attributes: normalized,
+          operation: "create"
+        )
 
         reservation = Reservation.create!(
           normalized.merge(
@@ -67,7 +74,13 @@ class ReservationService
         end
 
         evaluation = evaluate(member: reservation.member, attributes: normalized, reservation: reservation)
-        raise_for_evaluation!(evaluation)
+        raise_for_evaluation!(
+          evaluation,
+          member: reservation.member,
+          attributes: normalized,
+          operation: "update",
+          reservation: reservation
+        )
 
         reservation.update!(
           normalized.merge(
@@ -85,15 +98,16 @@ class ReservationService
       end
     end
 
-    def cancel!(reservation:, actor:)
+    def cancel!(reservation:, actor:, reason: nil)
       unless reservation.blocking? && reservation.end_at > Time.current
-        raise ::Error::UnprocessableEntity.new("Only future active reservations can be canceled")
+        raise ::Error::UnprocessableEntity.new("Only current or future active reservations can be cancelled")
       end
 
       with_shop_lock(reservation.shop_id) do
         reservation.update!(
-          status: "canceled",
-          decided_by_id: actor.id,
+          status: "cancelled",
+          decision_note: reason,
+          decided_by_id: actor&.id,
           decided_at: Time.current,
           calendar_sync_status: "pending",
           calendar_sync_error: nil
@@ -156,6 +170,7 @@ class ReservationService
     end
 
     def evaluate(member:, attributes:, reservation: nil)
+      member.reload if member.persisted?
       errors = []
       conflicts = []
       missing = []
@@ -167,7 +182,8 @@ class ReservationService
           errors: ["Selected shop was not found"],
           conflicts: [],
           missing_prerequisites: [],
-          approval_reasons: []
+          approval_reasons: [],
+          maximum_duration_hours: 0
         }
       end
       tools = attributes[:reservation_scope] == "tools" ?
@@ -175,7 +191,9 @@ class ReservationService
       resources = attributes[:reservation_scope] == "shop" ? [shop] : tools
 
       errors << "Title is required" if attributes[:title].blank?
-      errors << "Membership must be active and unexpired" unless member.active_unexpired?
+      unless member.active_unexpired?
+        errors << "Your membership is inactive or expired. An active membership is required to make a reservation"
+      end
       errors << "Start and end times are required" if attributes[:start_at].blank? || attributes[:end_at].blank?
       errors << "Start time must be in the future" if attributes[:start_at].present? && attributes[:start_at] < Time.current
       errors << "End time must be after start time" if attributes[:start_at].present? && attributes[:end_at].present? && attributes[:end_at] <= attributes[:start_at]
@@ -185,6 +203,15 @@ class ReservationService
       errors << "One or more selected tools are invalid" if attributes[:reservation_scope] == "tools" && tools.length != attributes[:tool_ids].length
       errors << "The selected shop is not reservable" if attributes[:reservation_scope] == "shop" && (!shop.reservable || shop.disabled?)
       errors << "One or more selected tools are not reservable" if tools.any? { |tool| !tool.reservable || tool.disabled? }
+
+      if attributes[:end_at].present? && !member.active_membership_subscription?
+        membership_expiration = member.membership_expires_at
+        if membership_expiration.present? && attributes[:end_at] > membership_expiration
+          expiration_text = membership_expiration.in_time_zone(ZONE).strftime("%B %-d, %Y at %H:%M")
+          errors << "This reservation ends after your membership expires on #{expiration_text}. " \
+            "Without an active recurring membership, reservations must end before your current membership expires"
+        end
+      end
 
       if attributes[:start_at].present? && attributes[:end_at].present? && resources.present?
         start_date = attributes[:start_at].in_time_zone(ZONE).to_date
@@ -205,42 +232,52 @@ class ReservationService
       checked_out_ids = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
       missing_ids = prerequisite_ids - checked_out_ids
       missing = Tool.where(:id.in => missing_ids).map { |tool| { id: tool.id.to_s, name: tool.name } }
-      errors << "Required tool checkouts are missing" if missing_ids.present?
+      if missing_ids.present?
+        missing_names = missing.map { |tool| tool[:name] }.presence || missing_ids
+        errors << "Missing required checkout(s): #{missing_names.join(', ')}"
+      end
 
       if attributes[:start_at].present? && attributes[:end_at].present?
         overlapping = overlapping_reservations(attributes[:start_at], attributes[:end_at], reservation)
         shop_overlaps = overlapping.where(shop_id: shop.id)
-
-        if attributes[:reservation_scope] == "shop"
-          conflicts << "A tool in this shop is already reserved" if shop_overlaps.where(reservation_scope: "tools").exists?
-          shop_count = shop_overlaps.where(reservation_scope: "shop").count
-          conflicts << "The shop has reached its reservation capacity" if shop_count >= shop.max_concurrent_reservations
-        else
-          conflicts << "The entire shop is already reserved" if shop_overlaps.where(reservation_scope: "shop").exists?
-          tools.each do |tool|
-            count = shop_overlaps.where(reservation_scope: "tools", tool_ids: tool.id.to_s).count
-            conflicts << "#{tool.name} has reached its reservation capacity" if count >= tool.max_concurrent_reservations
-          end
-        end
+        conflicts.concat(capacity_conflicts(
+          shop: shop,
+          tools: tools,
+          reservation_scope: attributes[:reservation_scope],
+          overlaps: shop_overlaps.to_a,
+          start_at: attributes[:start_at],
+          end_at: attributes[:end_at]
+        ))
 
         member_overlap = overlapping.where(member_id: member.id).exists?
         approval_reasons << "overlapping_member_reservation" if member_overlap
       end
 
       approval_reasons << "resource_requires_approval" if resources.any?(&:reservation_requires_approval)
+      maximum_duration = maximum_duration_hours(
+        member: member,
+        shop: shop,
+        tools: tools,
+        reservation_scope: attributes[:reservation_scope],
+        start_at: attributes[:start_at],
+        resources: resources,
+        reservation: reservation
+      )
 
       {
         errors: errors.uniq,
         conflicts: conflicts.uniq,
         missing_prerequisites: missing,
-        approval_reasons: approval_reasons.uniq
+        approval_reasons: approval_reasons.uniq,
+        maximum_duration_hours: maximum_duration
       }
     rescue Mongoid::Errors::DocumentNotFound, Mongoid::Errors::InvalidFind
       {
         errors: ["Selected shop was not found"],
         conflicts: [],
         missing_prerequisites: [],
-        approval_reasons: []
+        approval_reasons: [],
+        maximum_duration_hours: 0
       }
     end
 
@@ -254,6 +291,82 @@ class ReservationService
       time.present? && (time.min == 0 || time.min == 30) && time.sec == 0
     end
 
+    def maximum_duration_hours(member:, shop:, tools:, reservation_scope:, start_at:, resources:, reservation:)
+      return 0 unless start_at.present? && resources.present?
+
+      configured_max = resources.map(&:max_reservation_duration_hours).min.to_f
+      if !member.active_membership_subscription? && member.membership_expires_at.present?
+        membership_max = (member.membership_expires_at - start_at) / 1.hour
+        configured_max = [configured_max, membership_max].min
+      end
+
+      steps = [(configured_max * 2).floor, 0].max
+      return 0 if steps.zero?
+
+      window_end = start_at + (steps * 0.5).hours
+      overlaps = overlapping_reservations(start_at, window_end, reservation)
+        .where(shop_id: shop.id).to_a
+      allowed = 0.0
+
+      1.upto(steps) do |step|
+        candidate_end = start_at + (step * 0.5).hours
+        candidate_overlaps = overlaps.select do |existing|
+          existing.start_at < candidate_end && existing.end_at > start_at
+        end
+        break if capacity_conflicts(
+          shop: shop,
+          tools: tools,
+          reservation_scope: reservation_scope,
+          overlaps: candidate_overlaps,
+          start_at: start_at,
+          end_at: candidate_end
+        ).present?
+
+        allowed = step * 0.5
+      end
+      allowed
+    end
+
+    def capacity_conflicts(shop:, tools:, reservation_scope:, overlaps:, start_at:, end_at:)
+      if reservation_scope == "shop"
+        conflicts = []
+        conflicts << "A tool in this shop is already reserved" if overlaps.any? { |item| item.reservation_scope == "tools" }
+        shop_reservations = overlaps.select { |item| item.reservation_scope == "shop" }
+        if capacity_reached?(shop_reservations, shop.max_concurrent_reservations, start_at, end_at)
+          conflicts << "The shop has reached its reservation capacity"
+        end
+        conflicts
+      elsif reservation_scope == "tools"
+        conflicts = []
+        conflicts << "The entire shop is already reserved" if overlaps.any? { |item| item.reservation_scope == "shop" }
+        tools.each do |tool|
+          tool_reservations = overlaps.select do |item|
+            item.reservation_scope == "tools" && Array(item.tool_ids).map(&:to_s).include?(tool.id.to_s)
+          end
+          if capacity_reached?(tool_reservations, tool.max_concurrent_reservations, start_at, end_at)
+            conflicts << "#{tool.name} has reached its reservation capacity"
+          end
+        end
+        conflicts
+      else
+        []
+      end
+    end
+
+    def capacity_reached?(reservations, limit, start_at, end_at)
+      return false if reservations.empty?
+
+      boundaries = ([start_at, end_at] + reservations.flat_map { |item| [item.start_at, item.end_at] })
+        .select { |time| time >= start_at && time <= end_at }
+        .uniq.sort
+      boundaries.each_cons(2).any? do |segment_start, segment_end|
+        next false if segment_end <= segment_start
+        reservations.count do |item|
+          item.start_at < segment_end && item.end_at > segment_start
+        end >= limit
+      end
+    end
+
     def material_edit?(reservation, attributes)
       reservation.shop_id.to_s != attributes[:shop_id].to_s ||
         reservation.reservation_scope != attributes[:reservation_scope] ||
@@ -262,7 +375,15 @@ class ReservationService
         reservation.end_at != attributes[:end_at]
     end
 
-    def raise_for_evaluation!(evaluation)
+    def raise_for_evaluation!(evaluation, member:, attributes:, operation:, reservation: nil)
+      reasons = (evaluation[:errors] + evaluation[:conflicts]).uniq
+      if reasons.present?
+        Rails.logger.warn(
+          "[ReservationRejected] operation=#{operation} member_id=#{member.id} " \
+          "reservation_id=#{reservation&.id || 'new'} shop_id=#{attributes[:shop_id]} " \
+          "reason=#{reasons.join(' | ')}"
+        )
+      end
       raise ::Error::UnprocessableEntity.new(evaluation[:errors].join(". ")) if evaluation[:errors].present?
       raise ::Error::Conflict.new(evaluation[:conflicts].join(". ")) if evaluation[:conflicts].present?
     end
@@ -275,7 +396,12 @@ class ReservationService
 
       yield
     rescue Redis::BaseError => error
-      raise ::Error::Conflict.new("Reservation processing is temporarily unavailable: #{error.message}")
+      Rails.logger.error(
+        "[ReservationLockError] shop_id=#{shop_id} error=#{error.class}: #{error.message}"
+      )
+      raise ::Error::Conflict.new(
+        "Reservation processing is temporarily unavailable. Please retry in a moment"
+      )
     ensure
       if key && token
         begin

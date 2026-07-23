@@ -3,7 +3,7 @@ class Reservation
   include Mongoid::Timestamps
   include ActiveModel::Serializers::JSON
 
-  STATUSES = %w[pending approved denied canceled].freeze
+  STATUSES = %w[pending approved denied cancelled].freeze
   SCOPES = %w[shop tools].freeze
   ACTIVE_STATUSES = %w[pending approved].freeze
   SOURCES = %w[portal slack].freeze
@@ -31,6 +31,8 @@ class Reservation
   index({ member_id: 1, status: 1, start_at: 1, end_at: 1 })
   index({ tool_ids: 1, status: 1, start_at: 1, end_at: 1 })
 
+  after_initialize :normalize_legacy_cancelled_status
+
   validates :title, presence: true
   validates :member, :shop, :start_at, :end_at, presence: true
   validates :reservation_scope, inclusion: { in: SCOPES }
@@ -49,15 +51,21 @@ class Reservation
     ACTIVE_STATUSES.include?(status)
   end
 
-  def canceled?
-    status == "canceled"
+  def cancelled?
+    status == "cancelled"
   end
+
+  alias_method :canceled?, :cancelled?
 
   def denied?
     status == "denied"
   end
 
   private
+
+  def normalize_legacy_cancelled_status
+    self.status = "cancelled" if status == "canceled"
+  end
 
   def valid_resource_selection
     ids = Array(tool_ids).map(&:to_s).uniq

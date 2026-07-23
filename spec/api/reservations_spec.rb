@@ -49,7 +49,33 @@ RSpec.describe "Reservations API", type: :request do
     post "/api/reservations", params: reservation_params
 
     expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)["message"]).to include("Missing required checkout", tool.name)
     expect(Reservation.count).to eq(0)
+  end
+
+  it "lets an inactive member list and cancel an existing reservation but not create one" do
+    reservation = create(
+      :reservation,
+      member: member,
+      shop: shop,
+      reservation_scope: "tools",
+      tool_ids: [tool.id.to_s],
+      start_at: start_at,
+      end_at: start_at + 1.hour
+    )
+    member.update!(status: "inactive")
+
+    get "/api/reservations"
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).map { |item| item["id"] }).to include(reservation.id.to_s)
+
+    post "/api/reservations", params: reservation_params
+    expect(response).to have_http_status(:forbidden)
+    expect(JSON.parse(response.body)["message"]).to include("inactive or expired")
+
+    delete "/api/reservations/#{reservation.id}"
+    expect(response).to have_http_status(:ok)
+    expect(reservation.reload.status).to eq("cancelled")
   end
 
   it "allows only an assigned RM to approve a pending reservation" do

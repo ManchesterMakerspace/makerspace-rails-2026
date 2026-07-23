@@ -21,7 +21,7 @@ class Group
   validates :groupRep, presence: true
   validate :primary_on_household_plan, on: :create
 
-  after_update :update_active_members
+  after_update :update_active_members, :handle_reservation_subscription_change
   after_create :update_active_members
 
   def group_display_name
@@ -110,6 +110,28 @@ class Group
 
   def remove_subscription
     update_attributes!({ subscription_id: nil, subscription: false })
+  end
+
+  def handle_reservation_subscription_change
+    subscription_change = previous_changes["subscription"]
+    subscription_id_change = previous_changes["subscription_id"]
+    ended = (subscription_change&.first == true && subscription != true) ||
+      (subscription_id_change&.first.present? && subscription_id.blank?)
+    return unless ended
+
+    ReservationLifecycleService.cancel_beyond_membership!(
+      self,
+      reason: "Household recurring membership was cancelled"
+    )
+  rescue => error
+    Rails.logger.error(
+      "[ReservationCleanup] group_id=#{id} type=subscription_ended " \
+      "error=#{error.class}: #{error.message}"
+    )
+    Honeybadger.notify(error) if defined?(Honeybadger)
+    ([member] + active_members.to_a).compact.uniq { |item| item.id.to_s }.each do |item|
+      ReservationMembershipCleanupJob.perform_later(item.id.to_s, "subscription_ended")
+    end
   end
 
   private

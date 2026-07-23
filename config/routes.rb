@@ -104,7 +104,11 @@ Rails.application.routes.draw do
 
       namespace :billing do
         resources :payment_methods, only: [:new, :create, :show, :index, :destroy]
-        resources :subscriptions, only: [:show, :update, :destroy]
+        resources :subscriptions, only: [:show, :update, :destroy] do
+          member do
+            get :cancellation_impact
+          end
+        end
         resources :transactions, only: [:create, :index, :destroy]
         resources :receipts, only: [:show], defaults: { format: :html }
       end
@@ -218,7 +222,11 @@ Rails.application.routes.draw do
         end
 
         namespace :billing do
-          resources :subscriptions, only: [:index, :destroy]
+          resources :subscriptions, only: [:index, :destroy] do
+            member do
+              get :cancellation_impact
+            end
+          end
           resources :transactions, only: [:show, :index, :destroy]
           resources :receipts, only: [:show], defaults: { format: :html }
         end

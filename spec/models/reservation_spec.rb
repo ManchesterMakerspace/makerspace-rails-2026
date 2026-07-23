@@ -36,6 +36,46 @@ RSpec.describe ReservationService do
     expect(reservation.tool_ids).to eq([tool.id.to_s])
   end
 
+  it "marks cancellations as cancelled and no longer counts them against capacity" do
+    create(:tool_checkout, member: member, tool: tool)
+    existing = described_class.create!(member: member, attributes: attributes)
+
+    described_class.cancel!(reservation: existing, actor: member)
+
+    expect(existing.reload.status).to eq("cancelled")
+    replacement = described_class.create!(
+      member: create(:member, :current).tap { |other| create(:tool_checkout, member: other, tool: tool) },
+      attributes: attributes
+    )
+    expect(replacement.status).to eq("approved")
+  end
+
+  it "rejects a reservation ending after prepaid membership expiration" do
+    member.update!(expirationTime: (start_at + 30.minutes).to_i * 1000, subscription: false, subscription_id: nil)
+    create(:tool_checkout, member: member, tool: tool)
+
+    expect {
+      described_class.create!(member: member, attributes: attributes)
+    }.to raise_error(Error::UnprocessableEntity, /ends after your membership expires/)
+  end
+
+  it "caps the preview duration at the next capacity conflict" do
+    create(:tool_checkout, member: member, tool: tool)
+    create(
+      :reservation,
+      member: create(:member, :current),
+      shop: shop,
+      reservation_scope: "tools",
+      tool_ids: [tool.id.to_s],
+      start_at: start_at + 2.hours,
+      end_at: start_at + 3.hours
+    )
+
+    preview = described_class.preview(member: member, attributes: attributes)
+
+    expect(preview[:maximumDurationHours]).to eq(2.0)
+  end
+
   it "makes a member's second overlapping reservation pending" do
     create(:tool_checkout, member: member, tool: tool)
     described_class.create!(member: member, attributes: attributes)
@@ -92,5 +132,52 @@ RSpec.describe ReservationService do
 
     expect(tool).not_to be_valid
     expect(tool.errors[:reservation_prerequisite_tool_ids]).to be_present
+  end
+
+  it "cancels current and future reservations when membership is revoked" do
+    current_reservation = create(
+      :reservation,
+      member: member,
+      shop: shop,
+      start_at: 1.hour.ago,
+      end_at: 1.hour.from_now
+    )
+    future_reservation = create(:reservation, member: member, shop: shop)
+    past_reservation = create(
+      :reservation,
+      member: member,
+      shop: shop,
+      start_at: 2.hours.ago,
+      end_at: 1.hour.ago
+    )
+
+    member.update!(status: "revoked")
+
+    expect(current_reservation.reload.status).to eq("cancelled")
+    expect(future_reservation.reload.status).to eq("cancelled")
+    expect(past_reservation.reload.status).to eq("approved")
+  end
+
+  it "cancels reservations beyond the paid-through date when recurring membership ends" do
+    member.update!(subscription: true, subscription_id: "subscription-1")
+    within_membership = create(
+      :reservation,
+      member: member,
+      shop: shop,
+      start_at: 1.day.from_now,
+      end_at: 2.days.from_now
+    )
+    beyond_membership = create(
+      :reservation,
+      member: member,
+      shop: shop,
+      start_at: 19.days.from_now,
+      end_at: 21.days.from_now
+    )
+
+    member.update!(subscription: false, subscription_id: nil)
+
+    expect(within_membership.reload.status).to eq("approved")
+    expect(beyond_membership.reload.status).to eq("cancelled")
   end
 end

@@ -5,7 +5,7 @@ module Service
         calendar_id = Service::GoogleWorkspace.reservations_calendar_id
         raise "GOOGLE_RESERVATIONS_CALENDAR_ID is not configured" if calendar_id.blank?
 
-        if reservation.denied? || reservation.canceled?
+        if reservation.denied? || reservation.cancelled?
           delete_event(calendar_id, reservation)
           reservation.set(
             calendar_sync_status: "deleted",
