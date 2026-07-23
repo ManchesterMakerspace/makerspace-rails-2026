@@ -144,11 +144,15 @@ Rails.application.routes.draw do
 
         # Tool checkout management
         resources :shops, only: [:index, :create, :update, :destroy]
+        get 'google_calendar/colors', to: 'google_calendar#colors'
         resources :tools, only: [:index, :create, :update, :destroy]
         resources :tool_checkouts, only: [:index, :create, :destroy]
         resources :tool_checkout_requests, only: [:index]
         resources :checkout_approvers, only: [:index, :create, :update, :destroy]
-        resources :reservations, only: [:index, :update, :destroy] do
+        resources :reservations, only: [:index, :create, :update, :destroy] do
+          collection do
+            post :preview, action: :preview_create
+          end
           member do
             post :preview
             post :approve

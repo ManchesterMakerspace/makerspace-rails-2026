@@ -71,8 +71,9 @@ class Admin::ToolsController < ApplicationController
     end
     before = @tool.attributes.dup
     google_resource_id = @tool.google_resource_id
+    label_source_id = @tool.id.to_s
     @tool.destroy
-    GoogleResourceDeleteJob.perform_later(google_resource_id) if google_resource_id.present?
+    GoogleResourceDeleteJob.perform_later(google_resource_id, label_source_id)
     CheckoutApprover.where(:tool_ids.in => [before["_id"].to_s]).each do |approver|
       approver.pull(tool_ids: before["_id"].to_s)
       approver.destroy if approver.shop_ids.blank? && approver.tool_ids.blank?

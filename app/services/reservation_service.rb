@@ -175,6 +175,7 @@ class ReservationService
       conflicts = []
       missing = []
       approval_reasons = []
+      board_override = board_reservation_override?(member)
 
       shop = Shop.where(id: attributes[:shop_id]).first
       unless shop
@@ -191,7 +192,7 @@ class ReservationService
       resources = attributes[:reservation_scope] == "shop" ? [shop] : tools
 
       errors << "Title is required" if attributes[:title].blank?
-      unless member.active_unexpired?
+      unless board_override || member.active_unexpired?
         errors << "Your membership is inactive or expired. An active membership is required to make a reservation"
       end
       errors << "Start and end times are required" if attributes[:start_at].blank? || attributes[:end_at].blank?
@@ -204,7 +205,7 @@ class ReservationService
       errors << "The selected shop is not reservable" if attributes[:reservation_scope] == "shop" && (!shop.reservable || shop.disabled?)
       errors << "One or more selected tools are not reservable" if tools.any? { |tool| !tool.reservable || tool.disabled? }
 
-      if attributes[:end_at].present? && !member.active_membership_subscription?
+      if attributes[:end_at].present? && !board_override && !member.active_membership_subscription?
         membership_expiration = member.membership_expires_at
         if membership_expiration.present? && attributes[:end_at] > membership_expiration
           expiration_text = membership_expiration.in_time_zone(ZONE).strftime("%B %-d, %Y at %H:%M")
@@ -217,10 +218,12 @@ class ReservationService
         start_date = attributes[:start_at].in_time_zone(ZONE).to_date
         today = Time.current.in_time_zone(ZONE).to_date
         strict_horizon = resources.map(&:reservation_horizon_days).min
-        errors << "Reservation is outside the allowed booking window" if start_date > today + strict_horizon
+        unless board_override
+          errors << "Reservation is outside the allowed booking window" if start_date > today + strict_horizon
+        end
 
         duration_hours = (attributes[:end_at] - attributes[:start_at]) / 1.hour
-        strict_duration = resources.map(&:max_reservation_duration_hours).min.to_f
+        strict_duration = board_override ? 72.0 : resources.map(&:max_reservation_duration_hours).min.to_f
         errors << "Reservation exceeds the maximum duration" if duration_hours > strict_duration
       end
 
@@ -229,31 +232,37 @@ class ReservationService
       else
         tools.flat_map(&:effective_reservation_prerequisite_ids).uniq
       end
-      checked_out_ids = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
-      missing_ids = prerequisite_ids - checked_out_ids
-      missing = Tool.where(:id.in => missing_ids).map { |tool| { id: tool.id.to_s, name: tool.name } }
-      if missing_ids.present?
-        missing_names = missing.map { |tool| tool[:name] }.presence || missing_ids
-        errors << "Missing required checkout(s): #{missing_names.join(', ')}"
+      unless board_override
+        checked_out_ids = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
+        missing_ids = prerequisite_ids - checked_out_ids
+        missing = Tool.where(:id.in => missing_ids).map { |tool| { id: tool.id.to_s, name: tool.name } }
+        if missing_ids.present?
+          missing_names = missing.map { |tool| tool[:name] }.presence || missing_ids
+          errors << "Missing required checkout(s): #{missing_names.join(', ')}"
+        end
       end
 
       if attributes[:start_at].present? && attributes[:end_at].present?
         overlapping = overlapping_reservations(attributes[:start_at], attributes[:end_at], reservation)
-        shop_overlaps = overlapping.where(shop_id: shop.id)
-        conflicts.concat(capacity_conflicts(
-          shop: shop,
-          tools: tools,
-          reservation_scope: attributes[:reservation_scope],
-          overlaps: shop_overlaps.to_a,
-          start_at: attributes[:start_at],
-          end_at: attributes[:end_at]
-        ))
+        unless board_override
+          shop_overlaps = overlapping.where(shop_id: shop.id)
+          conflicts.concat(capacity_conflicts(
+            shop: shop,
+            tools: tools,
+            reservation_scope: attributes[:reservation_scope],
+            overlaps: shop_overlaps.to_a,
+            start_at: attributes[:start_at],
+            end_at: attributes[:end_at]
+          ))
 
-        member_overlap = overlapping.where(member_id: member.id).exists?
-        approval_reasons << "overlapping_member_reservation" if member_overlap
+          member_overlap = overlapping.where(member_id: member.id).exists?
+          approval_reasons << "overlapping_member_reservation" if member_overlap
+        end
       end
 
-      approval_reasons << "resource_requires_approval" if resources.any?(&:reservation_requires_approval)
+      if !board_override && resources.any?(&:reservation_requires_approval)
+        approval_reasons << "resource_requires_approval"
+      end
       maximum_duration = maximum_duration_hours(
         member: member,
         shop: shop,
@@ -294,6 +303,8 @@ class ReservationService
     def maximum_duration_hours(member:, shop:, tools:, reservation_scope:, start_at:, resources:, reservation:)
       return 0 unless start_at.present? && resources.present?
 
+      return 72.0 if board_reservation_override?(member)
+
       configured_max = resources.map(&:max_reservation_duration_hours).min.to_f
       if !member.active_membership_subscription? && member.membership_expires_at.present?
         membership_max = (member.membership_expires_at - start_at) / 1.hour
@@ -325,6 +336,10 @@ class ReservationService
         allowed = step * 0.5
       end
       allowed
+    end
+
+    def board_reservation_override?(member)
+      member.role == "board_member"
     end
 
     def capacity_conflicts(shop:, tools:, reservation_scope:, overlaps:, start_at:, end_at:)

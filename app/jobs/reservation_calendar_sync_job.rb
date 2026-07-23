@@ -8,9 +8,15 @@ class ReservationCalendarSyncJob < ApplicationJob
   rescue Mongoid::Errors::DocumentNotFound
     nil
   rescue => error
+    Service::GoogleApiErrorReporter.report_if_permission_denied(
+      error,
+      operation: "reservation_calendar_sync_job",
+      resource_type: "Reservation",
+      resource_id: reservation_id
+    )
     reservation&.set(
       calendar_sync_status: "failed",
-      calendar_sync_error: error.message.to_s.first(500)
+      calendar_sync_error: Service::GoogleApiErrorReporter.full_error_message(error).first(2_000)
     )
     Honeybadger.notify(error) if defined?(Honeybadger)
     raise

@@ -39,7 +39,9 @@ Then click Authorize APIs.
 
 Sign in with a Google Workspace administrator or delegated administrator who:
 * Can manage buildings and calendar resources.
-*Has edit access to the dedicated reservations calendar.
+* Is the data owner of the dedicated reservations calendar. Calendar event labels
+  can only be managed by the calendar's data owner; an ACL `owner` role alone is
+  insufficient.
 * Has access to the Drive folders used by the portal.
 
 Approve all requested permissions.
@@ -65,4 +67,7 @@ Restart Rails and the background-job workers, then run:
 ```
 bundle exec rake google_resources:reconcile
 ```
-That task queues synchronization for existing shops and tools. Confirm the worker logs show successful Directory resource creation or matching, followed by successful Calendar synchronization when making a test reservation.
+That task queues Directory resource and Calendar label synchronization for existing
+shops and tools. Confirm the worker logs show successful resource creation or
+matching and label creation, followed by successful Calendar synchronization when
+making a test reservation.

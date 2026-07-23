@@ -31,11 +31,28 @@ module Service
         service = Service::GoogleWorkspace.calendar
         begin
           service.get_event(calendar_id, event.id)
-          service.update_event(calendar_id, event.id, event, send_updates: "all")
+          Service::GoogleWorkspace.update_labeled_event(
+            calendar_id,
+            event.id,
+            event,
+            send_updates: "all"
+          )
         rescue Google::Apis::ClientError => error
           raise unless error.status_code == 404
-          service.insert_event(calendar_id, event, send_updates: "all")
+          Service::GoogleWorkspace.insert_labeled_event(
+            calendar_id,
+            event,
+            send_updates: "all"
+          )
         end
+      rescue => error
+        Service::GoogleApiErrorReporter.report_if_permission_denied(
+          error,
+          operation: "reservation_calendar_upsert",
+          resource_type: "Reservation",
+          resource_id: event.id
+        )
+        raise
       end
 
       def delete_event(calendar_id, reservation)
@@ -43,14 +60,32 @@ module Service
         Service::GoogleWorkspace.calendar.delete_event(calendar_id, event_id, send_updates: "all")
       rescue Google::Apis::ClientError => error
         raise unless error.status_code == 404
+      rescue => error
+        Service::GoogleApiErrorReporter.report_if_permission_denied(
+          error,
+          operation: "reservation_calendar_delete",
+          resource_type: "Reservation",
+          resource_id: reservation.id
+        )
+        raise
       end
 
       def build_event(reservation)
-        emails = if reservation.reservation_scope == "shop"
+        resource_emails = if reservation.reservation_scope == "shop"
           [reservation.shop.resource_email]
         else
           reservation.tools.map(&:resource_email)
         end.compact.uniq
+        attendees = resource_emails.map do |email|
+          Google::Apis::CalendarV3::EventAttendee.new(email: email, resource: true)
+        end
+        if reservation.member.deliverable_email?
+          attendees << Google::Apis::CalendarV3::EventAttendee.new(
+            email: reservation.member.email,
+            display_name: reservation.member.fullname
+          )
+        end
+        label_id = Service::GoogleWorkspace.label_id_for(reservation.shop.id)
 
         Google::Apis::CalendarV3::Event.new(
           id: reservation.id.to_s,
@@ -69,15 +104,22 @@ module Service
             date_time: reservation.end_at.to_datetime,
             time_zone: ReservationService::ZONE.tzinfo.name
           ),
-          attendees: emails.map do |email|
-            Google::Apis::CalendarV3::EventAttendee.new(email: email, resource: true)
-          end
+          attendees: attendees,
+          color_id: reservation.shop.color_id.presence,
+          event_label_id: label_id,
+          extended_properties: Google::Apis::CalendarV3::Event::ExtendedProperties.new(
+            private: {
+              "makerspace_reservation_id" => reservation.id.to_s,
+              "makerspace_shop_id" => reservation.shop.id.to_s,
+              "makerspace_label_id" => label_id
+            }
+          )
         )
       end
 
       def resource_names(reservation)
         return reservation.shop.name if reservation.reservation_scope == "shop"
-        reservation.tools.map(&:name).join(", ")
+        "#{reservation.tools.map(&:name).join(', ')} in #{reservation.shop.name}"
       end
     end
   end

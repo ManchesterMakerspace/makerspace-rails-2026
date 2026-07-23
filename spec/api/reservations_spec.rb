@@ -103,4 +103,103 @@ RSpec.describe "Reservations API", type: :request do
     expect(response).to have_http_status(:ok)
     expect(reservation.reload.status).to eq("approved")
   end
+
+  it "allows an admin to create an audited reservation for an eligible active member" do
+    admin = create(:member, :admin, :current)
+    target = create(:member, :current)
+    create(:tool_checkout, member: target, tool: tool)
+    sign_out member
+    sign_in admin
+
+    post "/api/admin/reservations", params: reservation_params.merge(member_id: target.id.to_s)
+
+    expect(response).to have_http_status(:created)
+    reservation = Reservation.order_by(created_at: :desc).first
+    expect(reservation.member_id).to eq(target.id)
+    expect(
+      AuditLog.where(
+        event_type: "reservation_created_on_behalf",
+        actor_id: admin.id,
+        subject_id: target.id,
+        resource_id: reservation.id
+      ).exists?
+    ).to be(true)
+  end
+
+  it "enforces the target member's prerequisites for delegated reservations" do
+    admin = create(:member, :admin, :current)
+    target = create(:member, :current)
+    sign_out member
+    sign_in admin
+
+    post "/api/admin/reservations", params: reservation_params.merge(member_id: target.id.to_s)
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)["message"]).to include("Missing required checkout")
+  end
+
+  it "prevents an RM from creating for a member outside the RM's assigned shops" do
+    other_shop = create(:shop)
+    rm = create(
+      :member,
+      :resource_manager,
+      :current,
+      resource_manager_shop_ids: [other_shop.id.to_s]
+    )
+    target = create(:member, :current)
+    create(:tool_checkout, member: target, tool: tool)
+    sign_out member
+    sign_in rm
+
+    post "/api/admin/reservations", params: reservation_params.merge(member_id: target.id.to_s)
+
+    expect(response).to have_http_status(:forbidden)
+    expect(JSON.parse(response.body)["message"]).to include("selected shop")
+  end
+
+  it "allows a board member to reserve for 72 hours without checkouts or conflict limits" do
+    board = create(:member, :board_member, :current)
+    create(
+      :reservation,
+      member: member,
+      shop: shop,
+      reservation_scope: "tools",
+      tool_ids: [tool.id.to_s],
+      start_at: start_at,
+      end_at: start_at + 2.hours
+    )
+    sign_out member
+    sign_in board
+
+    post "/api/reservations", params: reservation_params.merge(
+      start_at: start_at.iso8601,
+      end_at: (start_at + 72.hours).iso8601
+    )
+
+    expect(response).to have_http_status(:created)
+    expect(JSON.parse(response.body)).to include(
+      "status" => "approved",
+      "memberId" => board.id.to_s
+    )
+    expect(
+      AuditLog.where(
+        event_type: "board_reservation_created",
+        actor_id: board.id
+      ).exists?
+    ).to be(true)
+  end
+
+  it "rejects a board reservation longer than 72 hours" do
+    board = create(:member, :board_member, :current)
+    sign_out member
+    sign_in board
+
+    post "/api/reservations", params: reservation_params.merge(
+      start_at: start_at.iso8601,
+      end_at: (start_at + 72.5.hours).iso8601
+    )
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)["message"]).to include("maximum duration")
+  end
 end

@@ -35,8 +35,15 @@ class Admin::ShopsController < ApplicationController
   def update
     before = @shop.attributes.dup
     @shop.update_attributes!(shop_params)
-    if @shop.resource_email.blank? || @shop.previous_changes.key?("name") || @shop.previous_changes.key?("reservable")
+    shop_sync_needed = @shop.resource_email.blank? ||
+      %w[name reservable color_id].any? { |field| @shop.previous_changes.key?(field) }
+    if shop_sync_needed
       GoogleResourceSyncJob.perform_later("Shop", @shop.id.to_s)
+    end
+    if @shop.previous_changes.key?("color_id")
+      @shop.tools.pluck(:id).each do |tool_id|
+        GoogleResourceSyncJob.perform_later("Tool", tool_id.to_s)
+      end
     end
 
     ::Service::AuditLogger.log(
@@ -59,9 +66,12 @@ class Admin::ShopsController < ApplicationController
     end
     before = @shop.attributes.dup
     deleted_tool_ids = @shop.tools.pluck(:id).map(&:to_s)
-    google_resource_ids = [@shop.google_resource_id] + @shop.tools.pluck(:google_resource_id)
+    google_resources = [[@shop.google_resource_id, @shop.id.to_s]] +
+      @shop.tools.map { |tool| [tool.google_resource_id, tool.id.to_s] }
     @shop.destroy
-    google_resource_ids.compact.each { |resource_id| GoogleResourceDeleteJob.perform_later(resource_id) }
+    google_resources.each do |resource_id, label_source_id|
+      GoogleResourceDeleteJob.perform_later(resource_id, label_source_id)
+    end
     Member.where(role: "resource_manager", :resource_manager_shop_ids.in => [before["_id"].to_s]).each do |member|
       member.pull(resource_manager_shop_ids: before["_id"].to_s)
     end
@@ -94,6 +104,7 @@ class Admin::ShopsController < ApplicationController
       :name, :slack_channel, :disabled, :reservable,
       :max_concurrent_reservations, :reservation_horizon_days,
       :max_reservation_duration_hours, :reservation_requires_approval,
+      :color_id,
       reservation_prerequisite_tool_ids: []
     )
   end

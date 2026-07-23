@@ -392,7 +392,11 @@ RSpec.configure do |config|
             id: { type: :string },
             name: { type: :string },
             slackChannel: { type: :string, 'x-nullable': true },
-            disabled: { type: :boolean }
+            disabled: { type: :boolean },
+            colorId: { type: :string, pattern: '^\d+$', 'x-nullable': true },
+            reservationPrerequisiteNames: { type: :array, items: { type: :string } },
+            googleResourceId: { type: :string, 'x-nullable': true },
+            resourceEmail: { type: :string, 'x-nullable': true }
           },
           required: [:id, :name, :reservable]
         }

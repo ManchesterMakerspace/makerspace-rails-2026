@@ -134,6 +134,24 @@ RSpec.describe ReservationService do
     expect(tool.errors[:reservation_prerequisite_tool_ids]).to be_present
   end
 
+  it "enforces selected same-shop prerequisites for a shop reservation" do
+    shop.update!(
+      reservable: true,
+      reservation_prerequisite_tool_ids: [tool.id.to_s]
+    )
+
+    preview = described_class.preview(
+      member: member,
+      attributes: attributes.merge(
+        reservation_scope: "shop",
+        tool_ids: []
+      )
+    )
+
+    expect(preview[:eligible]).to be(false)
+    expect(preview[:missingPrerequisites]).to include(hash_including(name: tool.name))
+  end
+
   it "cancels current and future reservations when membership is revoked" do
     current_reservation = create(
       :reservation,

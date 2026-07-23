@@ -23,6 +23,11 @@ class ReservationCatalogController < ApplicationController
   private
 
   def require_active_member
-    raise ::Error::Forbidden.new("Active membership is required") unless current_member.active_unexpired?
+    return if current_member.role.in?(%w[admin board_member])
+    return if current_member.role == "resource_manager" &&
+      current_member.resource_manager_shop_ids.present?
+    return if current_member.active_unexpired?
+
+    raise ::Error::Forbidden.new("Active membership is required")
   end
 end

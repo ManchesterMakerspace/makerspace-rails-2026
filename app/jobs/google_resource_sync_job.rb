@@ -6,8 +6,18 @@ class GoogleResourceSyncJob < ApplicationJob
     record = klass.find(resource_id)
     category = klass == Shop ? "CONFERENCE_ROOM" : "OTHER"
     Service::GoogleWorkspace.ensure_resource!(record, category)
+    Service::GoogleWorkspace.ensure_label!(record)
   rescue => error
+    Service::GoogleApiErrorReporter.report_if_permission_denied(
+      error,
+      operation: "google_resource_sync_job",
+      resource_type: resource_type,
+      resource_id: resource_id
+    )
     Honeybadger.notify(error) if defined?(Honeybadger)
-    Rails.logger.warn("Google resource sync failed for #{resource_type}/#{resource_id}: #{error.message}")
+    Rails.logger.warn(
+      "Google resource sync failed for #{resource_type}/#{resource_id}: " \
+      "#{Service::GoogleApiErrorReporter.full_error_message(error)}"
+    )
   end
 end

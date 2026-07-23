@@ -92,6 +92,47 @@ RSpec.describe 'Tools API', type: :request do
     end
   end
 
+  describe 'PUT /api/admin/shops/:id' do
+    before { sign_in create(:member, :admin, :current) }
+
+    it 'stores the shop color and selected same-shop reservation prerequisites' do
+      put "/api/admin/shops/#{shop.id}", params: {
+        reservable: true,
+        color_id: "7",
+        reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to include(
+        "colorId" => "7",
+        "reservationPrerequisiteToolIds" => [visible_tool.id.to_s],
+        "reservationPrerequisiteNames" => [visible_tool.name]
+      )
+    end
+  end
+
+  describe 'GET /api/admin/google_calendar/colors' do
+    before { sign_in create(:member, :admin, :current) }
+
+    it 'returns at most the first 24 Google Calendar color definitions' do
+      colors = 30.times.map do |index|
+        {
+          id: (index + 1).to_s,
+          backgroundColor: "#000000",
+          foregroundColor: "#ffffff"
+        }
+      end
+      allow(Service::GoogleWorkspace).to receive(:calendar_colors).and_return(colors)
+
+      get "/api/admin/google_calendar/colors"
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)["colors"]).to eq(
+        colors.first(24).map(&:stringify_keys)
+      )
+    end
+  end
+
   describe 'POST /api/admin/tools' do
     before { sign_in create(:member, :admin, :current) }
 

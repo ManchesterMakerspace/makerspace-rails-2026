@@ -247,6 +247,28 @@ class Member
     false
   end
 
+  def deliverable_email?
+    return false if email.blank?
+
+    latest_event = MailtrapEvent.where(email: email.to_s.downcase)
+      .order_by(occurred_at: :desc, created_at: :desc)
+      .first
+    return true if latest_event.nil?
+
+    disposition = [latest_event.status, latest_event.event, latest_event.response]
+      .compact.join(" ").downcase
+    disposition.exclude?("bounce") &&
+      disposition.exclude?("reject") &&
+      disposition.exclude?("complaint") &&
+      disposition.exclude?("spam") &&
+      disposition.exclude?("failed")
+  rescue => error
+    Rails.logger.warn(
+      "[EmailDeliverabilityLookup] member_id=#{id} error=#{error.class}: #{error.message}"
+    )
+    false
+  end
+
   def valid_for_checkout_request?
     active_unexpired? && member_contract_signed_date.present?
   end

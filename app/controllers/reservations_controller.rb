@@ -49,6 +49,17 @@ class ReservationsController < ApplicationController
       attributes: reservation_params,
       source: "portal"
     )
+    if is_board_member?
+      ::Service::AuditLogger.log(
+        log_type: "portal",
+        event_type: "board_reservation_created",
+        resource_type: "Reservation",
+        resource_id: reservation.id,
+        actor: current_member,
+        subject: current_member,
+        after_snapshot: reservation.attributes
+      )
+    end
     render json: reservation, serializer: ReservationSerializer, adapter: :attributes,
       scope: current_member, status: :created
   end
@@ -88,11 +99,14 @@ class ReservationsController < ApplicationController
   end
 
   def require_active_member
-    unless current_member.active_unexpired?
-      raise ::Error::Forbidden.new(
-        "Your membership is inactive or expired. You may view and cancel existing reservations, but cannot create or edit reservations"
-      )
-    end
+    return if current_member.role.in?(%w[admin board_member])
+    return if current_member.role == "resource_manager" &&
+      current_member.resource_manager_shop_ids.present?
+    return if current_member.active_unexpired?
+
+    raise ::Error::Forbidden.new(
+      "Your membership is inactive or expired. You may view and cancel existing reservations, but cannot create or edit reservations"
+    )
   end
 
   def parse_time(value)
