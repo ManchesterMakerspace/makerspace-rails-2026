@@ -3,7 +3,11 @@ class Admin::GoogleCalendarController < ApplicationController
   before_action :authorize_calendar_configuration
 
   def colors
-    render json: { colors: Service::GoogleWorkspace.calendar_colors.first(24) }
+    render json: {
+      colors: Service::GoogleWorkspace.calendar_colors(
+        include_color_id: params[:color_id]
+      )
+    }
   end
 
   private

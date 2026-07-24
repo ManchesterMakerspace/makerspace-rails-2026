@@ -5,6 +5,7 @@ module Service
     DIRECTORY_SCOPE = "https://www.googleapis.com/auth/admin.directory.resource.calendar".freeze
     CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar".freeze
     DEFAULT_LABEL_COLOR = "#039be5".freeze
+    CALENDAR_COLOR_CACHE_KEY = "google_calendar_colors:v3".freeze
     GOOGLE_CALENDAR_COLOR_NAMES = [
       "Cocoa", "Flamingo", "Tomato", "Tangerine", "Pumpkin", "Mango",
       "Eucalyptus", "Basil", "Pistachio", "Avocado", "Citron", "Banana",
@@ -62,36 +63,26 @@ module Service
         ENV["GOOGLE_RESERVATIONS_CALENDAR_ID"].presence
       end
 
-      def calendar_colors
-        execute_google_call(operation: "calendar.colors.get") do
-          service = calendar
-          definitions = if service.respond_to?(:get_colors)
-            service.get_colors
-          else
-            service.get_color
-          end
-          colors = definitions.calendar.to_h.map do |id, definition|
-            {
-              id: id.to_s,
-              name: GOOGLE_CALENDAR_COLOR_NAMES[id.to_i - 1] || "Color #{id}",
-              backgroundColor: definition.background,
-              foregroundColor: definition.foreground
-            }
-          end.sort_by { |definition| definition[:id].to_i }
-          raise "Google Calendar returned no calendar colors" if colors.empty?
+      def calendar_colors(include_color_id: nil)
+        payload = read_color_cache || build_color_cache_payload
+        colors = payload[:colors].map(&:dup)
+        existing_id = include_color_id.to_s.presence
 
-          colors
+        if existing_id && colors.none? { |color| color[:id] == existing_id }
+          existing = payload[:all_colors].find { |color| color[:id] == existing_id } ||
+            FALLBACK_CALENDAR_COLORS.find { |color| color[:id] == existing_id } ||
+            {
+              id: existing_id,
+              name: "Existing color #{existing_id}",
+              backgroundColor: DEFAULT_LABEL_COLOR,
+              foregroundColor: "#ffffff"
+            }
+          colors << existing.dup
+          payload[:colors] = colors
+          write_color_cache(payload)
         end
-      rescue => error
-        Service::GoogleApiErrorReporter.report_if_permission_denied(
-          error,
-          operation: "calendar.colors.get",
-          resource_type: "GoogleCalendarColors"
-        )
-        Rails.logger.warn(
-          "[GoogleCalendarColors] Using fallback palette after #{error.class}: #{error.message}"
-        )
-        FALLBACK_CALENDAR_COLORS.map(&:dup)
+
+        colors
       end
 
       def ensure_resource!(record, category)
@@ -231,6 +222,121 @@ module Service
 
       private
 
+      def build_color_cache_payload
+        all_colors = fetch_google_calendar_colors
+        payload = {
+          colors: curated_calendar_colors(all_colors),
+          all_colors: all_colors
+        }
+        write_color_cache(payload)
+        payload
+      rescue => error
+        Service::GoogleApiErrorReporter.report_if_permission_denied(
+          error,
+          operation: "calendar.colors.get",
+          resource_type: "GoogleCalendarColors"
+        )
+        Rails.logger.warn(
+          "[GoogleCalendarColors] Using fallback palette after #{error.class}: #{error.message}"
+        )
+        payload = {
+          colors: FALLBACK_CALENDAR_COLORS.map(&:dup),
+          all_colors: FALLBACK_CALENDAR_COLORS.map(&:dup)
+        }
+        write_color_cache(payload)
+        payload
+      end
+
+      def fetch_google_calendar_colors
+        execute_google_call(operation: "calendar.colors.get") do
+          service = calendar
+          definitions = service.respond_to?(:get_colors) ?
+            service.get_colors : service.get_color
+          colors = definitions.calendar.to_h.map do |id, definition|
+            {
+              id: id.to_s,
+              name: GOOGLE_CALENDAR_COLOR_NAMES[id.to_i - 1] || "Color #{id}",
+              backgroundColor: definition.background,
+              foregroundColor: definition.foreground
+            }
+          end.sort_by { |definition| definition[:id].to_i }
+          raise "Google Calendar returned no calendar colors" if colors.empty?
+
+          colors
+        end
+      end
+
+      def curated_calendar_colors(all_colors)
+        used_ids = []
+        key_colors = FALLBACK_CALENDAR_COLORS.filter_map do |target|
+          available = all_colors.reject { |color| used_ids.include?(color[:id]) }
+          match = available.min_by do |color|
+            color_distance(color[:backgroundColor], target[:backgroundColor])
+          end
+          next if match.nil?
+
+          used_ids << match[:id]
+          match.merge(name: target[:name])
+        end
+        additional = all_colors.reject { |color| used_ids.include?(color[:id]) }.first(24)
+        key_colors + additional
+      end
+
+      def color_distance(first, second)
+        first_rgb = hex_to_rgb(first)
+        second_rgb = hex_to_rgb(second)
+        first_rgb.zip(second_rgb).sum { |left, right| (left - right)**2 }
+      end
+
+      def hex_to_rgb(value)
+        hex = value.to_s.delete_prefix("#")
+        raise ArgumentError, "Invalid Google color #{value.inspect}" unless hex.match?(/\A[0-9a-f]{6}\z/i)
+
+        [hex[0, 2], hex[2, 2], hex[4, 2]].map { |component| component.to_i(16) }
+      end
+
+      def read_color_cache
+        raw = REDIS.get(CALENDAR_COLOR_CACHE_KEY)
+        return nil if raw.blank?
+
+        parsed = JSON.parse(raw)
+        colors = Array(parsed["colors"]).map { |color| symbolize_color(color) }
+        all_colors = Array(parsed["allColors"] || parsed["all_colors"]).map { |color| symbolize_color(color) }
+        return nil if colors.empty?
+
+        { colors: colors, all_colors: all_colors.presence || colors.map(&:dup) }
+      rescue Redis::BaseError, JSON::ParserError, TypeError => error
+        Rails.logger.warn(
+          "[GoogleCalendarColors] Ignoring unavailable/invalid Redis cache: " \
+          "#{error.class}: #{error.message}"
+        )
+        nil
+      end
+
+      def write_color_cache(payload)
+        REDIS.set(
+          CALENDAR_COLOR_CACHE_KEY,
+          JSON.generate(
+            colors: payload[:colors],
+            allColors: payload[:all_colors]
+          )
+        )
+      rescue Redis::BaseError => error
+        Rails.logger.warn(
+          "[GoogleCalendarColors] Redis cache write failed: #{error.class}: #{error.message}"
+        )
+        nil
+      end
+
+      def symbolize_color(color)
+        {
+          id: color["id"].to_s,
+          name: color["name"].to_s,
+          backgroundColor: color["backgroundColor"].to_s,
+          foregroundColor: color["foregroundColor"].to_s
+        }
+      end
+
       def execute_labeled_event_command(
         service:, method:, path:, calendar_id:, event:, send_updates:, event_id: nil
       )
@@ -285,7 +391,9 @@ module Service
 
       def label_background_for(record)
         shop = record.is_a?(Shop) ? record : record.shop
-        selected = calendar_colors.find { |definition| definition[:id] == shop&.color_id.to_s }
+        selected = calendar_colors(include_color_id: shop&.color_id).find do |definition|
+          definition[:id] == shop&.color_id.to_s
+        end
         selected&.fetch(:backgroundColor, nil) || DEFAULT_LABEL_COLOR
       end
 

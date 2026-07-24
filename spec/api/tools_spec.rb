@@ -114,8 +114,8 @@ RSpec.describe 'Tools API', type: :request do
   describe 'GET /api/admin/google_calendar/colors' do
     before { sign_in create(:member, :admin, :current) }
 
-    it 'returns at most the first 24 Google Calendar color definitions' do
-      colors = 30.times.map do |index|
+    it 'returns the complete curated Google Calendar color list' do
+      colors = 35.times.map do |index|
         {
           id: (index + 1).to_s,
           name: "Color #{index + 1}",
@@ -128,9 +128,7 @@ RSpec.describe 'Tools API', type: :request do
       get "/api/admin/google_calendar/colors"
 
       expect(response).to have_http_status(:ok)
-      expect(JSON.parse(response.body)["colors"]).to eq(
-        colors.first(24).map(&:stringify_keys)
-      )
+      expect(JSON.parse(response.body)["colors"]).to eq(colors.map(&:stringify_keys))
     end
   end
 
