@@ -8,6 +8,7 @@ module Service
         if reservation.denied? || reservation.cancelled?
           delete_event(calendar_id, reservation)
           reservation.set(
+            calendar_html_link: nil,
             calendar_sync_status: "deleted",
             calendar_sync_error: nil,
             calendar_synced_at: Time.current
@@ -19,6 +20,7 @@ module Service
         result = upsert_event(calendar_id, event, reservation)
         reservation.set(
           calendar_event_id: result.id,
+          calendar_html_link: result.html_link,
           calendar_sync_status: "synced",
           calendar_sync_error: nil,
           calendar_synced_at: Time.current

@@ -1338,6 +1338,7 @@
           "approvalReasons": { "type": "array", "items": { "type": "string" } },
           "source": { "type": "string", "enum": ["portal", "slack"] },
           "calendarEventId": { "type": "string", "nullable": true },
+          "calendarHtmlLink": { "type": "string", "format": "uri", "nullable": true },
           "calendarSyncStatus": { "type": "string", "nullable": true },
           "calendarSyncError": { "type": "string", "nullable": true }
         },
@@ -1377,6 +1378,7 @@
               "properties": {
                 "id": { "type": "string" },
                 "title": { "type": "string" },
+                "calendarHtmlLink": { "type": "string", "format": "uri", "nullable": true },
                 "startAt": { "type": "string", "format": "date-time" },
                 "endAt": { "type": "string", "format": "date-time" }
               },

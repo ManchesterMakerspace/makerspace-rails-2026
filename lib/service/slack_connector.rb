@@ -93,6 +93,66 @@ module Service
       return if Rails.env.test?
       client.chat_delete(channel: safe_channel(channel), ts: ts)
     end
+
+    def self.find_channel_id(channel_name)
+      requested = channel_name.to_s.delete_prefix('#').strip
+      return if requested.blank?
+
+      if requested.match?(/\A[CG][A-Z0-9]+\z/i)
+        response = client.conversations_info(channel: requested)
+        channel = response.channel
+        return channel.id unless channel.respond_to?(:is_archived) && channel.is_archived
+        return
+      end
+
+      cursor = nil
+      loop do
+        response = client.conversations_list(
+          types: 'public_channel,private_channel',
+          exclude_archived: true,
+          limit: 200,
+          cursor: cursor
+        )
+        channel = Array(response.channels).find do |candidate|
+          candidate.name.to_s.casecmp?(requested)
+        end
+        return channel.id if channel
+
+        cursor = response.response_metadata&.next_cursor.to_s
+        break if cursor.blank?
+      end
+      nil
+    rescue Slack::Web::Api::Errors::ChannelNotFound
+      nil
+    end
+
+    def self.create_canvas(title)
+      client.canvases_create(title: title).canvas_id
+    end
+
+    def self.set_canvas_channel_access(canvas_id, channel_id)
+      client.canvases_access_set(
+        canvas_id: canvas_id,
+        access_level: 'read',
+        channel_ids: [channel_id]
+      )
+    end
+
+    def self.replace_canvas(canvas_id, markdown)
+      client.canvases_edit(
+        canvas_id: canvas_id,
+        changes: [
+          {
+            operation: 'replace',
+            document_content: {
+              type: 'markdown',
+              markdown: markdown
+            }
+          }
+        ]
+      )
+    end
+
     def self.invite_to_channel(channel, slack_id)
       return if Rails.env.test?
       client.conversations_invite(channel: safe_channel(channel), users: slack_id)

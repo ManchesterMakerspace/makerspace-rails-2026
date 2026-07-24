@@ -3,7 +3,7 @@ class ReservationSerializer < ActiveModel::Serializer
              :reservation_scope, :tool_ids, :tool_names, :start_at, :end_at,
              :status, :approval_reasons, :decision_note, :decided_by_id,
              :decided_by_name, :decided_at, :source, :calendar_event_id,
-             :calendar_sync_status, :calendar_synced_at,
+             :calendar_html_link, :calendar_sync_status, :calendar_synced_at,
              :created_at, :updated_at
 
   attribute :calendar_sync_error, if: :manager_view?

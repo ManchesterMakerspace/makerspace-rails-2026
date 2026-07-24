@@ -61,6 +61,23 @@ RSpec.describe Service::ReservationCalendar do
     )
   end
 
+  it "persists the Google event ID and HTML link returned by Calendar" do
+    result = double(
+      id: reservation.id.to_s,
+      html_link: "https://calendar.google.com/calendar/event?eid=example"
+    )
+    allow(Service::GoogleWorkspace).to receive(:reservations_calendar_id)
+      .and_return("reservations@example.com")
+    allow(described_class).to receive(:upsert_event).and_return(result)
+
+    described_class.sync!(reservation)
+
+    reservation.reload
+    expect(reservation.calendar_event_id).to eq(reservation.id.to_s)
+    expect(reservation.calendar_html_link).to eq(result.html_link)
+    expect(reservation.calendar_sync_status).to eq("synced")
+  end
+
   describe "invalid event label recovery" do
     let(:calendar_id) { "reservations@example.com" }
     let(:event) { described_class.send(:build_event, reservation) }

@@ -32,6 +32,7 @@ class Admin::Billing::SubscriptionsController < Admin::BillingController
         {
           id: reservation.id.to_s,
           title: reservation.title,
+          calendarHtmlLink: reservation.calendar_html_link,
           startAt: reservation.start_at.iso8601,
           endAt: reservation.end_at.iso8601
         }

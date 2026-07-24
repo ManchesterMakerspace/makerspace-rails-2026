@@ -14,6 +14,8 @@ class Shop
   field :google_resource_id, type: String
   field :resource_email, type: String
   field :color_id, type: String, default: "1"
+  field :canvas_today, type: String
+  field :canvas_tomorrow, type: String
 
   has_many :tools, dependent: :destroy
 

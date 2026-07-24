@@ -142,6 +142,7 @@ RSpec.describe Billing::SubscriptionsController, type: :controller do
         Reservation,
         id: BSON::ObjectId.new,
         title: "Woodshop project",
+        calendar_html_link: "https://calendar.google.com/calendar/event?eid=example",
         start_at: 1.day.from_now,
         end_at: 2.days.from_now
       )
@@ -155,6 +156,9 @@ RSpec.describe Billing::SubscriptionsController, type: :controller do
       expect(response).to have_http_status(:ok)
       expect(parsed_response["reservationCount"]).to eq(1)
       expect(parsed_response["reservations"].first["title"]).to eq("Woodshop project")
+      expect(parsed_response["reservations"].first["calendarHtmlLink"]).to eq(
+        impacted.calendar_html_link
+      )
     end
   end
 

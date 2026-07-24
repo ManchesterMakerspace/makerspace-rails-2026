@@ -31,7 +31,12 @@ RSpec.describe ReservationService do
 
   it "creates an approved reservation when eligibility and capacity are available" do
     create(:tool_checkout, member: member, tool: tool)
+    expected_date = start_at.in_time_zone(ReservationService::ZONE).to_date.iso8601
+    expect(ReservationSlackCanvasSyncJob).to receive(:perform_later)
+      .with(shop.id.to_s, [expected_date])
+
     reservation = described_class.create!(member: member, attributes: attributes)
+
     expect(reservation.status).to eq("approved")
     expect(reservation.tool_ids).to eq([tool.id.to_s])
   end
@@ -40,7 +45,11 @@ RSpec.describe ReservationService do
     create(:tool_checkout, member: member, tool: tool)
     existing = described_class.create!(member: member, attributes: attributes)
 
-    described_class.cancel!(reservation: existing, actor: member)
+    expected_date = start_at.in_time_zone(ReservationService::ZONE).to_date.iso8601
+    expect {
+      described_class.cancel!(reservation: existing, actor: member)
+    }.to have_enqueued_job(ReservationSlackCanvasSyncJob)
+      .with(shop.id.to_s, [expected_date])
 
     expect(existing.reload.status).to eq("cancelled")
     replacement = described_class.create!(
@@ -48,6 +57,32 @@ RSpec.describe ReservationService do
       attributes: attributes
     )
     expect(replacement.status).to eq("approved")
+  end
+
+  it "refreshes both the old and new day canvases when a reservation moves" do
+    travel_to(ReservationService::ZONE.local(2026, 7, 24, 8, 0)) do
+      create(:tool_checkout, member: member, tool: tool)
+      original_start = ReservationService::ZONE.local(2026, 7, 24, 9, 0)
+      reservation = described_class.create!(
+        member: member,
+        attributes: attributes.merge(
+          start_at: original_start,
+          end_at: original_start + 1.hour
+        )
+      )
+      moved_start = ReservationService::ZONE.local(2026, 7, 25, 9, 0)
+
+      expect(ReservationSlackCanvasSyncJob).to receive(:perform_later)
+        .with(shop.id.to_s, %w[2026-07-24 2026-07-25])
+
+      described_class.update!(
+        reservation: reservation,
+        attributes: {
+          start_at: moved_start,
+          end_at: moved_start + 1.hour
+        }
+      )
+    end
   end
 
   it "rejects a reservation ending after prepaid membership expiration" do

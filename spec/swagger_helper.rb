@@ -449,6 +449,7 @@ RSpec.configure do |config|
         approvalReasons: { type: :array, items: { type: :string } },
         source: { type: :string, enum: %w[portal slack] },
         calendarEventId: { type: :string, 'x-nullable': true },
+        calendarHtmlLink: { type: :string, format: :uri, 'x-nullable': true },
         calendarSyncStatus: { type: :string, 'x-nullable': true },
         calendarSyncError: { type: :string, 'x-nullable': true }
       },
@@ -488,6 +489,7 @@ RSpec.configure do |config|
             properties: {
               id: { type: :string },
               title: { type: :string },
+              calendarHtmlLink: { type: :string, format: :uri, 'x-nullable': true },
               startAt: { type: :string, format: 'date-time' },
               endAt: { type: :string, format: 'date-time' }
             },

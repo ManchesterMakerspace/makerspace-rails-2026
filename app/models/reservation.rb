@@ -19,6 +19,7 @@ class Reservation
   field :decided_at, type: Time
   field :source, type: String, default: "portal"
   field :calendar_event_id, type: String
+  field :calendar_html_link, type: String
   field :calendar_sync_status, type: String
   field :calendar_sync_error, type: String
   field :calendar_synced_at, type: Time

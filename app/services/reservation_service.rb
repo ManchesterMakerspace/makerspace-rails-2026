@@ -51,7 +51,7 @@ class ReservationService
             calendar_sync_status: "pending"
           )
         )
-        enqueue_calendar_sync(reservation)
+        enqueue_external_syncs(reservation)
         reservation
       end
     end
@@ -62,6 +62,7 @@ class ReservationService
       end
 
       normalized = normalize(attributes, reservation)
+      previous_canvas_targets = slack_canvas_targets(reservation)
       with_shop_locks([reservation.shop_id, normalized[:shop_id]]) do
         unless material_edit?(reservation, normalized)
           reservation.update!(
@@ -69,7 +70,10 @@ class ReservationService
             calendar_sync_status: "pending",
             calendar_sync_error: nil
           )
-          enqueue_calendar_sync(reservation)
+          enqueue_external_syncs(
+            reservation,
+            previous_canvas_targets: previous_canvas_targets
+          )
           next reservation
         end
 
@@ -93,7 +97,10 @@ class ReservationService
             calendar_sync_error: nil
           )
         )
-        enqueue_calendar_sync(reservation)
+        enqueue_external_syncs(
+          reservation,
+          previous_canvas_targets: previous_canvas_targets
+        )
         reservation
       end
     end
@@ -112,7 +119,7 @@ class ReservationService
           calendar_sync_status: "pending",
           calendar_sync_error: nil
         )
-        enqueue_calendar_sync(reservation)
+        enqueue_external_syncs(reservation)
         reservation
       end
     end
@@ -129,7 +136,7 @@ class ReservationService
         calendar_sync_status: "pending",
         calendar_sync_error: nil
       )
-      enqueue_calendar_sync(reservation)
+      enqueue_external_syncs(reservation)
       reservation
     end
 
@@ -144,7 +151,7 @@ class ReservationService
         calendar_sync_status: "pending",
         calendar_sync_error: nil
       )
-      enqueue_calendar_sync(reservation)
+      enqueue_external_syncs(reservation)
       reservation
     end
 
@@ -441,8 +448,31 @@ class ReservationService
       acquire.call(0)
     end
 
-    def enqueue_calendar_sync(reservation)
+    def enqueue_external_syncs(reservation, previous_canvas_targets: [])
       ReservationCalendarSyncJob.perform_later(reservation.id.to_s)
+
+      targets = (Array(previous_canvas_targets) + slack_canvas_targets(reservation))
+        .uniq
+        .group_by(&:first)
+      targets.each do |shop_id, shop_targets|
+        dates = shop_targets.map { |(_, date)| date.iso8601 }.uniq
+        ReservationSlackCanvasSyncJob.perform_later(shop_id, dates)
+      end
+    end
+
+    def slack_canvas_targets(reservation)
+      return [] if reservation.shop_id.blank? ||
+        reservation.start_at.blank? ||
+        reservation.end_at.blank?
+
+      today = Time.current.in_time_zone(ZONE).to_date
+      relevant_dates = [today, today + 1.day]
+      start_date = reservation.start_at.in_time_zone(ZONE).to_date
+      end_date = reservation.end_at.in_time_zone(ZONE).to_date
+
+      relevant_dates
+        .select { |date| date >= start_date && date <= end_date }
+        .map { |date| [reservation.shop_id.to_s, date] }
     end
   end
 end
