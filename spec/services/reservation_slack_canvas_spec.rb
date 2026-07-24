@@ -118,8 +118,15 @@ RSpec.describe Service::ReservationSlackCanvas do
     end
   end
 
-  it "does nothing when the configured Slack channel cannot be resolved" do
+  it "logs the configured channel when it cannot be resolved" do
     allow(Service::SlackConnector).to receive(:find_channel_id).and_return(nil)
+    expect(Rails.logger).to receive(:error).with(
+      a_string_including(
+        "[ReservationSlackCanvasChannelNotFound]",
+        "shop_id=#{shop.id}",
+        'slack_channel="woodshop"'
+      )
+    )
 
     described_class.sync!(shop, dates: [Date.current])
 

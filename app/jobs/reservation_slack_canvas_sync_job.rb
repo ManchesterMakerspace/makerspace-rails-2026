@@ -9,7 +9,9 @@ class ReservationSlackCanvasSyncJob < ApplicationJob
     nil
   rescue => error
     Rails.logger.error(
-      "[ReservationSlackCanvasError] shop_id=#{shop_id} dates=#{Array(dates).join(',')} " \
+      "[ReservationSlackCanvasError] shop_id=#{shop_id} " \
+      "slack_channel=#{shop&.slack_channel.inspect} " \
+      "dates=#{Array(dates).join(',')} " \
       "error=#{error.class}: #{error.message}"
     )
     Honeybadger.notify(error) if defined?(Honeybadger)

@@ -7,7 +7,13 @@ module Service
         return if shop.slack_channel.blank?
 
         channel_id = Service::SlackConnector.find_channel_id(shop.slack_channel)
-        return if channel_id.blank?
+        if channel_id.blank?
+          Rails.logger.error(
+            "[ReservationSlackCanvasChannelNotFound] shop_id=#{shop.id} " \
+            "slack_channel=#{shop.slack_channel.inspect}"
+          )
+          return
+        end
 
         today = Time.current.in_time_zone(ReservationService::ZONE).to_date
         tomorrow = today + 1.day
