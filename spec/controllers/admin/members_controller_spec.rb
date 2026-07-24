@@ -114,6 +114,20 @@ RSpec.describe Admin::MembersController, type: :controller do
           expect(parsed_response['id']).to eq(member.id.as_json)
         end
 
+        it "returns the manual Slack deactivation warning flag after revocation without an admin token" do
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SLACK_ADMIN_TOKEN").and_return(nil)
+          allow(Service::MemberAccess).to receive(:revoke)
+          member = Member.create valid_attributes.merge(status: "activeMember")
+
+          put :update, params: { id: member.to_param, status: "revoked" }, format: :json
+
+          parsed_response = JSON.parse(response.body)
+          expect(response).to have_http_status(200)
+          expect(parsed_response["status"]).to eq("revoked")
+          expect(parsed_response["slackManualDeactivationRequired"]).to be true
+        end
+
         it "allows admins to set and clear marketing email silence for non-revoked members" do
           member = Member.create valid_attributes.merge(silence_emails: false)
 

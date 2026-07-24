@@ -16,6 +16,7 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :checkout_approver_shop_ids,
              :checkout_approver_tool_ids,
              :resource_manager_shop_ids,
+             :slack_manual_deactivation_required,
              :firebase_uid
 
   attribute :is_checkout_approver do
@@ -99,5 +100,9 @@ class MemberSummarySerializer < ActiveModel::Serializer
       name: slack_user.real_name.presence || slack_user.name,
       url: ::Service::SlackConnector.slack_user_url(slack_user.slack_id)
     }
+  end
+
+  def slack_manual_deactivation_required
+    object.status == "revoked" && !::Service::SlackConnector.admin_token_present?
   end
 end

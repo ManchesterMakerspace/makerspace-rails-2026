@@ -5,6 +5,10 @@
 #
 # This file intentionally enables ordinary bot scopes only. Calls that require
 # an admin/user token are documented and commented out below.
+#
+# Configure SLACK_BOT_TOKEN for these bot scopes. If it is absent, the Rails
+# app falls back to SLACK_ADMIN_TOKEN for ordinary API calls. When both tokens
+# exist, only explicitly privileged calls use SLACK_ADMIN_TOKEN.
 
 oauth_config:
   scopes:

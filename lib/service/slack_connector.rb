@@ -215,11 +215,26 @@ module Service
       unless ENV['SLACK_INVITES_ENABLED'] == 'true'
         raise Error::NotAllowed.new('Slack invites are not enabled in this environment')
       end
-      client.users_admin_invite(
+
+      slack_client = admin_client("users.admin.invite")
+      if slack_client.nil?
+        raise Error::NotAllowed.new(
+          "SLACK_ADMIN_TOKEN is required to invite Slack users"
+        )
+      end
+
+      slack_client.users_admin_invite(
         email: email,
         first_name: firstname,
         last_name: lastname
       )
+    end
+
+    def self.team_billable_info(user:)
+      slack_client = admin_client("team.billableInfo")
+      return if slack_client.nil?
+
+      slack_client.team_billableInfo(user: user)
     end
 
     # ── Channel helpers ──────────────────────────────────────────────────────
@@ -242,13 +257,48 @@ module Service
       SystemConfig.get('slack_channel_admin') || 'general'
     end
 
+    def self.api_token_present?
+      ENV['SLACK_BOT_TOKEN'].present? || ENV['SLACK_ADMIN_TOKEN'].present?
+    end
+
+    def self.admin_token_present?
+      ENV['SLACK_ADMIN_TOKEN'].present?
+    end
+
+    # Ordinary calls prefer the least-privileged bot token. The historical
+    # admin token remains the fallback when no separate bot token is present.
+    def self.client
+      token = ENV['SLACK_BOT_TOKEN'].presence || ENV['SLACK_ADMIN_TOKEN'].presence
+      Slack::Web::Client.new(token: token)
+    end
+
+    # Admin-only calls must never fall back to the bot token.
+    def self.admin_client(operation)
+      token = ENV['SLACK_ADMIN_TOKEN'].presence
+      return Slack::Web::Client.new(token: token) if token
+
+      message = "[SlackAdminTokenRequired] operation=#{operation} " \
+        "SLACK_ADMIN_TOKEN is required; SLACK_BOT_TOKEN cannot authorize this API call"
+      $stderr.puts(message)
+      Rails.logger.error(message)
+      if defined?(Honeybadger)
+        Honeybadger.notify(
+          "Slack admin token required",
+          context: {
+            operation: operation,
+            slack_bot_token_present: ENV['SLACK_BOT_TOKEN'].present?
+          }
+        )
+      end
+      nil
+    end
+
     private
+
     def self.safe_channel(channel)
       ENV['SLACK_ENV'] == 'production' ? channel : 'test_channel'
     end
-    def self.client
-      Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
-    end
+
     def self.format_slack_messages(messages, channel)
       messages = messages.map { |m| "#{channel}| #{m}" } unless ENV['SLACK_ENV'] == 'production'
       messages.join(" \n ")

@@ -541,6 +541,10 @@
             "type": "number",
             "x-nullable": true
           },
+          "slackManualDeactivationRequired": {
+            "type": "boolean",
+            "description": "True for revoked members when Slack must be deactivated manually because SLACK_ADMIN_TOKEN is not configured."
+          },
           "memberContractSignedDate": {
             "type": "string",
             "x-nullable": true
