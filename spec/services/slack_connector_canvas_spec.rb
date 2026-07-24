@@ -14,7 +14,7 @@ RSpec.describe Service::SlackConnector do
     expect(client).to receive(:canvases_access_set).with(
       canvas_id: "F123",
       access_level: "read",
-      channel_ids: ["C123"]
+      channel_ids: '["C123"]'
     )
 
     canvas_id = described_class.create_canvas("Today's Reservations")
@@ -24,20 +24,46 @@ RSpec.describe Service::SlackConnector do
   end
 
   it "replaces the entire canvas with the rendered agenda" do
-    expect(client).to receive(:canvases_edit).with(
-      canvas_id: "F123",
-      changes: [
-        {
-          operation: "replace",
-          document_content: {
-            type: "markdown",
-            markdown: "# Woodshop Reservations"
+    expect(client).to receive(:canvases_edit) do |arguments|
+      expect(arguments[:canvas_id]).to eq("F123")
+      expect(JSON.parse(arguments[:changes], symbolize_names: true)).to eq(
+        [
+          {
+            operation: "replace",
+            document_content: {
+              type: "markdown",
+              markdown: "# Woodshop Reservations"
+            }
           }
-        }
-      ]
-    )
+        ]
+      )
+    end
 
     described_class.replace_canvas("F123", "# Woodshop Reservations")
+  end
+
+  it "includes Slack's HTTP status and response body in API errors" do
+    response = double(
+      status: 400,
+      body: {
+        ok: false,
+        error: "missing_argument",
+        response_metadata: {
+          messages: ["[ERROR] missing required field: channel_ids"]
+        }
+      }
+    )
+    error = Slack::Web::Api::Errors::MissingArgument.new(
+      "missing_argument",
+      response
+    )
+
+    expect(described_class.format_api_error(error)).to include(
+      "MissingArgument: missing_argument",
+      "http_status=400",
+      '"error":"missing_argument"',
+      "missing required field: channel_ids"
+    )
   end
 
   it "resolves a configured channel name to its Slack channel ID" do

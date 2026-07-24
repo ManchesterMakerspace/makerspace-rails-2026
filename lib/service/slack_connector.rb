@@ -134,23 +134,49 @@ module Service
       client.canvases_access_set(
         canvas_id: canvas_id,
         access_level: 'read',
-        channel_ids: [channel_id]
+        # slack-ruby-client 2.7.0 does not JSON-encode this array even though
+        # Slack expects an array-valued JSON parameter.
+        channel_ids: JSON.generate([channel_id])
       )
     end
 
     def self.replace_canvas(canvas_id, markdown)
+      changes = [
+        {
+          operation: 'replace',
+          document_content: {
+            type: 'markdown',
+            markdown: markdown
+          }
+        }
+      ]
       client.canvases_edit(
         canvas_id: canvas_id,
-        changes: [
-          {
-            operation: 'replace',
-            document_content: {
-              type: 'markdown',
-              markdown: markdown
-            }
-          }
-        ]
+        # See set_canvas_channel_access: nested Canvas parameters must be
+        # explicitly JSON-encoded with the currently bundled Slack client.
+        changes: JSON.generate(changes)
       )
+    end
+
+    def self.format_api_error(error)
+      details = "#{error.class}: #{error.message.to_s.gsub(/\s+/, ' ').strip}"
+      response = error.respond_to?(:response) ? error.response : nil
+      return details if response.nil?
+
+      status = response.respond_to?(:status) ? response.status : nil
+      body = response.respond_to?(:body) ? response.body : response
+      body = body.to_h if body.respond_to?(:to_h)
+      response_text = JSON.generate(body).gsub(/\s+/, ' ').strip
+      response_text = response_text.first(4_000)
+
+      [
+        details,
+        ("http_status=#{status}" if status),
+        ("slack_response=#{response_text}" if response_text.present?)
+      ].compact.join(" ")
+    rescue => formatting_error
+      "#{details} response_format_error=#{formatting_error.class}: " \
+        "#{formatting_error.message.to_s.gsub(/\s+/, ' ').strip}"
     end
 
     def self.invite_to_channel(channel, slack_id)

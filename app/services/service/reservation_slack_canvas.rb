@@ -80,10 +80,10 @@ module Service
         )
         canvas_id
       rescue => error
-        stderr_log(
+        failure_log(
           "create_failure shop_id=#{shop.id} " \
           "slack_channel=#{shop.slack_channel.inspect} field=#{field} " \
-          "error=#{error.class}: #{single_line(error.message)}"
+          "error=#{Service::SlackConnector.format_api_error(error)}"
         )
         raise
       end
@@ -116,10 +116,10 @@ module Service
           "date=#{date} markdown_bytes=#{markdown.bytesize}"
         )
       rescue => error
-        stderr_log(
+        failure_log(
           "#{phase}_failure shop_id=#{shop.id} " \
           "slack_channel=#{shop.slack_channel.inspect} canvas_id=#{canvas_id} " \
-          "date=#{date} error=#{error.class}: #{single_line(error.message)}"
+          "date=#{date} error=#{Service::SlackConnector.format_api_error(error)}"
         )
         raise
       end
@@ -211,8 +211,10 @@ module Service
         $stderr.puts("[ReservationSlackCanvas] #{message}")
       end
 
-      def single_line(value)
-        value.to_s.gsub(/\s+/, " ").strip
+      def failure_log(message)
+        formatted = "[ReservationSlackCanvas] #{message}"
+        $stderr.puts(formatted)
+        Rails.logger.error(formatted)
       end
 
       def with_canvas_lock(shop_id, field)

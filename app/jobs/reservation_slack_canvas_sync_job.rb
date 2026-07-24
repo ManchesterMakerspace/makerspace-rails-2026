@@ -12,7 +12,7 @@ class ReservationSlackCanvasSyncJob < ApplicationJob
       "[ReservationSlackCanvasError] shop_id=#{shop_id} " \
       "slack_channel=#{shop&.slack_channel.inspect} " \
       "dates=#{Array(dates).join(',')} " \
-      "error=#{error.class}: #{error.message}"
+      "error=#{Service::SlackConnector.format_api_error(error)}"
     )
     Honeybadger.notify(error) if defined?(Honeybadger)
     raise
