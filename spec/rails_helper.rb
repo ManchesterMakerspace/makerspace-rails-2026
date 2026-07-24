@@ -27,6 +27,7 @@ SAFE_DATABASE_CLEANER_MLAB_URI_SUBSTRINGS = [
   "127.0.0.1",
   "://mongo:2701",
   "localhost",
+  "/rspec",
   "dev",
   "test"
 ].freeze

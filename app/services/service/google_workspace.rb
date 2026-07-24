@@ -5,7 +5,7 @@ module Service
     DIRECTORY_SCOPE = "https://www.googleapis.com/auth/admin.directory.resource.calendar".freeze
     CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar".freeze
     DEFAULT_LABEL_COLOR = "#039be5".freeze
-    CALENDAR_COLOR_CACHE_KEY = "google_calendar_colors:v3".freeze
+    CALENDAR_COLOR_CACHE_KEY = "google_calendar_colors:v4".freeze
     GOOGLE_CALENDAR_COLOR_NAMES = [
       "Cocoa", "Flamingo", "Tomato", "Tangerine", "Pumpkin", "Mango",
       "Eucalyptus", "Basil", "Pistachio", "Avocado", "Citron", "Banana",
@@ -14,16 +14,16 @@ module Service
     ].freeze
     FALLBACK_CALENDAR_COLORS = [
       ["Black",  "#000000", "#ffffff"],
-      ["Red",    "#d50000", "#ffffff"],
-      ["Blue",   "#039be5", "#ffffff"],
-      ["Green",  "#33b679", "#ffffff"],
-      ["Yellow", "#f6bf26", "#000000"],
-      ["Orange", "#f4511e", "#ffffff"],
-      ["Brown",  "#795548", "#ffffff"],
-      ["Purple", "#8e24aa", "#ffffff"],
-      ["Gray",   "#616161", "#ffffff"],
-      ["Tan",    "#c0a36e", "#000000"],
-      ["Teal",   "#00897b", "#ffffff"]
+      ["Red",    "#ff0000", "#ffffff"],
+      ["Blue",   "#0000ff", "#ffffff"],
+      ["Green",  "#008000", "#ffffff"],
+      ["Yellow", "#ffff00", "#000000"],
+      ["Orange", "#ffa500", "#000000"],
+      ["Brown",  "#a52a2a", "#ffffff"],
+      ["Purple", "#800080", "#ffffff"],
+      ["Gray",   "#808080", "#ffffff"],
+      ["Tan",    "#d2b48c", "#000000"],
+      ["Teal",   "#008080", "#ffffff"]
     ].each_with_index.map do |(name, background, foreground), index|
       {
         id: (index + 1).to_s,
@@ -276,7 +276,11 @@ module Service
           next if match.nil?
 
           used_ids << match[:id]
-          match.merge(name: target[:name])
+          match.merge(
+            name: target[:name],
+            backgroundColor: target[:backgroundColor],
+            foregroundColor: target[:foregroundColor]
+          )
         end
         additional = all_colors.reject { |color| used_ids.include?(color[:id]) }.first(24)
         key_colors + additional

@@ -12,7 +12,7 @@ RSpec.describe Service::GoogleWorkspace do
       allow(REDIS).to receive(:set).and_return(true)
     end
 
-    it "uses get_color and puts nearest key colors before 24 additional colors" do
+    it "uses standard RGB key colors mapped to Google IDs before 24 additional colors" do
       source_colors = described_class::FALLBACK_CALENDAR_COLORS.map do |color|
         color[:backgroundColor]
       end + 30.times.map { |index| format("#%06x", index * 7_919 % 0xffffff) }
@@ -30,6 +30,9 @@ RSpec.describe Service::GoogleWorkspace do
 
       expect(colors.first(11).map { |color| color[:name] }).to eq(
         %w[Black Red Blue Green Yellow Orange Brown Purple Gray Tan Teal]
+      )
+      expect(colors.first(11).map { |color| color[:backgroundColor] }).to eq(
+        %w[#000000 #ff0000 #0000ff #008000 #ffff00 #ffa500 #a52a2a #800080 #808080 #d2b48c #008080]
       )
       expect(colors.length).to eq(35)
       expect(colors.map { |color| color[:id] }.uniq.length).to eq(35)
