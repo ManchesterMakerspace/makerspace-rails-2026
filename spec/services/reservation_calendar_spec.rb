@@ -60,4 +60,87 @@ RSpec.describe Service::ReservationCalendar do
       /\A[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/
     )
   end
+
+  describe "invalid event label recovery" do
+    let(:calendar_id) { "reservations@example.com" }
+    let(:event) { described_class.send(:build_event, reservation) }
+    let(:invalid_label_error) do
+      Google::Apis::ClientError.new(
+        "invalid: Invalid event label",
+        status_code: 400
+      )
+    end
+    let(:result) { double(id: reservation.id.to_s) }
+
+    it "recreates the shop label and retries the labeled event" do
+      attempts = 0
+      allow(Service::GoogleWorkspace).to receive(:insert_labeled_event) do
+        attempts += 1
+        raise invalid_label_error if attempts == 1
+
+        result
+      end
+      allow(Service::GoogleWorkspace).to receive(:ensure_label!).and_return(true)
+      allow(Service::GoogleWorkspace).to receive(:insert_event)
+
+      response = described_class.send(
+        :write_event_with_label_recovery,
+        calendar_id,
+        event,
+        reservation
+      )
+
+      expect(response).to eq(result)
+      expect(Service::GoogleWorkspace).to have_received(:ensure_label!).with(shop).once
+      expect(Service::GoogleWorkspace).to have_received(:insert_labeled_event).twice
+      expect(Service::GoogleWorkspace).not_to have_received(:insert_event)
+    end
+
+    it "falls back to an unlabeled event when recreating the label fails" do
+      fallback_event = nil
+      allow(Service::GoogleWorkspace).to receive(:insert_labeled_event)
+        .and_raise(invalid_label_error)
+      allow(Service::GoogleWorkspace).to receive(:ensure_label!)
+        .and_raise(StandardError, "label creation failed")
+      allow(Service::GoogleWorkspace).to receive(:insert_event) do |_calendar, event_arg, **_|
+        fallback_event = event_arg
+        result
+      end
+
+      response = described_class.send(
+        :write_event_with_label_recovery,
+        calendar_id,
+        event,
+        reservation
+      )
+
+      expect(response).to eq(result)
+      expect(fallback_event.event_label_id).to be_nil
+      expect(fallback_event.extended_properties.private).not_to have_key(
+        "makerspace_label_id"
+      )
+    end
+
+    it "falls back to an unlabeled event when the labeled retry fails" do
+      attempts = 0
+      allow(Service::GoogleWorkspace).to receive(:insert_labeled_event) do
+        attempts += 1
+        raise invalid_label_error if attempts == 1
+        raise Google::Apis::ServerError.new("retry failed", status_code: 500)
+      end
+      allow(Service::GoogleWorkspace).to receive(:ensure_label!).and_return(true)
+      allow(Service::GoogleWorkspace).to receive(:insert_event).and_return(result)
+
+      response = described_class.send(
+        :write_event_with_label_recovery,
+        calendar_id,
+        event,
+        reservation
+      )
+
+      expect(response).to eq(result)
+      expect(Service::GoogleWorkspace).to have_received(:insert_labeled_event).twice
+      expect(Service::GoogleWorkspace).to have_received(:insert_event).once
+    end
+  end
 end

@@ -220,6 +220,31 @@ module Service
         end
       end
 
+      def insert_event(calendar_id, event, send_updates: "all")
+        execute_google_call(
+          operation: "calendar.events.insert_without_label",
+          resource_type: "Reservation",
+          resource_id: event.id
+        ) do
+          calendar.insert_event(calendar_id, event, send_updates: send_updates)
+        end
+      end
+
+      def update_event(calendar_id, event_id, event, send_updates: "all")
+        execute_google_call(
+          operation: "calendar.events.update_without_label",
+          resource_type: "Reservation",
+          resource_id: event.id
+        ) do
+          calendar.update_event(
+            calendar_id,
+            event_id,
+            event,
+            send_updates: send_updates
+          )
+        end
+      end
+
       private
 
       def build_color_cache_payload
