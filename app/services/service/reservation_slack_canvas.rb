@@ -64,19 +64,64 @@ module Service
       end
 
       def create_and_cache_canvas!(shop, field, title)
+        stderr_log(
+          "create_start shop_id=#{shop.id} " \
+          "slack_channel=#{shop.slack_channel.inspect} field=#{field} " \
+          "title=#{title.inspect}"
+        )
         canvas_id = Service::SlackConnector.create_canvas(title)
         raise "Slack did not return a canvas ID for #{title}" if canvas_id.blank?
 
         shop.set(field => canvas_id)
+        stderr_log(
+          "create_success shop_id=#{shop.id} " \
+          "slack_channel=#{shop.slack_channel.inspect} field=#{field} " \
+          "canvas_id=#{canvas_id}"
+        )
         canvas_id
+      rescue => error
+        stderr_log(
+          "create_failure shop_id=#{shop.id} " \
+          "slack_channel=#{shop.slack_channel.inspect} field=#{field} " \
+          "error=#{error.class}: #{single_line(error.message)}"
+        )
+        raise
       end
 
       def publish_agenda!(canvas_id, channel_id, shop, date)
-        Service::SlackConnector.set_canvas_channel_access(canvas_id, channel_id)
-        Service::SlackConnector.replace_canvas(
-          canvas_id,
-          agenda_markdown(shop, date)
+        phase = "write"
+        markdown = agenda_markdown(shop, date)
+        phase = "access"
+        stderr_log(
+          "access_start shop_id=#{shop.id} " \
+          "slack_channel=#{shop.slack_channel.inspect} " \
+          "slack_channel_id=#{channel_id} canvas_id=#{canvas_id} date=#{date}"
         )
+        Service::SlackConnector.set_canvas_channel_access(canvas_id, channel_id)
+        stderr_log(
+          "access_success shop_id=#{shop.id} " \
+          "slack_channel=#{shop.slack_channel.inspect} " \
+          "slack_channel_id=#{channel_id} canvas_id=#{canvas_id} date=#{date}"
+        )
+        phase = "write"
+        stderr_log(
+          "write_start shop_id=#{shop.id} " \
+          "slack_channel=#{shop.slack_channel.inspect} canvas_id=#{canvas_id} " \
+          "date=#{date} markdown_bytes=#{markdown.bytesize}"
+        )
+        Service::SlackConnector.replace_canvas(canvas_id, markdown)
+        stderr_log(
+          "write_success shop_id=#{shop.id} " \
+          "slack_channel=#{shop.slack_channel.inspect} canvas_id=#{canvas_id} " \
+          "date=#{date} markdown_bytes=#{markdown.bytesize}"
+        )
+      rescue => error
+        stderr_log(
+          "#{phase}_failure shop_id=#{shop.id} " \
+          "slack_channel=#{shop.slack_channel.inspect} canvas_id=#{canvas_id} " \
+          "date=#{date} error=#{error.class}: #{single_line(error.message)}"
+        )
+        raise
       end
 
       def agenda_markdown(shop, date)
@@ -160,6 +205,14 @@ module Service
 
       def escape_table_cell(value)
         value.to_s.gsub(/\s+/, " ").gsub("|", "\\|").strip
+      end
+
+      def stderr_log(message)
+        $stderr.puts("[ReservationSlackCanvas] #{message}")
+      end
+
+      def single_line(value)
+        value.to_s.gsub(/\s+/, " ").strip
       end
 
       def with_canvas_lock(shop_id, field)

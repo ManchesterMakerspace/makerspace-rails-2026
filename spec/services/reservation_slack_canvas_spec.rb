@@ -132,4 +132,71 @@ RSpec.describe Service::ReservationSlackCanvas do
 
     expect(Service::SlackConnector).not_to have_received(:create_canvas)
   end
+
+  it "logs canvas creation and writing successes to stderr" do
+    travel_to(zone.local(2026, 7, 24, 8, 15)) do
+      expect {
+        described_class.sync!(shop, dates: ["2026-07-24"])
+      }.to output(
+        a_string_including(
+          "[ReservationSlackCanvas] create_start",
+          'slack_channel="woodshop"',
+          "title=\"Today's Reservations\"",
+          "[ReservationSlackCanvas] create_success",
+          "canvas_id=FTODAY",
+          "[ReservationSlackCanvas] access_success",
+          "[ReservationSlackCanvas] write_start",
+          "[ReservationSlackCanvas] write_success",
+          "date=2026-07-24"
+        )
+      ).to_stderr
+    end
+  end
+
+  it "logs canvas writing failures to stderr before reraising" do
+    travel_to(zone.local(2026, 7, 24, 8, 15)) do
+      shop.update!(canvas_today: "FEXISTING")
+      error = Slack::Web::Api::Errors::CanvasEditingFailed.new(
+        "canvas editing failed\nwith details"
+      )
+      allow(Service::SlackConnector).to receive(:replace_canvas).and_raise(error)
+
+      expect {
+        expect {
+          described_class.sync!(shop, dates: ["2026-07-24"])
+        }.to raise_error(Slack::Web::Api::Errors::CanvasEditingFailed)
+      }.to output(
+        a_string_including(
+          "[ReservationSlackCanvas] write_failure",
+          'slack_channel="woodshop"',
+          "canvas_id=FEXISTING",
+          "date=2026-07-24",
+          "CanvasEditingFailed: canvas editing failed with details"
+        )
+      ).to_stderr
+    end
+  end
+
+  it "logs canvas creation failures to stderr before reraising" do
+    travel_to(zone.local(2026, 7, 24, 8, 15)) do
+      error = Slack::Web::Api::Errors::CanvasCreationFailed.new(
+        "canvas creation failed\nwith details"
+      )
+      allow(Service::SlackConnector).to receive(:create_canvas).and_raise(error)
+
+      expect {
+        expect {
+          described_class.sync!(shop, dates: ["2026-07-24"])
+        }.to raise_error(Slack::Web::Api::Errors::CanvasCreationFailed)
+      }.to output(
+        a_string_including(
+          "[ReservationSlackCanvas] create_start",
+          'slack_channel="woodshop"',
+          "field=canvas_today",
+          "[ReservationSlackCanvas] create_failure",
+          "CanvasCreationFailed: canvas creation failed with details"
+        )
+      ).to_stderr
+    end
+  end
 end
