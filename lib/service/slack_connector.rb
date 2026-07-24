@@ -1,6 +1,7 @@
 module Service
   module SlackConnector
     mattr_accessor :slack_team_id
+    SLACK_RATE_LIMIT_MAX_RETRIES = 5
 
     def enque_message(
         message,
@@ -99,7 +100,9 @@ module Service
       return if requested.blank?
 
       if requested.match?(/\A[CG][A-Z0-9]+\z/i)
-        response = client.conversations_info(channel: requested)
+        response = with_rate_limit_retry("conversations.info") do
+          client.conversations_info(channel: requested)
+        end
         channel = response.channel
         return channel.id unless channel.respond_to?(:is_archived) && channel.is_archived
         return
@@ -107,12 +110,14 @@ module Service
 
       cursor = nil
       loop do
-        response = client.conversations_list(
-          types: 'public_channel,private_channel',
-          exclude_archived: true,
-          limit: 200,
-          cursor: cursor
-        )
+        response = with_rate_limit_retry("conversations.list") do
+          client.conversations_list(
+            types: 'public_channel,private_channel',
+            exclude_archived: true,
+            limit: 200,
+            cursor: cursor
+          )
+        end
         channel = Array(response.channels).find do |candidate|
           candidate.name.to_s.casecmp?(requested)
         end
@@ -127,17 +132,34 @@ module Service
     end
 
     def self.create_canvas(title)
-      client.canvases_create(title: title).canvas_id
+      with_rate_limit_retry("canvases.create") do
+        client.canvases_create(title: title).canvas_id
+      end
     end
 
     def self.set_canvas_channel_access(canvas_id, channel_id)
-      client.canvases_access_set(
-        canvas_id: canvas_id,
-        access_level: 'read',
-        # slack-ruby-client 2.7.0 does not JSON-encode this array even though
-        # Slack expects an array-valued JSON parameter.
-        channel_ids: JSON.generate([channel_id])
-      )
+      with_rate_limit_retry("canvases.access.set channel read") do
+        client.canvases_access_set(
+          canvas_id: canvas_id,
+          access_level: 'read',
+          # slack-ruby-client 2.7.0 does not JSON-encode this array even though
+          # Slack expects an array-valued JSON parameter.
+          channel_ids: JSON.generate([channel_id])
+        )
+      end
+    end
+
+    def self.set_canvas_user_access(canvas_id, user_ids, access_level:)
+      ids = Array(user_ids).map(&:to_s).reject(&:blank?).uniq
+      return if ids.empty?
+
+      with_rate_limit_retry("canvases.access.set user #{access_level}") do
+        client.canvases_access_set(
+          canvas_id: canvas_id,
+          access_level: access_level,
+          user_ids: JSON.generate(ids)
+        )
+      end
     end
 
     def self.replace_canvas(canvas_id, markdown)
@@ -150,12 +172,32 @@ module Service
           }
         }
       ]
-      client.canvases_edit(
-        canvas_id: canvas_id,
-        # See set_canvas_channel_access: nested Canvas parameters must be
-        # explicitly JSON-encoded with the currently bundled Slack client.
-        changes: JSON.generate(changes)
-      )
+      with_rate_limit_retry("canvases.edit") do
+        client.canvases_edit(
+          canvas_id: canvas_id,
+          # See set_canvas_channel_access: nested Canvas parameters must be
+          # explicitly JSON-encoded with the currently bundled Slack client.
+          changes: JSON.generate(changes)
+        )
+      end
+    end
+
+    def self.with_rate_limit_retry(operation, max_retries: SLACK_RATE_LIMIT_MAX_RETRIES)
+      retries = 0
+      begin
+        yield
+      rescue Slack::Web::Api::Errors::TooManyRequestsError => error
+        raise if retries >= max_retries
+
+        retries += 1
+        retry_after = error.retry_after.to_i
+        message = "[SlackRateLimited] operation=#{operation.inspect} " \
+          "retry=#{retries}/#{max_retries} retry_after=#{retry_after}"
+        $stderr.puts(message)
+        Rails.logger.warn(message)
+        sleep(retry_after)
+        retry
+      end
     end
 
     def self.format_api_error(error)

@@ -23,6 +23,37 @@ RSpec.describe Service::SlackConnector do
     expect(canvas_id).to eq("F123")
   end
 
+  it "grants a list of Slack users the requested canvas access" do
+    expect(client).to receive(:canvases_access_set).with(
+      canvas_id: "F123",
+      access_level: "owner",
+      user_ids: '["UADMIN","UBOARD","URM"]'
+    )
+
+    described_class.set_canvas_user_access(
+      "F123",
+      %w[UADMIN UBOARD URM],
+      access_level: "owner"
+    )
+  end
+
+  it "waits for Slack's Retry-After duration and retries a rate-limited API call" do
+    response = double(headers: { "retry-after" => "7" })
+    error = Slack::Web::Api::Errors::TooManyRequestsError.new(response)
+    attempts = 0
+    allow(client).to receive(:canvases_create) do
+      attempts += 1
+      raise error if attempts == 1
+
+      double(canvas_id: "F123")
+    end
+    allow(described_class).to receive(:sleep)
+
+    expect(described_class.create_canvas("Reservations")).to eq("F123")
+    expect(described_class).to have_received(:sleep).with(7)
+    expect(client).to have_received(:canvases_create).twice
+  end
+
   it "replaces the entire canvas with the rendered agenda" do
     expect(client).to receive(:canvases_edit) do |arguments|
       expect(arguments[:canvas_id]).to eq("F123")

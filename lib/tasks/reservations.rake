@@ -1,4 +1,9 @@
 namespace :reservations do
+  desc "Rebuild today's and tomorrow's Slack reservation canvases"
+  task rebuild_slack_canvases: :environment do
+    Service::ReservationSlackCanvas.rebuild_all!
+  end
+
   desc "Backfill existing Resource Managers with all current shops"
   task backfill_resource_manager_shops: :environment do
     shop_ids = Shop.all.pluck(:id).map(&:to_s)

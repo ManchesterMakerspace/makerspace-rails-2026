@@ -1,9 +1,31 @@
 module Service
   module ReservationSlackCanvas
     LOCK_TTL_SECONDS = 60
+    RATE_LIMIT_MAX_RETRIES = 5
 
     class << self
-      def sync!(shop, dates:)
+      def rebuild_all!
+        today = Time.current.in_time_zone(ReservationService::ZONE).to_date
+        dates = [today.iso8601, (today + 1.day).iso8601]
+        failures = []
+
+        Shop.all.each do |shop|
+          next if shop.canvas_today.blank? && shop.canvas_tomorrow.blank?
+
+          begin
+            rebuild_shop_with_rate_limit_retry!(shop, dates)
+          rescue => error
+            log_rebuild_failure(shop, dates, error)
+            failures << "#{shop.id}: #{error.class}: #{error.message}"
+          end
+        end
+
+        return if failures.empty?
+
+        raise "Slack canvas rebuild failed for #{failures.join('; ')}"
+      end
+
+      def sync!(shop, dates:, sync_owner_access: false)
         return if shop.slack_channel.blank?
 
         channel_id = Service::SlackConnector.find_channel_id(shop.slack_channel)
@@ -18,9 +40,10 @@ module Service
         today = Time.current.in_time_zone(ReservationService::ZONE).to_date
         tomorrow = today + 1.day
         requested_dates = Array(dates).filter_map { |value| parse_date(value) }.uniq
+        owner_slack_ids = nil
 
         requested_dates.each do |date|
-          configuration = canvas_configuration(date, today, tomorrow)
+          configuration = canvas_configuration(date, today, tomorrow, shop)
           next unless configuration
 
           field, title = configuration
@@ -29,28 +52,121 @@ module Service
             canvas_id = shop.public_send(field).presence
             reused_canvas = canvas_id.present?
             if canvas_id.blank?
-              canvas_id = create_and_cache_canvas!(shop, field, title)
+              owner_slack_ids ||= canvas_owner_slack_ids(shop)
+              canvas_id = create_and_cache_canvas!(
+                shop,
+                field,
+                title,
+                owner_slack_ids
+              )
             end
 
             begin
+              if sync_owner_access && reused_canvas
+                owner_slack_ids ||= canvas_owner_slack_ids(shop)
+                set_canvas_owner_access!(canvas_id, owner_slack_ids)
+              end
               publish_agenda!(canvas_id, channel_id, shop, date)
             rescue Slack::Web::Api::Errors::CanvasNotFound,
                    Slack::Web::Api::Errors::CanvasDeleted
               raise unless reused_canvas
 
               shop.set(field => nil)
-              canvas_id = create_and_cache_canvas!(shop, field, title)
+              owner_slack_ids ||= canvas_owner_slack_ids(shop)
+              canvas_id = create_and_cache_canvas!(
+                shop,
+                field,
+                title,
+                owner_slack_ids
+              )
               publish_agenda!(canvas_id, channel_id, shop, date)
             end
           end
         end
       end
 
+      def canvas_owner_slack_ids(shop)
+        member_ids = Member.any_of(
+          { :role.in => %w[admin board_member] },
+          {
+            role: "resource_manager",
+            :resource_manager_shop_ids.in => [shop.id.to_s]
+          }
+        ).pluck(:id)
+
+        SlackUser.where(:member_id.in => member_ids)
+          .pluck(:slack_id)
+          .map(&:to_s)
+          .reject(&:blank?)
+          .uniq
+      end
+
+      def sync_member_access!(member, shop_ids:)
+        slack_id = member.slack_user&.slack_id.to_s
+        return if slack_id.blank?
+
+        Shop.where(:id.in => Array(shop_ids)).each do |shop|
+          access_level = canvas_owner?(member, shop) ? "owner" : "read"
+          canvas_ids(shop).each do |canvas_id|
+            Service::SlackConnector.set_canvas_user_access(
+              canvas_id,
+              [slack_id],
+              access_level: access_level
+            )
+          end
+        end
+      end
+
       private
 
-      def canvas_configuration(date, today, tomorrow)
-        return [:canvas_today, "Today's Reservations"] if date == today
-        return [:canvas_tomorrow, "Tomorrow's Reservations"] if date == tomorrow
+      def rebuild_shop_with_rate_limit_retry!(shop, dates)
+        retries = 0
+        begin
+          sync!(
+            shop,
+            dates: dates,
+            sync_owner_access: true
+          )
+        rescue Slack::Web::Api::Errors::TooManyRequestsError => error
+          raise if retries >= RATE_LIMIT_MAX_RETRIES
+
+          retries += 1
+          retry_after = error.retry_after.to_i
+          message = "[ReservationSlackCanvasRateLimited] shop_id=#{shop.id} " \
+            "slack_channel=#{shop.slack_channel.inspect} " \
+            "retry=#{retries}/#{RATE_LIMIT_MAX_RETRIES} " \
+            "retry_after=#{retry_after}"
+          $stderr.puts(message)
+          Rails.logger.warn(message)
+          sleep(retry_after)
+          retry
+        end
+      end
+
+      def log_rebuild_failure(shop, dates, error)
+        message = "[ReservationSlackCanvasRebuildError] shop_id=#{shop.id} " \
+          "slack_channel=#{shop.slack_channel.inspect} " \
+          "dates=#{dates.join(',')} " \
+          "error=#{Service::SlackConnector.format_api_error(error)}"
+        $stderr.puts(message)
+        Rails.logger.error(message)
+        Honeybadger.notify(error) if defined?(Honeybadger)
+      end
+
+      def canvas_owner?(member, shop)
+        return true if %w[admin board_member].include?(member.role)
+
+        member.role == "resource_manager" &&
+          Array(member.resource_manager_shop_ids).map(&:to_s).include?(shop.id.to_s)
+      end
+
+      def canvas_ids(shop)
+        [shop.canvas_today, shop.canvas_tomorrow].compact_blank.uniq
+      end
+
+      def canvas_configuration(date, today, tomorrow, shop)
+        return [:canvas_today, "Todays #{shop.name} Reservations"] if date == today
+        return [:canvas_tomorrow, "Tomorrow's #{shop.name} Reservations"] if date == tomorrow
 
         nil
       end
@@ -63,7 +179,7 @@ module Service
         nil
       end
 
-      def create_and_cache_canvas!(shop, field, title)
+      def create_and_cache_canvas!(shop, field, title, owner_slack_ids)
         stderr_log(
           "create_start shop_id=#{shop.id} " \
           "slack_channel=#{shop.slack_channel.inspect} field=#{field} " \
@@ -72,6 +188,7 @@ module Service
         canvas_id = Service::SlackConnector.create_canvas(title)
         raise "Slack did not return a canvas ID for #{title}" if canvas_id.blank?
 
+        set_canvas_owner_access!(canvas_id, owner_slack_ids)
         shop.set(field => canvas_id)
         stderr_log(
           "create_success shop_id=#{shop.id} " \
@@ -86,6 +203,14 @@ module Service
           "error=#{Service::SlackConnector.format_api_error(error)}"
         )
         raise
+      end
+
+      def set_canvas_owner_access!(canvas_id, owner_slack_ids)
+        Service::SlackConnector.set_canvas_user_access(
+          canvas_id,
+          owner_slack_ids,
+          access_level: "owner"
+        )
       end
 
       def publish_agenda!(canvas_id, channel_id, shop, date)

@@ -91,4 +91,20 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
       expect(SystemConfig.get('devise_timeout_minutes')).to be_nil
     end
   end
+
+  describe "POST #run_job" do
+    before do
+      sign_in admin
+      allow(ReservationSlackCanvasRebuildJob).to receive(:perform_later)
+    end
+
+    it "enqueues the reservation canvas rake job" do
+      post :run_job,
+           params: { key: "reservation_canvas_rebuild" },
+           format: :json
+
+      expect(response).to have_http_status(200)
+      expect(ReservationSlackCanvasRebuildJob).to have_received(:perform_later)
+    end
+  end
 end

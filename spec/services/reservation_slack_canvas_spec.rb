@@ -20,13 +20,66 @@ RSpec.describe Service::ReservationSlackCanvas do
       .with("woodshop")
       .and_return("C123")
     allow(Service::SlackConnector).to receive(:create_canvas)
-      .with("Today's Reservations")
+      .with("Todays Woodshop Reservations")
       .and_return("FTODAY")
     allow(Service::SlackConnector).to receive(:create_canvas)
-      .with("Tomorrow's Reservations")
+      .with("Tomorrow's Woodshop Reservations")
       .and_return("FTOMORROW")
     allow(Service::SlackConnector).to receive(:set_canvas_channel_access)
+    allow(Service::SlackConnector).to receive(:set_canvas_user_access)
     allow(Service::SlackConnector).to receive(:replace_canvas)
+  end
+
+  describe ".rebuild_all!" do
+    let!(:shop_with_canvases) do
+      create(
+        :shop,
+        slack_channel: "woodshop",
+        canvas_today: "FTODAY"
+      )
+    end
+    let!(:shop_without_canvases) do
+      create(:shop, slack_channel: "metalshop")
+    end
+
+    before do
+      allow(described_class).to receive(:sync!)
+    end
+
+    it "rebuilds today and tomorrow and refreshes owners only for shops with canvases" do
+      travel_to(zone.local(2026, 7, 24, 0, 0)) do
+        described_class.rebuild_all!
+      end
+
+      expect(described_class).to have_received(:sync!).with(
+        shop_with_canvases,
+        dates: %w[2026-07-24 2026-07-25],
+        sync_owner_access: true
+      )
+      expect(described_class).not_to have_received(:sync!).with(
+        shop_without_canvases,
+        any_args
+      )
+    end
+
+    it "explicitly waits for Retry-After and retries a 429 response" do
+      response = double(headers: { "retry-after" => "11" })
+      error = Slack::Web::Api::Errors::TooManyRequestsError.new(response)
+      attempts = 0
+      allow(described_class).to receive(:sync!) do
+        attempts += 1
+        raise error if attempts == 1
+      end
+      allow(described_class).to receive(:sleep)
+      allow($stderr).to receive(:puts)
+
+      travel_to(zone.local(2026, 7, 24, 0, 0)) do
+        described_class.rebuild_all!
+      end
+
+      expect(described_class).to have_received(:sleep).with(11)
+      expect(described_class).to have_received(:sync!).twice
+    end
   end
 
   it "creates, shares, caches, and populates today's and tomorrow's canvases" do
@@ -84,6 +137,85 @@ RSpec.describe Service::ReservationSlackCanvas do
     end
   end
 
+  it "grants canvas ownership to admins, board members, and assigned resource managers" do
+    admin = create(:member, :admin)
+    board = create(:member, :board_member)
+    assigned_rm = create(
+      :member,
+      :resource_manager,
+      resource_manager_shop_ids: [shop.id.to_s]
+    )
+    unrelated_rm = create(
+      :member,
+      :resource_manager,
+      resource_manager_shop_ids: [create(:shop).id.to_s]
+    )
+    {
+      admin => "UADMIN",
+      board => "UBOARD",
+      assigned_rm => "URM",
+      unrelated_rm => "UOTHER"
+    }.each do |privileged_member, slack_id|
+      SlackUser.create!(member: privileged_member, slack_id: slack_id)
+    end
+
+    travel_to(zone.local(2026, 7, 24, 8, 15)) do
+      described_class.sync!(shop, dates: ["2026-07-24"])
+    end
+
+    expect(Service::SlackConnector).to have_received(:set_canvas_user_access)
+      .with(
+        "FTODAY",
+        a_collection_containing_exactly("UADMIN", "UBOARD", "URM"),
+        access_level: "owner"
+      )
+  end
+
+  it "sets a member to owner or read on both shop canvases based on current RM assignment" do
+    shop.update!(
+      canvas_today: "FTODAY-EXISTING",
+      canvas_tomorrow: "FTOMORROW-EXISTING"
+    )
+    rm = create(
+      :member,
+      :resource_manager,
+      resource_manager_shop_ids: [shop.id.to_s]
+    )
+    SlackUser.create!(member: rm, slack_id: "URM")
+
+    described_class.sync_member_access!(rm, shop_ids: [shop.id.to_s])
+
+    expect(Service::SlackConnector).to have_received(:set_canvas_user_access)
+      .with("FTODAY-EXISTING", ["URM"], access_level: "owner")
+    expect(Service::SlackConnector).to have_received(:set_canvas_user_access)
+      .with("FTOMORROW-EXISTING", ["URM"], access_level: "owner")
+
+    rm.update!(role: "member", resource_manager_shop_ids: [])
+    described_class.sync_member_access!(rm, shop_ids: [shop.id.to_s])
+
+    expect(Service::SlackConnector).to have_received(:set_canvas_user_access)
+      .with("FTODAY-EXISTING", ["URM"], access_level: "read")
+    expect(Service::SlackConnector).to have_received(:set_canvas_user_access)
+      .with("FTOMORROW-EXISTING", ["URM"], access_level: "read")
+  end
+
+  it "reapplies the complete owner list when rebuilding an existing canvas" do
+    shop.update!(canvas_today: "FTODAY-EXISTING")
+    admin = create(:member, :admin)
+    SlackUser.create!(member: admin, slack_id: "UADMIN")
+
+    travel_to(zone.local(2026, 7, 24, 0, 0)) do
+      described_class.sync!(
+        shop,
+        dates: ["2026-07-24"],
+        sync_owner_access: true
+      )
+    end
+
+    expect(Service::SlackConnector).to have_received(:set_canvas_user_access)
+      .with("FTODAY-EXISTING", ["UADMIN"], access_level: "owner")
+  end
+
   it "reuses a cached canvas ID instead of creating another canvas" do
     travel_to(zone.local(2026, 7, 24, 8, 15)) do
       shop.update!(canvas_today: "FEXISTING")
@@ -91,7 +223,7 @@ RSpec.describe Service::ReservationSlackCanvas do
       described_class.sync!(shop, dates: ["2026-07-24"])
 
       expect(Service::SlackConnector).not_to have_received(:create_canvas)
-        .with("Today's Reservations")
+        .with("Todays Woodshop Reservations")
       expect(Service::SlackConnector).to have_received(:replace_canvas)
         .with("FEXISTING", a_string_including("No pending or approved reservations"))
     end
@@ -112,7 +244,7 @@ RSpec.describe Service::ReservationSlackCanvas do
 
       expect(shop.reload.canvas_today).to eq("FTODAY")
       expect(Service::SlackConnector).to have_received(:create_canvas)
-        .with("Today's Reservations")
+        .with("Todays Woodshop Reservations")
       expect(Service::SlackConnector).to have_received(:replace_canvas)
         .with("FTODAY", a_string_including("Woodshop Reservations"))
     end
@@ -141,7 +273,7 @@ RSpec.describe Service::ReservationSlackCanvas do
         a_string_including(
           "[ReservationSlackCanvas] create_start",
           'slack_channel="woodshop"',
-          "title=\"Today's Reservations\"",
+          "title=\"Todays Woodshop Reservations\"",
           "[ReservationSlackCanvas] create_success",
           "canvas_id=FTODAY",
           "[ReservationSlackCanvas] access_success",
