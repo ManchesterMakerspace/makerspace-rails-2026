@@ -129,9 +129,11 @@ class Group
       "error=#{error.class}: #{error.message}"
     )
     Honeybadger.notify(error) if defined?(Honeybadger)
-    ([member] + active_members.to_a).compact.uniq { |item| item.id.to_s }.each do |item|
-      ReservationMembershipCleanupJob.perform_later(item.id.to_s, "subscription_ended")
-    end
+    ReservationMembershipCleanupJob.perform_later(
+      id.to_s,
+      "group_subscription_ended",
+      "Group"
+    )
   end
 
   private

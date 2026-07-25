@@ -61,7 +61,13 @@ class Slack::InteractionsController < ApplicationController
 
   def verify_slack_signature
     secret = ENV["SLACK_SIGNING_SECRET"]
-    return if secret.blank?
+    if secret.blank?
+      return if Rails.env.development?
+
+      render json: { error: "Slack signing secret is not configured" },
+        status: :forbidden
+      return
+    end
 
     timestamp = request.headers["X-Slack-Request-Timestamp"]
     signature = request.headers["X-Slack-Signature"]

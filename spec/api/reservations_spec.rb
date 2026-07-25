@@ -43,6 +43,30 @@ RSpec.describe "Reservations API", type: :request do
     )
   end
 
+  it "rejects tool reservations when the selected shop is disabled" do
+    shop.update!(disabled: true)
+
+    post "/api/reservations", params: reservation_params
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)["message"])
+      .to include("selected tools are not reservable")
+    expect(Reservation.count).to eq(0)
+  end
+
+  it "omits tools belonging to disabled shops from the reservation catalog" do
+    shop.update!(disabled: true)
+
+    get "/api/reservation_catalog"
+
+    expect(response).to have_http_status(:ok)
+    body = JSON.parse(response.body)
+    expect(body.fetch("tools").map { |item| item.fetch("id") })
+      .not_to include(tool.id.to_s)
+    expect(body.fetch("shops").map { |item| item.fetch("id") })
+      .not_to include(shop.id.to_s)
+  end
+
   it "excludes the member's reservation from its update preview" do
     reservation = create(
       :reservation,

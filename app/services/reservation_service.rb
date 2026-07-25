@@ -210,7 +210,10 @@ class ReservationService
       errors << "Select at least one tool" if attributes[:reservation_scope] == "tools" && attributes[:tool_ids].empty?
       errors << "One or more selected tools are invalid" if attributes[:reservation_scope] == "tools" && tools.length != attributes[:tool_ids].length
       errors << "The selected shop is not reservable" if attributes[:reservation_scope] == "shop" && (!shop.reservable || shop.disabled?)
-      errors << "One or more selected tools are not reservable" if tools.any? { |tool| !tool.reservable || tool.disabled? }
+      if attributes[:reservation_scope] == "tools" &&
+          (shop.disabled? || tools.any? { |tool| !tool.reservable || tool.disabled? })
+        errors << "One or more selected tools are not reservable"
+      end
 
       if attributes[:end_at].present? && !board_override && !member.active_membership_subscription?
         membership_expiration = member.membership_expires_at

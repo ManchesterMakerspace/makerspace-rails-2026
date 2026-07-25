@@ -3,9 +3,14 @@ class ReservationCatalogController < ApplicationController
   before_action :require_active_member
 
   def index
-    tools = Tool.where(:disabled.ne => true, reservable: true).order_by(name: :asc)
+    enabled_shops = Shop.where(:disabled.ne => true)
+    tools = Tool.where(
+      :disabled.ne => true,
+      reservable: true,
+      :shop_id.in => enabled_shops.pluck(:id)
+    ).order_by(name: :asc)
     shop_ids = tools.pluck(:shop_id)
-    shops = Shop.where(:disabled.ne => true).any_of(
+    shops = enabled_shops.any_of(
       { reservable: true },
       { :id.in => shop_ids }
     ).order_by(name: :asc)

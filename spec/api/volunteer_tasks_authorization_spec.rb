@@ -13,6 +13,7 @@ RSpec.describe "Volunteer task shop authorization", type: :request do
   end
 
   before do
+    allow(Service::SlackConnector).to receive(:enque_message)
     sign_in resource_manager
   end
 
@@ -43,7 +44,7 @@ RSpec.describe "Volunteer task shop authorization", type: :request do
   }.each do |action, (verb, request_params)|
     it "rejects #{action} when the existing task belongs to an unmanaged shop" do
       task = create_task(unmanaged_shop)
-      original_attributes = task.attributes
+      original_attributes = task.reload.attributes
 
       public_send(
         verb,
