@@ -152,24 +152,7 @@ class VolunteerEvent
       closed_by_id: closed_by_member.id,
       closed_at: Time.now
     )
-
-    attendee_ids.each do |member_id|
-      member = Member.find(member_id) rescue nil
-      next if member.nil?
-      next unless member.status == 'activeMember'
-
-      credit = VolunteerCredit.create!(
-        member_id:    member_id,
-        issued_by_id: closed_by_member.id,
-        description:  "Attended event: #{title} (#{display_number})",
-        credit_value: credit_value,
-        status:       'approved'
-      )
-      credit.send(:notify_member_credit_awarded)
-      credit.send(:check_discount_threshold!)
-    rescue => e
-      Honeybadger.notify(e) if defined?(Honeybadger)
-    end
+    VolunteerEventCloseJob.perform_later(id.to_s)
   end
 
   private
@@ -198,7 +181,7 @@ class VolunteerEvent
   def notify_member_checkin(member)
     slack_user = SlackUser.find_by(member_id: member.id)
     return unless slack_user
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "✅ You're checked in to *#{title}* (#{display_number}). Credits will be issued when the event closes.",
       slack_user.slack_id
     )
@@ -209,7 +192,7 @@ class VolunteerEvent
   def notify_member_checkin_removed(member, removed_by)
     slack_user = SlackUser.find_by(member_id: member.id)
     return unless slack_user
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "ℹ️ Your check-in for *#{title}* (#{display_number}) was removed by #{removed_by.fullname}. " \
       "Contact an admin if you believe this was an error.",
       slack_user.slack_id

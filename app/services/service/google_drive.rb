@@ -36,6 +36,7 @@ module Service
     end
 
     def self.load_gdrive
+      Service::GoogleDependencies.load!
       google = Google::Apis::DriveV3::DriveService.new
       google.authorization = Google::Auth::UserRefreshCredentials.new({
         client_id: ENV['GOOGLE_ID'],
@@ -107,6 +108,7 @@ module Service
     end
 
     def self.generate_document_string(document_name, locals = {}, base64_signature)
+      Service::GoogleDependencies.load_pdf!
       file_name = ::Service::GoogleDrive.get_document_name(locals[:member], document_name)
       template_hash = ::Service::GoogleDrive.get_templates()[document_name]
 

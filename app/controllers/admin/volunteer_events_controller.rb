@@ -14,6 +14,10 @@ class Admin::VolunteerEventsController < AdminOrRmController
   def index
     events = VolunteerEvent.all.order_by(created_at: :desc)
     events = events.where(status: params[:status]) if params[:status].present?
+    response.set_header("total-items", events.count)
+    page = (params[:page_num].presence || params[:pageNum]).to_i
+    events = events.skip([page, 0].max * FastQuery::ITEMS_PER_PAGE)
+      .limit(FastQuery::ITEMS_PER_PAGE)
     render json: events, each_serializer: VolunteerEventSerializer, adapter: :attributes
   end
 

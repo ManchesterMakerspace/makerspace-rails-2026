@@ -11,8 +11,14 @@ class Admin::ShopsController < ApplicationController
     else
       Shop.where(:id.in => managed_shop_ids)
     end
-    shops = shops.order_by(name: :asc)
-    render json: shops, each_serializer: ShopSerializer, adapter: :attributes
+    cache_scope = is_admin? || is_board_member? ? "all" : managed_shop_ids.sort.join(",")
+    payload = CachedPayload.collection(
+      "shops/admin/#{cache_scope}",
+      shops.order_by(name: :asc),
+      serializer: ShopSerializer,
+      dependencies: ["shops", "tools"]
+    )
+    render json: payload
   end
 
   def create
@@ -83,6 +89,11 @@ class Admin::ShopsController < ApplicationController
       approver.set(tool_ids: Array(approver.tool_ids).map(&:to_s) - deleted_tool_ids)
       approver.destroy if approver.shop_ids.blank? && approver.tool_ids.blank?
     end
+    MongoCache.invalidate(
+      "checkout_approvers",
+      "privileged_members",
+      "canvas_managers"
+    )
 
     ::Service::AuditLogger.log(
       log_type:        'portal',

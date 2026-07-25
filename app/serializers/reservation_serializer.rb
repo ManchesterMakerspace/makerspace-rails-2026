@@ -9,23 +9,42 @@ class ReservationSerializer < ActiveModel::Serializer
   attribute :calendar_sync_error, if: :manager_view?
 
   def member_name
-    object.member.try(:fullname)
+    member_for(object.member_id).try(:fullname)
   end
 
   def shop_name
-    object.shop.try(:name)
+    shop.try(:name)
   end
 
   def tool_names
-    object.tools.map(&:name)
+    return object.tools.map(&:name) unless instance_options.key?(:tools_by_id)
+
+    Array(object.tool_ids).filter_map do |tool_id|
+      instance_options[:tools_by_id][tool_id.to_s]&.name
+    end
   end
 
   def decided_by_name
-    object.decided_by.try(:fullname)
+    member_for(object.decided_by_id).try(:fullname)
   end
 
   def manager_view?
     return false unless scope
     scope.role.in?(%w[admin board_member]) || scope.manages_shop?(object.shop_id)
+  end
+
+  private
+
+  def member_for(member_id)
+    return nil if member_id.blank?
+    return Member.find_by(id: member_id) unless instance_options.key?(:members_by_id)
+
+    instance_options[:members_by_id][member_id.to_s]
+  end
+
+  def shop
+    return object.shop unless instance_options.key?(:shops_by_id)
+
+    instance_options[:shops_by_id][object.shop_id.to_s]
   end
 end

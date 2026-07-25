@@ -31,6 +31,11 @@ class InvoiceOption
   validates_numericality_of :quantity, greater_than: 0
   validates_uniqueness_of :plan_id, unless: -> { plan_id.nil? }
 
+  index({ disabled: 1, resource_class: 1, plan_id: 1 })
+  index({ plan_id: 1 }, { unique: true, sparse: true })
+  after_save { MongoCache.invalidate("invoice_options", "rental_types", "rental_spots") }
+  after_destroy { MongoCache.invalidate("invoice_options", "rental_types", "rental_spots") }
+
   def self.search(searchTerms, criteria = Mongoid::Criteria.new(InvoiceOption))
     criteria.full_text_search(searchTerms)
   end

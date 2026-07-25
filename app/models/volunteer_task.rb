@@ -366,7 +366,7 @@ class VolunteerTask
     claimant      = Member.find(claimed_by_id) rescue nil
     claimant_name = claimant&.fullname || 'Unknown member'
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "✅ *#{verifier.fullname}* verified task *#{effective_title}* (#{display_number}) " \
       "complete for *#{claimant_name}*. Credit issued!",
       VolunteerCredit.pending_slack_channel
@@ -379,7 +379,7 @@ class VolunteerTask
     slack_user = SlackUser.find_by(member_id: member_id)
     return unless slack_user
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "ℹ️ Your claim on *#{effective_title}* (#{display_number}) has been released by an admin. " \
       "Reason: #{reason}. The task is now available for others to claim.",
       slack_user.slack_id
@@ -392,7 +392,7 @@ class VolunteerTask
     slack_user = SlackUser.find_by(member_id: member_id)
     return unless slack_user
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "ℹ️ Your completion of *#{effective_title}* (#{display_number}) was not verified. " \
       "Reason: #{reason}. The task is now available for reclaiming.",
       slack_user.slack_id

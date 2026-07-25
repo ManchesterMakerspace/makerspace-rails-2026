@@ -20,6 +20,13 @@ class Shop
 
   has_many :tools, dependent: :destroy
 
+  index({ name: 1 }, { unique: true, collation: { locale: "en", strength: 2 } })
+  index({ disabled: 1, reservable: 1, name: 1 })
+  index({ slack_channel: 1 }, { sparse: true })
+
+  after_save :invalidate_reference_caches
+  after_destroy :invalidate_reference_caches
+
   validates :name, presence: true, uniqueness: { case_sensitive: false }
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :reservation_horizon_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
@@ -39,6 +46,17 @@ class Shop
   end
 
   private
+
+  def invalidate_reference_caches
+    MongoCache.invalidate(
+      "shops",
+      "tools",
+      "reservation_catalog",
+      "checkout_approvers",
+      "privileged_members",
+      "canvas_managers"
+    )
+  end
 
   def reservation_duration_uses_half_hours
     value = max_reservation_duration_hours.to_f

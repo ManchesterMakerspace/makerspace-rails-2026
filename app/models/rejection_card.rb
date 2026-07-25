@@ -5,4 +5,6 @@ class RejectionCard
   field :holder, type: String #Member's name
   field :validity, type: String
   field :timeOf, type: DateTime
+
+  index({ uid: 1, timeOf: -1 })
 end

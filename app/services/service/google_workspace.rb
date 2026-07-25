@@ -5,7 +5,7 @@ module Service
     DIRECTORY_SCOPE = "https://www.googleapis.com/auth/admin.directory.resource.calendar".freeze
     CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar".freeze
     DEFAULT_LABEL_COLOR = "#039be5".freeze
-    CALENDAR_COLOR_CACHE_KEY = "google_calendar_colors:v6".freeze
+    CALENDAR_COLOR_CACHE_KEY = "google/calendar_colors/v7".freeze
     FALLBACK_CALENDAR_COLORS = [
       ["1",  "Lavender",  "#a4bdfc", "#1d1d1d"],
       ["2",  "Sage",      "#7ae7bf", "#1d1d1d"],
@@ -29,6 +29,7 @@ module Service
 
     class << self
       def authorization(scopes)
+        Service::GoogleDependencies.load!
         Google::Auth::UserRefreshCredentials.new(
           client_id: ENV["GOOGLE_ID"],
           client_secret: ENV["GOOGLE_SECRET"],
@@ -58,7 +59,15 @@ module Service
       end
 
       def calendar_colors(include_color_id: nil)
-        payload = read_color_cache || build_color_cache_payload
+        payload = read_color_cache
+        unless payload
+          payload = {
+            colors: FALLBACK_CALENDAR_COLORS.map(&:dup),
+            all_colors: FALLBACK_CALENDAR_COLORS.map(&:dup)
+          }
+          write_color_cache(payload, expires_in: 5.minutes)
+          CalendarColorRefreshJob.perform_later
+        end
         colors = payload[:colors].map(&:dup)
         existing_id = include_color_id.to_s.presence
 
@@ -283,16 +292,17 @@ module Service
       end
 
       def read_color_cache
-        raw = REDIS.get(CALENDAR_COLOR_CACHE_KEY)
-        return nil if raw.blank?
+        parsed = Rails.cache.read(CALENDAR_COLOR_CACHE_KEY)
+        return nil if parsed.blank?
 
-        parsed = JSON.parse(raw)
-        colors = Array(parsed["colors"]).map { |color| symbolize_color(color) }
-        all_colors = Array(parsed["allColors"] || parsed["all_colors"]).map { |color| symbolize_color(color) }
+        colors = Array(parsed[:colors] || parsed["colors"]).map { |color| symbolize_color(color) }
+        all_colors = Array(
+          parsed[:all_colors] || parsed["allColors"] || parsed["all_colors"]
+        ).map { |color| symbolize_color(color) }
         return nil if colors.empty?
 
         { colors: colors, all_colors: all_colors.presence || colors.map(&:dup) }
-      rescue Redis::BaseError, JSON::ParserError, TypeError => error
+      rescue TypeError => error
         Rails.logger.warn(
           "[GoogleCalendarColors] Ignoring unavailable/invalid Redis cache: " \
           "#{error.class}: #{error.message}"
@@ -300,15 +310,13 @@ module Service
         nil
       end
 
-      def write_color_cache(payload)
-        REDIS.set(
+      def write_color_cache(payload, expires_in: 24.hours)
+        Rails.cache.write(
           CALENDAR_COLOR_CACHE_KEY,
-          JSON.generate(
-            colors: payload[:colors],
-            allColors: payload[:all_colors]
-          )
+          payload,
+          expires_in: expires_in
         )
-      rescue Redis::BaseError => error
+      rescue => error
         Rails.logger.warn(
           "[GoogleCalendarColors] Redis cache write failed: #{error.class}: #{error.message}"
         )
@@ -317,10 +325,10 @@ module Service
 
       def symbolize_color(color)
         {
-          id: color["id"].to_s,
-          name: color["name"].to_s,
-          backgroundColor: color["backgroundColor"].to_s,
-          foregroundColor: color["foregroundColor"].to_s
+          id: (color[:id] || color["id"]).to_s,
+          name: (color[:name] || color["name"]).to_s,
+          backgroundColor: (color[:backgroundColor] || color["backgroundColor"]).to_s,
+          foregroundColor: (color[:foregroundColor] || color["foregroundColor"]).to_s
         }
       end
 
@@ -348,6 +356,7 @@ module Service
               resource = directory.update_calendar_resource(customer_id, resource.resource_id, resource)
             end
             record.set(resource_email: resource.resource_email)
+            invalidate_record_cache(record)
             return resource
           rescue Google::Apis::ClientError => error
             raise unless error.status_code == 404
@@ -373,7 +382,16 @@ module Service
           google_resource_id: resource.resource_id,
           resource_email: resource.resource_email
         )
+        invalidate_record_cache(record)
         resource
+      end
+
+      def invalidate_record_cache(record)
+        if record.is_a?(Shop)
+          MongoCache.invalidate("shops", "reservation_catalog")
+        elsif record.is_a?(Tool)
+          MongoCache.invalidate("tools", "reservation_catalog")
+        end
       end
 
       def label_background_for(record)

@@ -84,19 +84,25 @@ module Service
       end
 
       def canvas_owner_slack_ids(shop)
-        member_ids = Member.any_of(
-          { :role.in => %w[admin board_member] },
-          {
-            role: "resource_manager",
-            :resource_manager_shop_ids.in => [shop.id.to_s]
-          }
-        ).pluck(:id)
+        MongoCache.fetch(
+          "canvas_owners/shop=#{shop.id}",
+          dependencies: ["canvas_managers", "slack_users"]
+        ) do
+          member_ids = Member.any_of(
+            { :role.in => %w[admin board_member] },
+            {
+              role: "resource_manager",
+              :resource_manager_shop_ids.in => [shop.id.to_s]
+            }
+          ).pluck(:id).to_a
 
-        SlackUser.where(:member_id.in => member_ids)
-          .pluck(:slack_id)
-          .map(&:to_s)
-          .reject(&:blank?)
-          .uniq
+          SlackUser.where(:member_id.in => member_ids)
+            .pluck(:slack_id)
+            .to_a
+            .map(&:to_s)
+            .reject(&:blank?)
+            .uniq
+        end
       end
 
       def sync_member_access!(member, shop_ids:)

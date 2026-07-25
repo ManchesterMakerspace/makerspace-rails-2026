@@ -12,10 +12,16 @@ class ToolCheckoutRequest
   belongs_to :tool
   belongs_to :checked_out, class_name: "ToolCheckout", optional: true
 
+  index({ status: 1, tool_id: 1, member_id: 1, request_date: -1 })
+  index({ member_id: 1, status: 1, request_date: -1 })
+
   validates :member, presence: true
   validates :tool, presence: true
   validates :status, inclusion: { in: %w[open closed deleted] }
   validates :note, length: { maximum: 128 }, allow_blank: true
+
+  after_create { ToolCheckoutRequestNotificationJob.perform_later(id.to_s, "created") }
+  after_update :enqueue_cancellation_notification
 
   def open?
     status == "open"
@@ -86,5 +92,14 @@ class ToolCheckoutRequest
     )
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
+  end
+
+  private
+
+  def enqueue_cancellation_notification
+    status_change = previous_changes["status"]
+    return unless status_change&.first == "open" && status == "deleted"
+
+    ToolCheckoutRequestNotificationJob.perform_later(id.to_s, "cancelled")
   end
 end

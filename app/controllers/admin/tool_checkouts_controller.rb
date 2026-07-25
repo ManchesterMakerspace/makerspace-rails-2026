@@ -28,7 +28,18 @@ class Admin::ToolCheckoutsController < ApplicationController
     end
 
     checkouts = checkouts.order_by(checked_out_at: :desc)
-    render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes
+    response.set_header("total-items", checkouts.count)
+    page = [params[:page_num].presence || params[:pageNum], 0].compact.first.to_i
+    checkouts = checkouts.skip([page, 0].max * FastQuery::ITEMS_PER_PAGE)
+      .limit(FastQuery::ITEMS_PER_PAGE)
+    checkouts = checkouts.to_a
+    render(
+      {
+        json: checkouts,
+        each_serializer: ToolCheckoutSerializer,
+        adapter: :attributes
+      }.merge(MongoPreloadMaps.for_tool_records(checkouts))
+    )
   end
 
   def create
@@ -53,8 +64,6 @@ class Admin::ToolCheckoutsController < ApplicationController
       checked_out_at: Time.now
     )
     checkout.save!
-    checkout.send_checkout_slack_notification
-    checkout.announce_checkout_success
 
     ::Service::AuditLogger.log(
       log_type:       'member',
@@ -80,7 +89,6 @@ class Admin::ToolCheckoutsController < ApplicationController
     # Only allow updating revocation fields
     if update_params[:revoked_at] || update_params[:revocation_reason]
       @checkout.update_attributes!(update_params)
-      @checkout.send_revocation_slack_notification if @checkout.revoked_at.present?
     end
     render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes
   end
@@ -93,9 +101,6 @@ class Admin::ToolCheckoutsController < ApplicationController
       revoked_at: Time.now,
       revocation_reason: reason
     )
-    @checkout.send_revocation_slack_notification
-    @checkout.remove_member_from_users_channel
-
     ::Service::AuditLogger.log(
       log_type:       'member',
       event_type:     'tool_checkout_revoked',

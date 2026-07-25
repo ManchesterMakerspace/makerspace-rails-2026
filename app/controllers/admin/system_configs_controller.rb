@@ -27,6 +27,7 @@ class Admin::SystemConfigsController < AdminController
     'volunteer_leaderboard_top',
     # Security settings
     'devise_timeout_minutes',
+    SystemConfig::MONGO_CACHE_TTL_HOURS,
   ].freeze
 
   ALL_EDITABLE_KEYS = (FLAG_KEYS + SETTING_KEYS).freeze
@@ -77,6 +78,7 @@ class Admin::SystemConfigsController < AdminController
 
     security = {
       devise_timeout_minutes: SystemConfig.get('devise_timeout_minutes') || '30',
+      mongo_cache_ttl_hours: SystemConfig.get(SystemConfig::MONGO_CACHE_TTL_HOURS) || '8',
     }
 
     render json: {
@@ -132,7 +134,11 @@ class Admin::SystemConfigsController < AdminController
 
     if key == 'volunteer_discount_id'
       SystemConfig.set(key, value)
-      notify_volunteer_discount_changed(old_value.presence, value.presence)
+      VolunteerDiscountNotificationJob.perform_later(
+        old_value.presence,
+        value.presence,
+        current_member&.fullname || "Unknown Admin"
+      )
     else
       SystemConfig.set(key, value)
     end
@@ -176,27 +182,14 @@ class Admin::SystemConfigsController < AdminController
 
   private
 
-  # Posts to logs and treasurer channels when the volunteer discount setting changes.
-  # Fetches discount descriptions from Braintree for a human-readable audit trail.
-  # Note: the audit log entry is written separately in update_setting above.
-  def notify_volunteer_discount_changed(old_id, new_id)
-    gateway   = ::Service::BraintreeGateway.connect_gateway
-    discounts = gateway.discount.all
-
-    old_desc   = describe_discount(discounts, old_id)
-    new_desc   = describe_discount(discounts, new_id)
-    admin_name = current_member&.fullname || 'Unknown Admin'
-
-    message = "⚙️ Volunteer discount setting changed by *#{admin_name}*: " \
-              "*#{old_desc}* → *#{new_desc}*"
-
-    ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.logs_channel)
-    ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.treasurer_channel)
-  rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
-  end
-
   def valid_setting_value?(key, value)
+    if key == SystemConfig::MONGO_CACHE_TTL_HOURS
+      ttl_hours = Integer(value)
+      return true if ttl_hours.between?(MongoCache::MIN_TTL_HOURS, MongoCache::MAX_TTL_HOURS)
+
+      raise ArgumentError, "must be between 1 and 24"
+    end
+
     return true unless key == 'devise_timeout_minutes'
 
     timeout_minutes = Integer(value)
@@ -204,17 +197,14 @@ class Admin::SystemConfigsController < AdminController
 
     raise ArgumentError, 'must be greater than 0'
   rescue ArgumentError
-    render json: { error: 'devise_timeout_minutes must be a positive whole number of minutes' },
+    message = if key == SystemConfig::MONGO_CACHE_TTL_HOURS
+      "mongo_cache_ttl_hours must be a whole number between 1 and 24"
+    else
+      "devise_timeout_minutes must be a positive whole number of minutes"
+    end
+    render json: { error: message },
            status: :unprocessable_entity
     false
   end
 
-  # Returns a human-readable label for a Braintree discount ID.
-  # Falls back to "No Credit" when id is blank, or the raw ID if not found.
-  def describe_discount(discounts, discount_id)
-    return 'No Credit' if discount_id.blank?
-    found = discounts.find { |d| d.id == discount_id }
-    return discount_id unless found
-    (found.description.presence || found.name.presence || discount_id)
-  end
 end

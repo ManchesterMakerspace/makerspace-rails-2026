@@ -121,7 +121,9 @@ module Error
         end
 
         enque_message(message, ::Service::SlackConnector.logs_channel)
-        SlackMessagesJob.perform_later(Current.request_id)
+        payloads = Array(Current.slack_messages)
+        Current.slack_messages = []
+        SlackMessagesJob.perform_later(payloads) if payloads.present?
       end
     end
   end

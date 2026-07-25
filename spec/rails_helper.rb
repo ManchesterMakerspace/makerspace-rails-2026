@@ -67,6 +67,7 @@ RSpec.configure do |config|
   config.include Devise::Test::ControllerHelpers, :type => :controller
   config.include Devise::Test::IntegrationHelpers, type: :request
   config.include ActiveSupport::Testing::TimeHelpers
+  config.include ActiveJob::TestHelper
   config.extend ControllerMacros, :type => :controller
   config.include TestHelpers, :type => :controller
   config.include FactoryBot::Syntax::Methods
@@ -81,6 +82,9 @@ RSpec.configure do |config|
   end
   config.before(:each) do |example|
     ensure_safe_database_cleaner_mlab_uri!
+    Rails.cache.clear
+    clear_enqueued_jobs
+    clear_performed_jobs
     DatabaseCleaner[:mongoid].strategy = :deletion
     DatabaseCleaner[:mongoid].start
   end

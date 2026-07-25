@@ -94,9 +94,6 @@ module Service
         message_details: message_details
       )
 
-      # Attempt Slack post if a channel was provided
-      slack_posted = attempt_slack(message, slack_channel)
-
       # Build and persist the log entry
       entry = AuditLog.new(
         log_type:        log_type,
@@ -112,12 +109,13 @@ module Service
         after_snapshot:  clean_after,
         slack_channel:   slack_channel,
         slack_message:   message,
-        slack_posted:    slack_posted,
+        slack_posted:    nil,
         ip_address:      Current.ip_address
       )
 
       begin
         entry.save!
+        AuditLogSlackJob.perform_later(entry.id.to_s) if slack_channel.present?
         Rails.logger.info("[AuditLogger] #{event_type} on #{resource_type}:#{resource_id} by #{actor_id}")
         entry
       rescue => e
@@ -217,21 +215,6 @@ module Service
           "#{field}: #{before} → #{after}"
         end
       end.join(', ')
-    end
-
-    # Attempts a Slack post if a channel is provided.
-    # Returns true/false if attempted, nil if skipped.
-    # Notifies Honeybadger on failure but does not raise.
-    def self.attempt_slack(message, channel)
-      return nil if channel.blank?
-
-      begin
-        ::Service::SlackConnector.send_slack_message(message, channel)
-        true
-      rescue => e
-        notify_honeybadger(e, context: { slack_channel: channel, slack_message: message })
-        false
-      end
     end
 
     # Coerces resource_id to BSON::ObjectId safely.

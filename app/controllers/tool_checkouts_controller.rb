@@ -19,6 +19,16 @@ class ToolCheckoutsController < ApplicationController
     checkouts = checkouts.where(:tool_id.in => visible_tool_ids)
 
     checkouts = checkouts.order_by(checked_out_at: :desc)
-    render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes
+    response.set_header("total-items", checkouts.count)
+    page = (params[:page_num].presence || params[:pageNum]).to_i
+    checkouts = checkouts.skip([page, 0].max * FastQuery::ITEMS_PER_PAGE)
+      .limit(FastQuery::ITEMS_PER_PAGE).to_a
+    render(
+      {
+        json: checkouts,
+        each_serializer: ToolCheckoutSerializer,
+        adapter: :attributes
+      }.merge(MongoPreloadMaps.for_tool_records(checkouts))
+    )
   end
 end

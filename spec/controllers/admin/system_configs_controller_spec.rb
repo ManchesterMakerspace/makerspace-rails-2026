@@ -77,6 +77,33 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
     end
   end
 
+  describe "Mongo cache TTL" do
+    before { sign_in admin }
+
+    it "defaults to eight hours" do
+      get :index, format: :json
+      expect(JSON.parse(response.body).dig("security", "mongo_cache_ttl_hours")).to eq("8")
+    end
+
+    it "accepts values from one through twenty-four" do
+      put :update_setting,
+          params: { key: "mongo_cache_ttl_hours", value: "12" },
+          format: :json
+
+      expect(response).to have_http_status(200)
+      expect(SystemConfig.raw_get("mongo_cache_ttl_hours")).to eq("12")
+    end
+
+    it "rejects values outside the supported range" do
+      put :update_setting,
+          params: { key: "mongo_cache_ttl_hours", value: "25" },
+          format: :json
+
+      expect(response).to have_http_status(422)
+      expect(SystemConfig.raw_get("mongo_cache_ttl_hours")).to be_nil
+    end
+  end
+
   describe "authorization" do
     it "forbids a regular member from viewing system configs" do
       sign_in member

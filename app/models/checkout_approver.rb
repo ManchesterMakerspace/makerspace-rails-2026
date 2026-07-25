@@ -9,6 +9,13 @@ class CheckoutApprover
   # Optional individual Tool IDs. Shop assignments and tool assignments are additive.
   field :tool_ids, type: Array, default: []
 
+  index({ member_id: 1 }, { unique: true })
+  index({ shop_ids: 1 })
+  index({ tool_ids: 1 })
+
+  after_save :invalidate_reference_caches
+  after_destroy :invalidate_reference_caches
+
   validates :member, presence: true
   validate :has_assignment
   validate :assignments_exist
@@ -49,14 +56,23 @@ class CheckoutApprover
   end
 
   def self.allowed_tool_ids_for_member(member_id)
-    approver = find_by(member_id: member_id)
-    return [] unless approver
+    MongoCache.fetch(
+      "checkout_approvers/#{member_id}/allowed_tool_ids",
+      dependencies: ["checkout_approvers", "tools"]
+    ) do
+      approver = find_by(member_id: member_id)
+      next [] unless approver
 
-    shop_tool_ids = Tool.where(:shop_id.in => Array(approver.shop_ids)).pluck(:id)
-    (shop_tool_ids + Array(approver.tool_ids)).map(&:to_s).uniq
+      shop_tool_ids = Tool.where(:shop_id.in => Array(approver.shop_ids)).pluck(:id).to_a
+      (shop_tool_ids + Array(approver.tool_ids)).map(&:to_s).uniq
+    end
   end
 
   private
+
+  def invalidate_reference_caches
+    MongoCache.invalidate("checkout_approvers")
+  end
 
   def has_assignment
     return if Array(shop_ids).present? || Array(tool_ids).present?

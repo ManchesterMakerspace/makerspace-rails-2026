@@ -2,8 +2,13 @@ class Admin::CheckoutApproversController < AdminController
   before_action :find_approver, only: [:update, :destroy]
 
   def index
-    approvers = CheckoutApprover.all
-    render json: approvers, each_serializer: CheckoutApproverSerializer, adapter: :attributes
+    payload = CachedPayload.collection(
+      "checkout_approvers/all",
+      CheckoutApprover.all,
+      serializer: CheckoutApproverSerializer,
+      dependencies: ["checkout_approvers", "members", "shops", "tools"]
+    )
+    render json: payload
   end
 
   def create

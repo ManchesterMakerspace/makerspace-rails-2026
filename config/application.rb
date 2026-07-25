@@ -1,16 +1,11 @@
 require_relative 'boot'
 
-require "rails"
-# Pick the frameworks you want:
-# require "active_record/railtie"
 require "active_model/railtie"
 require "active_job/railtie"
 require "action_view/railtie"
-require "action_cable/engine"
 require "action_controller/railtie"
 require "action_mailer/railtie"
 require "sprockets/railtie"
-require "rails/test_unit/railtie"
 require_relative "../lib/app_domain_url"
 
 require 'dotenv'
@@ -34,6 +29,7 @@ Mongoid.load!("#{__dir__}/mongoid.yml")
 module MemberInterface
   class Application < Rails::Application
     config.load_defaults 5.0
+    config.active_job.queue_adapter = :async
 
     config.autoload_paths << "#{Rails.root}/lib"
     config.eager_load_paths << "#{Rails.root}/lib"

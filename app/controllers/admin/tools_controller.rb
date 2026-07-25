@@ -20,12 +20,22 @@ class Admin::ToolsController < ApplicationController
       )
     end
     tools = tools.order_by(name: :asc)
-    render json: tools,
-      each_serializer: AdminToolSerializer,
-      adapter: :attributes,
+    scope_key = if is_admin? || is_board_member?
+      "global"
+    else
+      "member=#{current_member.id}/shops=#{managed_shop_ids.sort.join(',')}"
+    end
+    payload = CachedPayload.collection(
+      "tools/admin/#{scope_key}/shop=#{params[:shop_id]}",
+      tools,
+      serializer: AdminToolSerializer,
+      dependencies: ["tools", "shops", "checkout_approvers", "members"],
       scope: current_member,
       management_shop_ids: managed_shop_ids,
       global_management: is_admin? || is_board_member?
+    )
+    response.set_header("total-items", payload.length)
+    render json: payload
   end
 
   def create

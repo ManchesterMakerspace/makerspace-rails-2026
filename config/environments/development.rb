@@ -1,3 +1,5 @@
+require "net/http"
+
 Rails.application.configure do
 
   # Settings specified here will take precedence over those in config/application.rb.
@@ -16,9 +18,19 @@ Rails.application.configure do
   config.consider_all_requests_local = true
 
   config.cache_store = :redis_cache_store, {
-    url: ENV["REDIS_URL"],
-    expires_in: 1.hour,
-    namespace: "cache"
+    url: ENV.fetch("REDIS_URL", "redis://localhost:6379/0"),
+    expires_in: 8.hours,
+    namespace: "makerspace:cache:v1",
+    compress: true,
+    compress_threshold: 1.kilobyte,
+    connect_timeout: 1,
+    read_timeout: 0.2,
+    write_timeout: 0.2,
+    reconnect_attempts: 1,
+    error_handler: ->(method:, returning:, exception:) {
+      Rails.logger.warn("[RailsCache] #{method} failed: #{exception.class}: #{exception.message}")
+      Honeybadger.notify(exception, context: { cache_method: method, returning: returning }) if defined?(Honeybadger)
+    }
   }
 
   # require 'syslog/logger'
@@ -82,11 +94,17 @@ Rails.application.configure do
   if ENV['MAILTRAP_API_TOKEN'].present? && ENV['MAILTRAP_ACCOUNT_ID'].present?
     begin
       config.action_mailer.perform_deliveries = true
-      response = RestClient.get(
-        "https://mailtrap.io/api/accounts/#{ENV['MAILTRAP_ACCOUNT_ID']}/inboxes",
-        { Authorization: "Bearer #{ENV['MAILTRAP_API_TOKEN']}" }
-      )
-      parsed = JSON.parse(response)
+      uri = URI("https://mailtrap.io/api/accounts/#{ENV['MAILTRAP_ACCOUNT_ID']}/inboxes")
+      request = Net::HTTP::Get.new(uri)
+      request["Authorization"] = "Bearer #{ENV['MAILTRAP_API_TOKEN']}"
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = true
+      http.open_timeout = 2
+      http.read_timeout = 2
+      response = http.request(request)
+      raise "Mailtrap API returned HTTP #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+
+      parsed = JSON.parse(response.body)
       inbox = parsed.is_a?(Array) ? parsed[0] : parsed["inboxes"][0]
       config.action_mailer.delivery_method = :smtp
       config.action_mailer.smtp_settings = {
@@ -98,7 +116,7 @@ Rails.application.configure do
         :authentication => :plain
       }
       $stderr.puts "[Mailer] Using Mailtrap for email delivery"
-    rescue RestClient::Exception, StandardError => e
+    rescue StandardError => e
       $stderr.puts "[Mailer] Mailtrap setup failed: #{e.message} — falling back to next provider"
     end
   elsif ENV['GMAIL_USERNAME'].present?

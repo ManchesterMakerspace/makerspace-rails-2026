@@ -82,35 +82,63 @@ class Admin::AnalyticsController < AdminController
   #
   # Response: [{ date: "2024-01", count: 142 }, ...]
   def active_members
-    # Determine date range
-    if params[:year].present?
-      year       = params[:year].to_i
-      start_date = Date.new(year, 1, 1)
-      end_date   = Date.new(year, 12, 31)
-    else
-      # Default: from the earliest member startDate to today
-      earliest = Member.where(:startDate.ne => nil).min(:startDate)
-      start_date = earliest ? earliest.to_date.beginning_of_month : 3.years.ago.to_date
-      end_date   = Date.today
+    unless AggregationRollout.enabled?("active_members")
+      render json: legacy_active_member_counts and return
     end
 
-    # Walk month by month and count active members at end of each month
-    data      = []
-    cursor    = start_date.beginning_of_month
-    end_month = end_date.beginning_of_month
+    year = params[:year].presence&.to_i
+    data = MongoCache.fetch(
+      "analytics/active_members/year=#{year || 'all'}",
+      dependencies: ["active_member_analytics"]
+    ) do
+      result = Member.collection.aggregate([
+        {
+          "$facet" => {
+            "range" => [
+              { "$match" => { "startDate" => { "$ne" => nil } } },
+              { "$sort" => { "startDate" => 1 } },
+              { "$limit" => 1 },
+              { "$project" => { "_id" => 0, "startDate" => 1 } }
+            ],
+            "members" => [
+              {
+                "$match" => {
+                  "status" => "activeMember",
+                  "startDate" => { "$ne" => nil },
+                  "expirationTime" => { "$ne" => nil }
+                }
+              },
+              { "$project" => { "_id" => 0, "startDate" => 1, "expirationTime" => 1 } }
+            ]
+          }
+        }
+      ]).to_a.first || {}
 
-    while cursor <= end_month
-      month_end    = cursor.end_of_month
-      month_end_ms = month_end.to_time.to_i * 1000
+      members = Array(result["members"])
+      if year
+        start_date = Date.new(year, 1, 1)
+        end_date = Date.new(year, 12, 31)
+      else
+        earliest = Array(result["range"]).first&.dig("startDate")
+        start_date = earliest ? earliest.to_date.beginning_of_month : 3.years.ago.to_date
+        end_date = Date.current
+      end
 
-      count = Member.where(
-        :startDate.lte      => month_end.to_time,
-        :expirationTime.gte => month_end_ms,
-        status:               'activeMember'
-      ).count
-
-      data << { date: cursor.strftime('%Y-%m'), count: count }
-      cursor = cursor >> 1  # advance one month
+      months = []
+      cursor = start_date.beginning_of_month
+      while cursor <= end_date.beginning_of_month
+        month_end = cursor.end_of_month.to_time
+        month_end_ms = month_end.to_i * 1000
+        months << {
+          date: cursor.strftime("%Y-%m"),
+          count: members.count do |member|
+            member["startDate"] <= month_end &&
+              member["expirationTime"].to_i >= month_end_ms
+          end
+        }
+        cursor = cursor.next_month
+      end
+      months
     end
 
     render json: data
@@ -218,6 +246,34 @@ class Admin::AnalyticsController < AdminController
   end
 
   private
+
+  def legacy_active_member_counts
+    if params[:year].present?
+      year = params[:year].to_i
+      start_date = Date.new(year, 1, 1)
+      end_date = Date.new(year, 12, 31)
+    else
+      earliest = Member.where(:startDate.ne => nil).min(:startDate)
+      start_date = earliest ? earliest.to_date.beginning_of_month : 3.years.ago.to_date
+      end_date = Date.current
+    end
+
+    data = []
+    cursor = start_date.beginning_of_month
+    while cursor <= end_date.beginning_of_month
+      month_end = cursor.end_of_month.to_time
+      data << {
+        date: cursor.strftime("%Y-%m"),
+        count: Member.where(
+          :startDate.lte => month_end,
+          :expirationTime.gte => month_end.to_i * 1000,
+          status: "activeMember"
+        ).count
+      }
+      cursor = cursor.next_month
+    end
+    data
+  end
 
   def parse_date_param(key, default:)
     return default if params[key].blank?

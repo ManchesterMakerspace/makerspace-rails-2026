@@ -15,10 +15,21 @@ class Admin::ReservationsController < ApplicationController
     end
     reservations = reservations.where(:end_at.gt => Time.current) if params[:future] == "true"
 
-    render json: reservations.order_by(start_at: :asc),
-      each_serializer: ReservationSerializer,
-      adapter: :attributes,
-      scope: current_member
+    reservations = reservations.order_by(start_at: :asc)
+    response.set_header("total-items", reservations.count)
+    page = (params[:page_num].presence || params[:pageNum]).to_i
+    reservations = reservations.skip([page, 0].max * FastQuery::ITEMS_PER_PAGE)
+      .limit(FastQuery::ITEMS_PER_PAGE)
+      .to_a
+
+    render(
+      {
+        json: reservations,
+        each_serializer: ReservationSerializer,
+        adapter: :attributes,
+        scope: current_member
+      }.merge(MongoPreloadMaps.for_reservations(reservations))
+    )
   end
 
   def create

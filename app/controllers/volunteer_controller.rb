@@ -140,7 +140,7 @@ class VolunteerController < AuthenticationController
 
     task.mark_pending!(current_member)
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "✅ *#{current_member.fullname}* has completed task *#{task.title}* (#{task.display_number}) and is awaiting verification.",
       VolunteerCredit.pending_slack_channel
     )

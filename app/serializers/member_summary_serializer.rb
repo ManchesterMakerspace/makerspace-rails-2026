@@ -20,15 +20,15 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :firebase_uid
 
   attribute :is_checkout_approver do
-    CheckoutApprover.exists?(member_id: object.id)
+    checkout_approver.present?
   end
 
   attribute :checkout_approver_shop_ids do
-    CheckoutApprover.find_by(member_id: object.id)&.shop_ids || []
+    checkout_approver&.shop_ids || []
   end
 
   attribute :checkout_approver_tool_ids do
-    CheckoutApprover.find_by(member_id: object.id)&.tool_ids || []
+    checkout_approver&.tool_ids || []
   end
 
   def member_contract_on_file
@@ -40,7 +40,11 @@ class MemberSummarySerializer < ActiveModel::Serializer
   end
 
   def household
-    group = object.group
+    group = if instance_options.key?(:groups_by_name)
+      instance_options[:groups_by_name][object.groupName.to_s]
+    else
+      object.group
+    end
     return nil unless group
 
     {
@@ -48,7 +52,11 @@ class MemberSummarySerializer < ActiveModel::Serializer
       display_name: group.group_display_name,
       role: object.household_role,
       primary_member_name: group.groupRep,
-      member_count: group.active_members.count
+      member_count: if instance_options.key?(:group_counts)
+        instance_options[:group_counts][group.groupName.to_s].to_i
+      else
+        group.active_members.count
+      end
     }
   end
 
@@ -104,5 +112,15 @@ class MemberSummarySerializer < ActiveModel::Serializer
 
   def slack_manual_deactivation_required
     object.status == "revoked" && !::Service::SlackConnector.admin_token_present?
+  end
+
+  def checkout_approver
+    return @checkout_approver if defined?(@checkout_approver)
+
+    @checkout_approver = if instance_options.key?(:checkout_approvers_by_member_id)
+      instance_options[:checkout_approvers_by_member_id][object.id.to_s]
+    else
+      CheckoutApprover.find_by(member_id: object.id)
+    end
   end
 end

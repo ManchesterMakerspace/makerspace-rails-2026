@@ -12,10 +12,14 @@ class ToolCheckout
   belongs_to :tool
   belongs_to :approved_by, class_name: "Member", optional: true
 
+  index({ member_id: 1, revoked_at: 1, checked_out_at: -1 })
+  index({ tool_id: 1, revoked_at: 1, checked_out_at: -1 })
+
   validates :member, presence: true
   validates :tool, presence: true
 
-  after_create :close_open_request, :invite_member_to_users_channel
+  after_create :close_open_request, :enqueue_created_notification
+  after_update :enqueue_revocation_notification
 
   def active?
     revoked_at.nil?
@@ -80,10 +84,22 @@ class ToolCheckout
 
   private
 
+  def enqueue_created_notification
+    ToolCheckoutNotificationJob.perform_later(id.to_s, "created")
+  end
+
+  def enqueue_revocation_notification
+    return unless previous_changes.key?("revoked_at") && revoked_at.present?
+
+    ToolCheckoutNotificationJob.perform_later(id.to_s, "revoked")
+  end
+
   def close_open_request
     request = ToolCheckoutRequest.where(member_id: member_id, tool_id: tool_id, status: "open").first
     request.update_attributes!(status: "closed", checked_out_id: id) if request
   end
+
+  public
 
   def invite_member_to_users_channel
     return if tool.users_channel.blank?

@@ -12,7 +12,7 @@ RSpec.describe Group, type: :model do
     around do |example|
       Current.request_id = SecureRandom.uuid
       example.run
-      REDIS.keys("#{Current.request_id}.*").each { |key| REDIS.del(key) }
+      Current.slack_messages = []
       Current.request_id = nil
     end
 

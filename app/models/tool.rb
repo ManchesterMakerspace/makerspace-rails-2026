@@ -21,6 +21,12 @@ class Tool
 
   belongs_to :shop
 
+  index({ shop_id: 1, name: 1 }, { unique: true, collation: { locale: "en", strength: 2 } })
+  index({ shop_id: 1, disabled: 1, reservable: 1, name: 1 })
+
+  after_save :invalidate_reference_caches
+  after_destroy :invalidate_reference_caches
+
   validates :name, presence: true
   validates :name, uniqueness: { scope: :shop_id, case_sensitive: false }
   validates :shop, presence: true
@@ -54,6 +60,10 @@ class Tool
   end
 
   private
+
+  def invalidate_reference_caches
+    MongoCache.invalidate("tools", "shops", "reservation_catalog", "checkout_approvers")
+  end
 
   def reservation_duration_uses_half_hours
     value = max_reservation_duration_hours.to_f

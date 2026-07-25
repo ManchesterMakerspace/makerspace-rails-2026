@@ -1,22 +1,19 @@
 class SlackMessagesJob < ApplicationJob
   include Service::SlackConnector
-  retry_on StandardError
+  retry_on StandardError, wait: :polynomially_longer, attempts: 5
 
   queue_as :slack
 
-  def perform(request_id)
-    message_payloads = get_enqueued_messages("#{request_id}.*")
-    messages_per_channel = message_payloads.group_by { |key, payload| JSON.load(payload)["channel"] }
-    messages_per_channel.each do |channel, payloads|
-      messages = []
-      keys = []
-      payloads.sort_by { |key, payload| Time.parse(JSON.load(payload)["timestamp"]) }.each do |key, payload|
-        parsed_payload = JSON.load(payload)
-        messages.push(parsed_payload["message"])
-        keys.push(key)
+  def perform(message_payloads)
+    Array(message_payloads)
+      .uniq { |payload| payload["dedupe_key"] }
+      .group_by { |payload| payload["channel"] }
+      .each do |channel, payloads|
+        messages = payloads.sort_by { |payload| payload["timestamp"] }.map { |payload| payload["message"] }
+        send_slack_messages(messages, channel)
       end
-      send_slack_messages(messages, channel)
-      REDIS.del(*keys)
-    end
+  rescue ActiveJob::DeserializationError
+    # A removed source record should not poison the queue.
+    nil
   end
 end

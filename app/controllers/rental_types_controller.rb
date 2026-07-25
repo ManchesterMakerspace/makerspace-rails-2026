@@ -1,6 +1,11 @@
 class RentalTypesController < AuthenticationController
   def index
-    types = RentalType.where(active: true)
-    render json: types, each_serializer: RentalTypeSerializer, adapter: :attributes
+    payload = CachedPayload.collection(
+      "rental_types/active",
+      RentalType.where(active: true),
+      serializer: RentalTypeSerializer,
+      dependencies: ["rental_types", "invoice_options"]
+    )
+    render json: payload
   end
 end

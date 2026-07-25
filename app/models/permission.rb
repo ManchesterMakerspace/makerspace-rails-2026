@@ -8,7 +8,13 @@ class Permission
 
   belongs_to :member
 
+  index({ member_id: 1, name: 1 }, { unique: true })
+  after_save { MongoCache.invalidate("permissions", "member_permissions/#{member_id}") }
+  after_destroy { MongoCache.invalidate("permissions", "member_permissions/#{member_id}") }
+
   def self.list_permissions
-    self.distinct(:name)
+    MongoCache.fetch("permissions/list", dependencies: ["permissions"]) do
+      distinct(:name).to_a
+    end
   end
 end

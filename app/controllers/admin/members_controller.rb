@@ -120,13 +120,8 @@ class Admin::MembersController < AdminController
   # POST /api/admin/members/:id/invite_google_drive
   # Re-sends a Google Drive folder invite to the member.
   def invite_google_drive
-    invite_gdrive(@member.email)
-    render json: {}, status: 204 and return
-  rescue Error::NotAllowed => e
-    render json: { message: e.message }, status: :unprocessable_content and return
-  rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
-    render json: { message: e.message }, status: :unprocessable_content and return
+    MemberInviteJob.perform_later(@member.id.to_s, "google_drive")
+    render json: { status: "queued" }, status: :accepted and return
   end
 
   # POST /api/admin/members/:id/invite_slack
@@ -134,13 +129,8 @@ class Admin::MembersController < AdminController
   # Safe to call even if the member is already in the workspace — Slack
   # will return an error which is surfaced to the admin.
   def invite_slack
-    ::Service::SlackConnector.invite_to_slack(@member.email, @member.lastname, @member.firstname)
-    render json: {}, status: 204 and return
-  rescue Error::NotAllowed => e
-    render json: { message: e.message }, status: :unprocessable_content and return
-  rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
-    render json: { message: e.message }, status: :unprocessable_content and return
+    MemberInviteJob.perform_later(@member.id.to_s, "slack")
+    render json: { status: "queued" }, status: :accepted and return
   end
 
   private
@@ -148,33 +138,12 @@ class Admin::MembersController < AdminController
   # Cancel subscription, revoke Drive/Slack access, and invalidate all sessions
   # when a member's status is set to revoked.
   def handle_revocation
-    # Cancel Braintree subscription if present
-    if @member.subscription_id
-      begin
-        ::BraintreeService::Subscription.cancel(connect_gateway, @member.subscription_id)
-      rescue => e
-        ::Service::SlackConnector.send_slack_message(
-          "⚠️ Error cancelling subscription for revoked member #{@member.fullname}: #{e.message}",
-          ::Service::SlackConnector.logs_channel
-        )
-      end
-    end
-
-    # Revoke Google Drive and Slack access
-    begin
-      Service::MemberAccess.revoke(@member)
-    rescue => e
-      ::Service::SlackConnector.send_slack_message(
-        "⚠️ Error revoking Drive/Slack access for #{@member.fullname}: #{e.message}",
-        ::Service::SlackConnector.logs_channel
-      )
-    end
-
     # Keep marketing mail silenced; revoked status suppresses direct member email/Slack notifications.
     @member.update_attribute(:silence_emails, true)
 
     # Rotate session token to invalidate any active portal sessions
     invalidate_member_sessions
+    MemberRevocationJob.perform_later(@member.id.to_s)
   end
 
   # Rotate session token to invalidate any active portal sessions
@@ -295,7 +264,7 @@ class Admin::MembersController < AdminController
     @member.reset_password_token = hashed_token
     @member.reset_password_sent_at = Time.now.utc
     @member.save!
-    MemberMailer.welcome_email_manual_register(@member.email, raw_token).deliver_now
+    MemberMailer.welcome_email_manual_register(@member.email, raw_token).deliver_later
   end
 
   def send_set_password_email

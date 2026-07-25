@@ -12,16 +12,26 @@ class Admin::ToolCheckoutRequestsController < ApplicationController
       ordinary_tool_ids = CheckoutApprover.allowed_tool_ids_for_member(current_member.id)
       ordinary_tool_ids &= Tool.where(:disabled.ne => true).pluck(:id).map(&:to_s)
       tool_ids = (managed_tool_ids + ordinary_tool_ids).uniq
-      valid_member_ids = Member.all.select(&:active_unexpired?).map(&:id)
+      valid_member_ids = Member.where(
+        status: "activeMember",
+        :expirationTime.gt => Time.current.to_i * 1000
+      ).pluck(:id).to_a
       requests = requests.where(:tool_id.in => tool_ids, :member_id.in => valid_member_ids)
     end
 
     requests = ToolCheckoutRequest.table_query(requests, params)
     response.set_header("total-items", requests.count)
+    page = (params[:page_num].presence || params[:pageNum]).to_i
+    offset = [page, 0].max * FastQuery::ITEMS_PER_PAGE
+    requests = requests.slice(offset, FastQuery::ITEMS_PER_PAGE) || []
 
-    render json: requests,
-      each_serializer: ToolCheckoutRequestSerializer,
-      adapter: :attributes
+    render(
+      {
+        json: requests,
+        each_serializer: ToolCheckoutRequestSerializer,
+        adapter: :attributes
+      }.merge(MongoPreloadMaps.for_tool_records(requests))
+    )
   end
 
   private

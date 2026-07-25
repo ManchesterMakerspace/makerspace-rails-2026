@@ -7,16 +7,22 @@ ruby '~> 3.4.0'
 gem 'base64'
 gem 'csv'
 
-gem 'rails', '8.0.0'
+gem 'railties', '8.0.0'
+gem 'activemodel', '8.0.0'
+gem 'activejob', '8.0.0'
+gem 'actionpack', '8.0.0'
+gem 'actionview', '8.0.0'
+gem 'actionmailer', '8.0.0'
 gem 'rack-cors', '~> 3.0'
 gem 'puma', '~> 8.0'
 gem 'active_model_serializers', '~> 0.10.15'
 gem 'dotenv-rails'
-gem 'concurrent-ruby', '~> 1.3'
 # Redis
 gem 'redis', '~> 5.0'
 gem 'connection_pool', '~> 2.4'
-gem 'redis-actionpack'
+# Sidekiq 7 remains compatible with pre-Redis-7 deployments. Upgrade to
+# Sidekiq 8 only after the production Redis server has been verified as 7+.
+gem 'sidekiq', '~> 7.3'
 # Authentication
 gem 'devise', '~> 5.0'
 gem 'nokogiri', '~> 1.19.4'
@@ -31,22 +37,19 @@ gem 'paypal-sdk-rest', '~> 1.7'
 gem 'braintree', '~> 4.39'
 gem 'slack-ruby-client', '~> 2.0'
 # Google Drive
-gem 'multi_json', '~> 1.15'
 gem 'faraday', '~> 2.14'
-gem 'google-apis-drive_v3'
-gem 'google-apis-sheets_v4'
-gem 'google-apis-admin_directory_v1'
-gem 'google-apis-calendar_v3'
-gem 'mini_magick', '~> 5.3'
+gem 'google-apis-drive_v3', require: false
+gem 'google-apis-sheets_v4', require: false
+gem 'google-apis-admin_directory_v1', require: false
+gem 'google-apis-calendar_v3', require: false
 gem 'sprockets-rails'
-gem 'mime-types', '~> 3.5'
-gem 'rest-client', '~> 2.1'
-gem 'git', '~> 4.4'
+# Release/integration rake tasks still use ruby-git; do not load it in web/worker boots.
+gem 'git', '~> 4.4', require: false
 gem 'rswag-api', '~> 2.14'
 gem 'rswag-ui', '~> 2.14'
 # PDF generation
-gem 'wicked_pdf', '~> 2.8'
-gem 'wkhtmltopdf-binary', '~> 0.12.6'
+gem 'wicked_pdf', '~> 2.8', require: false
+gem 'wkhtmltopdf-binary', '~> 0.12.6', require: false
 group :test do
   gem 'rspec-rails', '~> 7.1'
   gem 'mongoid-rspec', '~> 4.1'

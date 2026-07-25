@@ -9,6 +9,7 @@ class VolunteerCredit
   field :member_id,     type: BSON::ObjectId
   field :issued_by_id,  type: BSON::ObjectId
   field :task_id,       type: BSON::ObjectId, default: nil
+  field :event_id,      type: BSON::ObjectId, default: nil
 
   # Credit details
   field :description,   type: String
@@ -44,6 +45,13 @@ class VolunteerCredit
   index({ member_id: 1 })
   index({ status: 1 })
   index({ created_at: 1 })
+  index(
+    { event_id: 1, member_id: 1 },
+    {
+      unique: true,
+      partial_filter_expression: { event_id: { "$exists" => true } }
+    }
+  )
 
   # ── Scopes ────────────────────────────────────────────────────────────────
 
@@ -212,7 +220,7 @@ class VolunteerCredit
       end
     end
 
-    ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
+    ::Service::SlackConnector.enque_message(message, slack_user.slack_id)
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
   end
@@ -223,7 +231,7 @@ class VolunteerCredit
     slack_user = SlackUser.find_by(member_id: m.id)
     return unless slack_user
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "⚠️ A volunteer credit has been reversed: *#{description}* " \
       "(#{credit_value.abs} credit#{'s' if credit_value.abs != 1.0}). " \
       "Reason: #{reason}. Contact us if you have questions.",
@@ -239,7 +247,7 @@ class VolunteerCredit
     m          = member
     member_url = ::BraintreeService::Notification.get_member_profile(m)
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "💳 Manual Braintree review needed: A volunteer credit for #{member_url} " \
       "that contributed to a discount award has been reversed by *#{reversed_by.fullname}*. " \
       "Reason: #{reason}. Please review and adjust discount billing cycles in Braintree if appropriate.",
@@ -328,14 +336,14 @@ class VolunteerCredit
 
     slack_user = SlackUser.find_by(member_id: m.id)
     if slack_user
-      ::Service::SlackConnector.send_slack_message(
+      ::Service::SlackConnector.enque_message(
         "🎉 You've earned a volunteer discount! *#{amount_str}* will be applied " \
         "to your next #{cycles_str}.",
         slack_user.slack_id
       )
     end
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "💰 Volunteer discount applied for #{member_url} (ID: #{id_str}) — " \
       "*#{amount_str}* for #{cycles_str} (#{total} total queued). Discount: #{description}",
       ::Service::SlackConnector.treasurer_channel
@@ -348,7 +356,7 @@ class VolunteerCredit
   def notify_no_subscription(m)
     member_url = ::BraintreeService::Notification.get_member_profile(m)
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "⚠️ Volunteer discount earned by #{member_url} (ID: #{m.id}) but no active " \
       "subscription found. Credits preserved — will apply automatically once a subscription is activated.",
       ::Service::SlackConnector.logs_channel
@@ -360,7 +368,7 @@ class VolunteerCredit
   def notify_discount_error(m, error)
     member_url = (::BraintreeService::Notification.get_member_profile(m) rescue m.fullname)
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "🚨 Error applying volunteer discount for #{member_url} (ID: #{m.id}): #{error.message}",
       ::Service::SlackConnector.logs_channel
     )

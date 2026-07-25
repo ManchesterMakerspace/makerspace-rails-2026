@@ -15,18 +15,28 @@ module Service
         channel = members_relations_channel,
         uniquifier = request_caller_id(caller_locations(1,1)[0].label)
       )
-      REDIS.set(uniquifier, {
-        message: message,
-        channel: channel,
-        timestamp: Time.now
-      }.to_json)
+      payload = {
+        "message" => message,
+        "channel" => channel,
+        "timestamp" => Time.current.iso8601(6),
+        "dedupe_key" => uniquifier
+      }
+
+      if Current.request_id.present?
+        Current.slack_messages = Array(Current.slack_messages) << payload
+      else
+        SlackMessagesJob.perform_later([payload])
+      end
+      payload
     end
-    def get_enqueued_messages(uniquifier)
-      ::Service::SlackConnector.get_enqueued_messages(uniquifier)
+    def get_enqueued_messages(pattern)
+      ::Service::SlackConnector.get_enqueued_messages(pattern)
     end
-    def self.get_enqueued_messages(uniquifier)
-      related_keys = REDIS.keys(uniquifier)
-      related_keys.reduce({}) { |msg_hash, key| msg_hash.merge({ key => REDIS.get(key) }) }
+    def self.get_enqueued_messages(pattern)
+      Array(Current.slack_messages).each_with_object({}) do |payload, messages|
+        key = payload["dedupe_key"]
+        messages[key] = payload.to_json if File.fnmatch(pattern, key)
+      end
     end
     def send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel)
       ::Service::SlackConnector.send_slack_messages(messages, channel)
@@ -368,7 +378,7 @@ module Service
       messages.join(" \n ")
     end
     def self.request_caller_id(caller_method)
-      "#{Current.request_id}.#{caller_method}"
+      [Current.request_id.presence || SecureRandom.uuid, caller_method].join(".")
     end
   end
 end

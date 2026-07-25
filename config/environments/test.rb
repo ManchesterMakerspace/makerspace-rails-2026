@@ -81,6 +81,7 @@ Rails.application.configure do
   config.action_controller.default_url_options = test_url_options.dup
   config.action_mailer.default_url_options = test_url_options.dup
   config.action_mailer.delivery_method = :file
+  config.active_job.queue_adapter = :test
   ActionMailer::Base.file_settings = { :location => Rails.root.join('tmp/mail') }
 
   # Print deprecation notices to the stderr.

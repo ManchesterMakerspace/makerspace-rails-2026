@@ -11,7 +11,7 @@ module SetCurrentRequestDetails
     before_action do
       Current.url = request.url
       Current.method = request.method
-      Current.params = request.params
+      Current.params = compact_request_context
       Current.request_id = request.uuid
       Current.user_agent = request.user_agent
       Current.ip_address = request.ip
@@ -20,6 +20,12 @@ module SetCurrentRequestDetails
   end
 
   private
+
+  def compact_request_context
+    request.filtered_parameters
+      .slice("controller", "action", "id")
+      .transform_values { |value| value.to_s.first(200) }
+  end
 
   def current_request_ip_address
     cloudflare_client_ip_address || request.ip

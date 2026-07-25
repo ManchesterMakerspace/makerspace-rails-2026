@@ -67,7 +67,12 @@ class RentalsController < AuthenticationController
 
     encoded_signature = update_params[:signature]&.split(",")&.[](1)
     if encoded_signature
-      DocumentUploadJob.perform_later(encoded_signature, "rental_agreement", @rental.id.as_json)
+      pending_upload = PendingDocumentUpload.stage!(
+        base64_data: encoded_signature,
+        document_type: "rental_agreement",
+        resource: @rental
+      )
+      DocumentUploadJob.perform_later(pending_upload.id.to_s)
       @rental.update_attributes!(
         contract_signed_date: Date.today,
         status: "active"
