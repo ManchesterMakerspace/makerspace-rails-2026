@@ -146,4 +146,104 @@ RSpec.describe 'Tools API', type: :request do
       expect(Tool.where(shop_id: shop.id).count).to eq(2)
     end
   end
+
+  describe 'PUT /api/admin/tools/:id' do
+    let(:other_shop) { create(:shop, name: 'Metal Shop') }
+    let(:resource_manager) do
+      create(
+        :member,
+        :resource_manager,
+        :current,
+        resource_manager_shop_ids: [shop.id.to_s, other_shop.id.to_s]
+      )
+    end
+
+    before { sign_in resource_manager }
+
+    {
+      current: {
+        start_at: -> { 1.hour.ago },
+        end_at: -> { 1.hour.from_now },
+        status: "approved"
+      },
+      future: {
+        start_at: -> { 1.day.from_now },
+        end_at: -> { 1.day.from_now + 1.hour },
+        status: "pending"
+      }
+    }.each do |timing, reservation_attributes|
+      it "rejects moving a tool with a #{timing} blocking reservation" do
+        reservation = create(
+          :reservation,
+          shop: shop,
+          reservation_scope: "tools",
+          tool_ids: [visible_tool.id.to_s],
+          start_at: reservation_attributes[:start_at].call,
+          end_at: reservation_attributes[:end_at].call,
+          status: reservation_attributes[:status]
+        )
+
+        put "/api/admin/tools/#{visible_tool.id}",
+          params: { shop_id: other_shop.id.to_s }
+
+        expect(response).to have_http_status(:conflict)
+        expect(visible_tool.reload.shop_id).to eq(shop.id)
+        expect(reservation.reload.shop_id).to eq(shop.id)
+      end
+    end
+
+    it "allows moving a tool when all blocking reservations have ended" do
+      create(
+        :reservation,
+        shop: shop,
+        reservation_scope: "tools",
+        tool_ids: [visible_tool.id.to_s],
+        start_at: 2.hours.ago,
+        end_at: 1.hour.ago,
+        status: "approved"
+      )
+
+      put "/api/admin/tools/#{visible_tool.id}",
+        params: { shop_id: other_shop.id.to_s }
+
+      expect(response).to have_http_status(:ok)
+      expect(visible_tool.reload.shop_id).to eq(other_shop.id)
+    end
+
+    it "allows moving a tool when its future reservations are cancelled" do
+      create(
+        :reservation,
+        shop: shop,
+        reservation_scope: "tools",
+        tool_ids: [visible_tool.id.to_s],
+        start_at: 1.day.from_now,
+        end_at: 1.day.from_now + 1.hour,
+        status: "cancelled"
+      )
+
+      put "/api/admin/tools/#{visible_tool.id}",
+        params: { shop_id: other_shop.id.to_s }
+
+      expect(response).to have_http_status(:ok)
+      expect(visible_tool.reload.shop_id).to eq(other_shop.id)
+    end
+
+    it "allows non-shop updates while a blocking reservation exists" do
+      create(
+        :reservation,
+        shop: shop,
+        reservation_scope: "tools",
+        tool_ids: [visible_tool.id.to_s],
+        start_at: 1.hour.ago,
+        end_at: 1.hour.from_now,
+        status: "approved"
+      )
+
+      put "/api/admin/tools/#{visible_tool.id}",
+        params: { description: "Updated description" }
+
+      expect(response).to have_http_status(:ok)
+      expect(visible_tool.reload.description).to eq("Updated description")
+    end
+  end
 end

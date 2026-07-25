@@ -34,6 +34,29 @@ RSpec.describe "Volunteer task shop authorization", type: :request do
     expect(task.reload.title).to eq("Clean the shop")
   end
 
+  {
+    complete: [:post, {}],
+    release: [:post, { reason: "No longer available" }],
+    reject_pending: [:post, { reason: "Work was incomplete" }],
+    cancel: [:post, {}],
+    reset_cooldown: [:post, {}]
+  }.each do |action, (verb, request_params)|
+    it "rejects #{action} when the existing task belongs to an unmanaged shop" do
+      task = create_task(unmanaged_shop)
+      original_attributes = task.attributes
+
+      public_send(
+        verb,
+        "/api/admin/volunteer_tasks/#{task.id}/#{action}",
+        params: request_params
+      )
+
+      expect(response).to have_http_status(:forbidden)
+      expect(task.reload.attributes).to eq(original_attributes)
+      expect(VolunteerCredit.where(task_id: task.id)).to be_empty
+    end
+  end
+
   it "does not let an RM detach a task from its managed shop" do
     task = create_task(managed_shop)
 

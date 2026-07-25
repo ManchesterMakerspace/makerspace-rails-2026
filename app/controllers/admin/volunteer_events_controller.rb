@@ -1,5 +1,14 @@
 class Admin::VolunteerEventsController < AdminOrRmController
-  before_action :find_event, only: [:show, :update, :close, :add_attendee, :remove_attendee, :destroy]
+  MUTATION_ACTIONS = [
+    :update,
+    :close,
+    :add_attendee,
+    :remove_attendee,
+    :destroy
+  ].freeze
+
+  before_action :find_event, only: [:show, *MUTATION_ACTIONS]
+  before_action :authorize_current_event_shop!, only: MUTATION_ACTIONS
 
   # GET /api/admin/volunteer_events
   def index
@@ -19,7 +28,6 @@ class Admin::VolunteerEventsController < AdminOrRmController
 
   # PUT /api/admin/volunteer_events/:id
   def update
-    authorize_shop_assignment!(@event.shop_id, allow_blank: false)
     if event_params.key?(:shop_id)
       authorize_shop_assignment!(event_params[:shop_id], allow_blank: false)
     end
@@ -101,6 +109,10 @@ class Admin::VolunteerEventsController < AdminOrRmController
   def find_event
     @event = VolunteerEvent.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerEvent, { id: params[:id] }) if @event.nil?
+  end
+
+  def authorize_current_event_shop!
+    authorize_shop_assignment!(@event.shop_id, allow_blank: false)
   end
 
   def event_params

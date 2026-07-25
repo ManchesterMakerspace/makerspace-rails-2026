@@ -1,5 +1,16 @@
 class Admin::VolunteerTasksController < AdminOrRmController
-  before_action :find_task, only: [:update, :destroy, :complete, :cancel, :release, :reject_pending, :reset_cooldown]
+  MUTATION_ACTIONS = [
+    :update,
+    :destroy,
+    :complete,
+    :cancel,
+    :release,
+    :reject_pending,
+    :reset_cooldown
+  ].freeze
+
+  before_action :find_task, only: MUTATION_ACTIONS
+  before_action :authorize_current_task_shop!, only: MUTATION_ACTIONS
 
   # GET /api/admin/volunteer_tasks
   def index
@@ -25,7 +36,6 @@ class Admin::VolunteerTasksController < AdminOrRmController
 
   # PUT /api/admin/volunteer_tasks/:id
   def update
-    authorize_shop_assignment!(@task.shop_id, allow_blank: false)
     if task_params.key?(:shop_id)
       authorize_shop_assignment!(task_params[:shop_id], allow_blank: false)
     end
@@ -98,6 +108,10 @@ class Admin::VolunteerTasksController < AdminOrRmController
   def find_task
     @task = VolunteerTask.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerTask, { id: params[:id] }) if @task.nil?
+  end
+
+  def authorize_current_task_shop!
+    authorize_shop_assignment!(@task.shop_id, allow_blank: false)
   end
 
   def task_params

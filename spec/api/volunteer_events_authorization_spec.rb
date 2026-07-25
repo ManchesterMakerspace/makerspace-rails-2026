@@ -33,6 +33,42 @@ RSpec.describe "Volunteer event shop authorization", type: :request do
     expect(event.reload.title).to eq("Volunteer orientation")
   end
 
+  it "rejects closing an unmanaged event without issuing attendee credits" do
+    attendee = create(:member, :current)
+    event = create_event(unmanaged_shop)
+    event.set(attendee_ids: [attendee.id])
+
+    post "/api/admin/volunteer_events/#{event.id}/close"
+
+    expect(response).to have_http_status(:forbidden)
+    expect(event.reload.status).to eq("open")
+    expect(VolunteerCredit.where(member_id: attendee.id)).to be_empty
+  end
+
+  it "rejects adding an attendee to an unmanaged event" do
+    attendee = create(:member, :current)
+    event = create_event(unmanaged_shop)
+
+    post "/api/admin/volunteer_events/#{event.id}/add_attendee",
+      params: { member_id: attendee.id.to_s }
+
+    expect(response).to have_http_status(:forbidden)
+    expect(event.reload.attendee_ids).to be_empty
+  end
+
+  it "rejects removing an attendee from an unmanaged event" do
+    attendee = create(:member, :current)
+    event = create_event(unmanaged_shop)
+    event.set(attendee_ids: [attendee.id])
+
+    delete "/api/admin/volunteer_events/#{event.id}/remove_attendee",
+      params: { member_id: attendee.id.to_s }
+
+    expect(response).to have_http_status(:forbidden)
+    expect(event.reload.attendee_ids).to eq([attendee.id])
+    expect(event.attendee_removals).to be_empty
+  end
+
   it "does not let an RM detach an event from its managed shop" do
     event = create_event(managed_shop)
 

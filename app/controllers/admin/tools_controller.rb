@@ -4,6 +4,7 @@ class Admin::ToolsController < ApplicationController
   before_action :find_tool, only: [:update, :destroy]
   before_action :authorize_create, only: [:create]
   before_action :authorize_manage, only: [:update, :destroy]
+  before_action :prevent_move_with_active_reservations, only: [:update]
 
   def index
     tools = params[:shop_id] ? Tool.where(shop_id: params[:shop_id]) : Tool.all
@@ -66,7 +67,7 @@ class Admin::ToolsController < ApplicationController
   end
 
   def destroy
-    if Reservation.blocking.where(tool_ids: @tool.id.to_s, :end_at.gt => Time.current).exists?
+    if current_or_future_blocking_reservations.exists?
       raise ::Error::Conflict.new("Cancel future reservations before deleting this tool")
     end
     before = @tool.attributes.dup
@@ -125,5 +126,22 @@ class Admin::ToolsController < ApplicationController
     if target_shop_id && !can_manage_shop?(target_shop_id)
       raise ::Error::Forbidden.new("User cannot move this tool to that shop")
     end
+  end
+
+  def prevent_move_with_active_reservations
+    return unless tool_params.key?(:shop_id)
+    return if tool_params[:shop_id].to_s == @tool.shop_id.to_s
+    return unless current_or_future_blocking_reservations.exists?
+
+    raise ::Error::Conflict.new(
+      "Cancel current and future reservations before moving this tool"
+    )
+  end
+
+  def current_or_future_blocking_reservations
+    Reservation.blocking.where(
+      tool_ids: @tool.id.to_s,
+      :end_at.gt => Time.current
+    )
   end
 end
