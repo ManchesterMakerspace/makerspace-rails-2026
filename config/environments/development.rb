@@ -9,6 +9,12 @@ Rails.application.configure do
   config.hosts << "members.manchestermakerspace.com"
   config.hosts << "members.manchestermakerspace.org"
   config.hosts << "makerspace-dev-51ba804d4c30.herokuapp.com"
+
+  #  If an incoming request does not match the allowed domains, Rails blocks it, our APP_DOMAIN must always be a valid host
+  if ENV['APP_DOMAIN']&.empty? == false
+    config.hosts <<  ENV["APP_DOMAIN"]
+  end
+
   # Do not eager load code on boot.
   config.eager_load = true
 
