@@ -1,9 +1,9 @@
 class ReservationsController < ApplicationController
   around_action :handle_unexpected_reservation_errors
   before_action :authenticate_member!
-  before_action :require_active_member, only: [:availability, :preview, :create, :update]
-  before_action :find_reservation, only: [:update, :destroy]
-  before_action :authorize_owner, only: [:update, :destroy]
+  before_action :require_active_member, only: [:availability, :preview, :preview_update, :create, :update]
+  before_action :find_reservation, only: [:preview_update, :update, :destroy]
+  before_action :authorize_owner, only: [:preview_update, :update, :destroy]
 
   def index
     reservations = Reservation.where(member_id: current_member.id)
@@ -24,6 +24,15 @@ class ReservationsController < ApplicationController
     render json: ReservationService.preview(
       member: current_member,
       attributes: reservation_params
+    )
+  end
+
+  def preview_update
+    ensure_future!
+    render json: ReservationService.preview(
+      member: current_member,
+      attributes: reservation_params,
+      reservation: @reservation
     )
   end
 

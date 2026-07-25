@@ -75,6 +75,27 @@ RSpec.describe Service::ReservationSlackCanvas do
         )
     end
 
+    it "rebuilds a shop without cached canvases when a reservation enters the display window" do
+      travel_to(zone.local(2026, 7, 24, 0, 0)) do
+        create(
+          :reservation,
+          member: member,
+          shop: shop_without_canvases,
+          start_at: zone.local(2026, 7, 25, 9, 0),
+          end_at: zone.local(2026, 7, 25, 10, 0),
+          status: "approved"
+        )
+
+        described_class.rebuild_all!
+      end
+
+      expect(described_class).to have_received(:sync!).with(
+        shop_without_canvases,
+        dates: %w[2026-07-24 2026-07-25],
+        sync_owner_access: true
+      )
+    end
+
     it "explicitly waits for Retry-After and retries a 429 response" do
       response = double(headers: { "retry-after" => "11" })
       error = Slack::Web::Api::Errors::TooManyRequestsError.new(response)

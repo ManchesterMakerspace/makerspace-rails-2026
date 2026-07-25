@@ -43,6 +43,27 @@ RSpec.describe "Reservations API", type: :request do
     )
   end
 
+  it "excludes the member's reservation from its update preview" do
+    reservation = create(
+      :reservation,
+      member: member,
+      shop: shop,
+      reservation_scope: "tools",
+      tool_ids: [tool.id.to_s],
+      start_at: start_at,
+      end_at: start_at + 1.hour,
+      status: "approved"
+    )
+
+    post "/api/reservations/#{reservation.id}/preview", params: reservation_params
+
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body)).to include(
+      "eligible" => true,
+      "conflicts" => []
+    )
+  end
+
   it "rejects a member without the selected tool checkout" do
     ToolCheckout.where(member_id: member.id).delete_all
 

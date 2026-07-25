@@ -82,6 +82,9 @@ Rails.application.routes.draw do
           get :availability
           post :preview
         end
+        member do
+          post :preview, action: :preview_update
+        end
       end
 
       # Rentals — member self-service

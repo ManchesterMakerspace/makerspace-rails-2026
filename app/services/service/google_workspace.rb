@@ -5,28 +5,22 @@ module Service
     DIRECTORY_SCOPE = "https://www.googleapis.com/auth/admin.directory.resource.calendar".freeze
     CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar".freeze
     DEFAULT_LABEL_COLOR = "#039be5".freeze
-    CALENDAR_COLOR_CACHE_KEY = "google_calendar_colors:v4".freeze
-    GOOGLE_CALENDAR_COLOR_NAMES = [
-      "Cocoa", "Flamingo", "Tomato", "Tangerine", "Pumpkin", "Mango",
-      "Eucalyptus", "Basil", "Pistachio", "Avocado", "Citron", "Banana",
-      "Sage", "Peacock", "Sky", "Blueberry", "Lavender", "Wisteria",
-      "Graphite", "Birch", "Beetroot", "Cherry Blossom", "Grape", "Amethyst"
-    ].freeze
+    CALENDAR_COLOR_CACHE_KEY = "google_calendar_colors:v6".freeze
     FALLBACK_CALENDAR_COLORS = [
-      ["Black",  "#000000", "#ffffff"],
-      ["Red",    "#ff0000", "#ffffff"],
-      ["Blue",   "#0000ff", "#ffffff"],
-      ["Green",  "#008000", "#ffffff"],
-      ["Yellow", "#ffff00", "#000000"],
-      ["Orange", "#ffa500", "#000000"],
-      ["Brown",  "#a52a2a", "#ffffff"],
-      ["Purple", "#800080", "#ffffff"],
-      ["Gray",   "#808080", "#ffffff"],
-      ["Tan",    "#d2b48c", "#000000"],
-      ["Teal",   "#008080", "#ffffff"]
-    ].each_with_index.map do |(name, background, foreground), index|
+      ["1",  "Lavender",  "#a4bdfc", "#1d1d1d"],
+      ["2",  "Sage",      "#7ae7bf", "#1d1d1d"],
+      ["3",  "Grape",     "#dbadff", "#1d1d1d"],
+      ["4",  "Flamingo",  "#ff887c", "#1d1d1d"],
+      ["5",  "Banana",    "#fbd75b", "#1d1d1d"],
+      ["6",  "Tangerine", "#ffb878", "#1d1d1d"],
+      ["7",  "Peacock",   "#46d6db", "#1d1d1d"],
+      ["8",  "Graphite",  "#e1e1e1", "#1d1d1d"],
+      ["9",  "Blueberry", "#5484ed", "#1d1d1d"],
+      ["10", "Basil",     "#51b749", "#1d1d1d"],
+      ["11", "Tomato",    "#dc2127", "#1d1d1d"]
+    ].map do |id, name, background, foreground|
       {
-        id: (index + 1).to_s,
+        id: id,
         name: name,
         backgroundColor: background,
         foregroundColor: foreground
@@ -70,16 +64,12 @@ module Service
 
         if existing_id && colors.none? { |color| color[:id] == existing_id }
           existing = payload[:all_colors].find { |color| color[:id] == existing_id } ||
-            FALLBACK_CALENDAR_COLORS.find { |color| color[:id] == existing_id } ||
-            {
-              id: existing_id,
-              name: "Existing color #{existing_id}",
-              backgroundColor: DEFAULT_LABEL_COLOR,
-              foregroundColor: "#ffffff"
-            }
-          colors << existing.dup
-          payload[:colors] = colors
-          write_color_cache(payload)
+            FALLBACK_CALENDAR_COLORS.find { |color| color[:id] == existing_id }
+          if existing
+            colors << existing.dup
+            payload[:colors] = colors
+            write_color_cache(payload)
+          end
         end
 
         colors
@@ -250,7 +240,7 @@ module Service
       def build_color_cache_payload
         all_colors = fetch_google_calendar_colors
         payload = {
-          colors: curated_calendar_colors(all_colors),
+          colors: all_colors.map(&:dup),
           all_colors: all_colors
         }
         write_color_cache(payload)
@@ -277,51 +267,19 @@ module Service
           service = calendar
           definitions = service.respond_to?(:get_colors) ?
             service.get_colors : service.get_color
-          colors = definitions.calendar.to_h.map do |id, definition|
+          colors = definitions.event.to_h.map do |id, definition|
+            fallback = FALLBACK_CALENDAR_COLORS.find { |color| color[:id] == id.to_s }
             {
               id: id.to_s,
-              name: GOOGLE_CALENDAR_COLOR_NAMES[id.to_i - 1] || "Color #{id}",
+              name: fallback&.dig(:name) || "Event color #{id}",
               backgroundColor: definition.background,
               foregroundColor: definition.foreground
             }
           end.sort_by { |definition| definition[:id].to_i }
-          raise "Google Calendar returned no calendar colors" if colors.empty?
+          raise "Google Calendar returned no event colors" if colors.empty?
 
           colors
         end
-      end
-
-      def curated_calendar_colors(all_colors)
-        used_ids = []
-        key_colors = FALLBACK_CALENDAR_COLORS.filter_map do |target|
-          available = all_colors.reject { |color| used_ids.include?(color[:id]) }
-          match = available.min_by do |color|
-            color_distance(color[:backgroundColor], target[:backgroundColor])
-          end
-          next if match.nil?
-
-          used_ids << match[:id]
-          match.merge(
-            name: target[:name],
-            backgroundColor: target[:backgroundColor],
-            foregroundColor: target[:foregroundColor]
-          )
-        end
-        additional = all_colors.reject { |color| used_ids.include?(color[:id]) }.first(24)
-        key_colors + additional
-      end
-
-      def color_distance(first, second)
-        first_rgb = hex_to_rgb(first)
-        second_rgb = hex_to_rgb(second)
-        first_rgb.zip(second_rgb).sum { |left, right| (left - right)**2 }
-      end
-
-      def hex_to_rgb(value)
-        hex = value.to_s.delete_prefix("#")
-        raise ArgumentError, "Invalid Google color #{value.inspect}" unless hex.match?(/\A[0-9a-f]{6}\z/i)
-
-        [hex[0, 2], hex[2, 2], hex[4, 2]].map { |component| component.to_i(16) }
       end
 
       def read_color_cache

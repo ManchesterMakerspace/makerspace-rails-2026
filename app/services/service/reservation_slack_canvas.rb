@@ -120,7 +120,9 @@ module Service
       def rebuild_shop_with_rate_limit_retry!(shop, dates)
         retries = 0
         begin
-          unless shop.canvas_today.blank? && shop.canvas_tomorrow.blank?
+          if shop.canvas_today.present? ||
+              shop.canvas_tomorrow.present? ||
+              reservation_canvas_relevant?(shop, dates)
             sync!(
               shop,
               dates: dates,
@@ -146,6 +148,30 @@ module Service
           sleep(retry_after)
           retry
         end
+      end
+
+      def reservation_canvas_relevant?(shop, dates)
+        requested_dates = Array(dates).filter_map { |value| parse_date(value) }
+        return false if requested_dates.empty?
+
+        first_date = requested_dates.min
+        last_date = requested_dates.max + 1.day
+        window_start = ReservationService::ZONE.local(
+          first_date.year,
+          first_date.month,
+          first_date.day
+        ).utc
+        window_end = ReservationService::ZONE.local(
+          last_date.year,
+          last_date.month,
+          last_date.day
+        ).utc
+
+        Reservation.blocking.where(
+          shop_id: shop.id,
+          :start_at.lt => window_end,
+          :end_at.gt => window_start
+        ).exists?
       end
 
       def log_rebuild_failure(shop, dates, error)
