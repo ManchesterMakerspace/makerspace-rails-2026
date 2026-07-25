@@ -2,7 +2,7 @@ Rails.application.configure do
 
   # Settings specified here will take precedence over those in config/application.rb.
   config.action_mailer.default_url_options = {
-    host: ENV.fetch('APP_DOMAIN'),
+    host: AppDomainUrl.base_url(ENV.fetch("APP_DOMAIN"), environment: Rails.env),
     protocol: "https"
   }
   config.action_mailer.delivery_method = :smtp

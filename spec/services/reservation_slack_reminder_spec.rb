@@ -11,6 +11,12 @@ RSpec.describe Service::ReservationSlackReminder do
     allow(Service::SlackConnector).to receive(:schedule_slack_message)
       .and_return("Q123")
     allow(Service::SlackConnector).to receive(:delete_scheduled_slack_message)
+    allow(Rails.application.config.action_mailer)
+      .to receive(:default_url_options)
+      .and_return(host: "http://localhost", port: 3002)
+    allow(Rails.application.config.action_controller)
+      .to receive(:default_url_options)
+      .and_return(host: "http://localhost", port: 3002)
   end
 
   it "schedules a 30-minute reminder for an approved reservation 6 to 47 hours away" do
@@ -62,6 +68,15 @@ RSpec.describe Service::ReservationSlackReminder do
         post_at: reservation.start_at - 8.hours
       )
     end
+  end
+
+  it "normalizes a duplicated URL scheme and preserves an explicit host port" do
+    allow(Rails.application.config.action_mailer)
+      .to receive(:default_url_options)
+      .and_return(host: "http://http://localhost:3035", port: 3002)
+
+    expect(described_class.send(:portal_reservations_url))
+      .to eq("http://localhost:3035/reservations")
   end
 
   it "does not schedule a reminder when the reservation starts in less than 6 hours" do

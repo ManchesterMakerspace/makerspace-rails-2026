@@ -51,7 +51,7 @@ Rails.application.configure do
 
   config.action_mailer.raise_delivery_errors = true
   config.action_mailer.default_url_options = if ENV['APP_DOMAIN']
-    { host: "https://#{ENV['APP_DOMAIN']}" }
+    { host: AppDomainUrl.base_url(ENV["APP_DOMAIN"], environment: Rails.env) }
   else
     { host: 'http://localhost', port: ENV['PORT'] || 3002 }
   end

@@ -62,8 +62,17 @@ Rails.application.configure do
   # Tell Action Mailer not to deliver emails to the real world.
   # The :test delivery method accumulates sent emails in the
   # ActionMailer::Base.deliveries array.
-  config.action_controller.default_url_options = { host: "http://#{ENV["APP_DOMAIN"] || "localhost"}", port: ENV["PORT"] || 3002 }
-  config.action_mailer.default_url_options = { host: "http://#{ENV["APP_DOMAIN"] || "localhost"}", port: ENV["PORT"] || 3002 }
+  configured_app_domain = ENV["APP_DOMAIN"].presence
+  test_url_options = if configured_app_domain
+    host = AppDomainUrl.base_url(configured_app_domain, environment: Rails.env)
+    { host: host }.tap do |options|
+      options[:port] = ENV["PORT"] if ENV["PORT"].present?
+    end
+  else
+    { host: "http://localhost", port: ENV["PORT"] || 3002 }
+  end
+  config.action_controller.default_url_options = test_url_options.dup
+  config.action_mailer.default_url_options = test_url_options.dup
   config.action_mailer.delivery_method = :file
   ActionMailer::Base.file_settings = { :location => Rails.root.join('tmp/mail') }
 

@@ -123,9 +123,8 @@ module Service
         options = Rails.application.config.action_mailer.default_url_options || {}
         controller_options =
           Rails.application.config.action_controller.default_url_options || {}
-        host = options[:host].to_s.sub(%r{/+\z}, "")
-        protocol = options[:protocol].presence || "https"
-        base_url = host.match?(%r{\Ahttps?://}i) ? host : "#{protocol}://#{host}"
+        host = options[:host].presence || controller_options[:host].presence || "localhost"
+        base_url = AppDomainUrl.base_url(host, environment: Rails.env)
         port = options[:port].presence || controller_options[:port].presence
         base_uri = URI.parse(base_url)
         default_port = URI.parse("#{base_uri.scheme}://example.test").port

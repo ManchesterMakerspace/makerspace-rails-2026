@@ -11,6 +11,7 @@ require "action_controller/railtie"
 require "action_mailer/railtie"
 require "sprockets/railtie"
 require "rails/test_unit/railtie"
+require_relative "../lib/app_domain_url"
 
 require 'dotenv'
 if (ENV["RAILS_ENV"] == 'production')

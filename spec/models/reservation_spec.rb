@@ -7,7 +7,10 @@ RSpec.describe ReservationService do
     ActiveJob::Base.queue_adapter = :test
   end
 
-  let(:start_at) { 1.day.from_now.change(hour: 10, min: 0, sec: 0) }
+  let(:start_at) do
+    date = Time.current.in_time_zone(ReservationService::ZONE).to_date + 1
+    ReservationService::ZONE.local(date.year, date.month, date.day, 10, 0, 0)
+  end
   let(:end_at) { start_at + 1.hour }
   let(:shop) { create(:shop, reservable: false) }
   let(:tool) { create(:tool, shop: shop) }
