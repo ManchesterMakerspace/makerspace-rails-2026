@@ -1,6 +1,24 @@
 require "rails_helper"
 
 RSpec.describe AppDomainUrl do
+  describe ".host" do
+    it "returns only the normalized host" do
+      expect(described_class.host("https://members.example.org/"))
+        .to eq("members.example.org")
+      expect(described_class.host("http://https://localhost:3035"))
+        .to eq("localhost:3035")
+    end
+
+    it "produces a valid URL when passed to Rails with a separate protocol" do
+      url = Rails.application.routes.url_helpers.root_url(
+        host: described_class.host("https://members.example.org"),
+        protocol: "https"
+      )
+
+      expect(url).to eq("https://members.example.org/")
+    end
+  end
+
   describe ".base_url" do
     it "uses HTTP for local and non-secure test domains" do
       expect(described_class.base_url("localhost:3035", environment: "test"))

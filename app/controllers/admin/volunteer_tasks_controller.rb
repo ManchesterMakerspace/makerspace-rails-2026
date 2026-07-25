@@ -25,7 +25,10 @@ class Admin::VolunteerTasksController < AdminOrRmController
 
   # PUT /api/admin/volunteer_tasks/:id
   def update
-    authorize_shop_assignment!(task_params[:shop_id]) if task_params.key?(:shop_id)
+    authorize_shop_assignment!(@task.shop_id, allow_blank: false)
+    if task_params.key?(:shop_id)
+      authorize_shop_assignment!(task_params[:shop_id], allow_blank: false)
+    end
     previous_shop_id = @task.shop_id
     @task.update!(task_params)
     enqueue_canvas_sync(previous_shop_id)
@@ -109,8 +112,10 @@ class Admin::VolunteerTasksController < AdminOrRmController
     )
   end
 
-  def authorize_shop_assignment!(shop_id)
-    return if shop_id.blank? || is_admin? || is_board_member? || manages_shop?(shop_id)
+  def authorize_shop_assignment!(shop_id, allow_blank: true)
+    return if is_admin? || is_board_member?
+    return if shop_id.blank? && allow_blank
+    return if shop_id.present? && manages_shop?(shop_id)
 
     raise ::Error::Forbidden.new
   end

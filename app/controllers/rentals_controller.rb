@@ -85,7 +85,7 @@ class RentalsController < AuthenticationController
       end
 
       member = current_member
-      profile_url = "#{Rails.configuration.action_mailer.default_url_options[:host]}/members/#{member.id}/invoices"
+      profile_url = "#{Rails.configuration.x.app_base_url}/members/#{member.id}/invoices"
 
       slack_user = SlackUser.find_by(member_id: member.id)
       unless slack_user.nil?
@@ -227,8 +227,7 @@ class RentalsController < AuthenticationController
 
   def notify_admin_pending(rental, spot)
     member = current_member
-    host = Rails.configuration.action_mailer.default_url_options[:host]
-    admin_rentals_url = "#{host}/admin/rentals"
+    admin_rentals_url = "#{Rails.configuration.x.app_base_url}/admin/rentals"
     admin_message = "🔔 New rental request from *#{member.fullname}* for *#{spot.number}* (#{spot.rental_type&.display_name} — #{spot.location}). <#{admin_rentals_url}|Review rental requests>"
     enque_message(
       admin_message,

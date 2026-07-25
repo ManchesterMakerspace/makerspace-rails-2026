@@ -7,10 +7,11 @@ namespace :reservations do
   desc "Backfill existing Resource Managers with all current shops"
   task backfill_resource_manager_shops: :environment do
     shop_ids = Shop.all.pluck(:id).map(&:to_s)
-    Member.where(role: "resource_manager").each do |member|
-      next if member.resource_manager_shop_ids.present?
-      member.set(resource_manager_shop_ids: shop_ids)
-    end
+    count = Member.where(
+      role: "resource_manager",
+      :resource_manager_shop_ids.exists => false
+    ).update_all(resource_manager_shop_ids: shop_ids)
+    puts "Backfilled #{count} legacy Resource Manager(s)"
   end
 
   desc "Normalize legacy reservation status spelling from canceled to cancelled"

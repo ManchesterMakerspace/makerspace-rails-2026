@@ -64,12 +64,19 @@ Rails.application.configure do
   # ActionMailer::Base.deliveries array.
   configured_app_domain = ENV["APP_DOMAIN"].presence
   test_url_options = if configured_app_domain
-    host = AppDomainUrl.base_url(configured_app_domain, environment: Rails.env)
-    { host: host }.tap do |options|
+    config.x.app_base_url = AppDomainUrl.base_url(
+      configured_app_domain,
+      environment: Rails.env
+    )
+    {
+      host: AppDomainUrl.host(configured_app_domain),
+      protocol: config.x.app_base_url.split(":", 2).first
+    }.tap do |options|
       options[:port] = ENV["PORT"] if ENV["PORT"].present?
     end
   else
-    { host: "http://localhost", port: ENV["PORT"] || 3002 }
+    config.x.app_base_url = "http://localhost:#{ENV['PORT'] || 3002}"
+    { host: "localhost", port: ENV["PORT"] || 3002, protocol: "http" }
   end
   config.action_controller.default_url_options = test_url_options.dup
   config.action_mailer.default_url_options = test_url_options.dup

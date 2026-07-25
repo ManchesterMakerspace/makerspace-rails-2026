@@ -399,7 +399,7 @@ class Member
                 status != 'activeMember'
     return unless lapsed
 
-    member_url = "#{Rails.configuration.action_mailer.default_url_options[:host]}/members/#{id}"
+    member_url = "#{Rails.configuration.x.app_base_url}/members/#{id}"
     rental_list = orphaned.map { |r| "##{r.number}" }.join(', ')
 
     ::Service::SlackConnector.send_slack_message(

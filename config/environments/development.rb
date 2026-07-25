@@ -51,9 +51,17 @@ Rails.application.configure do
 
   config.action_mailer.raise_delivery_errors = true
   config.action_mailer.default_url_options = if ENV['APP_DOMAIN']
-    { host: AppDomainUrl.base_url(ENV["APP_DOMAIN"], environment: Rails.env) }
+    config.x.app_base_url = AppDomainUrl.base_url(
+      ENV["APP_DOMAIN"],
+      environment: Rails.env
+    )
+    {
+      host: AppDomainUrl.host(ENV["APP_DOMAIN"]),
+      protocol: config.x.app_base_url.split(":", 2).first
+    }
   else
-    { host: 'http://localhost', port: ENV['PORT'] || 3002 }
+    config.x.app_base_url = "http://localhost:#{ENV['PORT'] || 3002}"
+    { host: 'localhost', port: ENV['PORT'] || 3002, protocol: "http" }
   end
   config.action_mailer.perform_caching = false
   # config.action_controller.asset_host = "#{config.action_mailer.default_url_options[:host]}:#{config.action_mailer.default_url_options[:port]}"

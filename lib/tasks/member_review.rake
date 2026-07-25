@@ -1,7 +1,7 @@
 desc "This task is called by the Heroku scheduler add-on and reviews membership statuses."
 task :member_review => :environment do
   should_run = Rails.env.production? ? !!Date.today.sunday? : true
-  @base_url = ActionMailer::Base.default_url_options[:host]
+  @base_url = Rails.configuration.x.app_base_url
 
   @management_messages = [
     {

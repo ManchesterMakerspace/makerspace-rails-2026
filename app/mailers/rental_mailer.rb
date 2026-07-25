@@ -11,14 +11,14 @@ class RentalMailer < ApplicationMailer
   def rental_request_approved(member_id, rental_id)
     @member      = Member.find(member_id)
     @rental      = Rental.find(rental_id)
-    @profile_url = "#{Rails.configuration.action_mailer.default_url_options[:host]}/members/#{@member.id}/invoices"
+    @profile_url = "#{Rails.configuration.x.app_base_url}/members/#{@member.id}/invoices"
     mail(to: @member.email, subject: "Your Rental Request Has Been Approved — Manchester Makerspace")
   end
 
   def rental_claimed(member_id, rental_id)
     @member      = Member.find(member_id)
     @rental      = Rental.find(rental_id)
-    @profile_url = "#{Rails.configuration.action_mailer.default_url_options[:host]}/members/#{@member.id}/invoices"
+    @profile_url = "#{Rails.configuration.x.app_base_url}/members/#{@member.id}/invoices"
     mail(to: @member.email, subject: "Rental Claimed — Payment Required — Manchester Makerspace")
   end
 

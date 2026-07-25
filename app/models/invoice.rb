@@ -95,7 +95,7 @@ class Invoice
 
   def request_refund
     set_refund_requested
-    base_url = ActionMailer::Base.default_url_options[:host]
+    base_url = Rails.configuration.x.app_base_url
     enque_message("#{member.fullname} has requested a refund of #{amount} for #{name || description} from #{settled_at}. <#{base_url}/billing/transactions/#{transaction_id}|Process refund>")
     BillingMailer.refund_requested(member.email, transaction_id, id.as_json).deliver_later
   end
@@ -261,8 +261,7 @@ class Invoice
     slack_user = SlackUser.find_by(member_id: member_id)
     return if slack_user.nil? || member&.direct_notifications_suppressed?
 
-    base_url = Rails.configuration.action_mailer.default_url_options[:host]
-    portal_url = base_url.to_s.start_with?('http') ? base_url : "https://#{base_url}"
+    portal_url = Rails.configuration.x.app_base_url
     details = description.present? ? "\n#{description}" : ""
     message = "A shop charge has been added to your member portal account: *#{name}* for *$#{format('%.2f', amount)}*.#{details}\n<#{portal_url}|Open the member portal>"
     ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)

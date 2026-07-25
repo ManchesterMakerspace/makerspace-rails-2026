@@ -1,0 +1,64 @@
+require "rails_helper"
+
+RSpec.describe "Volunteer task shop authorization", type: :request do
+  let(:managed_shop) { create(:shop, name: "Managed Shop") }
+  let(:unmanaged_shop) { create(:shop, name: "Unmanaged Shop") }
+  let(:resource_manager) do
+    create(
+      :member,
+      :resource_manager,
+      :current,
+      resource_manager_shop_ids: [managed_shop.id.to_s]
+    )
+  end
+
+  before do
+    sign_in resource_manager
+  end
+
+  def create_task(shop)
+    VolunteerTask.create!(
+      title: "Clean the shop",
+      description: "Sweep and organize the work area",
+      shop_id: shop.id,
+      created_by_id: resource_manager.id
+    )
+  end
+
+  it "rejects an update when the existing task belongs to an unmanaged shop" do
+    task = create_task(unmanaged_shop)
+
+    put "/api/admin/volunteer_tasks/#{task.id}", params: { title: "Changed" }
+
+    expect(response).to have_http_status(:forbidden)
+    expect(task.reload.title).to eq("Clean the shop")
+  end
+
+  it "does not let an RM detach a task from its managed shop" do
+    task = create_task(managed_shop)
+
+    put "/api/admin/volunteer_tasks/#{task.id}", params: { shop_id: "" }
+
+    expect(response).to have_http_status(:forbidden)
+    expect(task.reload.shop_id).to eq(managed_shop.id)
+  end
+
+  it "rejects moving a task from a managed shop to an unmanaged shop" do
+    task = create_task(managed_shop)
+
+    put "/api/admin/volunteer_tasks/#{task.id}",
+      params: { shop_id: unmanaged_shop.id.to_s }
+
+    expect(response).to have_http_status(:forbidden)
+    expect(task.reload.shop_id).to eq(managed_shop.id)
+  end
+
+  it "allows an RM to update a task in their managed shop without resending shop_id" do
+    task = create_task(managed_shop)
+
+    put "/api/admin/volunteer_tasks/#{task.id}", params: { title: "Updated" }
+
+    expect(response).to have_http_status(:ok)
+    expect(task.reload.title).to eq("Updated")
+  end
+end

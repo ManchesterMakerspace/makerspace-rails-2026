@@ -3,16 +3,19 @@ module AppDomainUrl
 
   module_function
 
-  def base_url(domain = ENV["APP_DOMAIN"], environment: nil)
-    normalized_domain = domain.to_s.strip
+  def host(domain = ENV["APP_DOMAIN"])
+    normalized_host = domain.to_s.strip
       .sub(%r{\A(?:(?:https?):\/\/)+}i, "")
       .sub(%r{/+\z}, "")
-    normalized_domain = "localhost" if normalized_domain.empty?
+    normalized_host.empty? ? "localhost" : normalized_host
+  end
 
-    protocol = secure_protocol?(normalized_domain, environment: environment) ?
+  def base_url(domain = ENV["APP_DOMAIN"], environment: nil)
+    normalized_host = host(domain)
+    protocol = secure_protocol?(normalized_host, environment: environment) ?
       "https" :
       "http"
-    "#{protocol}://#{normalized_domain}"
+    "#{protocol}://#{normalized_host}"
   end
 
   def secure_protocol?(domain, environment: nil)
