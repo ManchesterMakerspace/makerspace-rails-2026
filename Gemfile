@@ -30,8 +30,6 @@ gem 'mongoid_search', '~> 0.4'
 gem 'paypal-sdk-rest', '~> 1.7'
 gem 'braintree', '~> 4.39'
 gem 'slack-ruby-client', '~> 2.0'
-# Cron generation for the remaining jobs in config/schedule.rb.
-gem 'whenever', '~> 1.1', require: false
 # Google Drive
 gem 'multi_json', '~> 1.15'
 gem 'faraday', '~> 2.14'

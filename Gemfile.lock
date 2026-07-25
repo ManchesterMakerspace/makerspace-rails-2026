@@ -90,7 +90,6 @@ GEM
     builder (3.3.0)
     case_transform (0.2)
       activesupport
-    chronic (0.10.2)
     chunky_png (1.4.0)
     cloudflare-rails (7.0.0)
       actionpack (>= 7.2.0, < 8.2.0)
@@ -465,8 +464,6 @@ GEM
       base64
       websocket-extensions (>= 0.1.0)
     websocket-extensions (0.1.5)
-    whenever (1.1.2)
-      chronic (>= 0.6.3)
     wicked_pdf (2.8.2)
       activesupport
       ostruct
@@ -533,7 +530,6 @@ DEPENDENCIES
   sprockets-rails
   tzinfo-data
   valid_email2
-  whenever (~> 1.1)
   wicked_pdf (~> 2.8)
   wkhtmltopdf-binary (~> 0.12.6)
 
@@ -560,7 +556,6 @@ CHECKSUMS
   builder (3.3.0) sha256=497918d2f9dca528fdca4b88d84e4ef4387256d984b8154e9d5d3fe5a9c8835f
   bundler (4.0.15) sha256=a4ceb882fe94a0e0ac63cd0813932bbfd631a14e5ac0b7975189b19a4d28d9e7
   case_transform (0.2) sha256=e2ad4418dceeb227cf474cc332cd5004c95c136c04186c1cceaad8ab8de6fe3b
-  chronic (0.10.2) sha256=766f2fcce6ac3cc152249ed0f2b827770d3e517e2e87c5fba7ed74f4889d2dc3
   chunky_png (1.4.0) sha256=89d5b31b55c0cf4da3cf89a2b4ebc3178d8abe8cbaf116a1dba95668502fdcfe
   cloudflare-rails (7.0.0) sha256=9049b8305eab120e2d4ed9d04b42ce7030da5297fb62b0fa718b0a9e2d9af56c
   concurrent-ruby (1.3.7) sha256=4412caec3a5ea2e5fdc52076724c071a81f2c0593d83b2ac8cbb8ca63b3151b0
@@ -722,7 +717,6 @@ CHECKSUMS
   warden (1.2.9) sha256=46684f885d35a69dbb883deabf85a222c8e427a957804719e143005df7a1efd0
   websocket-driver (0.8.2) sha256=97c556b019bf3410b4961002ac501621e9322d3f8a7bc02161a09301cc4c4146
   websocket-extensions (0.1.5) sha256=1c6ba63092cda343eb53fc657110c71c754c56484aad42578495227d717a8241
-  whenever (1.1.2) sha256=af139a25cf6b5c7d2122686724c0b9a4a7495135a1f79a404e29f4cce48abd83
   wicked_pdf (2.8.2) sha256=648d9b0cec5a34adbc9bbf809731052a78119e2d6d323b9e4aa1383e1d683824
   wkhtmltopdf-binary (0.12.6.10) sha256=863060a4559253d20f9a73c76106bd972a443aec9fdd5013b45e1d1a9a44f352
   xml-simple (1.1.9) sha256=d21131e519c86f1a5bc2b6d2d57d46e6998e47f18ed249b25cad86433dbd695d
