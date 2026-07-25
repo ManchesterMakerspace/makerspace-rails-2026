@@ -23,6 +23,8 @@ class Reservation
   field :calendar_sync_status, type: String
   field :calendar_sync_error, type: String
   field :calendar_synced_at, type: Time
+  field :scheduled_message_id, type: String
+  field :scheduled_message_channel_id, type: String
 
   belongs_to :member
   belongs_to :shop

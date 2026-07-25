@@ -64,7 +64,9 @@ class Admin::ToolCheckoutsController < ApplicationController
       actor:          current_member,
       subject:        member,
       after_snapshot: { member_id: member.id.to_s, tool_id: tool.id.to_s,
-                        tool_name: tool.name, approved_by: current_member.fullname },
+                        shop_name: tool.shop.name, tool_name: tool.name,
+                        approved_by: current_member.fullname },
+      message_details: "shop: #{tool.shop.name}, tool: #{tool.name}",
       slack_channel:  ::Service::SlackConnector.logs_channel
     )
 

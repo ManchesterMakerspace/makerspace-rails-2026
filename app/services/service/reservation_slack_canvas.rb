@@ -10,8 +10,6 @@ module Service
         failures = []
 
         Shop.all.each do |shop|
-          next if shop.canvas_today.blank? && shop.canvas_tomorrow.blank?
-
           begin
             rebuild_shop_with_rate_limit_retry!(shop, dates)
           rescue => error
@@ -122,9 +120,16 @@ module Service
       def rebuild_shop_with_rate_limit_retry!(shop, dates)
         retries = 0
         begin
-          sync!(
+          unless shop.canvas_today.blank? && shop.canvas_tomorrow.blank?
+            sync!(
+              shop,
+              dates: dates,
+              sync_owner_access: true
+            )
+          end
+          Service::VolunteerSlackCanvas.sync!(
             shop,
-            dates: dates,
+            create_if_needed: true,
             sync_owner_access: true
           )
         rescue Slack::Web::Api::Errors::TooManyRequestsError => error
@@ -161,11 +166,15 @@ module Service
       end
 
       def canvas_ids(shop)
-        [shop.canvas_today, shop.canvas_tomorrow].compact_blank.uniq
+        [
+          shop.canvas_today,
+          shop.canvas_tomorrow,
+          shop.volunteer_canvas_id
+        ].compact_blank.uniq
       end
 
       def canvas_configuration(date, today, tomorrow, shop)
-        return [:canvas_today, "Todays #{shop.name} Reservations"] if date == today
+        return [:canvas_today, "Today's #{shop.name} Reservations"] if date == today
         return [:canvas_tomorrow, "Tomorrow's #{shop.name} Reservations"] if date == tomorrow
 
         nil

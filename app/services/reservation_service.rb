@@ -450,6 +450,7 @@ class ReservationService
 
     def enqueue_external_syncs(reservation, previous_canvas_targets: [])
       ReservationCalendarSyncJob.perform_later(reservation.id.to_s)
+      ReservationSlackReminderSyncJob.perform_later(reservation.id.to_s)
 
       targets = (Array(previous_canvas_targets) + slack_canvas_targets(reservation))
         .uniq

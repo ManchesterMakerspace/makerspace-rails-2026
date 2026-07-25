@@ -16,6 +16,7 @@ class Shop
   field :color_id, type: String, default: "1"
   field :canvas_today, type: String
   field :canvas_tomorrow, type: String
+  field :volunteer_canvas_id, type: String
 
   has_many :tools, dependent: :destroy
 

@@ -45,6 +45,15 @@ RSpec.describe Service::AuditLogger do
         expect(log.slack_message).to include('revoked')
       end
 
+      it 'appends human-readable message details when provided' do
+        log = described_class.log(
+          **base_params,
+          message_details: 'shop: Woodshop, tool: Bandsaw'
+        )
+
+        expect(log.slack_message).to include('shop: Woodshop, tool: Bandsaw')
+      end
+
       it 'scrubs sensitive fields from before_snapshot' do
         before_snap = {
           'firstname'            => 'Jane',

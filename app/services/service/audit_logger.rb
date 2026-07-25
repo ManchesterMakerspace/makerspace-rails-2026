@@ -47,6 +47,8 @@ module Service
     #   before_snapshot: (optional) Hash — full document before the change.
     #   after_snapshot:  (optional) Hash — full document after the change.
     #
+    #   message_details: (optional) Human-readable context appended to the
+    #                    generated Slack message.
     #   slack_channel:   (optional) Channel to post to. Omit to skip Slack entirely.
     #
     # Returns the persisted AuditLog document, or nil if the write failed
@@ -62,6 +64,7 @@ module Service
       field_changes: nil,
       before_snapshot: nil,
       after_snapshot: nil,
+      message_details: nil,
       slack_channel: nil
     )
       validate_required!(log_type: log_type, event_type: event_type,
@@ -87,7 +90,8 @@ module Service
         actor_name:    actor_name,
         subject_name:  subject_name,
         resource_type: resource_type,
-        field_changes: clean_field_changes
+        field_changes: clean_field_changes,
+        message_details: message_details
       )
 
       # Attempt Slack post if a channel was provided
@@ -169,7 +173,14 @@ module Service
 
     # Generates a human-readable Slack message from structured data.
     # Always produced; only posted when slack_channel is present.
-    def self.generate_message(event_type:, actor_name:, subject_name:, resource_type:, field_changes:)
+    def self.generate_message(
+      event_type:,
+      actor_name:,
+      subject_name:,
+      resource_type:,
+      field_changes:,
+      message_details:
+    )
       parts = []
 
       # Lead with event label
@@ -191,6 +202,7 @@ module Service
         parts << "— #{diff}" if diff.present?
       end
 
+      parts << "— #{message_details}" if message_details.present?
       parts.join(' ')
     end
 

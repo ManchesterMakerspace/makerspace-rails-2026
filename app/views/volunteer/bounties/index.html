@@ -172,7 +172,10 @@
   <script>
     const urlParams  = new URLSearchParams(window.location.search);
     const token      = urlParams.get('token') || '';
-    const jsonUrl    = '/volunteer/bounties.json' + (token ? '?token=' + encodeURIComponent(token) : '');
+    const jsonParams = new URLSearchParams();
+    if (token) jsonParams.set('token', token);
+    if (urlParams.get('shop')) jsonParams.set('shop', urlParams.get('shop'));
+    const jsonUrl    = '/volunteer/bounties.json' + (jsonParams.toString() ? '?' + jsonParams.toString() : '');
     const REFRESH_MS = 30000;
 
     const grid        = document.getElementById('task-grid');

@@ -34,6 +34,8 @@ RSpec.describe ReservationService do
     expected_date = start_at.in_time_zone(ReservationService::ZONE).to_date.iso8601
     expect(ReservationSlackCanvasSyncJob).to receive(:perform_later)
       .with(shop.id.to_s, [expected_date])
+    expect(ReservationSlackReminderSyncJob).to receive(:perform_later)
+      .with(kind_of(String))
 
     reservation = described_class.create!(member: member, attributes: attributes)
 

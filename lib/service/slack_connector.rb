@@ -95,6 +95,26 @@ module Service
       client.chat_delete(channel: safe_channel(channel), ts: ts)
     end
 
+    def self.schedule_slack_message(channel:, text:, post_at:)
+      with_rate_limit_retry("chat.scheduleMessage") do
+        response = client.chat_scheduleMessage(
+          channel: safe_channel(channel),
+          text: text,
+          post_at: post_at.to_i
+        )
+        response.scheduled_message_id
+      end
+    end
+
+    def self.delete_scheduled_slack_message(channel:, scheduled_message_id:)
+      with_rate_limit_retry("chat.deleteScheduledMessage") do
+        client.chat_deleteScheduledMessage(
+          channel: safe_channel(channel),
+          scheduled_message_id: scheduled_message_id
+        )
+      end
+    end
+
     def self.find_channel_id(channel_name)
       requested = channel_name.to_s.delete_prefix('#').strip
       return if requested.blank?
@@ -131,9 +151,11 @@ module Service
       nil
     end
 
-    def self.create_canvas(title)
+    def self.create_canvas(title, channel_id: nil)
       with_rate_limit_retry("canvases.create") do
-        client.canvases_create(title: title).canvas_id
+        arguments = { title: title }
+        arguments[:channel_id] = channel_id if channel_id.present?
+        client.canvases_create(**arguments).canvas_id
       end
     end
 

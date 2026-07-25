@@ -262,7 +262,7 @@ Rails.application.routes.draw do
         end
 
         # Volunteer events — admin/RM manage
-        resources :volunteer_events, only: [:index, :create, :show, :destroy] do
+        resources :volunteer_events, only: [:index, :create, :show, :update, :destroy] do
           member do
             post   :close
             post   :add_attendee

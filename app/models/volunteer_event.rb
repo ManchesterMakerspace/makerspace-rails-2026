@@ -11,6 +11,8 @@ class VolunteerEvent
   field :description,       type: String
   field :credit_value,      type: Float,   default: 1.0
   field :event_date,        type: Date
+  field :shop_id,           type: BSON::ObjectId, default: nil
+  field :prerequisite_tool_ids, type: Array, default: []
   field :status,            type: String,  default: 'open'  # open | closed
   field :created_by_id,     type: BSON::ObjectId
   field :closed_by_id,      type: BSON::ObjectId, default: nil
@@ -25,11 +27,13 @@ class VolunteerEvent
   validates :title,        presence: true
   validates :credit_value, numericality: { greater_than: 0 }
   validates_inclusion_of :status, in: VALID_STATUSES
+  validate :prerequisites_belong_to_shop
 
   before_create :assign_event_number
 
   index({ status: 1 })
   index({ event_number: 1 }, { unique: true })
+  index({ shop_id: 1 })
 
   scope :active_events, -> { where(status: 'open') }
   scope :closed_events, -> { where(status: 'closed') }
@@ -44,6 +48,45 @@ class VolunteerEvent
 
   def attendee_count
     attendee_ids.length
+  end
+
+  def shop
+    Shop.find(shop_id) if shop_id
+  end
+
+  def prerequisite_tools
+    ids = Array(prerequisite_tool_ids).map(&:to_s).uniq
+    ids.present? ? Tool.where(:id.in => ids) : Tool.none
+  end
+
+  def missing_prerequisite_tools(member)
+    Tool.where(:id.in => missing_prerequisite_tool_ids(member)).to_a
+  end
+
+  def missing_prerequisite_tool_ids(member)
+    required_ids = Array(prerequisite_tool_ids).map(&:to_s).uniq
+    return [] if required_ids.empty?
+
+    checked_out_ids = ToolCheckout.where(
+      member_id: member.id,
+      revoked_at: nil,
+      :tool_id.in => required_ids
+    ).pluck(:tool_id).map(&:to_s)
+    required_ids - checked_out_ids
+  end
+
+  def missing_prerequisite_tool_names(member)
+    tools_by_id = missing_prerequisite_tools(member).index_by { |tool| tool.id.to_s }
+    missing_prerequisite_tool_ids(member).map do |tool_id|
+      tools_by_id[tool_id]&.name || "Unavailable tool (#{tool_id})"
+    end
+  end
+
+  def eligible_for?(member)
+    return false unless member&.status == 'activeMember'
+    return true if %w[admin board_member resource_manager].include?(member.role)
+
+    missing_prerequisite_tool_ids(member).empty?
   end
 
   def created_by
@@ -66,7 +109,17 @@ class VolunteerEvent
   def checkin!(member)
     raise Error::Forbidden.new unless status == 'open'
     raise Error::Forbidden.new unless member.status == 'activeMember'
+    raise Error::Forbidden.new unless eligible_for?(member)
     raise Error::Forbidden.new if attendee_ids.include?(member.id)
+    push(attendee_ids: member.id)
+    notify_member_checkin(member)
+  end
+
+  def add_attendee!(member, _added_by)
+    raise Error::Forbidden.new unless status == 'open'
+    raise Error::Forbidden.new unless eligible_for?(member)
+    raise Error::Forbidden.new if attendee_ids.include?(member.id)
+
     push(attendee_ids: member.id)
     notify_member_checkin(member)
   end
@@ -120,6 +173,19 @@ class VolunteerEvent
   end
 
   private
+
+  def prerequisites_belong_to_shop
+    ids = Array(prerequisite_tool_ids).map(&:to_s).reject(&:blank?).uniq
+    return if ids.empty?
+
+    if shop_id.blank?
+      errors.add(:prerequisite_tool_ids, 'require an associated shop')
+      return
+    end
+
+    valid_ids = Tool.where(shop_id: shop_id, :id.in => ids).pluck(:id).map(&:to_s)
+    errors.add(:prerequisite_tool_ids, 'must belong to the associated shop') unless (ids - valid_ids).empty?
+  end
 
   def assign_event_number
     counter_key = 'volunteer_event_counter'

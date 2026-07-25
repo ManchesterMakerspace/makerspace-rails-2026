@@ -20,7 +20,7 @@ RSpec.describe Service::ReservationSlackCanvas do
       .with("woodshop")
       .and_return("C123")
     allow(Service::SlackConnector).to receive(:create_canvas)
-      .with("Todays Woodshop Reservations")
+      .with("Today's Woodshop Reservations")
       .and_return("FTODAY")
     allow(Service::SlackConnector).to receive(:create_canvas)
       .with("Tomorrow's Woodshop Reservations")
@@ -44,6 +44,7 @@ RSpec.describe Service::ReservationSlackCanvas do
 
     before do
       allow(described_class).to receive(:sync!)
+      allow(Service::VolunteerSlackCanvas).to receive(:sync!)
     end
 
     it "rebuilds today and tomorrow and refreshes owners only for shops with canvases" do
@@ -60,6 +61,18 @@ RSpec.describe Service::ReservationSlackCanvas do
         shop_without_canvases,
         any_args
       )
+      expect(Service::VolunteerSlackCanvas).to have_received(:sync!)
+        .with(
+          shop_with_canvases,
+          create_if_needed: true,
+          sync_owner_access: true
+        )
+      expect(Service::VolunteerSlackCanvas).to have_received(:sync!)
+        .with(
+          shop_without_canvases,
+          create_if_needed: true,
+          sync_owner_access: true
+        )
     end
 
     it "explicitly waits for Retry-After and retries a 429 response" do
@@ -174,7 +187,8 @@ RSpec.describe Service::ReservationSlackCanvas do
   it "sets a member to owner or read on both shop canvases based on current RM assignment" do
     shop.update!(
       canvas_today: "FTODAY-EXISTING",
-      canvas_tomorrow: "FTOMORROW-EXISTING"
+      canvas_tomorrow: "FTOMORROW-EXISTING",
+      volunteer_canvas_id: "FVOLUNTEER-EXISTING"
     )
     rm = create(
       :member,
@@ -189,6 +203,8 @@ RSpec.describe Service::ReservationSlackCanvas do
       .with("FTODAY-EXISTING", ["URM"], access_level: "owner")
     expect(Service::SlackConnector).to have_received(:set_canvas_user_access)
       .with("FTOMORROW-EXISTING", ["URM"], access_level: "owner")
+    expect(Service::SlackConnector).to have_received(:set_canvas_user_access)
+      .with("FVOLUNTEER-EXISTING", ["URM"], access_level: "owner")
 
     rm.update!(role: "member", resource_manager_shop_ids: [])
     described_class.sync_member_access!(rm, shop_ids: [shop.id.to_s])
@@ -197,6 +213,8 @@ RSpec.describe Service::ReservationSlackCanvas do
       .with("FTODAY-EXISTING", ["URM"], access_level: "read")
     expect(Service::SlackConnector).to have_received(:set_canvas_user_access)
       .with("FTOMORROW-EXISTING", ["URM"], access_level: "read")
+    expect(Service::SlackConnector).to have_received(:set_canvas_user_access)
+      .with("FVOLUNTEER-EXISTING", ["URM"], access_level: "read")
   end
 
   it "reapplies the complete owner list when rebuilding an existing canvas" do
@@ -223,7 +241,7 @@ RSpec.describe Service::ReservationSlackCanvas do
       described_class.sync!(shop, dates: ["2026-07-24"])
 
       expect(Service::SlackConnector).not_to have_received(:create_canvas)
-        .with("Todays Woodshop Reservations")
+        .with("Today's Woodshop Reservations")
       expect(Service::SlackConnector).to have_received(:replace_canvas)
         .with("FEXISTING", a_string_including("No pending or approved reservations"))
     end
@@ -244,7 +262,7 @@ RSpec.describe Service::ReservationSlackCanvas do
 
       expect(shop.reload.canvas_today).to eq("FTODAY")
       expect(Service::SlackConnector).to have_received(:create_canvas)
-        .with("Todays Woodshop Reservations")
+        .with("Today's Woodshop Reservations")
       expect(Service::SlackConnector).to have_received(:replace_canvas)
         .with("FTODAY", a_string_including("Woodshop Reservations"))
     end
@@ -273,7 +291,7 @@ RSpec.describe Service::ReservationSlackCanvas do
         a_string_including(
           "[ReservationSlackCanvas] create_start",
           'slack_channel="woodshop"',
-          "title=\"Todays Woodshop Reservations\"",
+          "title=\"Today's Woodshop Reservations\"",
           "[ReservationSlackCanvas] create_success",
           "canvas_id=FTODAY",
           "[ReservationSlackCanvas] access_success",

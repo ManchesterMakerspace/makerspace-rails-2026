@@ -63,6 +63,7 @@ class VolunteerController < AuthenticationController
     tasks = VolunteerTask.claimable
                          .where(parent_task_id: nil)
                          .order_by(task_number: :asc)
+    tasks = tasks.to_a.select { |task| task.eligible_for?(current_member) } unless privileged_volunteer_member?
     render json: tasks, each_serializer: VolunteerTaskSerializer, adapter: :attributes
   end
 
@@ -98,6 +99,7 @@ class VolunteerController < AuthenticationController
   # GET /api/volunteer/events
   def events
     events = VolunteerEvent.active_events.order_by(created_at: :desc)
+    events = events.to_a.select { |event| event.eligible_for?(current_member) } unless privileged_volunteer_member?
     render json: events, each_serializer: VolunteerEventSerializer, adapter: :attributes
   end
 
@@ -109,6 +111,13 @@ class VolunteerController < AuthenticationController
 
     task = VolunteerTask.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerTask, { id: params[:id] }) if task.nil?
+
+    unless task.eligible_for?(current_member)
+      names = task.missing_prerequisite_tool_names(current_member)
+      render json: {
+        error: "You need active checkouts for: #{names.join(', ')}"
+      }, status: :forbidden and return
+    end
 
     result = task.claim!(current_member)
 
@@ -162,6 +171,13 @@ class VolunteerController < AuthenticationController
       render json: { error: 'You are already checked in to this event' }, status: :unprocessable_content and return
     end
 
+    unless event.eligible_for?(current_member)
+      names = event.missing_prerequisite_tool_names(current_member)
+      render json: {
+        error: "You need active checkouts for: #{names.join(', ')}"
+      }, status: :forbidden and return
+    end
+
     event.checkin!(current_member)
     render json: event, serializer: VolunteerEventSerializer, adapter: :attributes
   rescue Error::Forbidden
@@ -185,5 +201,11 @@ class VolunteerController < AuthenticationController
     render json: event, serializer: VolunteerEventSerializer, adapter: :attributes
   rescue Error::Forbidden
     render json: { error: 'Unable to remove check-in. The event may already be closed.' }, status: :unprocessable_content
+  end
+
+  private
+
+  def privileged_volunteer_member?
+    %w[admin board_member resource_manager].include?(current_member.role)
   end
 end

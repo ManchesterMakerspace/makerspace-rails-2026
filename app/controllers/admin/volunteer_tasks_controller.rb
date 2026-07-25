@@ -13,17 +13,23 @@ class Admin::VolunteerTasksController < AdminOrRmController
 
   # POST /api/admin/volunteer_tasks
   def create
+    authorize_shop_assignment!(task_params[:shop_id])
     task = VolunteerTask.new(task_params.merge(
       created_by_id: current_member.id,
       credit_value:  task_params[:credit_value]&.to_f || 1.0
     ))
     task.save!
+    enqueue_canvas_sync(task.shop_id)
     render json: task, serializer: VolunteerTaskSerializer, adapter: :attributes
   end
 
   # PUT /api/admin/volunteer_tasks/:id
   def update
+    authorize_shop_assignment!(task_params[:shop_id]) if task_params.key?(:shop_id)
+    previous_shop_id = @task.shop_id
     @task.update!(task_params)
+    enqueue_canvas_sync(previous_shop_id)
+    enqueue_canvas_sync(@task.shop_id) if @task.shop_id.to_s != previous_shop_id.to_s
     render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
   end
 
@@ -62,6 +68,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
   # POST /api/admin/volunteer_tasks/:id/cancel
   def cancel
     @task.cancel!
+    enqueue_canvas_sync(@task.shop_id)
     render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
   end
 
@@ -77,7 +84,9 @@ class Admin::VolunteerTasksController < AdminOrRmController
   # DELETE /api/admin/volunteer_tasks/:id
   def destroy
     raise ::Error::Forbidden.new unless is_admin? || is_board_member?
+    shop_id = @task.shop_id
     @task.destroy
+    enqueue_canvas_sync(shop_id)
     render json: {}, status: :no_content
   end
 
@@ -89,6 +98,26 @@ class Admin::VolunteerTasksController < AdminOrRmController
   end
 
   def task_params
-    params.permit(:title, :description, :credit_value, :shop_id, :status, :days)
+    params.permit(
+      :title,
+      :description,
+      :credit_value,
+      :shop_id,
+      :status,
+      :days,
+      prerequisite_tool_ids: []
+    )
+  end
+
+  def authorize_shop_assignment!(shop_id)
+    return if shop_id.blank? || is_admin? || is_board_member? || manages_shop?(shop_id)
+
+    raise ::Error::Forbidden.new
+  end
+
+  def enqueue_canvas_sync(shop_id)
+    return if shop_id.blank?
+
+    VolunteerSlackCanvasSyncJob.perform_later(shop_id.to_s)
   end
 end

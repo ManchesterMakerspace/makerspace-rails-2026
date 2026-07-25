@@ -41,11 +41,11 @@ class SlackVolunteerJob < ApplicationJob
 
     case command
     when 'status'    then handle_status(response_url, invoker, parts[1])
-    when 'tasks'     then handle_tasks(response_url)
+    when 'tasks'     then handle_tasks(response_url, invoker)
     when 'claim'     then handle_claim(response_url, invoker, parts[1])
     when 'done'      then handle_done(response_url, invoker, parts[1])
     when 'myclaims'  then handle_myclaims(response_url, invoker)
-    when 'events'    then handle_events(response_url)
+    when 'events'    then handle_events(response_url, invoker)
     when 'checkin'   then handle_checkin(response_url, invoker, parts[1])
     when 'award'     then handle_award(response_url, invoker, parts)
     when 'verify'    then handle_verify(response_url, invoker, parts[1])
@@ -103,8 +103,13 @@ class SlackVolunteerJob < ApplicationJob
 
   # List all claimable tasks — includes reusable, repeatable, and recurring
   # (excluding recurring tasks still in their cooldown window).
-  def handle_tasks(response_url)
-    tasks = VolunteerTask.claimable.where(parent_task_id: nil).order_by(task_number: :asc).limit(15)
+  def handle_tasks(response_url, invoker)
+    tasks = VolunteerTask.claimable
+      .where(parent_task_id: nil)
+      .order_by(task_number: :asc)
+      .to_a
+    tasks.select! { |task| task.eligible_for?(invoker) } unless privileged?(invoker)
+    tasks = tasks.first(15)
 
     if tasks.empty?
       post_response(response_url, :ephemeral, '📋 No bounty tasks are currently available.')
@@ -121,6 +126,7 @@ class SlackVolunteerJob < ApplicationJob
         else ''
       end
       lines << "• *#{t.title}* (#{credit_label}#{type_hint}) — `#{t.display_number}`\n  #{t.description}"
+      lines << "  Shop: #{t.shop.name}" if t.shop_id.present? && t.shop
     end
     lines << "\nUse `/volunteer claim <task#>` to claim one."
 
@@ -142,6 +148,16 @@ class SlackVolunteerJob < ApplicationJob
     task = find_task_by_ref(task_ref)
     unless task
       post_response(response_url, :ephemeral, "❌ Task not found: #{task_ref}. Use `/volunteer tasks` to see available tasks.")
+      return
+    end
+
+    unless task.eligible_for?(invoker)
+      names = task.missing_prerequisite_tool_names(invoker)
+      post_response(
+        response_url,
+        :ephemeral,
+        "❌ You need active checkouts for: #{names.join(', ')}"
+      )
       return
     end
 
@@ -239,8 +255,10 @@ class SlackVolunteerJob < ApplicationJob
     post_response(response_url, :ephemeral, lines.join("\n"))
   end
 
-  def handle_events(response_url)
-    events = VolunteerEvent.active_events.order_by(event_number: :asc).limit(10)
+  def handle_events(response_url, invoker)
+    events = VolunteerEvent.active_events.order_by(event_number: :asc).to_a
+    events.select! { |event| event.eligible_for?(invoker) } unless privileged?(invoker)
+    events = events.first(10)
 
     if events.empty?
       post_response(response_url, :ephemeral, '📅 No volunteer events are currently open.')
@@ -252,6 +270,7 @@ class SlackVolunteerJob < ApplicationJob
       credit_label = e.credit_value == 1.0 ? '1 credit' : "#{e.credit_value} credits"
       date_str     = e.event_date ? " — #{e.event_date.strftime('%b %d')}" : ''
       lines << "• *#{e.title}* (#{credit_label}#{date_str}) — `#{e.display_number}` — #{e.attendee_count} checked in\n  #{e.description}"
+      lines << "  Shop: #{e.shop.name}" if e.shop_id.present? && e.shop
     end
     lines << "\nUse `/volunteer checkin <E#>` to check in."
 
@@ -267,6 +286,16 @@ class SlackVolunteerJob < ApplicationJob
     event = find_event_by_ref(event_ref)
     unless event
       post_response(response_url, :ephemeral, "❌ Event not found: #{event_ref}. Use `/volunteer events` to see open events.")
+      return
+    end
+
+    unless event.eligible_for?(invoker)
+      names = event.missing_prerequisite_tool_names(invoker)
+      post_response(
+        response_url,
+        :ephemeral,
+        "❌ You need active checkouts for: #{names.join(', ')}"
+      )
       return
     end
 
