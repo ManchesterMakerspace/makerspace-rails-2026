@@ -8,7 +8,7 @@ class Admin::CheckoutApproversController < AdminController
       serializer: CheckoutApproverSerializer,
       dependencies: ["checkout_approvers", "members", "shops", "tools"]
     )
-    render json: payload
+    render json: payload.to_json
   end
 
   def create

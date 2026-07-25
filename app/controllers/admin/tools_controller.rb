@@ -35,7 +35,7 @@ class Admin::ToolsController < ApplicationController
       global_management: is_admin? || is_board_member?
     )
     response.set_header("total-items", payload.length)
-    render json: payload
+    render json: payload.to_json
   end
 
   def create

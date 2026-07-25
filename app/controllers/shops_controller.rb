@@ -8,6 +8,6 @@ class ShopsController < ApplicationController
       serializer: ShopSerializer,
       dependencies: ["shops", "tools"]
     )
-    render json: payload
+    render json: payload.to_json
   end
 end

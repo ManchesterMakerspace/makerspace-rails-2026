@@ -163,6 +163,7 @@ module Service
       end
 
       def build_event(reservation)
+        Service::GoogleDependencies.load!
         resource_emails = if reservation.reservation_scope == "shop"
           [reservation.shop.resource_email]
         else

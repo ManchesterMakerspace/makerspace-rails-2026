@@ -22,7 +22,7 @@ class InvoiceOptionsController < ApplicationController
       dependencies: ["invoice_options"]
     )
     response.set_header("total-items", payload.length)
-    render json: payload
+    render json: payload.to_json
   end
 
   def show

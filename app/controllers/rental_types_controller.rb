@@ -6,6 +6,6 @@ class RentalTypesController < AuthenticationController
       serializer: RentalTypeSerializer,
       dependencies: ["rental_types", "invoice_options"]
     )
-    render json: payload
+    render json: payload.to_json
   end
 end

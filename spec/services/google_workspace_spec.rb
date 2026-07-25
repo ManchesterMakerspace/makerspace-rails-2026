@@ -8,8 +8,6 @@ RSpec.describe Service::GoogleWorkspace do
       allow(described_class).to receive(:calendar).and_return(calendar_service)
       allow(calendar_service).to receive(:respond_to?).with(:get_colors).and_return(false)
       allow(calendar_service).to receive(:get_color)
-      allow(REDIS).to receive(:get).with(described_class::CALENDAR_COLOR_CACHE_KEY).and_return(nil)
-      allow(REDIS).to receive(:set).and_return(true)
     end
 
     it "uses Google's event palette and excludes calendar-only color IDs" do
@@ -24,6 +22,7 @@ RSpec.describe Service::GoogleWorkspace do
         double(calendar: calendar_definitions, event: event_definitions)
       )
 
+      described_class.send(:build_color_cache_payload)
       colors = described_class.calendar_colors
 
       expect(colors).to eq(
@@ -47,6 +46,7 @@ RSpec.describe Service::GoogleWorkspace do
         StandardError, "colors endpoint unavailable"
       )
 
+      described_class.send(:build_color_cache_payload)
       colors = described_class.calendar_colors
 
       expect(colors.map { |color| color[:name] }).to eq(
@@ -82,7 +82,7 @@ RSpec.describe Service::GoogleWorkspace do
           }
         ]
       }
-      allow(REDIS).to receive(:get).and_return(JSON.generate(cached))
+      Rails.cache.write(described_class::CALENDAR_COLOR_CACHE_KEY, cached)
 
       colors = described_class.calendar_colors(include_color_id: "9")
 
@@ -92,10 +92,8 @@ RSpec.describe Service::GoogleWorkspace do
         backgroundColor: "#5484ed"
       )
       expect(calendar_service).not_to have_received(:get_color)
-      expect(REDIS).to have_received(:set).with(
-        described_class::CALENDAR_COLOR_CACHE_KEY,
-        include('"id":"9"')
-      )
+      stored = Rails.cache.read(described_class::CALENDAR_COLOR_CACHE_KEY)
+      expect(Array(stored[:colors] || stored["colors"]).last).to include(id: "9")
     end
 
     it "does not expose an existing calendar-only color ID" do
@@ -103,12 +101,12 @@ RSpec.describe Service::GoogleWorkspace do
         colors: described_class::FALLBACK_CALENDAR_COLORS,
         allColors: described_class::FALLBACK_CALENDAR_COLORS
       }
-      allow(REDIS).to receive(:get).and_return(JSON.generate(cached))
+      Rails.cache.write(described_class::CALENDAR_COLOR_CACHE_KEY, cached)
 
       colors = described_class.calendar_colors(include_color_id: "24")
 
       expect(colors.map { |color| color[:id] }).not_to include("24")
-      expect(REDIS).not_to have_received(:set)
+      expect(calendar_service).not_to have_received(:get_color)
     end
   end
 end

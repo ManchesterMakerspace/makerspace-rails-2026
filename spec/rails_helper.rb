@@ -82,6 +82,7 @@ RSpec.configure do |config|
   end
   config.before(:each) do |example|
     ensure_safe_database_cleaner_mlab_uri!
+    Current.reset if defined?(Current)
     Rails.cache.clear
     clear_enqueued_jobs
     clear_performed_jobs
@@ -91,6 +92,7 @@ RSpec.configure do |config|
   config.after(:each) do
     ensure_safe_database_cleaner_mlab_uri!
     DatabaseCleaner[:mongoid].clean
+    Current.reset if defined?(Current)
   end
   # RSpec Rails can automatically mix in different behaviours to your tests
   # based on their file location, for example enabling you to call `get` and

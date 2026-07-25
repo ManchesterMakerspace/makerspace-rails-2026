@@ -13,6 +13,10 @@ class AuditLogSlackJob < ApplicationJob
     audit_log.set(slack_posted: true)
   rescue => error
     audit_log&.set(slack_posted: false)
+    Honeybadger.notify(
+      error,
+      context: { audit_log_id: audit_log_id }
+    ) if defined?(Honeybadger)
     raise error
   end
 end

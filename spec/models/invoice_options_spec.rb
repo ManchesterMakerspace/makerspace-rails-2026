@@ -23,10 +23,10 @@ RSpec.describe InvoiceOption, type: :model do
     end
 
     it 'allows multiple records with nil plan_id' do
-      opt1 = build(:invoice_option, plan_id: nil)
-      opt2 = build(:invoice_option, plan_id: nil)
-      expect(opt1).to be_valid
-      expect(opt2).to be_valid
+      expect {
+        create(:invoice_option, plan_id: nil)
+        create(:invoice_option, plan_id: nil)
+      }.to change(InvoiceOption, :count).by(2)
     end
   end
 
