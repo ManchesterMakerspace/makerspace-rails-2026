@@ -14,9 +14,15 @@ Rails.application.configure do
   if ENV['APP_DOMAIN']&.empty? == false
     config.hosts <<  ENV["APP_DOMAIN"]
   end
+  $stderr.puts "[config] config.hosts=#{Rails.application.config.hosts.inspect}"
 
-  # Do not eager load code on boot.
-  config.eager_load = true
+  # "False" means "Do not eager load code on boot".
+  # When set to false, Rails relies on lazy loading
+  # (via the Zeitwerk code loader in modern versions) to load files
+  # on-demand only when their respective classes are referenced
+  # for the first time.   Usually set to false in DEV!
+  #config.eager_load = true
+  config.eager_load = false
 
   # Show full error reports.
   config.consider_all_requests_local = true
