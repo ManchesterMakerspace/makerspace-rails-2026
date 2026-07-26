@@ -11,7 +11,7 @@
 #
 class ClientConfigController < ApplicationController
   def index
-  firebase_auth_domain=ENV['APP_DOMAIN']
+  firebase_auth_domain=ENV['FIREBASE_PROJECT_ID'].to_s + ".firebaseapp.com"
 
   firebase_auth_type="signInWithPopup"
   if ENV['FIREBASE_AUTH_TYPE'].present?
@@ -20,6 +20,8 @@ class ClientConfigController < ApplicationController
 
   if ENV['FIREBASE_AUTH_DOMAIN'].present?
     firebase_auth_domain=ENV['FIREBASE_AUTH_DOMAIN']
+  else
+    $stderr.puts "[config] Missing mandatory environment variable FIREBASE_AUTH_DOMAIN, using fallback #{firebase_auth_domain}"
   end
 
     render json: {
@@ -30,4 +32,3 @@ class ClientConfigController < ApplicationController
     }, status: :ok
   end
 end
-    
