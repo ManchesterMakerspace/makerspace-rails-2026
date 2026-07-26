@@ -9,8 +9,20 @@ Rails.application.configure do
   config.hosts << "members.manchestermakerspace.com"
   config.hosts << "members.manchestermakerspace.org"
   config.hosts << "makerspace-dev-51ba804d4c30.herokuapp.com"
-  # Do not eager load code on boot.
-  config.eager_load = true
+
+  #  If an incoming request does not match the allowed domains, Rails blocks it, our APP_DOMAIN must always be a valid host
+  if ENV['APP_DOMAIN']&.empty? == false
+    config.hosts <<  ENV["APP_DOMAIN"]
+  end
+  $stderr.puts "[config] config.hosts=#{Rails.application.config.hosts.inspect}"
+
+  # "False" means "Do not eager load code on boot".
+  # When set to false, Rails relies on lazy loading
+  # (via the Zeitwerk code loader in modern versions) to load files
+  # on-demand only when their respective classes are referenced
+  # for the first time.   Usually set to false in DEV!
+  #config.eager_load = true
+  config.eager_load = false
 
   # Show full error reports.
   config.consider_all_requests_local = true
