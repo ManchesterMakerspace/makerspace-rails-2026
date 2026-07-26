@@ -13,6 +13,11 @@ class ClientConfigController < ApplicationController
   def index
   firebase_auth_domain=ENV['APP_DOMAIN']
 
+  firebase_auth_type="signInWithPopup"
+  if ENV['FIREBASE_AUTH_TYPE'].present?
+    firebase_auth_type=ENV['FIREBASE_AUTH_TYPE']
+  end
+
   if ENV['FIREBASE_AUTH_DOMAIN'].present?
     firebase_auth_domain=ENV['FIREBASE_AUTH_DOMAIN']
   end
@@ -20,7 +25,9 @@ class ClientConfigController < ApplicationController
     render json: {
       firebase_api_key:    ENV['FIREBASE_API_KEY'].to_s,
       firebase_project_id: ENV['FIREBASE_PROJECT_ID'].to_s,
-      firebase_auth_domain: firebase_auth_domain
+      firebase_auth_domain: firebase_auth_domain,
+      firebase_auth_type: firebase_auth_type
     }, status: :ok
   end
 end
+    
