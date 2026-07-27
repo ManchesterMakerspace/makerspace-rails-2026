@@ -23,8 +23,8 @@ Rails.application.configure do
   # (via the Zeitwerk code loader in modern versions) to load files
   # on-demand only when their respective classes are referenced
   # for the first time.   Usually set to false in DEV!
-  #config.eager_load = true
-  config.eager_load = false
+  config.eager_load = true
+  #config.eager_load = false
 
   # Show full error reports.
   config.consider_all_requests_local = true
