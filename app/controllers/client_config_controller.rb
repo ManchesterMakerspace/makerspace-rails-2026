@@ -20,8 +20,8 @@ class ClientConfigController < ApplicationController
 
   if ENV['FIREBASE_AUTH_DOMAIN'].present?
     firebase_auth_domain=ENV['FIREBASE_AUTH_DOMAIN']
-  else
-    $stderr.puts "[config] Missing mandatory environment variable FIREBASE_AUTH_DOMAIN, using fallback #{firebase_auth_domain}"
+#  else
+#    $stderr.puts "[config] Missing mandatory environment variable FIREBASE_AUTH_DOMAIN, using fallback #{firebase_auth_domain}"
   end
 
     render json: {
