@@ -43,6 +43,12 @@ $ rake integration
 ```
 Emails in the development environment are published to MailTrap under the adgrants@ user in Lastpass. To preview emails, you can view them in the browser by starting a server with `TEST_MAIL=true rails s`; this will start a development server, which will preview emails, using a test database to hydrate values for all the mocks. If you need to test that the emails actually sent, you may use `MAILTRAP_API_TOKEN` environment variable in the development environment. 
 
+# Operations
+
+See [Performance configuration and rollout](docs/performance_rollout.md) for
+the Redis/Mongo cache TTL, runtime tuning options, Sidekiq configuration,
+aggregation feature flags, staged rollout, monitoring, and rollback procedures.
+
 # Swagger
 An OpenSwagger spec of the JSON API can be generated or updated with `rake rswag:specs:swaggerize`. To view an interactive version of this swagger, start a development server with `rails s` and navigate to `/api-docs`
 
