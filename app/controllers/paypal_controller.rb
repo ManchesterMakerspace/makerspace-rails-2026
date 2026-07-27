@@ -58,7 +58,7 @@ class PaypalController < ApplicationController
       matching_invoice = Invoice.find_by(subscription_id: @payment.plan_id)
     end
 
-    base_url = ActionMailer::Base.default_url_options[:host]
+    base_url = Rails.configuration.x.app_base_url
 
     if @payment.member
       completed_message = "Payment Completed: $#{@payment.amount} for #{@payment.product} from #{@payment.firstname} #{@payment.lastname} ~ email: #{@payment.payer_email} - Member found: #{@payment.member.fullname}. <#{base_url}/members/#{@payment.member.id}|Renew Member>"

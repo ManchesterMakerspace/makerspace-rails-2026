@@ -47,6 +47,11 @@ class Invoice
   # ID of transaction used to settle invoice
   field :transaction_id, type: String
 
+  index({ member_id: 1, settled_at: 1, transaction_id: 1 })
+  index({ resource_class: 1, resource_id: 1, settled_at: 1 })
+  index({ subscription_id: 1 }, { sparse: true })
+  index({ transaction_id: 1 }, { sparse: true })
+
   search_in :name, member: %i[firstname lastname email]
 
   validates :resource_class, inclusion: { in: OPERATION_RESOURCES.keys }, allow_nil: false
@@ -95,7 +100,7 @@ class Invoice
 
   def request_refund
     set_refund_requested
-    base_url = ActionMailer::Base.default_url_options[:host]
+    base_url = Rails.configuration.x.app_base_url
     enque_message("#{member.fullname} has requested a refund of #{amount} for #{name || description} from #{settled_at}. <#{base_url}/billing/transactions/#{transaction_id}|Process refund>")
     BillingMailer.refund_requested(member.email, transaction_id, id.as_json).deliver_later
   end
@@ -161,8 +166,8 @@ class Invoice
     type = self.resource_class == "member" ? "membership" : "rental"
     message = "#{self.member.fullname}'s #{type} subscription#{type == "rental" ? " for #{self.resource.try(:number) || self.name}" : ""} has been canceled."
     begin
-      ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id) unless slack_user.nil?
-      ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.members_relations_channel)
+      ::Service::SlackConnector.enque_message(message, slack_user.slack_id) unless slack_user.nil?
+      ::Service::SlackConnector.enque_message(message, ::Service::SlackConnector.members_relations_channel)
     rescue => e
       Rails.logger.error("send_cancellation_notification: Slack notify failed: #{e.message}")
     end
@@ -261,11 +266,10 @@ class Invoice
     slack_user = SlackUser.find_by(member_id: member_id)
     return if slack_user.nil? || member&.direct_notifications_suppressed?
 
-    base_url = Rails.configuration.action_mailer.default_url_options[:host]
-    portal_url = base_url.to_s.start_with?('http') ? base_url : "https://#{base_url}"
+    portal_url = Rails.configuration.x.app_base_url
     details = description.present? ? "\n#{description}" : ""
     message = "A shop charge has been added to your member portal account: *#{name}* for *$#{format('%.2f', amount)}*.#{details}\n<#{portal_url}|Open the member portal>"
-    ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
+    ::Service::SlackConnector.enque_message(message, slack_user.slack_id)
   rescue => e
     Rails.logger.warn("send_shop_charge_slack_notification failed: #{e.message}")
   end

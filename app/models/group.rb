@@ -21,8 +21,13 @@ class Group
   validates :groupRep, presence: true
   validate :primary_on_household_plan, on: :create
 
-  after_update :update_active_members
+  index({ groupName: 1 }, { unique: true })
+  index({ subscription_id: 1 })
+
+  after_update :update_active_members, :handle_reservation_subscription_change
   after_create :update_active_members
+  after_save :invalidate_reference_caches
+  after_destroy :invalidate_reference_caches
 
   def group_display_name
     "#{groupRep}'s Household"
@@ -60,14 +65,27 @@ class Group
 
   def update_expiration(new_expiration)
     household_key = groupName.to_s
-    member_ids = (Member.where(groupName: household_key).pluck(:id) + [member&.id]).compact.uniq
+    # Historical member rows contain both String and BSON::ObjectId values in
+    # groupName. Query the raw collection with both representations so a bulk
+    # propagation does not silently omit either shape.
+    household_values = [household_key]
+    household_values << BSON::ObjectId.from_string(household_key) if BSON::ObjectId.legal?(household_key)
+    secondary_ids = Member.collection
+      .find("groupName" => { "$in" => household_values })
+      .projection(_id: 1)
+      .map { |document| document["_id"] }
+    member_ids = (secondary_ids + [member&.id]).compact.uniq
 
     Group.collection.find(_id: id).update_one("$set" => { expiry: new_expiration })
     self.expiry = new_expiration
-    Member.collection.find(_id: { "$in" => member_ids }).update_many(
-      "$set" => { expirationTime: new_expiration, groupName: household_key }
+    Member.collection.find("_id" => { "$in" => member_ids }).update_many(
+      "$set" => {
+        "expirationTime" => new_expiration,
+        "groupName" => household_key
+      }
     )
     Card.where(:member_id.in => member_ids).update_all(expiry: new_expiration)
+    MongoCache.invalidate("members", "privileged_members", "active_member_analytics")
 
     true
   end
@@ -112,11 +130,38 @@ class Group
     update_attributes!({ subscription_id: nil, subscription: false })
   end
 
+  def handle_reservation_subscription_change
+    subscription_change = previous_changes["subscription"]
+    subscription_id_change = previous_changes["subscription_id"]
+    ended = (subscription_change&.first == true && subscription != true) ||
+      (subscription_id_change&.first.present? && subscription_id.blank?)
+    return unless ended
+
+    ReservationLifecycleService.cancel_beyond_membership!(
+      self,
+      reason: "Household recurring membership was cancelled"
+    )
+  rescue => error
+    Rails.logger.error(
+      "[ReservationCleanup] group_id=#{id} type=subscription_ended " \
+      "error=#{error.class}: #{error.message}"
+    )
+    Honeybadger.notify(error) if defined?(Honeybadger)
+    ReservationMembershipCleanupJob.perform_later(
+      id.to_s,
+      "group_subscription_ended",
+      "Group"
+    )
+  end
+
   private
 
   def update_active_members
-    self.active_members.each { |m| m.verify_group_expiry }
-    self.member.verify_group_expiry if self.member
+    update_expiration(expiry) if expiry.present?
+  end
+
+  def invalidate_reference_caches
+    MongoCache.invalidate("members", "privileged_members", "active_member_analytics")
   end
 
   def primary_on_household_plan

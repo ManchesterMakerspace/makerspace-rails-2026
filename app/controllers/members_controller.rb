@@ -35,10 +35,27 @@ class MembersController < AuthenticationController
       end
 
       members = @members.to_a
+      member_ids = members.map(&:id)
+      approvers_by_member_id = CheckoutApprover.where(
+        :member_id.in => member_ids
+      ).to_a.index_by { |approver| approver.member_id.to_s }
+      group_names = members.filter_map { |member| member.groupName.presence }.uniq
+      groups_by_name = Group.where(
+        :groupName.in => group_names
+      ).to_a.index_by { |group| group.groupName.to_s }
+      group_counts = Member.where(:groupName.in => group_names)
+        .collection.aggregate([
+          { "$match" => { "groupName" => { "$in" => group_names } } },
+          { "$group" => { "_id" => "$groupName", "count" => { "$sum" => 1 } } }
+        ]).to_a.to_h { |row| [row["_id"].to_s, row["count"]] }
+
       return render_with_total_items(members, {
         each_serializer: MemberSummarySerializer,
         adapter: :attributes,
-        mailtrap_events_by_member_id_email: mailtrap_events_by_member_id_email(members)
+        mailtrap_events_by_member_id_email: mailtrap_events_by_member_id_email(members),
+        checkout_approvers_by_member_id: approvers_by_member_id,
+        groups_by_name: groups_by_name,
+        group_counts: group_counts
       })
     end
 
@@ -64,7 +81,12 @@ class MembersController < AuthenticationController
 
       if signature_params[:signature]
          encoded_signature = signature_params[:signature].split(",")[1]
-         DocumentUploadJob.perform_later(encoded_signature, "member_contract", @member.id.as_json)
+         pending_upload = PendingDocumentUpload.stage!(
+           base64_data: encoded_signature,
+           document_type: "member_contract",
+           resource: @member
+         )
+         DocumentUploadJob.perform_later(pending_upload.id.to_s)
          @member.update_attributes!(member_contract_signed_date: Date.today)
 
          # Log contract signature — no Slack, pure audit trail

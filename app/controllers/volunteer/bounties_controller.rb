@@ -1,4 +1,5 @@
 class Volunteer::BountiesController < ApplicationController
+  require 'cgi'
   skip_before_action :verify_authenticity_token
   skip_before_action :authenticate_member! rescue nil
   skip_after_action  :send_messages
@@ -9,7 +10,10 @@ class Volunteer::BountiesController < ApplicationController
     if request.format.json?
       render plain: active_tasks_json.to_json, content_type: 'application/json' and return
     end
-    @tasks = VolunteerTask.claimable.where(parent_task_id: nil).order_by(task_number: :asc)
+    if request.format.xml?
+      render xml: active_tasks_json.to_xml(root: 'bounties', children: 'bounty') and return
+    end
+    @tasks = filtered_tasks
     render 'volunteer/bounties/index', layout: false
   end
 
@@ -34,7 +38,7 @@ class Volunteer::BountiesController < ApplicationController
   def active_tasks_json
     # Show parent-level claimable tasks only; exclude cooling-down recurring tasks
     # and child documents spawned from multi-use claims.
-    VolunteerTask.claimable.where(parent_task_id: nil).order_by(task_number: :asc).map do |t|
+    filtered_tasks.map do |t|
       {
         id:           t.id.to_s,
         task_number:  t.task_number,
@@ -43,9 +47,24 @@ class Volunteer::BountiesController < ApplicationController
         credit_value: t.credit_value,
         status:       t.status,
         shop_name:    (t.shop&.name rescue nil),
+        prerequisite_tools: t.prerequisite_tools.map(&:name),
         claimed_at:   t.claimed_at,
         next_available: t.next_available
       }
+    end
+  end
+
+  def filtered_tasks
+    tasks = VolunteerTask.claimable.where(parent_task_id: nil).order_by(task_number: :asc)
+    requested_shop = CGI.unescape(params[:shop].to_s).strip
+    return tasks if requested_shop.blank?
+
+    needle = requested_shop.downcase
+    tasks.to_a.select do |task|
+      shop_name = task.shop&.name.to_s
+      shop_name.present? && shop_name.downcase.include?(needle)
+    rescue Mongoid::Errors::DocumentNotFound
+      false
     end
   end
 end

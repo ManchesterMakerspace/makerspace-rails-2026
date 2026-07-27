@@ -25,5 +25,7 @@ class MailtrapEvent
   index({ event_id:            1 }, { unique: true, sparse: true })
   index({ message_id:          1 })
   index({ occurred_at:         1 })
+  index({ member_id: 1, occurred_at: -1 })
+  index({ email: 1, occurred_at: -1 })
   index({ mailtrap_message_id: 1 }, { sparse: true })
 end

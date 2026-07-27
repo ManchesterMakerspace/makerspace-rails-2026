@@ -19,11 +19,11 @@ RSpec.describe 'slack notification suppression' do
     member = create(:member, silence_emails: true)
     invoice = create(:invoice, member: member, resource_class: "fee", amount: 12.50, name: "Laser fee")
     SlackUser.create!(member_id: member.id, slack_id: "U_SILENCED")
-    allow(::Service::SlackConnector).to receive(:send_slack_message)
-
-    invoice.send(:send_shop_charge_slack_notification)
-
-    expect(::Service::SlackConnector).to have_received(:send_slack_message).with(/Laser fee/, "U_SILENCED")
+    expect {
+      invoice.send(:send_shop_charge_slack_notification)
+    }.to have_enqueued_job(SlackMessagesJob).with(
+      [hash_including("message" => /Laser fee/, "channel" => "U_SILENCED")]
+    )
   end
 
   it 'does not send checkout revocation Slack notifications to revoked members' do
@@ -43,10 +43,8 @@ RSpec.describe 'slack notification suppression' do
     member = create(:member, status: 'revoked', silence_emails: true)
     invoice = create(:invoice, member: member, resource_class: "fee", amount: 12.50, name: "Laser fee")
     SlackUser.create!(member_id: member.id, slack_id: "U_REVOKED")
-    allow(::Service::SlackConnector).to receive(:send_slack_message)
-
-    invoice.send(:send_shop_charge_slack_notification)
-
-    expect(::Service::SlackConnector).not_to have_received(:send_slack_message)
+    expect {
+      invoice.send(:send_shop_charge_slack_notification)
+    }.not_to have_enqueued_job(SlackMessagesJob)
   end
 end

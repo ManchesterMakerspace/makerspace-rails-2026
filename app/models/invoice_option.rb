@@ -31,6 +31,22 @@ class InvoiceOption
   validates_numericality_of :quantity, greater_than: 0
   validates_uniqueness_of :plan_id, unless: -> { plan_id.nil? }
 
+  before_validation :normalize_plan_id
+
+  index({ disabled: 1, resource_class: 1, plan_id: 1 })
+  # A sparse unique index still indexes an explicitly stored null value.
+  # Restrict uniqueness to actual string plan IDs so one-off invoice options
+  # may all keep plan_id=nil.
+  index(
+    { plan_id: 1 },
+    {
+      unique: true,
+      partial_filter_expression: { plan_id: { "$type" => "string" } }
+    }
+  )
+  after_save { MongoCache.invalidate("invoice_options", "rental_types", "rental_spots") }
+  after_destroy { MongoCache.invalidate("invoice_options", "rental_types", "rental_spots") }
+
   def self.search(searchTerms, criteria = Mongoid::Criteria.new(InvoiceOption))
     criteria.full_text_search(searchTerms)
   end
@@ -52,5 +68,11 @@ class InvoiceOption
       operation: self.operation,
     }
     Invoice.create!(invoice_args)
+  end
+
+  private
+
+  def normalize_plan_id
+    self.plan_id = plan_id.to_s.strip.presence
   end
 end

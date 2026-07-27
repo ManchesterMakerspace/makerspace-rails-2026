@@ -6,6 +6,8 @@ module Service
         :merchant_id => ENV["BT_MERCHANT_ID"],
         :public_key => ENV["BT_PUBLIC_KEY"],
         :private_key => ENV['BT_PRIVATE_KEY'],
+        :http_open_timeout => ENV.fetch("BRAINTREE_OPEN_TIMEOUT", 5).to_i,
+        :http_read_timeout => ENV.fetch("BRAINTREE_READ_TIMEOUT", 20).to_i,
       )
     end
 

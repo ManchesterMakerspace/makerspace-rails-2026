@@ -1,15 +1,22 @@
-class Admin::CheckoutApproversController < AdminOrRmController
+class Admin::CheckoutApproversController < AdminController
   before_action :find_approver, only: [:update, :destroy]
 
   def index
-    approvers = CheckoutApprover.all
-    render json: approvers, each_serializer: CheckoutApproverSerializer, adapter: :attributes
+    payload = CachedPayload.collection(
+      "checkout_approvers/all",
+      CheckoutApprover.all,
+      serializer: CheckoutApproverSerializer,
+      dependencies: ["checkout_approvers", "members", "shops", "tools"]
+    )
+    render json: payload.to_json
   end
 
   def create
     approver = CheckoutApprover.find_or_initialize_by(member_id: approver_params[:member_id])
-    incoming = approver_params[:shop_ids] || []
-    approver.shop_ids = (approver.shop_ids + incoming).uniq
+    incoming_shops = approver_params[:shop_ids] || []
+    incoming_tools = approver_params[:tool_ids] || []
+    approver.shop_ids = (approver.shop_ids + incoming_shops).uniq
+    approver.tool_ids = (approver.tool_ids + incoming_tools).uniq
     approver.save!
 
     ::Service::AuditLogger.log(
@@ -62,7 +69,7 @@ class Admin::CheckoutApproversController < AdminOrRmController
   private
 
   def approver_params
-    params.permit(:member_id, shop_ids: [])
+    params.permit(:member_id, shop_ids: [], tool_ids: [])
   end
 
   def find_approver

@@ -37,20 +37,23 @@ module Service
     def self.revoke_slack_access(member)
       slack_id = member.slack_user&.slack_id
 
-      unless ENV['SLACK_ADMIN_TOKEN'].present?
+      admin_client = ::Service::SlackConnector.admin_client(
+        "users.admin.setInactive"
+      )
+      unless admin_client
         reason = 'SLACK_ADMIN_TOKEN not configured'
         alert_manual_slack_revocation_required(member, slack_id, reason)
         return { status: :skipped, reason: reason }
       end
 
       begin
-        client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
-        user   = client.users_lookupByEmail(email: member.email)
+        lookup_client = ::Service::SlackConnector.client
+        user = lookup_client.users_lookupByEmail(email: member.email)
         slack_id = user.user.id
-        client.users_admin_setInactive(user: slack_id)
+        admin_client.users_admin_setInactive(user: slack_id)
         { status: :ok, message: "Deactivated Slack user for #{member.email}" }
       rescue Slack::Web::Api::Errors::UsersNotFound
-        revoke_stored_slack_id(client, member, slack_id)
+        revoke_stored_slack_id(admin_client, member, slack_id)
       rescue => e
         alert_manual_slack_revocation_required(member, slack_id, e.message)
         { status: :error, message: e.message }

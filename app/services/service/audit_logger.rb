@@ -47,6 +47,8 @@ module Service
     #   before_snapshot: (optional) Hash — full document before the change.
     #   after_snapshot:  (optional) Hash — full document after the change.
     #
+    #   message_details: (optional) Human-readable context appended to the
+    #                    generated Slack message.
     #   slack_channel:   (optional) Channel to post to. Omit to skip Slack entirely.
     #
     # Returns the persisted AuditLog document, or nil if the write failed
@@ -62,6 +64,7 @@ module Service
       field_changes: nil,
       before_snapshot: nil,
       after_snapshot: nil,
+      message_details: nil,
       slack_channel: nil
     )
       validate_required!(log_type: log_type, event_type: event_type,
@@ -87,11 +90,9 @@ module Service
         actor_name:    actor_name,
         subject_name:  subject_name,
         resource_type: resource_type,
-        field_changes: clean_field_changes
+        field_changes: clean_field_changes,
+        message_details: message_details
       )
-
-      # Attempt Slack post if a channel was provided
-      slack_posted = attempt_slack(message, slack_channel)
 
       # Build and persist the log entry
       entry = AuditLog.new(
@@ -108,12 +109,13 @@ module Service
         after_snapshot:  clean_after,
         slack_channel:   slack_channel,
         slack_message:   message,
-        slack_posted:    slack_posted,
+        slack_posted:    nil,
         ip_address:      Current.ip_address
       )
 
       begin
         entry.save!
+        AuditLogSlackJob.perform_later(entry.id.to_s) if slack_channel.present?
         Rails.logger.info("[AuditLogger] #{event_type} on #{resource_type}:#{resource_id} by #{actor_id}")
         entry
       rescue => e
@@ -169,7 +171,14 @@ module Service
 
     # Generates a human-readable Slack message from structured data.
     # Always produced; only posted when slack_channel is present.
-    def self.generate_message(event_type:, actor_name:, subject_name:, resource_type:, field_changes:)
+    def self.generate_message(
+      event_type:,
+      actor_name:,
+      subject_name:,
+      resource_type:,
+      field_changes:,
+      message_details:
+    )
       parts = []
 
       # Lead with event label
@@ -191,6 +200,7 @@ module Service
         parts << "— #{diff}" if diff.present?
       end
 
+      parts << "— #{message_details}" if message_details.present?
       parts.join(' ')
     end
 
@@ -205,21 +215,6 @@ module Service
           "#{field}: #{before} → #{after}"
         end
       end.join(', ')
-    end
-
-    # Attempts a Slack post if a channel is provided.
-    # Returns true/false if attempted, nil if skipped.
-    # Notifies Honeybadger on failure but does not raise.
-    def self.attempt_slack(message, channel)
-      return nil if channel.blank?
-
-      begin
-        ::Service::SlackConnector.send_slack_message(message, channel)
-        true
-      rescue => e
-        notify_honeybadger(e, context: { slack_channel: channel, slack_message: message })
-        false
-      end
     end
 
     # Coerces resource_id to BSON::ObjectId safely.

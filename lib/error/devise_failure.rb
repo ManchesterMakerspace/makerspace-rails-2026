@@ -25,7 +25,7 @@ module Error
       member = find_member_by_email
       return unless member
 
-      ::Service::SlackConnector.send_slack_message(
+      ::Service::SlackConnector.enque_message(
         "🚫 Revoked member #{member.fullname} attempted portal login",
         ::Service::SlackConnector.logs_channel
       )

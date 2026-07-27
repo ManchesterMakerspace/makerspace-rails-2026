@@ -41,7 +41,7 @@ class BraintreeService::Transaction < Braintree::Transaction
         results
       end
     rescue Timeout::Error => e
-      ::Service::SlackConnector.send_slack_message(
+      ::Service::SlackConnector.enque_message(
         "⚠️ Braintree transaction search timed out after 25s. Try narrowing the date range. Error: #{e.message}",
         ::Service::SlackConnector.logs_channel
       )

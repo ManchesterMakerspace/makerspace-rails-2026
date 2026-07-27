@@ -14,6 +14,7 @@ class VolunteerTask
 
   # Optional shop association
   field :shop_id,      type: BSON::ObjectId, default: nil
+  field :prerequisite_tool_ids, type: Array, default: []
 
   # Lifecycle status
   # available  — posted, open for claiming
@@ -56,12 +57,14 @@ class VolunteerTask
 
   validate :days_required_for_recurring
   validate :credit_value_within_max, on: :create
+  validate :prerequisites_belong_to_shop
 
   before_create :assign_task_number
 
   index({ status: 1 })
   index({ claimed_by_id: 1 })
   index({ parent_task_id: 1 })
+  index({ shop_id: 1 })
   index({ task_number: 1 }, { unique: true })
 
   # ── Scopes ────────────────────────────────────────────────────────────────
@@ -117,6 +120,41 @@ class VolunteerTask
     Shop.find(shop_id) if shop_id
   end
 
+  def prerequisite_tools
+    ids = Array(prerequisite_tool_ids).map(&:to_s).uniq
+    ids.present? ? Tool.where(:id.in => ids) : Tool.none
+  end
+
+  def missing_prerequisite_tools(member)
+    Tool.where(:id.in => missing_prerequisite_tool_ids(member)).to_a
+  end
+
+  def missing_prerequisite_tool_ids(member)
+    required_ids = Array(prerequisite_tool_ids).map(&:to_s).uniq
+    return [] if required_ids.empty?
+
+    checked_out_ids = ToolCheckout.where(
+      member_id: member.id,
+      revoked_at: nil,
+      :tool_id.in => required_ids
+    ).pluck(:tool_id).map(&:to_s)
+    required_ids - checked_out_ids
+  end
+
+  def missing_prerequisite_tool_names(member)
+    tools_by_id = missing_prerequisite_tools(member).index_by { |tool| tool.id.to_s }
+    missing_prerequisite_tool_ids(member).map do |tool_id|
+      tools_by_id[tool_id]&.name || "Unavailable tool (#{tool_id})"
+    end
+  end
+
+  def eligible_for?(member)
+    return false unless member&.status == 'activeMember'
+    return true if %w[admin board_member resource_manager].include?(member.role)
+
+    missing_prerequisite_tool_ids(member).empty?
+  end
+
   def created_by
     Member.find(created_by_id) if created_by_id
   end
@@ -136,10 +174,12 @@ class VolunteerTask
   # Recurring:  creates a child task; respects next_available cooldown; sets parent claimed_at + status + next_available.
   def claim!(member)
     raise Error::Forbidden.new unless member.status == 'activeMember'
+    raise Error::Forbidden.new unless eligible_for?(member)
 
-    case status
+    result = case status
     when 'available'
       update!(status: 'claimed', claimed_by_id: member.id, claimed_at: Time.now)
+      self
 
     when 'reusable'
       already_claimed = VolunteerTask.where(
@@ -169,6 +209,9 @@ class VolunteerTask
     else
       raise Error::Forbidden.new
     end
+
+    enqueue_volunteer_canvas_sync(struck_task_id: child_task? ? parent_task_id : id)
+    result
   end
 
   def mark_pending!(member)
@@ -215,6 +258,7 @@ class VolunteerTask
     end
 
     notify_member_task_released(former_claimant_id, reason)
+    enqueue_volunteer_canvas_sync
   end
 
   # Reject a pending task (or deny a child task).
@@ -237,6 +281,7 @@ class VolunteerTask
     end
 
     notify_member_task_rejected(former_claimant_id, reason)
+    enqueue_volunteer_canvas_sync
   end
 
   def cancel!
@@ -252,6 +297,7 @@ class VolunteerTask
       description:   description,
       credit_value:  credit_value,
       shop_id:       shop_id,
+      prerequisite_tool_ids: Array(prerequisite_tool_ids),
       created_by_id: created_by_id,
       parent_task_id: id,
       status:        'claimed',
@@ -288,11 +334,39 @@ class VolunteerTask
     end
   end
 
+  def prerequisites_belong_to_shop
+    ids = Array(prerequisite_tool_ids).map(&:to_s).reject(&:blank?).uniq
+    return if ids.empty?
+
+    if shop_id.blank?
+      errors.add(:prerequisite_tool_ids, 'require an associated shop')
+      return
+    end
+
+    valid_ids = Tool.where(shop_id: shop_id, :id.in => ids).pluck(:id).map(&:to_s)
+    errors.add(:prerequisite_tool_ids, 'must belong to the associated shop') unless (ids - valid_ids).empty?
+  end
+
+  def enqueue_volunteer_canvas_sync(struck_task_id: nil)
+    effective_shop_id = shop_id || parent_task&.shop_id
+    return if effective_shop_id.blank?
+
+    VolunteerSlackCanvasSyncJob.perform_later(
+      effective_shop_id.to_s,
+      struck_task_id&.to_s
+    )
+  rescue => error
+    Rails.logger.error(
+      "[VolunteerSlackCanvasEnqueueError] task_id=#{id} error=#{error.class}: #{error.message}"
+    )
+    Honeybadger.notify(error) if defined?(Honeybadger)
+  end
+
   def notify_task_verified(verifier)
     claimant      = Member.find(claimed_by_id) rescue nil
     claimant_name = claimant&.fullname || 'Unknown member'
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "✅ *#{verifier.fullname}* verified task *#{effective_title}* (#{display_number}) " \
       "complete for *#{claimant_name}*. Credit issued!",
       VolunteerCredit.pending_slack_channel
@@ -305,7 +379,7 @@ class VolunteerTask
     slack_user = SlackUser.find_by(member_id: member_id)
     return unless slack_user
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "ℹ️ Your claim on *#{effective_title}* (#{display_number}) has been released by an admin. " \
       "Reason: #{reason}. The task is now available for others to claim.",
       slack_user.slack_id
@@ -318,7 +392,7 @@ class VolunteerTask
     slack_user = SlackUser.find_by(member_id: member_id)
     return unless slack_user
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "ℹ️ Your completion of *#{effective_title}* (#{display_number}) was not verified. " \
       "Reason: #{reason}. The task is now available for reclaiming.",
       slack_user.slack_id

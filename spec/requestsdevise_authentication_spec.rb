@@ -37,6 +37,6 @@ RSpec.describe 'Devise member authentication', type: :request do
 
     expect(response).to have_http_status(:unauthorized)
     expect(JSON.parse(response.body)['message']).to eq('Login failed, email board@manchestermakerspace.org with error code R2026')
-    expect(::Service::SlackConnector).to have_received(:send_slack_message)
+    expect(SlackMessagesJob).to have_been_enqueued
   end
 end

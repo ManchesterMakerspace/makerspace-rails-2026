@@ -13,6 +13,7 @@ class SystemConfig
 
   SLACK_SYNC_ENABLED = "slack_sync_enabled"
   SLACK_PROFILE_SYNC_ENABLED = "slack_profile_sync_enabled"
+  MONGO_CACHE_TTL_HOURS = "mongo_cache_ttl_hours"
 
   JOB_KEYS = {
     "slack_sync"      => "slack:sync_users",
@@ -20,10 +21,21 @@ class SystemConfig
     "member_review"   => "member_review",
     "invoice_review"  => "invoice_review",
     "garbage_collect" => "gc",
-    "db_backup"       => "db:backup"
+    "db_backup"       => "db:backup",
+    "reservation_canvas_rebuild" => "reservations:rebuild_slack_canvases"
   }.freeze
 
   def self.get(key)
+    MongoCache.fetch(
+      "system_config/#{key}",
+      dependencies: ["system_config/#{key}"],
+      expires_in: key == MONGO_CACHE_TTL_HOURS ? MongoCache::DEFAULT_TTL : MongoCache.ttl
+    ) do
+      raw_get(key)
+    end
+  end
+
+  def self.raw_get(key)
     find_by(key: key)&.value
   end
 
@@ -31,6 +43,12 @@ class SystemConfig
     record = find_or_initialize_by(key: key)
     record.value = value.to_s
     record.save!
+    if key == MONGO_CACHE_TTL_HOURS
+      MongoCache.update_ttl!(record.value)
+      MongoCache.clear!
+    else
+      MongoCache.invalidate("system_config/#{key}")
+    end
     record
   end
 

@@ -1,6 +1,17 @@
 class ToolSerializer < ActiveModel::Serializer
   attributes :id, :name, :description, :disabled, :announce,
-             :announce_channel, :users_channel, :shop_id, :prerequisite_ids
+             :announce_channel, :users_channel, :shop_id, :prerequisite_ids,
+             :reservable, :max_concurrent_reservations, :reservation_horizon_days,
+             :max_reservation_duration_hours, :reservation_requires_approval,
+             :reservation_prerequisite_tool_ids
+
+  attribute :effective_reservation_prerequisite_ids do
+    object.effective_reservation_prerequisite_ids
+  end
+
+  attribute :reservation_prerequisite_names do
+    object.reservation_prerequisites.map(&:name)
+  end
 
   attribute :shop_name do
     object.shop.try(:name)

@@ -4,6 +4,7 @@ class Payment
 
   belongs_to :member, optional: true
   after_initialize :find_member
+  after_save :configure_subscription_status
 
   field :product
   field :firstname
@@ -23,6 +24,8 @@ class Payment
 
   private
   def configure_subscription_status
+    return unless member
+
     rental_product_match = /(plot|rental|locker)/i.match(self.product)
     unless rental_product_match
       true_types = ['subscr_signup', 'subscr_payment']
@@ -38,22 +41,19 @@ class Payment
   end
 
   def find_member
-    return unless self.valid?
+    return if member
 
-    unless !!self.member
-      # Use direct field queries instead of Member.search (which requires Atlas Search index)
-      self.member = Member.find_by(email: self.payer_email.to_s.downcase) unless self.payer_email.nil?
-      self.member ||= Member.where(lastname: /\A#{Regexp.escape(self.lastname)}\z/i).first unless self.lastname.nil?
-      self.member ||= Member.where(firstname: /\A#{Regexp.escape(self.firstname)}\z/i).first unless self.firstname.nil?
-      if !self.member && self.payer_email then
-        payments = Payment.where(member: !nil, payer_email: self.payer_email.to_s.downcase).order_by(payment_date: :desc);
-        self.member = payments.first.member unless payments.empty?
-      end
-      self.save
-    end
-
-    if self.member
-      configure_subscription_status
+    # Resolve the association without saving from a read/initialization
+    # callback. The controller performs the one authoritative payment save.
+    self.member = Member.find_by(email: payer_email.to_s.downcase) if payer_email.present?
+    self.member ||= Member.where(lastname: /\A#{Regexp.escape(lastname)}\z/i).first if lastname.present?
+    self.member ||= Member.where(firstname: /\A#{Regexp.escape(firstname)}\z/i).first if firstname.present?
+    if member.nil? && payer_email.present?
+      previous = Payment.where(
+        :member_id.ne => nil,
+        payer_email: payer_email.to_s.downcase
+      ).order_by(payment_date: :desc).first
+      self.member = previous&.member
     end
   end
 end

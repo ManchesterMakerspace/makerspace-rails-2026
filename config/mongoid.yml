@@ -3,6 +3,10 @@ development:
   clients:
     default:
       uri: <%=ENV['MLAB_URI']%>
+      options:
+        max_pool_size: <%= ENV.fetch("MONGO_POOL_SIZE", 5) %>
+        min_pool_size: 1
+        wait_queue_timeout: 2
     # payments:
     #   uri: <%=ENV['MLAB_URI']%>
 
@@ -40,11 +44,19 @@ production:
   clients:
       default:
         uri: <%=ENV['MLAB_URI']%>
+        options:
+          max_pool_size: <%= ENV.fetch("MONGO_POOL_SIZE", 5) %>
+          min_pool_size: 1
+          wait_queue_timeout: 2
   options:
     raise_not_found_error: false
 test:
   clients:
     default:
       uri: <%= ENV['MLAB_URI'] %>
+      options:
+        max_pool_size: 5
+        min_pool_size: 0
+        wait_queue_timeout: 2
   options:
     raise_not_found_error: false

@@ -6,6 +6,9 @@ class Card
   field :validity, type: String #Member's Status
   attr_accessor :card_location
 
+  index({ uid: 1 }, { unique: true })
+  index({ member_id: 1, uid: 1 })
+
   before_create :set_expiration, :set_holder
   before_update :set_expiration
   after_create :update_rejection_card, :settle_open_member_invoices

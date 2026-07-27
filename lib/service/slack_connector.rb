@@ -1,6 +1,7 @@
 module Service
   module SlackConnector
     mattr_accessor :slack_team_id
+    SLACK_RATE_LIMIT_MAX_RETRIES = 5
 
     def enque_message(
         message,
@@ -14,18 +15,28 @@ module Service
         channel = members_relations_channel,
         uniquifier = request_caller_id(caller_locations(1,1)[0].label)
       )
-      REDIS.set(uniquifier, {
-        message: message,
-        channel: channel,
-        timestamp: Time.now
-      }.to_json)
+      payload = {
+        "message" => message,
+        "channel" => channel,
+        "timestamp" => Time.current.iso8601(6),
+        "dedupe_key" => uniquifier
+      }
+
+      if Current.request_id.present?
+        Current.slack_messages = Array(Current.slack_messages) << payload
+      else
+        SlackMessagesJob.perform_later([payload])
+      end
+      payload
     end
-    def get_enqueued_messages(uniquifier)
-      ::Service::SlackConnector.get_enqueued_messages(uniquifier)
+    def get_enqueued_messages(pattern)
+      ::Service::SlackConnector.get_enqueued_messages(pattern)
     end
-    def self.get_enqueued_messages(uniquifier)
-      related_keys = REDIS.keys(uniquifier)
-      related_keys.reduce({}) { |msg_hash, key| msg_hash.merge({ key => REDIS.get(key) }) }
+    def self.get_enqueued_messages(pattern)
+      Array(Current.slack_messages).each_with_object({}) do |payload, messages|
+        key = payload["dedupe_key"]
+        messages[key] = payload.to_json if File.fnmatch(pattern, key)
+      end
     end
     def send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel)
       ::Service::SlackConnector.send_slack_messages(messages, channel)
@@ -79,6 +90,10 @@ module Service
       return if Rails.env.test?
       client.chat_update(channel: safe_channel(channel), ts: ts, text: message)
     end
+    def self.open_modal(trigger_id, view)
+      return if Rails.env.test?
+      client.views_open(trigger_id: trigger_id, view: view)
+    end
     def self.pin_slack_message(channel, ts)
       return if Rails.env.test?
       return if ts.blank?
@@ -89,6 +104,155 @@ module Service
       return if Rails.env.test?
       client.chat_delete(channel: safe_channel(channel), ts: ts)
     end
+
+    def self.schedule_slack_message(channel:, text:, post_at:)
+      with_rate_limit_retry("chat.scheduleMessage") do
+        response = client.chat_scheduleMessage(
+          channel: safe_channel(channel),
+          text: text,
+          post_at: post_at.to_i
+        )
+        response.scheduled_message_id
+      end
+    end
+
+    def self.delete_scheduled_slack_message(channel:, scheduled_message_id:)
+      with_rate_limit_retry("chat.deleteScheduledMessage") do
+        client.chat_deleteScheduledMessage(
+          channel: safe_channel(channel),
+          scheduled_message_id: scheduled_message_id
+        )
+      end
+    end
+
+    def self.find_channel_id(channel_name)
+      requested = channel_name.to_s.delete_prefix('#').strip
+      return if requested.blank?
+
+      if requested.match?(/\A[CG][A-Z0-9]+\z/i)
+        response = with_rate_limit_retry("conversations.info") do
+          client.conversations_info(channel: requested)
+        end
+        channel = response.channel
+        return channel.id unless channel.respond_to?(:is_archived) && channel.is_archived
+        return
+      end
+
+      cursor = nil
+      loop do
+        response = with_rate_limit_retry("conversations.list") do
+          client.conversations_list(
+            types: 'public_channel,private_channel',
+            exclude_archived: true,
+            limit: 200,
+            cursor: cursor
+          )
+        end
+        channel = Array(response.channels).find do |candidate|
+          candidate.name.to_s.casecmp?(requested)
+        end
+        return channel.id if channel
+
+        cursor = response.response_metadata&.next_cursor.to_s
+        break if cursor.blank?
+      end
+      nil
+    rescue Slack::Web::Api::Errors::ChannelNotFound
+      nil
+    end
+
+    def self.create_canvas(title, channel_id: nil)
+      with_rate_limit_retry("canvases.create") do
+        arguments = { title: title }
+        arguments[:channel_id] = channel_id if channel_id.present?
+        client.canvases_create(**arguments).canvas_id
+      end
+    end
+
+    def self.set_canvas_channel_access(canvas_id, channel_id)
+      with_rate_limit_retry("canvases.access.set channel read") do
+        client.canvases_access_set(
+          canvas_id: canvas_id,
+          access_level: 'read',
+          # slack-ruby-client 2.7.0 does not JSON-encode this array even though
+          # Slack expects an array-valued JSON parameter.
+          channel_ids: JSON.generate([channel_id])
+        )
+      end
+    end
+
+    def self.set_canvas_user_access(canvas_id, user_ids, access_level:)
+      ids = Array(user_ids).map(&:to_s).reject(&:blank?).uniq
+      return if ids.empty?
+
+      with_rate_limit_retry("canvases.access.set user #{access_level}") do
+        client.canvases_access_set(
+          canvas_id: canvas_id,
+          access_level: access_level,
+          user_ids: JSON.generate(ids)
+        )
+      end
+    end
+
+    def self.replace_canvas(canvas_id, markdown)
+      changes = [
+        {
+          operation: 'replace',
+          document_content: {
+            type: 'markdown',
+            markdown: markdown
+          }
+        }
+      ]
+      with_rate_limit_retry("canvases.edit") do
+        client.canvases_edit(
+          canvas_id: canvas_id,
+          # See set_canvas_channel_access: nested Canvas parameters must be
+          # explicitly JSON-encoded with the currently bundled Slack client.
+          changes: JSON.generate(changes)
+        )
+      end
+    end
+
+    def self.with_rate_limit_retry(operation, max_retries: SLACK_RATE_LIMIT_MAX_RETRIES)
+      retries = 0
+      begin
+        yield
+      rescue Slack::Web::Api::Errors::TooManyRequestsError => error
+        raise if retries >= max_retries
+
+        retries += 1
+        retry_after = error.retry_after.to_i
+        message = "[SlackRateLimited] operation=#{operation.inspect} " \
+          "retry=#{retries}/#{max_retries} retry_after=#{retry_after}"
+        $stderr.puts(message)
+        Rails.logger.warn(message)
+        sleep(retry_after)
+        retry
+      end
+    end
+
+    def self.format_api_error(error)
+      details = "#{error.class}: #{error.message.to_s.gsub(/\s+/, ' ').strip}"
+      response = error.respond_to?(:response) ? error.response : nil
+      return details if response.nil?
+
+      status = response.respond_to?(:status) ? response.status : nil
+      body = response.respond_to?(:body) ? response.body : response
+      body = body.to_h if body.respond_to?(:to_h)
+      response_text = JSON.generate(body).gsub(/\s+/, ' ').strip
+      response_text = response_text.first(4_000)
+
+      [
+        details,
+        ("http_status=#{status}" if status),
+        ("slack_response=#{response_text}" if response_text.present?)
+      ].compact.join(" ")
+    rescue => formatting_error
+      "#{details} response_format_error=#{formatting_error.class}: " \
+        "#{formatting_error.message.to_s.gsub(/\s+/, ' ').strip}"
+    end
+
     def self.invite_to_channel(channel, slack_id)
       return if Rails.env.test?
       client.conversations_invite(channel: safe_channel(channel), users: slack_id)
@@ -125,11 +289,26 @@ module Service
       unless ENV['SLACK_INVITES_ENABLED'] == 'true'
         raise Error::NotAllowed.new('Slack invites are not enabled in this environment')
       end
-      client.users_admin_invite(
+
+      slack_client = admin_client("users.admin.invite")
+      if slack_client.nil?
+        raise Error::NotAllowed.new(
+          "SLACK_ADMIN_TOKEN is required to invite Slack users"
+        )
+      end
+
+      slack_client.users_admin_invite(
         email: email,
         first_name: firstname,
         last_name: lastname
       )
+    end
+
+    def self.team_billable_info(user:)
+      slack_client = admin_client("team.billableInfo")
+      return if slack_client.nil?
+
+      slack_client.team_billableInfo(user: user)
     end
 
     # ── Channel helpers ──────────────────────────────────────────────────────
@@ -152,19 +331,54 @@ module Service
       SystemConfig.get('slack_channel_admin') || 'general'
     end
 
+    def self.api_token_present?
+      ENV['SLACK_BOT_TOKEN'].present? || ENV['SLACK_ADMIN_TOKEN'].present?
+    end
+
+    def self.admin_token_present?
+      ENV['SLACK_ADMIN_TOKEN'].present?
+    end
+
+    # Ordinary calls prefer the least-privileged bot token. The historical
+    # admin token remains the fallback when no separate bot token is present.
+    def self.client
+      token = ENV['SLACK_BOT_TOKEN'].presence || ENV['SLACK_ADMIN_TOKEN'].presence
+      Slack::Web::Client.new(token: token)
+    end
+
+    # Admin-only calls must never fall back to the bot token.
+    def self.admin_client(operation)
+      token = ENV['SLACK_ADMIN_TOKEN'].presence
+      return Slack::Web::Client.new(token: token) if token
+
+      message = "[SlackAdminTokenRequired] operation=#{operation} " \
+        "SLACK_ADMIN_TOKEN is required; SLACK_BOT_TOKEN cannot authorize this API call"
+      $stderr.puts(message)
+      Rails.logger.error(message)
+      if defined?(Honeybadger)
+        Honeybadger.notify(
+          "Slack admin token required",
+          context: {
+            operation: operation,
+            slack_bot_token_present: ENV['SLACK_BOT_TOKEN'].present?
+          }
+        )
+      end
+      nil
+    end
+
     private
+
     def self.safe_channel(channel)
       ENV['SLACK_ENV'] == 'production' ? channel : 'test_channel'
     end
-    def self.client
-      Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
-    end
+
     def self.format_slack_messages(messages, channel)
       messages = messages.map { |m| "#{channel}| #{m}" } unless ENV['SLACK_ENV'] == 'production'
       messages.join(" \n ")
     end
     def self.request_caller_id(caller_method)
-      "#{Current.request_id}.#{caller_method}"
+      [Current.request_id.presence || SecureRandom.uuid, caller_method].join(".")
     end
   end
 end

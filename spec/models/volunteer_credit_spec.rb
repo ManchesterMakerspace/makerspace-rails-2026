@@ -88,7 +88,7 @@ describe VolunteerCredit, type: :model do
     it 'attempts to DM the member via Slack when linked' do
       slack_user = double('SlackUser', slack_id: 'U123')
       allow(SlackUser).to receive(:find_by).with(member_id: member.id).and_return(slack_user)
-      expect(Service::SlackConnector).to receive(:send_slack_message).with(anything, 'U123')
+      expect(Service::SlackConnector).to receive(:enque_message).with(anything, 'U123')
       credit.approve!(admin)
     end
   end

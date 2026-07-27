@@ -21,7 +21,7 @@ class BraintreeService::Subscription < Braintree::Subscription
         results
       end
     rescue Timeout::Error => e
-      ::Service::SlackConnector.send_slack_message(
+      ::Service::SlackConnector.enque_message(
         "⚠️ Braintree subscription search timed out after 25s. Error: #{e.message}",
         ::Service::SlackConnector.logs_channel
       )

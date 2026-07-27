@@ -295,7 +295,7 @@ describe VolunteerTask, type: :model do
     it 'attempts to DM the former claimant when Slack linked' do
       slack_user = double('SlackUser', slack_id: 'U456')
       allow(SlackUser).to receive(:find_by).with(member_id: member.id).and_return(slack_user)
-      expect(Service::SlackConnector).to receive(:send_slack_message).with(anything, 'U456')
+      expect(Service::SlackConnector).to receive(:enque_message).with(anything, 'U456')
       task.release!(admin, 'No response from member')
     end
 
@@ -353,7 +353,7 @@ describe VolunteerTask, type: :model do
     it 'attempts to DM the former claimant when Slack linked' do
       slack_user = double('SlackUser', slack_id: 'U456')
       allow(SlackUser).to receive(:find_by).with(member_id: member.id).and_return(slack_user)
-      expect(Service::SlackConnector).to receive(:send_slack_message).with(anything, 'U456')
+      expect(Service::SlackConnector).to receive(:enque_message).with(anything, 'U456')
       task.reject_pending!(admin, 'Work not completed to standard')
     end
 

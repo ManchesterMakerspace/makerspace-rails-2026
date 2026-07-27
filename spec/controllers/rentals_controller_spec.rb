@@ -60,7 +60,8 @@ RSpec.describe RentalsController, type: :controller do
     end
 
     it "renders json of the updated rental" do
-      put :update, params: { id: rental.id, signature: "foo,bar" }, format: :json
+      signature = "data:image/png;base64,#{Base64.strict_encode64('signature bytes')}"
+      put :update, params: { id: rental.id, signature: signature }, format: :json
       expect(response).to have_http_status(200)
       expect(response.media_type).to eq "application/json"
       parsed_response = JSON.parse(response.body)

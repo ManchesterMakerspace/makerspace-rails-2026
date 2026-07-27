@@ -45,7 +45,7 @@ module InvoiceHelper
     end
 
     def self.get_all_invoices()
-        REDIS.keys("#{name}/*")
+        REDIS.scan_each(match: "#{name}/*", count: 100).to_a
     end
 
     def self.get_invoice_cache(invoice_id)
@@ -68,7 +68,7 @@ module InvoiceHelper
         REDIS.set(normalize_invoice_id(invoice_id), {
             lifecycle: lifecycle,
             timestamp: Time.now.to_i
-        }.to_json)
+        }.to_json, ex: 7.days.to_i)
     end
 
     def self.clean_cache(older_than_time)

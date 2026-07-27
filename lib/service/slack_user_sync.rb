@@ -2,15 +2,15 @@ module Service
   module SlackUserSync
 
     def self.sync_single(slack_id)
-      unless ENV['SLACK_ADMIN_TOKEN'].present?
+      unless ::Service::SlackConnector.api_token_present?
         ::Service::SlackConnector.send_slack_message(
-          "⚠ Slack single-user sync failed: SLACK_ADMIN_TOKEN not set.",
+          "⚠ Slack single-user sync failed: neither SLACK_BOT_TOKEN nor SLACK_ADMIN_TOKEN is set.",
           ::Service::SlackConnector.logs_channel
         )
         return nil
       end
 
-      client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
+      client = ::Service::SlackConnector.client
 
       begin
         response = client.users_info(user: slack_id)
@@ -77,14 +77,14 @@ module Service
         return { skipped: true }
       end
 
-      unless ENV['SLACK_ADMIN_TOKEN'].present?
-        msg = '[Slack Sync] ERROR: SLACK_ADMIN_TOKEN is not set'
+      unless ::Service::SlackConnector.api_token_present?
+        msg = '[Slack Sync] ERROR: neither SLACK_BOT_TOKEN nor SLACK_ADMIN_TOKEN is set'
         puts msg
-        Honeybadger.notify('Slack user sync failed', context: { reason: 'SLACK_ADMIN_TOKEN not set' }) if defined?(Honeybadger)
+        Honeybadger.notify('Slack user sync failed', context: { reason: 'no Slack API token configured' }) if defined?(Honeybadger)
         raise msg
       end
 
-      client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
+      client = ::Service::SlackConnector.client
 
       created_count = 0
       updated_count = 0

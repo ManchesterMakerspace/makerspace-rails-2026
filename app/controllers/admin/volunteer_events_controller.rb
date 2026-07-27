@@ -1,18 +1,45 @@
 class Admin::VolunteerEventsController < AdminOrRmController
-  before_action :find_event, only: [:show, :close, :add_attendee, :remove_attendee, :destroy]
+  MUTATION_ACTIONS = [
+    :update,
+    :close,
+    :add_attendee,
+    :remove_attendee,
+    :destroy
+  ].freeze
+
+  before_action :find_event, only: [:show, *MUTATION_ACTIONS]
+  before_action :authorize_current_event_shop!, only: MUTATION_ACTIONS
 
   # GET /api/admin/volunteer_events
   def index
     events = VolunteerEvent.all.order_by(created_at: :desc)
     events = events.where(status: params[:status]) if params[:status].present?
+    response.set_header("total-items", events.count)
+    page = (params[:page_num].presence || params[:pageNum]).to_i
+    events = events.skip([page, 0].max * FastQuery::ITEMS_PER_PAGE)
+      .limit(FastQuery::ITEMS_PER_PAGE)
     render json: events, each_serializer: VolunteerEventSerializer, adapter: :attributes
   end
 
   # POST /api/admin/volunteer_events
   def create
+    authorize_shop_assignment!(event_params[:shop_id])
     event = VolunteerEvent.new(event_params.merge(created_by_id: current_member.id))
     event.save!
+    enqueue_canvas_sync(event.shop_id)
     render json: event, serializer: VolunteerEventSerializer, adapter: :attributes
+  end
+
+  # PUT /api/admin/volunteer_events/:id
+  def update
+    if event_params.key?(:shop_id)
+      authorize_shop_assignment!(event_params[:shop_id], allow_blank: false)
+    end
+    previous_shop_id = @event.shop_id
+    @event.update!(event_params)
+    enqueue_canvas_sync(previous_shop_id)
+    enqueue_canvas_sync(@event.shop_id) if @event.shop_id.to_s != previous_shop_id.to_s
+    render json: @event, serializer: VolunteerEventSerializer, adapter: :attributes
   end
 
   # GET /api/admin/volunteer_events/:id
@@ -26,6 +53,7 @@ class Admin::VolunteerEventsController < AdminOrRmController
       render json: { error: 'Event is already closed' }, status: :forbidden and return
     end
     @event.close!(current_member)
+    enqueue_canvas_sync(@event.shop_id)
     render json: @event, serializer: VolunteerEventSerializer, adapter: :attributes
   rescue Error::Forbidden
     render json: { error: 'Unable to close this event' }, status: :forbidden
@@ -74,7 +102,9 @@ class Admin::VolunteerEventsController < AdminOrRmController
   # DELETE /api/admin/volunteer_events/:id
   def destroy
     raise ::Error::Forbidden.new unless is_admin? || is_board_member?
+    shop_id = @event.shop_id
     @event.destroy
+    enqueue_canvas_sync(shop_id)
     render json: {}, status: :no_content
   end
 
@@ -85,7 +115,32 @@ class Admin::VolunteerEventsController < AdminOrRmController
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerEvent, { id: params[:id] }) if @event.nil?
   end
 
+  def authorize_current_event_shop!
+    authorize_shop_assignment!(@event.shop_id, allow_blank: false)
+  end
+
   def event_params
-    params.permit(:title, :description, :credit_value, :event_date)
+    params.permit(
+      :title,
+      :description,
+      :credit_value,
+      :event_date,
+      :shop_id,
+      prerequisite_tool_ids: []
+    )
+  end
+
+  def authorize_shop_assignment!(shop_id, allow_blank: true)
+    return if is_admin? || is_board_member?
+    return if shop_id.blank? && allow_blank
+    return if shop_id.present? && manages_shop?(shop_id)
+
+    raise ::Error::Forbidden.new
+  end
+
+  def enqueue_canvas_sync(shop_id)
+    return if shop_id.blank?
+
+    VolunteerSlackCanvasSyncJob.perform_later(shop_id.to_s)
   end
 end
