@@ -2,6 +2,12 @@ require 'rails_helper'
 
 RSpec.describe Service::MemberAccess do
   describe '.revoke_slack_access' do
+    before do
+      allow(Honeybadger).to receive(:notify) if defined?(Honeybadger)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with('SLACK_BOT_TOKEN').and_return(nil)
+    end
+
     it 'alerts and pins a manual revocation message when the Slack admin token is missing' do
       member = create(:member, firstname: 'Revoked', lastname: 'Member')
       SlackUser.create!(member: member, slack_id: 'U_REVOKED')
@@ -44,6 +50,37 @@ RSpec.describe Service::MemberAccess do
         Service::SlackConnector.admin_channel
       )
       expect(Service::SlackConnector).to have_received(:pin_slack_message).with(Service::SlackConnector.admin_channel, '789.012')
+    end
+
+    it 'uses the bot token for lookup and the admin token for deactivation' do
+      member = create(:member, firstname: 'Revoked', lastname: 'Member')
+      bot_client = instance_double(Slack::Web::Client)
+      admin_client = instance_double(Slack::Web::Client)
+      slack_user = OpenStruct.new(user: OpenStruct.new(id: 'U_LOOKUP'))
+
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with('SLACK_BOT_TOKEN').and_return('bot-token')
+      allow(ENV).to receive(:[]).with('SLACK_ADMIN_TOKEN').and_return('admin-token')
+      allow(Slack::Web::Client).to receive(:new)
+        .with(token: 'bot-token')
+        .and_return(bot_client)
+      allow(Slack::Web::Client).to receive(:new)
+        .with(token: 'admin-token')
+        .and_return(admin_client)
+      allow(bot_client).to receive(:users_lookupByEmail)
+        .with(email: member.email)
+        .and_return(slack_user)
+      allow(admin_client).to receive(:users_admin_setInactive)
+        .with(user: 'U_LOOKUP')
+
+      result = described_class.revoke_slack_access(member)
+
+      expect(result).to eq(
+        status: :ok,
+        message: "Deactivated Slack user for #{member.email}"
+      )
+      expect(bot_client).to have_received(:users_lookupByEmail)
+      expect(admin_client).to have_received(:users_admin_setInactive)
     end
 
 

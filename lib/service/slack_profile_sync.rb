@@ -13,12 +13,9 @@ module Service
         return nil
       end
 
-      unless ENV['SLACK_ADMIN_TOKEN'].present?
-        Rails.logger.info('Cannot update slack profile without a SLACK_ADMIN_TOKEN')
-        return nil
-      end
+      client = ::Service::SlackConnector.admin_client("users.profile.set")
+      return nil if client.nil?
 
-      client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
       profile = {}
       profile[status_field] = { value: status_profile_value(member) }
 
@@ -39,6 +36,7 @@ module Service
       end
 
       unless ENV['SLACK_ADMIN_TOKEN'].present?
+        ::Service::SlackConnector.admin_client("users.profile.set")
         msg = '[Slack Profile Sync] ERROR: SLACK_ADMIN_TOKEN is not set'
         puts msg
         Honeybadger.notify('Slack profile sync failed', context: { reason: 'SLACK_ADMIN_TOKEN not set' }) if defined?(Honeybadger)

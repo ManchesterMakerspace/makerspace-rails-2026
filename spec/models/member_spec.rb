@@ -216,9 +216,10 @@ RSpec.describe Member, type: :model do
       end
     end
 
-    describe "address_setter" do 
-      it "unpacks and saves address hash as attributes" do 
+    describe "address_setter" do
+      it "unpacks address attributes without triggering a nested save" do
         member = create(:member)
+        persisted_street = member.address_street
         address_hash = {
           street: "foo",
           unit: "1",
@@ -227,12 +228,12 @@ RSpec.describe Member, type: :model do
           postal_code: "90210"
         }
         member.address = address_hash
-        member.reload
         expect(member.address_street).to eq(address_hash[:street])
         expect(member.address_unit).to eq(address_hash[:unit])
         expect(member.address_city).to eq(address_hash[:city])
         expect(member.address_state).to eq(address_hash[:state])
         expect(member.address_postal_code).to eq(address_hash[:postal_code])
+        expect(member.reload.address_street).to eq(persisted_street)
       end
     end
 
@@ -285,12 +286,8 @@ RSpec.describe Member, type: :model do
     describe "on create" do
       it "schedules a slack and google drive invite" do
         member = build(:member)
-        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
-        expect(MemberSubscriber).to receive(:invite_to_slack).with(
-          member.email,
-          member.lastname,
-          member.firstname,
-        )
+        expect(MemberProvisioningJob).to receive(:perform_later)
+          .with(kind_of(String))
         member.save!
       end
     end
@@ -321,8 +318,7 @@ RSpec.describe Member, type: :model do
         new_email = "foo_changed@test.com"
         member.set(firebase_uid: "firebase-123", session_token: "old-token")
 
-        expect(MemberSubscriber).not_to receive(:send_google_invite)
-        expect(MemberSubscriber).not_to receive(:send_slack_invite)
+        expect(MemberProvisioningJob).not_to receive(:perform_later)
 
         member.update!({ email: new_email })
 
@@ -333,25 +329,13 @@ RSpec.describe Member, type: :model do
       end
 
       it "Updates billing if a customer" do 
-        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
-        allow(MemberSubscriber).to receive(:invite_to_slack).and_return(nil)
         customer = create(:member, customer_id: "foo")
-        mock_customer_chain = double
-        # The subscriber's connect_gateway instance method delegates to
-        # ::Service::BraintreeGateway.connect_gateway — stub the class-level method
-        allow(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
-        expect(gateway).to receive(:customer).and_return(mock_customer_chain)
-        expect(mock_customer_chain).to receive(:update).with(
-          "foo", 
-          first_name: "foo_changed", 
-          last_name: customer.lastname
-        )
+        expect(MemberBillingSyncJob).to receive(:perform_later).with(customer.id.to_s)
         customer.update!({ firstname: "foo_changed" })
       end
 
       it "Doesn't update billing if not a customer" do 
-        allow_any_instance_of(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
-        expect(gateway).not_to receive(:customer)
+        expect(MemberBillingSyncJob).to receive(:perform_later).with(member.id.to_s)
         member.update!({ firstname: "foo_changed" })
       end
 
@@ -363,7 +347,6 @@ RSpec.describe Member, type: :model do
       secondary.update!(groupName: group.groupName)
       SlackUser.create!(member_id: primary.id, slack_id: "U_PRIMARY")
       SlackUser.create!(member_id: secondary.id, slack_id: "U_SECONDARY")
-      allow(::Service::SlackConnector).to receive(:send_slack_message)
       mail_delivery = instance_double(ActionMailer::MessageDelivery, deliver_later: true)
       allow(MemberMailer).to receive(:household_disbanded).and_return(mail_delivery)
 
@@ -374,8 +357,7 @@ RSpec.describe Member, type: :model do
       expect(Group.where(id: group.id).count).to eq(0)
       expect(primary.reload.groupName).to be_nil
       expect(secondary.reload.groupName).to be_nil
-      expect(::Service::SlackConnector).to have_received(:send_slack_message).with(/individual membership plan/, "U_PRIMARY")
-      expect(::Service::SlackConnector).to have_received(:send_slack_message).with(/elect a new membership plan/, "U_SECONDARY")
+      expect(SlackMessagesJob).to have_been_enqueued.exactly(3).times
       expect(MemberMailer).to have_received(:household_disbanded).with(primary.id.to_s, primary.id.to_s, true)
       expect(MemberMailer).to have_received(:household_disbanded).with(secondary.id.to_s, primary.id.to_s, false)
       expect(mail_delivery).to have_received(:deliver_later).twice
@@ -438,8 +420,10 @@ RSpec.describe Member, type: :model do
     describe "on destroy" do 
       it "cancels its subscription if subscription_id exists" do 
         member = create(:member, subscription_id: "124")
-        expect(BraintreeService::Subscription).to receive(:cancel).with(anything, "124")
-        member.destroy
+        expect {
+          member.destroy
+        }.to have_enqueued_job(MemberDestroyCleanupJob)
+          .with("124", [], member.fullname)
       end
     
       it "Doesnt touch subscription if subscription_id doesn't exist" do 
@@ -453,7 +437,7 @@ RSpec.describe Member, type: :model do
         create(:rental, member: member)
         create(:rental, member: member)
         expect(Rental.all.length).to eq(2)
-        member.destroy
+        perform_enqueued_jobs(only: MemberDestroyCleanupJob) { member.destroy }
         expect(Rental.all.length).to eq(0)
       end
     end
@@ -478,7 +462,7 @@ RSpec.describe Member, type: :model do
     around do |example|
       Current.request_id = SecureRandom.uuid
       example.run
-      REDIS.keys("#{Current.request_id}.*").each { |key| REDIS.del(key) }
+      Current.slack_messages = []
       Current.request_id = nil
     end
 

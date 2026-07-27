@@ -13,6 +13,12 @@ class RentalSpot
   field :parent_number,     type: String   # set on child spots (e.g. "Shelf-1" for "Shelf-1a")
   field :notes,             type: String
 
+  index({ active: 1, rental_type_id: 1, number: 1 })
+  index({ parent_number: 1, active: 1 })
+
+  after_save { MongoCache.invalidate("rental_spots") }
+  after_destroy { MongoCache.invalidate("rental_spots") }
+
   search_in :number, :location, :description
 
   validates :number,         presence: true, uniqueness: true,

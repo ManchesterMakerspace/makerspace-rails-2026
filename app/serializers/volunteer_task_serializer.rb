@@ -5,6 +5,7 @@ class VolunteerTaskSerializer < ActiveModel::Serializer
              :description,
              :credit_value,
              :shop_id,
+             :prerequisite_tool_ids,
              :status,
              :days,
              :next_available,
@@ -22,6 +23,12 @@ class VolunteerTaskSerializer < ActiveModel::Serializer
     object.shop&.name
   rescue
     nil
+  end
+
+  attribute :prerequisite_tool_names do
+    object.prerequisite_tools.map(&:name)
+  rescue
+    []
   end
 
   attribute :claimed_by_name do

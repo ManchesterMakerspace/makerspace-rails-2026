@@ -7,6 +7,10 @@ module SlackService
   end
 
   def send_messages
-    SlackMessagesJob.perform_later(Current.request_id)
+    messages = Array(Current.slack_messages)
+    return if messages.empty?
+
+    Current.slack_messages = []
+    SlackMessagesJob.perform_later(messages)
   end
 end

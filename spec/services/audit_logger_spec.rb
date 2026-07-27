@@ -45,6 +45,15 @@ RSpec.describe Service::AuditLogger do
         expect(log.slack_message).to include('revoked')
       end
 
+      it 'appends human-readable message details when provided' do
+        log = described_class.log(
+          **base_params,
+          message_details: 'shop: Woodshop, tool: Bandsaw'
+        )
+
+        expect(log.slack_message).to include('shop: Woodshop, tool: Bandsaw')
+      end
+
       it 'scrubs sensitive fields from before_snapshot' do
         before_snap = {
           'firstname'            => 'Jane',
@@ -114,16 +123,19 @@ RSpec.describe Service::AuditLogger do
       it 'calls Slack and sets slack_posted true when channel is provided' do
         allow(::Service::SlackConnector).to receive(:send_slack_message).and_return(true)
         log = described_class.log(**base_params, slack_channel: '#member-relations')
+        expect(AuditLogSlackJob).to have_been_enqueued.with(log.id.to_s)
+        AuditLogSlackJob.perform_now(log.id.to_s)
         expect(log.slack_channel).to eq('#member-relations')
-        expect(log.slack_posted).to eq(true)
+        expect(log.reload.slack_posted).to eq(true)
       end
 
       it 'sets slack_posted false and notifies Honeybadger when Slack fails' do
         allow(::Service::SlackConnector).to receive(:send_slack_message).and_raise('Slack error')
         allow(Honeybadger).to receive(:notify)
         log = described_class.log(**base_params, slack_channel: '#member-relations')
-        expect(log.slack_posted).to eq(false)
-        expect(Honeybadger).to have_received(:notify)
+        AuditLogSlackJob.perform_now(log.id.to_s)
+        expect(log.reload.slack_posted).to eq(false)
+        expect(Honeybadger).to have_received(:notify).at_least(:once)
       end
     end
 

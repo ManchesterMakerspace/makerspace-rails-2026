@@ -1,8 +1,12 @@
 Rails.application.configure do
 
   # Settings specified here will take precedence over those in config/application.rb.
+  config.x.app_base_url = AppDomainUrl.base_url(
+    ENV.fetch("APP_DOMAIN"),
+    environment: Rails.env
+  )
   config.action_mailer.default_url_options = {
-    host: ENV.fetch('APP_DOMAIN'),
+    host: AppDomainUrl.host(ENV.fetch("APP_DOMAIN")),
     protocol: "https"
   }
   config.action_mailer.delivery_method = :smtp
@@ -12,8 +16,18 @@ Rails.application.configure do
 
   config.cache_store = :redis_cache_store, {
     url: ENV["REDIS_URL"],
-    expires_in: 1.hour,
-    namespace: "cache"
+    expires_in: 8.hours,
+    namespace: "makerspace:cache:v1",
+    compress: true,
+    compress_threshold: 1.kilobyte,
+    connect_timeout: 1,
+    read_timeout: 0.2,
+    write_timeout: 0.2,
+    reconnect_attempts: 1,
+    error_handler: ->(method:, returning:, exception:) {
+      Rails.logger.warn("[RailsCache] #{method} failed: #{exception.class}: #{exception.message}")
+      Honeybadger.notify(exception, context: { cache_method: method, returning: returning }) if defined?(Honeybadger)
+    }
   }
 
   if ENV['GMAIL_USERNAME'].present?
@@ -69,36 +83,31 @@ Rails.application.configure do
   #config.assets.css_compressor = :sass
 
   # Do not fallback to assets pipeline if a precompiled asset is missed.
-  config.assets.compile = true
+  config.assets.compile = false
 
   # `config.assets.precompile` and `config.assets.version` have moved to config/initializers/assets.rb
 
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.action_controller.asset_host = config.action_mailer.default_url_options[:host]
-  config.action_mailer.asset_host = config.action_mailer.default_url_options[:host]
+  config.action_mailer.asset_host = config.x.app_base_url
   
   # Specifies the header that your server uses for sending files.
   # config.action_dispatch.x_sendfile_header = 'X-Sendfile' # for Apache
   # config.action_dispatch.x_sendfile_header = 'X-Accel-Redirect' # for NGINX
-
-  # Mount Action Cable outside main process or domain
-  # config.action_cable.mount_path = nil
-  # config.action_cable.url = 'wss://example.com/cable'
-  # config.action_cable.allowed_request_origins = [ 'http://example.com', /http:\/\/example.*/ ]
 
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
   # config.force_ssl = true
 
   # Use the lowest log level to ensure availability of diagnostic information
   # when problems arise.
-  config.log_level = :debug
+  config.log_level = :info
 
   # Prepend all log lines with the following tags.
   config.log_tags = [ :request_id ]
 
   # Use a real queuing backend for Active Job (and separate queues per environment)
-  # config.active_job.queue_adapter     = :resque
-  # config.active_job.queue_name_prefix = "member-interface_#{Rails.env}"
+  config.active_job.queue_adapter = :sidekiq
+  config.action_mailer.deliver_later_queue_name = :mailers
   config.action_mailer.perform_caching = false
 
   # Ignore bad email addresses and do not raise email delivery errors.

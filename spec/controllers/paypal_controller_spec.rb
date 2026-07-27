@@ -71,14 +71,14 @@ RSpec.describe PaypalController, type: :controller do
       end
 
       it "Notifies of duplicate txn_ids" do
-        ActiveJob::Base.queue_adapter = :test
         post :notify, params: valid_attributes, format: :json
-        expect {
-          post :notify, params: valid_attributes, format: :json
-        }.to have_enqueued_job
-        messages = REDIS.mget(*REDIS.keys)
-        sorted_messages = messages.sort_by { |payload| Time.parse(JSON.load(payload)["timestamp"]) }
-        expect(JSON.load(sorted_messages.last)["message"]).to include("already been taken")
+        allow(::Service::SlackConnector).to receive(:enque_message).and_call_original
+        expect(::Service::SlackConnector).to receive(:enque_message)
+          .with(/already been taken/, anything, anything)
+          .at_least(:once)
+          .and_call_original
+
+        post :notify, params: valid_attributes, format: :json
       end
     end
   end

@@ -9,7 +9,20 @@ class InvoiceOptionsController < ApplicationController
     end
     invoice_option_types = invoice_option_params[:types]
     invoice_options = invoice_option_types ? enabled_options.where(:resource_class.in => invoice_option_types) : enabled_options
-    render_with_total_items(invoice_options, { each_serializer: InvoiceOptionSerializer, adapter: :attributes })
+    cache_variant = [
+      "subscription=#{to_bool(invoice_option_params[:subscription_only])}",
+      "enabled=#{to_bool(invoice_option_params[:only_enabled])}",
+      "types=#{Array(invoice_option_types).map(&:to_s).sort.join(',')}",
+      "admin=#{is_admin?}"
+    ].join("/")
+    payload = CachedPayload.collection(
+      "invoice_options/#{cache_variant}",
+      invoice_options,
+      serializer: InvoiceOptionSerializer,
+      dependencies: ["invoice_options"]
+    )
+    response.set_header("total-items", payload.length)
+    render json: payload.to_json
   end
 
   def show

@@ -8,10 +8,17 @@ class ToolCheckoutRequestsController < AuthenticationController
 
     requests = ToolCheckoutRequest.table_query(requests, params)
     response.set_header("total-items", requests.count)
+    page = (params[:page_num].presence || params[:pageNum]).to_i
+    offset = [page, 0].max * FastQuery::ITEMS_PER_PAGE
+    requests = requests.slice(offset, FastQuery::ITEMS_PER_PAGE) || []
 
-    render json: requests,
-      each_serializer: ToolCheckoutRequestSerializer,
-      adapter: :attributes
+    render(
+      {
+        json: requests,
+        each_serializer: ToolCheckoutRequestSerializer,
+        adapter: :attributes
+      }.merge(MongoPreloadMaps.for_tool_records(requests))
+    )
   end
 
   def create
@@ -29,7 +36,6 @@ class ToolCheckoutRequestsController < AuthenticationController
       request_date: Time.now,
       status: "open"
     )
-    request.announce_request
 
     render json: request, serializer: ToolCheckoutRequestSerializer, adapter: :attributes
   end
@@ -46,7 +52,6 @@ class ToolCheckoutRequestsController < AuthenticationController
     raise ::Error::Forbidden.new unless @request.member_id.to_s == current_member.id.to_s && @request.open?
     raise ::Error::Forbidden.new if @request.tool.try(:disabled?)
 
-    @request.remove_announcement
     @request.update_attributes!(status: "deleted")
     render json: {}, status: 204
   end

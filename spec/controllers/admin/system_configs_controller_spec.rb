@@ -77,6 +77,33 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
     end
   end
 
+  describe "Mongo cache TTL" do
+    before { sign_in admin }
+
+    it "defaults to eight hours" do
+      get :index, format: :json
+      expect(JSON.parse(response.body).dig("security", "mongo_cache_ttl_hours")).to eq("8")
+    end
+
+    it "accepts values from one through twenty-four" do
+      put :update_setting,
+          params: { key: "mongo_cache_ttl_hours", value: "12" },
+          format: :json
+
+      expect(response).to have_http_status(200)
+      expect(SystemConfig.raw_get("mongo_cache_ttl_hours")).to eq("12")
+    end
+
+    it "rejects values outside the supported range" do
+      put :update_setting,
+          params: { key: "mongo_cache_ttl_hours", value: "25" },
+          format: :json
+
+      expect(response).to have_http_status(422)
+      expect(SystemConfig.raw_get("mongo_cache_ttl_hours")).to be_nil
+    end
+  end
+
   describe "authorization" do
     it "forbids a regular member from viewing system configs" do
       sign_in member
@@ -89,6 +116,22 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
       put :update_setting, params: { key: 'devise_timeout_minutes', value: '15' }, format: :json
       expect(response).to have_http_status(403)
       expect(SystemConfig.get('devise_timeout_minutes')).to be_nil
+    end
+  end
+
+  describe "POST #run_job" do
+    before do
+      sign_in admin
+      allow(ReservationSlackCanvasRebuildJob).to receive(:perform_later)
+    end
+
+    it "enqueues the reservation canvas rake job" do
+      post :run_job,
+           params: { key: "reservation_canvas_rebuild" },
+           format: :json
+
+      expect(response).to have_http_status(200)
+      expect(ReservationSlackCanvasRebuildJob).to have_received(:perform_later)
     end
   end
 end

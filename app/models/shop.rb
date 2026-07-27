@@ -5,8 +5,69 @@ class Shop
   field :name, type: String
   field :slack_channel, type: String  # e.g. "shop-woodworking" — used for slash command routing
   field :disabled, type: Boolean, default: false
+  field :reservable, type: Boolean, default: false
+  field :max_concurrent_reservations, type: Integer, default: 1
+  field :reservation_horizon_days, type: Integer, default: 7
+  field :max_reservation_duration_hours, type: Float, default: 8.0
+  field :reservation_requires_approval, type: Boolean, default: false
+  field :reservation_prerequisite_tool_ids, type: Array, default: []
+  field :google_resource_id, type: String
+  field :resource_email, type: String
+  field :color_id, type: String, default: "1"
+  field :canvas_today, type: String
+  field :canvas_tomorrow, type: String
+  field :volunteer_canvas_id, type: String
 
   has_many :tools, dependent: :destroy
 
+  index({ name: 1 }, { unique: true, collation: { locale: "en", strength: 2 } })
+  index({ disabled: 1, reservable: 1, name: 1 })
+  index({ slack_channel: 1 }, { sparse: true })
+
+  after_save :invalidate_reference_caches
+  after_destroy :invalidate_reference_caches
+
   validates :name, presence: true, uniqueness: { case_sensitive: false }
+  validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+  validates :reservation_horizon_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :max_reservation_duration_hours, numericality: { greater_than: 0 }
+  validates :color_id, format: { with: /\A\d+\z/, allow_blank: true }
+  validate :reservation_duration_uses_half_hours
+  validate :reservation_prerequisites_belong_to_shop
+
+  def reservable
+    value = read_attribute(:reservable)
+    value.nil? ? false : value
+  end
+
+  def reservation_prerequisites
+    ids = Array(reservation_prerequisite_tool_ids).map(&:to_s)
+    ids.present? ? Tool.where(:id.in => ids) : Tool.none
+  end
+
+  private
+
+  def invalidate_reference_caches
+    MongoCache.invalidate(
+      "shops",
+      "tools",
+      "reservation_catalog",
+      "checkout_approvers",
+      "privileged_members",
+      "canvas_managers"
+    )
+  end
+
+  def reservation_duration_uses_half_hours
+    value = max_reservation_duration_hours.to_f
+    errors.add(:max_reservation_duration_hours, "must use half-hour increments") unless (value * 2).round == value * 2
+  end
+
+  def reservation_prerequisites_belong_to_shop
+    ids = Array(reservation_prerequisite_tool_ids).map(&:to_s).uniq
+    return if ids.empty?
+
+    valid_ids = Tool.where(shop_id: id, :id.in => ids).pluck(:id).map(&:to_s)
+    errors.add(:reservation_prerequisite_tool_ids, "must belong to this shop") unless (ids - valid_ids).empty?
+  end
 end

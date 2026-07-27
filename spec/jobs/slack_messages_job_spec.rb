@@ -1,52 +1,38 @@
-require 'rails_helper'
+require "rails_helper"
 
-RSpec.describe SlackMessagesJob, type: :job do 
-  include ActiveJob::TestHelper
-
-  let(:target_id) { "foobar" }
-
-  before(:each) do 
-    Service::SlackConnector.enque_message("Message1", nil, "fizzbuzz.method")
-    sleep 1
-    Service::SlackConnector.enque_message("Message2", nil, "#{target_id}.method")
-    sleep 1
-    Service::SlackConnector.enque_message("Message3", nil, "#{target_id}.method2")
+RSpec.describe SlackMessagesJob, type: :job do
+  let(:payloads) do
+    [
+      {
+        "message" => "Message 1",
+        "channel" => "C1",
+        "timestamp" => "2026-01-01T00:00:02Z",
+        "dedupe_key" => "request.one"
+      },
+      {
+        "message" => "Message 2",
+        "channel" => "C1",
+        "timestamp" => "2026-01-01T00:00:01Z",
+        "dedupe_key" => "request.two"
+      },
+      {
+        "message" => "duplicate",
+        "channel" => "C1",
+        "timestamp" => "2026-01-01T00:00:03Z",
+        "dedupe_key" => "request.two"
+      }
+    ]
   end
 
-  after(:each) do 
-    REDIS.flushall
+  it "groups, orders, and deduplicates payloads without Redis scratch keys" do
+    expect_any_instance_of(described_class)
+      .to receive(:send_slack_messages)
+      .with(["Message 2", "Message 1"], "C1")
+
+    described_class.perform_now(payloads)
   end
 
-  it "Dispatches slack messages from Redis cache by request_id" do
-    expect_any_instance_of(Service::SlackConnector).to receive(:send_slack_messages).with(["Message2", "Message3"], nil)
-    SlackMessagesJob.perform_now(target_id)
-  end
-
-  it "Removes enqueued messages when sent successfully" do
-    SlackMessagesJob.perform_now(target_id)
-    expect(REDIS.get("#{target_id}.method")).to be(nil)
-    expect(REDIS.get("#{target_id}.method2")).to be(nil)
-  end
-
-  it "Retains enqueued messages when sent failed" do 
-    allow_any_instance_of(Service::SlackConnector).to receive(:send_slack_messages).and_throw("Error")
-    SlackMessagesJob.perform_now(target_id)
-    expect(REDIS.get("#{target_id}.method")).to be_truthy
-    expect(REDIS.get("#{target_id}.method2")).to be_truthy
-  end
-
-  it "Retries failed messages" do 
-    call_count = 0
-    allow_any_instance_of(Service::SlackConnector).to receive(:send_slack_messages) do 
-      call_count += 1
-      if call_count == 1
-        raise StandardError
-      end
-    end
-    perform_enqueued_jobs do 
-      SlackMessagesJob.perform_now(target_id) rescue nil
-    end
-    expect(REDIS.get("#{target_id}.method")).to be(nil)
-    expect(REDIS.get("#{target_id}.method2")).to be(nil)
+  it "uses the slack queue" do
+    expect(described_class.queue_name).to eq("slack")
   end
 end

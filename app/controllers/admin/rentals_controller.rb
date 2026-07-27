@@ -44,7 +44,7 @@ class Admin::RentalsController < AdminController
 
       member = @rental.member
       if member
-        profile_url = "#{Rails.configuration.action_mailer.default_url_options[:host]}/members/#{member.id}/invoices"
+        profile_url = "#{Rails.configuration.x.app_base_url}/members/#{member.id}/invoices"
         slack_user = SlackUser.find_by(member_id: member.id)
         unless slack_user.nil?
           enque_message("An admin has created a rental of *#{@rental.number}* for you. ⚠ Your rental is not valid until payment is received. Please pay your invoice here: #{profile_url}", slack_user.slack_id)
@@ -130,8 +130,7 @@ class Admin::RentalsController < AdminController
     @rental.update_attributes!(status: "pending_agreement")
 
     member = @rental.member
-    host = Rails.configuration.action_mailer.default_url_options[:host]
-    profile_url = "#{host}/members/#{member.id}/rentals"
+    profile_url = "#{Rails.configuration.x.app_base_url}/members/#{member.id}/rentals"
 
     enque_message(
       "✅ *#{member.fullname}*'s rental request for *#{@rental.number}* has been approved — awaiting agreement signature.",

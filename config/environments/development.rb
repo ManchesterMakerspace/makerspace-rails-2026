@@ -1,3 +1,5 @@
+require "net/http"
+
 Rails.application.configure do
 
   # Settings specified here will take precedence over those in config/application.rb.
@@ -21,16 +23,26 @@ Rails.application.configure do
   # (via the Zeitwerk code loader in modern versions) to load files
   # on-demand only when their respective classes are referenced
   # for the first time.   Usually set to false in DEV!
-  #config.eager_load = true
-  config.eager_load = false
+  config.eager_load = true
+  #config.eager_load = false
 
   # Show full error reports.
   config.consider_all_requests_local = true
 
   config.cache_store = :redis_cache_store, {
-    url: ENV["REDIS_URL"],
-    expires_in: 1.hour,
-    namespace: "cache"
+    url: ENV.fetch("REDIS_URL", "redis://localhost:6379/0"),
+    expires_in: 8.hours,
+    namespace: "makerspace:cache:v1",
+    compress: true,
+    compress_threshold: 1.kilobyte,
+    connect_timeout: 1,
+    read_timeout: 0.2,
+    write_timeout: 0.2,
+    reconnect_attempts: 1,
+    error_handler: ->(method:, returning:, exception:) {
+      Rails.logger.warn("[RailsCache] #{method} failed: #{exception.class}: #{exception.message}")
+      Honeybadger.notify(exception, context: { cache_method: method, returning: returning }) if defined?(Honeybadger)
+    }
   }
 
   # require 'syslog/logger'
@@ -63,9 +75,17 @@ Rails.application.configure do
 
   config.action_mailer.raise_delivery_errors = true
   config.action_mailer.default_url_options = if ENV['APP_DOMAIN']
-    { host: "https://#{ENV['APP_DOMAIN']}" }
+    config.x.app_base_url = AppDomainUrl.base_url(
+      ENV["APP_DOMAIN"],
+      environment: Rails.env
+    )
+    {
+      host: AppDomainUrl.host(ENV["APP_DOMAIN"]),
+      protocol: config.x.app_base_url.split(":", 2).first
+    }
   else
-    { host: 'http://localhost', port: ENV['PORT'] || 3002 }
+    config.x.app_base_url = "http://localhost:#{ENV['PORT'] || 3002}"
+    { host: 'localhost', port: ENV['PORT'] || 3002, protocol: "http" }
   end
   config.action_mailer.perform_caching = false
   # config.action_controller.asset_host = "#{config.action_mailer.default_url_options[:host]}:#{config.action_mailer.default_url_options[:port]}"
@@ -86,11 +106,17 @@ Rails.application.configure do
   if ENV['MAILTRAP_API_TOKEN'].present? && ENV['MAILTRAP_ACCOUNT_ID'].present?
     begin
       config.action_mailer.perform_deliveries = true
-      response = RestClient.get(
-        "https://mailtrap.io/api/accounts/#{ENV['MAILTRAP_ACCOUNT_ID']}/inboxes",
-        { Authorization: "Bearer #{ENV['MAILTRAP_API_TOKEN']}" }
-      )
-      parsed = JSON.parse(response)
+      uri = URI("https://mailtrap.io/api/accounts/#{ENV['MAILTRAP_ACCOUNT_ID']}/inboxes")
+      request = Net::HTTP::Get.new(uri)
+      request["Authorization"] = "Bearer #{ENV['MAILTRAP_API_TOKEN']}"
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = true
+      http.open_timeout = 2
+      http.read_timeout = 2
+      response = http.request(request)
+      raise "Mailtrap API returned HTTP #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+
+      parsed = JSON.parse(response.body)
       inbox = parsed.is_a?(Array) ? parsed[0] : parsed["inboxes"][0]
       config.action_mailer.delivery_method = :smtp
       config.action_mailer.smtp_settings = {
@@ -102,7 +128,7 @@ Rails.application.configure do
         :authentication => :plain
       }
       $stderr.puts "[Mailer] Using Mailtrap for email delivery"
-    rescue RestClient::Exception, StandardError => e
+    rescue StandardError => e
       $stderr.puts "[Mailer] Mailtrap setup failed: #{e.message} — falling back to next provider"
     end
   elsif ENV['GMAIL_USERNAME'].present?

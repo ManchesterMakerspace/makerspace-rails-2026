@@ -20,9 +20,14 @@ class Rental
   field :status,               type: String, default: "active"
   field :rental_spot_id,       type: String
 
+  index({ member_id: 1, status: 1 })
+  index({ rental_spot_id: 1, status: 1 })
+  index({ subscription_id: 1 }, { sparse: true })
+
   search_in :number, member: %i[firstname lastname email]
 
-  after_destroy :publish_destroy
+  after_save { MongoCache.invalidate("rentals", "rental_spots") }
+  after_destroy :publish_destroy, :invalidate_rental_spot_cache
 
   validates :number, presence: true, uniqueness: {
     conditions: -> { where(:status.in => ["active", "pending", "pending_agreement", "vacating"]) }
@@ -35,6 +40,14 @@ class Rental
   rescue
     nil
   end
+
+  private
+
+  def invalidate_rental_spot_cache
+    MongoCache.invalidate("rentals", "rental_spots")
+  end
+
+  public
 
   def send_renewal_slack_message(current_user = nil)
     slack_user = SlackUser.find_by(member_id: member_id)
@@ -72,14 +85,14 @@ class Rental
     slack_user = SlackUser.find_by(member_id: m.id) if m
 
     if slack_user
-      ::Service::SlackConnector.send_slack_message(
+      ::Service::SlackConnector.enque_message(
         "Your rental of *#{number}* will end on #{expiry_str}. " \
         "Your subscription has been cancelled. Please ensure you have vacated by then.",
         slack_user.slack_id
       )
     end
 
-    ::Service::SlackConnector.send_slack_message(
+    ::Service::SlackConnector.enque_message(
       "🟡 #{m&.fullname}'s rental of *#{number}* is vacating — " \
       "subscription cancelled, expires #{expiry_str}.",
       ::Service::SlackConnector.members_relations_channel

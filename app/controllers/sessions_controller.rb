@@ -18,7 +18,7 @@ class SessionsController < Devise::SessionsController
           actor_name:  resource.fullname,
           description: "Login blocked — member status: #{resource.status}"
         ) rescue nil
-        ::Service::SlackConnector.send_slack_message(
+        ::Service::SlackConnector.enque_message(
           "🚫 #{resource.status.capitalize} member #{resource.fullname} (#{resource.email}) attempted portal login",
           ::Service::SlackConnector.logs_channel
         ) rescue nil

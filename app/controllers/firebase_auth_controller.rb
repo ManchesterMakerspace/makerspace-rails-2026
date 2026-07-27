@@ -185,10 +185,25 @@ class FirebaseAuthController < ApplicationController
   end
 
   def fetch_google_certs
-    uri      = URI(GOOGLE_CERTS_URL)
-    response = Net::HTTP.get_response(uri)
+    cached = Rails.cache.read("firebase/public_certificates/v1")
+    return cached if cached.present?
+
+    uri = URI(GOOGLE_CERTS_URL)
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+    http.open_timeout = 2
+    http.read_timeout = 2
+    response = http.get(uri.request_uri)
     return nil unless response.is_a?(Net::HTTPSuccess)
-    JSON.parse(response.body)
+
+    certificates = JSON.parse(response.body)
+    max_age = response["cache-control"].to_s[/max-age=(\d+)/, 1].to_i
+    Rails.cache.write(
+      "firebase/public_certificates/v1",
+      certificates,
+      expires_in: (max_age.positive? ? max_age.seconds : 1.hour)
+    )
+    certificates
   rescue => e
     Rails.logger.error "[FirebaseAuth] Failed to fetch Google certs: #{e.message}"
     Honeybadger.notify(e, context: { controller: 'FirebaseAuthController', action: 'fetch_google_certs' })
