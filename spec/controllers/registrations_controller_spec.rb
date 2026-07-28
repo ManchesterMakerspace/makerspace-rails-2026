@@ -61,6 +61,62 @@ RSpec.describe RegistrationsController, type: :controller do
         expect(MemberMailer).to receive_message_chain(:member_registered, :deliver_later)
         post :create, params: valid_attributes, format: :json
       end
+
+      it "continues signup and reports a Slack invite failure without returning 500" do
+        slack_error = StandardError.new("not_authed")
+        allow(MemberSubscriber).to receive(:invite_to_slack).and_raise(slack_error)
+        allow(::Service::SlackConnector).to receive(:send_slack_message).and_return(true)
+        allow(Honeybadger).to receive(:notify)
+
+        expect do
+          post :create, params: valid_attributes, format: :json
+        end.to change(Member, :count).by(1)
+
+        expect(response).to have_http_status(200)
+
+        audit_entry = AuditLog.where(event_type: "slack_invite_failed").last
+        expect(audit_entry).to be_present
+        expect(audit_entry.resource_id).to eq(Member.last.id)
+        expect(audit_entry.slack_channel).to eq(::Service::SlackConnector.logs_channel)
+        expect(audit_entry.slack_posted).to be(true)
+        expect(audit_entry.field_changes.dig("slack_invite", 1)).to include("not_authed")
+
+        expect(::Service::SlackConnector).to have_received(:send_slack_message).with(
+          /Slack invite failed.*not_authed/i,
+          ::Service::SlackConnector.logs_channel
+        )
+        expect(Honeybadger).to have_received(:notify).with(
+          slack_error,
+          context: hash_including(
+            event_type: "slack_invite_failed",
+            member_email: email
+          )
+        )
+      end
+
+      it "continues signup when posting the invite failure to Slack also fails" do
+        invite_error = StandardError.new("not_authed")
+        log_error = StandardError.new("interface log not_authed")
+        allow(MemberSubscriber).to receive(:invite_to_slack).and_raise(invite_error)
+        allow(::Service::SlackConnector).to receive(:send_slack_message).and_raise(log_error)
+        allow(Honeybadger).to receive(:notify)
+
+        post :create, params: valid_attributes, format: :json
+
+        expect(response).to have_http_status(200)
+        audit_entry = AuditLog.where(event_type: "slack_invite_failed").last
+        expect(audit_entry).to be_present
+        expect(audit_entry.slack_channel).to eq(::Service::SlackConnector.logs_channel)
+        expect(audit_entry.slack_posted).to be(false)
+        expect(Honeybadger).to have_received(:notify).with(
+          invite_error,
+          context: hash_including(event_type: "slack_invite_failed")
+        )
+        expect(Honeybadger).to have_received(:notify).with(
+          log_error,
+          context: hash_including(slack_channel: ::Service::SlackConnector.logs_channel)
+        )
+      end
     end
 
     # context "with invalid params" do

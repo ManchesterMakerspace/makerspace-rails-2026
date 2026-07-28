@@ -4,6 +4,12 @@
     "title": "Makerspace Server V2",
     "version": "v2"
   },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "API base path"
+    }
+  ],
   "components": {
     "schemas": {
       "MemberStatus": {
@@ -1940,6 +1946,29 @@
           "404": {
             "description": "member not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createAccessCardDetails",
+                "type": "object",
+                "properties": {
+                  "memberId": {
+                    "type": "string"
+                  },
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "memberId",
+                  "uid"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -1973,6 +2002,25 @@
           "404": {
             "description": "Invoice not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateAccessCardDetails",
+                "type": "object",
+                "properties": {
+                  "cardLocation": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cardLocation"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2095,6 +2143,17 @@
           "401": {
             "description": "User unauthenticated"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createEarnedMembershipDetails",
+                "$ref": "#/components/schemas/NewEarnedMembership"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2159,6 +2218,17 @@
           "404": {
             "description": "EarnedMembership not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateEarnedMembershipDetails",
+                "$ref": "#/components/schemas/EarnedMembership"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2180,6 +2250,17 @@
           "401": {
             "description": "User unauthenticated"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createInvoiceOptionDetails",
+                "$ref": "#/components/schemas/NewInvoiceOption"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2213,6 +2294,17 @@
           "404": {
             "description": "Invoice option not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateInvoiceOptionDetails",
+                "$ref": "#/components/schemas/InvoiceOption"
+              }
+            }
+          },
+          "required": true
         }
       },
       "delete": {
@@ -2399,6 +2491,36 @@
           "404": {
             "description": "invoice option not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createInvoiceDetails",
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "memberId": {
+                    "type": "string"
+                  },
+                  "resourceId": {
+                    "type": "string"
+                  },
+                  "discountId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "memberId",
+                  "resourceId"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2432,6 +2554,22 @@
           "404": {
             "description": "Invoice not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateInvoiceDetails",
+                "type": "object",
+                "properties": {
+                  "settled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       },
       "delete": {
@@ -2484,6 +2622,17 @@
           "401": {
             "description": "User unauthenticated"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createMemberDetails",
+                "$ref": "#/components/schemas/NewMember"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2506,7 +2655,10 @@
         ],
         "responses": {
           "200": {
-            "description": "member updated"
+            "description": "revocation skips email deliverability validation without an email change"
+          },
+          "422": {
+            "description": "invalid email rejected"
           },
           "403": {
             "description": "User unauthorized"
@@ -2517,6 +2669,17 @@
           "404": {
             "description": "Member not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateMemberDetails",
+                "$ref": "#/components/schemas/AdminUpdateMemberDetails"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2598,6 +2761,17 @@
           "401": {
             "description": "User unauthenticated"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createRentalDetails",
+                "$ref": "#/components/schemas/NewRental"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2631,6 +2805,17 @@
           "404": {
             "description": "Rental not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateRentalDetails",
+                "$ref": "#/components/schemas/Rental"
+              }
+            }
+          },
+          "required": true
         }
       },
       "delete": {
@@ -2774,6 +2959,28 @@
           "422": {
             "description": "parameter missing"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createPaymentMethodDetails",
+                "type": "object",
+                "properties": {
+                  "paymentMethodNonce": {
+                    "type": "string"
+                  },
+                  "makeDefault": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "paymentMethodNonce"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2911,7 +3118,7 @@
             "description": "User not authenticated"
           },
           "403": {
-            "description": "User not authorized"
+            "description": "Billing permission disabled"
           },
           "404": {
             "description": "Transaction not found"
@@ -2947,7 +3154,7 @@
             "description": "User not authorized"
           },
           "404": {
-            "description": "Subscription not for user"
+            "description": "secondary household member cannot access household subscription"
           }
         }
       },
@@ -2980,6 +3187,25 @@
           "404": {
             "description": "Subscription not for user"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateSubscriptionDetails",
+                "type": "object",
+                "properties": {
+                  "paymentMethodToken": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "paymentMethodToken"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       },
       "delete": {
@@ -3009,7 +3235,7 @@
             "description": "User not authorized"
           },
           "404": {
-            "description": "Subscription not for user"
+            "description": "secondary household member cannot cancel household subscription"
           }
         }
       }
@@ -3112,6 +3338,34 @@
           "404": {
             "description": "invoice option not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createTransactionDetails",
+                "type": "object",
+                "properties": {
+                  "invoiceId": {
+                    "type": "string"
+                  },
+                  "invoiceOptionId": {
+                    "type": "string"
+                  },
+                  "discountId": {
+                    "type": "string"
+                  },
+                  "paymentMethodId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "paymentMethodId"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3160,6 +3414,24 @@
           "204": {
             "description": "Message sent"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "messageDetails",
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "message"
+                ]
+              }
+            }
+          }
         }
       }
     },
@@ -3194,17 +3466,28 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Document found"
+            "description": "Saved rental agreement returned for the rental owner"
           },
           "302": {
             "description": "User not authenticated"
           },
           "404": {
             "description": "Document not found"
+          },
+          "403": {
+            "description": "Forbidden — saved rental agreement belongs to another member"
           }
         }
       }
@@ -3285,6 +3568,17 @@
           "403": {
             "description": "unauthorized"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createEarnedMembershipReportDetails",
+                "$ref": "#/components/schemas/NewReport"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3317,6 +3611,30 @@
           },
           "401": {
             "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/invoice_options/signup": {
+      "get": {
+        "summary": "Gets invoice options eligible for signup",
+        "tags": [
+          "InvoiceOptions"
+        ],
+        "operationId": "listSignupInvoiceOptions",
+        "responses": {
+          "200": {
+            "description": "signup invoice options found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InvoiceOption"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -3542,6 +3860,28 @@
           "404": {
             "description": "invoice option not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createInvoiceDetails",
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "discountId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3645,11 +3985,79 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Member registered"
+            "description": "Member registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
           },
           "422": {
-            "description": "Email already exists"
+            "description": "Email already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "registerMemberDetails",
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "firstname": {
+                    "type": "string"
+                  },
+                  "lastname": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "object",
+                    "properties": {
+                      "street": {
+                        "type": "string"
+                      },
+                      "unit": {
+                        "type": "string"
+                      },
+                      "city": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string"
+                      },
+                      "postalCode": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "email",
+                  "password",
+                  "firstname",
+                  "lastname"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3711,6 +4119,60 @@
           "404": {
             "description": "member not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateMemberDetails",
+                "type": "object",
+                "properties": {
+                  "firstname": {
+                    "type": "string"
+                  },
+                  "lastname": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "memberContractOnFile": {
+                    "type": "boolean"
+                  },
+                  "silenceEmails": {
+                    "type": "boolean"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "object",
+                    "properties": {
+                      "street": {
+                        "type": "string"
+                      },
+                      "unit": {
+                        "type": "string"
+                      },
+                      "city": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string"
+                      },
+                      "postalCode": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "signature": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3724,11 +4186,49 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "User signed in"
+            "description": "User signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
           },
           "401": {
-            "description": "User unauthenticated"
+            "description": "User unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "signInDetails",
+                "type": "object",
+                "properties": {
+                  "member": {
+                    "type": "object",
+                    "properties": {
+                      "email": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3759,8 +4259,36 @@
             "description": "Instructions sent"
           },
           "422": {
-            "description": "Email not found"
+            "description": "Email not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/passwordError"
+                }
+              }
+            }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "passwordResetDetails",
+                "type": "object",
+                "properties": {
+                  "member": {
+                    "type": "object",
+                    "properties": {
+                      "email": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       },
       "put": {
@@ -3775,8 +4303,39 @@
             "description": "Password reset"
           },
           "422": {
-            "description": "Invalid token"
+            "description": "Invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/passwordResetError"
+                }
+              }
+            }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "passwordResetDetails",
+                "type": "object",
+                "properties": {
+                  "member": {
+                    "type": "object",
+                    "properties": {
+                      "resetPasswordToken": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3793,8 +4352,34 @@
             "description": "Registration email sent"
           },
           "409": {
-            "description": "Email already exists"
+            "description": "Email already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "registrationEmailDetails",
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3896,6 +4481,25 @@
           "404": {
             "description": "Rental not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateRentalDetails",
+                "type": "object",
+                "properties": {
+                  "signature": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "signature"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     }
