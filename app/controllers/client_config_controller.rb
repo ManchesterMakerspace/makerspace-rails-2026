@@ -24,8 +24,6 @@ class ClientConfigController < ApplicationController
 
   if ENV['FIREBASE_AUTH_DOMAIN'].present?
     firebase_auth_domain=ENV['FIREBASE_AUTH_DOMAIN']
-#  else
-#    $stderr.puts "[config] Missing mandatory environment variable FIREBASE_AUTH_DOMAIN, using fallback #{firebase_auth_domain}"
   end
    render json: {
     firebase_api_key:    ENV['FIREBASE_API_KEY'].to_s,
@@ -33,6 +31,6 @@ class ClientConfigController < ApplicationController
     firebase_auth_domain: firebase_auth_domain,
     firebase_auth_type:   firebase_auth_type,
     wiki_url: wiki_url
-    ), status: :ok
+   }, status: :ok
   end
 end
