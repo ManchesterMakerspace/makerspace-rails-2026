@@ -4,17 +4,20 @@ class Admin::MembersController < AdminController
 
   def create
     permitted_params = get_camel_case_params(create_member_params())
+    normalize_and_validate_rm_assignments!(permitted_params)
     authorize_silence_emails_change!(permitted_params, Member.new(status: permitted_params[:status]))
 
     @member = Member.new(permitted_params)
     @member.save!
     @member.reload
     send_welcome_email
+    enqueue_rm_canvas_access_sync([], rm_shop_ids_for(@member))
     render json: @member, adapter: :attributes and return
   end
 
   def update
     before = @member.attributes.dup
+    previous_rm_shop_ids = rm_shop_ids_for(@member)
     date = @member.expirationTime
     becoming_revoked   = params[:status] == 'revoked'   && @member.status != 'revoked'
     becoming_suspended = params[:status] == 'suspended' && @member.status != 'suspended'
@@ -22,6 +25,7 @@ class Admin::MembersController < AdminController
     @member.skip_email_deliverability_validation = true if becoming_revoked
 
     permitted_params = get_camel_case_params(update_member_params())
+    normalize_and_validate_rm_assignments!(permitted_params, @member)
     authorize_silence_emails_change!(permitted_params, @member)
 
     @member.update!(permitted_params)
@@ -73,6 +77,11 @@ class Admin::MembersController < AdminController
         slack_channel:   ::Service::SlackConnector.logs_channel
       )
     end
+
+    enqueue_rm_canvas_access_sync(
+      previous_rm_shop_ids,
+      rm_shop_ids_for(@member)
+    )
 
     render json: @member, adapter: :attributes and return
   end
@@ -195,12 +204,16 @@ class Admin::MembersController < AdminController
   def create_member_params
     params.require([:firstname, :lastname, :email])
     params.permit(:firstname, :lastname, :role, :email, :status,
-      :silence_emails, :member_contract_on_file, :phone, :notes, address: [:street, :city, :state, :postal_code])
+      :silence_emails, :member_contract_on_file, :phone, :notes,
+      resource_manager_shop_ids: [], resourceManagerShopIds: [],
+      address: [:street, :city, :state, :postal_code])
   end
 
   def update_member_params
     params.permit(:firstname, :lastname, :role, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
-      :silence_emails, :phone, :subscription, :email, address: [:street, :unit, :city, :state, :postal_code])
+      :silence_emails, :phone, :subscription, :email,
+      resource_manager_shop_ids: [], resourceManagerShopIds: [],
+      address: [:street, :unit, :city, :state, :postal_code])
   end
 
   def password_params
@@ -214,10 +227,52 @@ class Admin::MembersController < AdminController
       member_contract_on_file: :memberContractOnFile,
     }
     params = member_params
+    if params[:resourceManagerShopIds].present? || params.key?(:resourceManagerShopIds)
+      params[:resource_manager_shop_ids] = params.delete(:resourceManagerShopIds)
+    end
     camel_case_props.each do | key, value|
       params[value] = params.delete(key) unless params[key].nil?
     end
     params
+  end
+
+  def normalize_and_validate_rm_assignments!(permitted_params, member = nil)
+    role = permitted_params[:role].presence || member&.role
+    if role != "resource_manager"
+      permitted_params[:resource_manager_shop_ids] = [] if permitted_params.key?(:role) || permitted_params.key?(:resource_manager_shop_ids)
+      return
+    end
+
+    ids = if permitted_params.key?(:resource_manager_shop_ids)
+      Array(permitted_params[:resource_manager_shop_ids]).map(&:to_s).uniq
+    else
+      Array(member&.resource_manager_shop_ids).map(&:to_s)
+    end
+    raise ::Error::UnprocessableEntity.new("Select at least one shop for a Resource Manager") if ids.empty?
+
+    valid_ids = Shop.where(:id.in => ids).pluck(:id).map(&:to_s)
+    raise ::Error::UnprocessableEntity.new("One or more Resource Manager shops are invalid") unless (ids - valid_ids).empty?
+    permitted_params[:resource_manager_shop_ids] = ids
+  end
+
+  def rm_shop_ids_for(member)
+    return [] unless member.role == "resource_manager"
+
+    Array(member.resource_manager_shop_ids).map(&:to_s).uniq
+  end
+
+  def enqueue_rm_canvas_access_sync(previous_shop_ids, current_shop_ids)
+    previous_shop_ids = Array(previous_shop_ids).map(&:to_s).uniq
+    current_shop_ids = Array(current_shop_ids).map(&:to_s).uniq
+    return if previous_shop_ids.sort == current_shop_ids.sort
+
+    affected_shop_ids = previous_shop_ids | current_shop_ids
+    return if affected_shop_ids.empty?
+
+    ReservationSlackCanvasMemberAccessJob.perform_later(
+      @member.id.to_s,
+      affected_shop_ids
+    )
   end
 
   def set_member

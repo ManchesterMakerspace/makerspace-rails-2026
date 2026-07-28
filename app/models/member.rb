@@ -39,6 +39,7 @@ class Member
   field :startDate, default: -> { Time.now }
   field :groupName, type: String #potentially member is in a group/partner membership
   field :role,                          default: "member" #admin,board_member,resource_manager,member
+  field :resource_manager_shop_ids, type: Array, default: []
   field :firebase_uid,                   type: String
 
   ## TOTP / Two-Factor Authentication
@@ -77,7 +78,8 @@ class Member
   before_validation :normalize_email, :normalize_group_name
   after_initialize :verify_group_expiry
   after_create :apply_default_permissions, :publish_create
-  after_update :update_card, :handle_successful_email_change, :publish_update, :check_household_exit, :sync_expiration_to_group
+  after_update :handle_reservation_membership_changes, :update_card, :handle_successful_email_change,
+               :publish_update, :check_household_exit, :sync_expiration_to_group
   after_destroy :publish_destroy
 
   has_many :permissions, class_name: 'Permission', dependent: :destroy, :autosave => true
@@ -232,8 +234,83 @@ class Member
     status == 'activeMember' && expirationTime.present? && expirationTime > (Time.now.to_i * 1000)
   end
 
+  def membership_expires_at
+    return nil if expirationTime.blank?
+    Time.at(expirationTime.to_f / 1000).utc
+  end
+
+  def active_membership_subscription?
+    return true if subscription == true || subscription_id.present?
+    household = group
+    household.present? && (household.subscription == true || household.subscription_id.present?)
+  rescue Mongoid::Errors::DocumentNotFound
+    false
+  end
+
+  def deliverable_email?
+    return false if email.blank?
+
+    latest_event = MailtrapEvent.where(email: email.to_s.downcase)
+      .order_by(occurred_at: :desc, created_at: :desc)
+      .first
+    return true if latest_event.nil?
+
+    disposition = [latest_event.status, latest_event.event, latest_event.response]
+      .compact.join(" ").downcase
+    disposition.exclude?("bounce") &&
+      disposition.exclude?("reject") &&
+      disposition.exclude?("complaint") &&
+      disposition.exclude?("spam") &&
+      disposition.exclude?("failed")
+  rescue => error
+    Rails.logger.warn(
+      "[EmailDeliverabilityLookup] member_id=#{id} error=#{error.class}: #{error.message}"
+    )
+    false
+  end
+
   def valid_for_checkout_request?
     active_unexpired? && member_contract_signed_date.present?
+  end
+
+  def manages_shop?(shop_or_id)
+    role == "resource_manager" &&
+      Array(resource_manager_shop_ids).map(&:to_s).include?(shop_or_id.try(:id).to_s.presence || shop_or_id.to_s)
+  end
+
+  def handle_reservation_membership_changes
+    cleanup_type = if previous_changes["status"]&.first != "revoked" && status == "revoked"
+      "revoked"
+    elsif membership_subscription_ended? && !active_membership_subscription?
+      "subscription_ended"
+    end
+    return if cleanup_type.nil?
+
+    if cleanup_type == "revoked"
+      ReservationLifecycleService.cancel_current_and_future!(
+        self,
+        reason: "Membership was revoked"
+      )
+    else
+      ReservationLifecycleService.cancel_beyond_membership!(
+        self,
+        reason: "Recurring membership was cancelled"
+      )
+    end
+  rescue => error
+    Rails.logger.error(
+      "[ReservationCleanup] member_id=#{id} type=#{cleanup_type} " \
+      "error=#{error.class}: #{error.message}"
+    )
+    Honeybadger.notify(error) if defined?(Honeybadger)
+    ReservationMembershipCleanupJob.perform_later(id.to_s, cleanup_type) if cleanup_type
+  end
+
+  def membership_subscription_ended?
+    subscription_change = previous_changes["subscription"]
+    subscription_id_change = previous_changes["subscription_id"]
+    (subscription_change&.first == true && subscription != true) ||
+      (subscription_id_change&.first.present? && subscription_id.blank?)
   end
 
   def normalize_email
@@ -322,7 +399,7 @@ class Member
                 status != 'activeMember'
     return unless lapsed
 
-    member_url = "#{Rails.configuration.action_mailer.default_url_options[:host]}/members/#{id}"
+    member_url = "#{Rails.configuration.x.app_base_url}/members/#{id}"
     rental_list = orphaned.map { |r| "##{r.number}" }.join(', ')
 
     ::Service::SlackConnector.send_slack_message(

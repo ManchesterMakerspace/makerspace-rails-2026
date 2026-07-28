@@ -48,4 +48,4 @@ COPY --from=ui /react/dist/manifest.js /app/app/assets/config/manifest.js
 RUN SECRET_KEY_BASE_DUMMY=1 APP_DOMAIN=${APP_DOMAIN} bundle exec rails assets:precompile
 RUN cp -r /app/app/assets/builds/. /app/public/assets/ && rm -f /app/public/assets/manifest.js
 
-CMD ["bundle", "exec", "rails", "server", "-b", "0.0.0.0"]
+CMD ["sh", "-c", "bundle exec rake reservations:backfill_resource_manager_shops && exec bundle exec rails server -b 0.0.0.0"]

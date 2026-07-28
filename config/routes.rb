@@ -16,7 +16,9 @@ Rails.application.routes.draw do
   # Slack inbound slash commands (outside :api scope — Slack posts form-encoded)
   namespace :slack do
     post '/commands/checkout',  to: 'commands#checkout'
+    post '/commands/reserve',   to: 'commands#reserve'
     post '/commands/volunteer', to: 'commands#volunteer'
+    post '/interactions',       to: 'interactions#create'
   end
 
   # Public volunteer pages — unauthenticated, token gated via SystemConfig
@@ -75,6 +77,16 @@ Rails.application.routes.draw do
       # Member sees their own checkouts
       resources :tool_checkouts, only: [:index]
       resources :tool_checkout_requests, only: [:index, :create, :update, :destroy]
+      resources :reservation_catalog, only: [:index]
+      resources :reservations, only: [:index, :create, :update, :destroy] do
+        collection do
+          get :availability
+          post :preview
+        end
+        member do
+          post :preview, action: :preview_update
+        end
+      end
 
       # Rentals — member self-service
       resources :rentals, only: [:show, :index, :update, :create] do
@@ -96,7 +108,11 @@ Rails.application.routes.draw do
 
       namespace :billing do
         resources :payment_methods, only: [:new, :create, :show, :index, :destroy]
-        resources :subscriptions, only: [:show, :update, :destroy]
+        resources :subscriptions, only: [:show, :update, :destroy] do
+          member do
+            get :cancellation_impact
+          end
+        end
         resources :transactions, only: [:create, :index, :destroy]
         resources :receipts, only: [:show], defaults: { format: :html }
       end
@@ -132,10 +148,21 @@ Rails.application.routes.draw do
 
         # Tool checkout management
         resources :shops, only: [:index, :create, :update, :destroy]
+        get 'google_calendar/colors', to: 'google_calendar#colors'
         resources :tools, only: [:index, :create, :update, :destroy]
         resources :tool_checkouts, only: [:index, :create, :destroy]
         resources :tool_checkout_requests, only: [:index]
         resources :checkout_approvers, only: [:index, :create, :update, :destroy]
+        resources :reservations, only: [:index, :create, :update, :destroy] do
+          collection do
+            post :preview, action: :preview_create
+          end
+          member do
+            post :preview
+            post :approve
+            post :deny
+          end
+        end
 
         # Rentals — admin manage + approve/deny
         resources :rentals, only: [:create, :update, :destroy, :index] do
@@ -203,7 +230,11 @@ Rails.application.routes.draw do
         end
 
         namespace :billing do
-          resources :subscriptions, only: [:index, :destroy]
+          resources :subscriptions, only: [:index, :destroy] do
+            member do
+              get :cancellation_impact
+            end
+          end
           resources :transactions, only: [:show, :index, :destroy]
           resources :receipts, only: [:show], defaults: { format: :html }
         end
@@ -235,7 +266,7 @@ Rails.application.routes.draw do
         end
 
         # Volunteer events — admin/RM manage
-        resources :volunteer_events, only: [:index, :create, :show, :destroy] do
+        resources :volunteer_events, only: [:index, :create, :show, :update, :destroy] do
           member do
             post   :close
             post   :add_attendee

@@ -240,6 +240,10 @@ class SeedData
         Tool.create!(name: t, description: "#{t} in #{s[:name]}", shop: shop)
       end
     end
+    shop_ids = Shop.all.pluck(:id).map(&:to_s)
+    Member.where(role: "resource_manager").each do |member|
+      member.set(resource_manager_shop_ids: shop_ids)
+    end
     puts "  [seed] Created #{Shop.count} shops with #{Tool.count} tools."
   end
 

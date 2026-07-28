@@ -127,6 +127,34 @@ RSpec.describe MembersController, type: :controller do
     end
   end
 
+  describe "GET #show for a privileged user" do
+    login_admin
+
+    it "flags a revoked member for manual Slack deactivation when no admin token is configured" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("SLACK_ADMIN_TOKEN").and_return(nil)
+      member = create(:member, status: "revoked")
+
+      get :show, params: { id: member.to_param }, format: :json
+
+      parsed_response = JSON.parse(response.body)
+      expect(response).to have_http_status(200)
+      expect(parsed_response["slackManualDeactivationRequired"]).to be true
+    end
+
+    it "does not request manual Slack deactivation when an admin token is configured" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("SLACK_ADMIN_TOKEN").and_return("xoxp-admin")
+      member = create(:member, status: "revoked")
+
+      get :show, params: { id: member.to_param }, format: :json
+
+      parsed_response = JSON.parse(response.body)
+      expect(response).to have_http_status(200)
+      expect(parsed_response["slackManualDeactivationRequired"]).to be false
+    end
+  end
+
   describe "PUT #update" do
     let!(:current_user) { create(:member) }
     member_params = {

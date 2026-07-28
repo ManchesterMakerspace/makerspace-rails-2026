@@ -20,7 +20,8 @@ class SystemConfig
     "member_review"   => "member_review",
     "invoice_review"  => "invoice_review",
     "garbage_collect" => "gc",
-    "db_backup"       => "db:backup"
+    "db_backup"       => "db:backup",
+    "reservation_canvas_rebuild" => "reservations:rebuild_slack_canvases"
   }.freeze
 
   def self.get(key)

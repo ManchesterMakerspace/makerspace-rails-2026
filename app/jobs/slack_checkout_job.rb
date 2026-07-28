@@ -58,20 +58,6 @@ class SlackCheckoutJob < ApplicationJob
         return
       end
 
-      unless can_approve_for_shop?(invoker, shop)
-        Honeybadger.notify('Slack checkout failed: invoker not approved for shop', context: {
-          reason:           "Invoker does not have checkout approval rights for shop '#{shop.name}' (id: #{shop.id})",
-          command_text:     text,
-          invoker_slack_id: invoker_slack_id,
-          member_token:     member_token,
-          member_slack_id:  member_slack_id,
-          shop_name:        shop.name,
-          shop_id:          shop.id.to_s
-        })
-        post_response(response_url, :ephemeral, "You are not authorized to approve checkouts for #{shop.name}.")
-        return
-      end
-
       tool = Tool.where(shop_id: shop.id).find_by(name: /#{Regexp.escape(tool_name)}/i)
       unless tool
         tool_list = Tool.where(shop_id: shop.id).pluck(:name).join(', ')
@@ -89,7 +75,19 @@ class SlackCheckoutJob < ApplicationJob
         return
       end
 
-      if tool.disabled? && !privileged_invoker?(invoker)
+      unless can_approve_tool?(invoker, tool)
+        Honeybadger.notify('Slack checkout failed: invoker not approved for tool', context: {
+          reason:           "Invoker does not have checkout approval rights for tool '#{tool.name}' (id: #{tool.id})",
+          command_text:     text,
+          invoker_slack_id: invoker_slack_id,
+          tool_id:          tool.id.to_s,
+          shop_id:          shop.id.to_s
+        })
+        post_response(response_url, :ephemeral, "You are not authorized to approve checkouts for #{tool.name}.")
+        return
+      end
+
+      if tool.disabled? && !privileged_invoker?(invoker, shop)
         post_response(response_url, :ephemeral, "You are not authorized to approve checkouts for disabled tools.")
         return
       end
@@ -236,20 +234,19 @@ class SlackCheckoutJob < ApplicationJob
   def find_invoker(slack_id)
     slack_user = SlackUser.find_by(slack_id: slack_id)
     return nil unless slack_user
-    member = Member.find(slack_user.member_id)
-    return member if privileged_invoker?(member)
-    return member if member.valid_for_checkout_request? && CheckoutApprover.is_approver?(member.id)
-    nil
+    Member.find(slack_user.member_id)
   end
 
-  def can_approve_for_shop?(member, shop)
-    return true if privileged_invoker?(member)
+  def can_approve_tool?(member, tool)
+    return true if privileged_invoker?(member, tool.shop)
+    return false if tool.disabled? || !member.valid_for_checkout_request?
     approver = CheckoutApprover.find_by(member_id: member.id)
-    member.valid_for_checkout_request? && approver && approver.can_approve_for_shop?(shop.id)
+    approver && approver.can_approve_tool?(tool)
   end
 
-  def privileged_invoker?(member)
-    member.role.in?(%w[admin board_member resource_manager])
+  def privileged_invoker?(member, shop = nil)
+    return true if member.role.in?(%w[admin board_member])
+    shop.present? && member.manages_shop?(shop)
   end
 
   def unmet_prerequisites(member, tool)

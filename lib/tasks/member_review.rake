@@ -1,7 +1,7 @@
 desc "This task is called by the Heroku scheduler add-on and reviews membership statuses."
 task :member_review => :environment do
   should_run = Rails.env.production? ? !!Date.today.sunday? : true
-  @base_url = ActionMailer::Base.default_url_options[:host]
+  @base_url = Rails.configuration.x.app_base_url
 
   @management_messages = [
     {
@@ -65,10 +65,14 @@ task :member_review => :environment do
           unless slack_user.nil?
             slack_activity = "INACTIVE"
 
-            team_info = ::Service::SlackConnector.client.team_billableInfo({ user: slack_user.slack_id })
-            is_slack_active = team_info.billable_info[slack_user.slack_id].billing_active
-            if is_slack_active
-              slack_activity = "ACTIVE"
+            team_info = ::Service::SlackConnector.team_billable_info(
+              user: slack_user.slack_id
+            )
+            if team_info
+              is_slack_active = team_info.billable_info[slack_user.slack_id].billing_active
+              slack_activity = "ACTIVE" if is_slack_active
+            else
+              slack_activity = "UNKNOWN"
             end
           end
 

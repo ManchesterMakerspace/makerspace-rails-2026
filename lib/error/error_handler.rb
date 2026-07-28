@@ -40,6 +40,10 @@ module Error
           respond(:not_found, 404, "Braintree resource not found")
         end
         rescue_from CustomError do |e|
+          Rails.logger.warn(
+            "[RequestRejected] method=#{request.method} path=#{request.path} " \
+            "member_id=#{current_member&.id || 'anonymous'} status=#{e.error} reason=#{e.message}"
+          )
           honeybadger_notify(e) if e.error.to_i >= 500
           slack_alert(e.status, e.error, e.message)
           respond(e.status, e.error, e.message)

@@ -45,4 +45,25 @@ RSpec.describe Group, type: :model do
       expect(card.reload.expiry).to eq(group_expiration)
     end
   end
+
+  it "retries failed reservation cleanup with household context" do
+    group = create(:group)
+    group.subscription = false
+    allow(group).to receive(:previous_changes).and_return(
+      "subscription" => [true, false]
+    )
+    allow(ReservationLifecycleService).to receive(:cancel_beyond_membership!)
+      .with(
+        group,
+        reason: "Household recurring membership was cancelled"
+      )
+      .and_raise(StandardError, "cleanup failed")
+    allow(ReservationMembershipCleanupJob).to receive(:perform_later)
+    allow(Honeybadger).to receive(:notify)
+
+    group.handle_reservation_subscription_change
+
+    expect(ReservationMembershipCleanupJob).to have_received(:perform_later)
+      .with(group.id.to_s, "group_subscription_ended", "Group")
+  end
 end

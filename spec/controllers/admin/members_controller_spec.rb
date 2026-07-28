@@ -142,6 +142,50 @@ RSpec.describe Admin::MembersController, type: :controller do
           expect(parsed_response['id']).to eq(member.id.as_json)
         end
 
+        it "returns the manual Slack deactivation warning flag after revocation without an admin token" do
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SLACK_ADMIN_TOKEN").and_return(nil)
+          allow(Service::MemberAccess).to receive(:revoke)
+          member = Member.create valid_attributes.merge(status: "activeMember")
+
+          put :update, params: { id: member.to_param, status: "revoked" }, format: :json
+
+          parsed_response = JSON.parse(response.body)
+          expect(response).to have_http_status(200)
+          expect(parsed_response["status"]).to eq("revoked")
+          expect(parsed_response["slackManualDeactivationRequired"]).to be true
+        end
+
+        it "queues canvas owner access when assigning a Resource Manager to a shop" do
+          shop = create(:shop)
+          member = Member.create valid_attributes.merge(role: "member")
+
+          expect {
+            put :update, params: {
+              id: member.to_param,
+              role: "resource_manager",
+              resourceManagerShopIds: [shop.id.to_s]
+            }, format: :json
+          }.to have_enqueued_job(ReservationSlackCanvasMemberAccessJob)
+            .with(member.id.to_s, [shop.id.to_s])
+        end
+
+        it "queues canvas read access when removing a Resource Manager from a shop" do
+          shop = create(:shop)
+          member = Member.create valid_attributes.merge(
+            role: "resource_manager",
+            resource_manager_shop_ids: [shop.id.to_s]
+          )
+
+          expect {
+            put :update, params: {
+              id: member.to_param,
+              role: "member"
+            }, format: :json
+          }.to have_enqueued_job(ReservationSlackCanvasMemberAccessJob)
+            .with(member.id.to_s, [shop.id.to_s])
+        end
+
         it "allows admins to set and clear marketing email silence for non-revoked members" do
           member = Member.create valid_attributes.merge(silence_emails: false)
 
