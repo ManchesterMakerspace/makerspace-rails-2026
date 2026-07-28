@@ -26,6 +26,38 @@ RSpec.describe "Volunteer task shop authorization", type: :request do
     )
   end
 
+  it "requires an RM to assign a task to a managed shop" do
+    post "/api/admin/volunteer_tasks", params: {
+      title: "Global task",
+      description: "No shop supplied"
+    }
+
+    expect(response).to have_http_status(:forbidden)
+    expect(VolunteerTask.where(title: "Global task")).to be_empty
+  end
+
+  it "rejects task creation in an unmanaged shop" do
+    post "/api/admin/volunteer_tasks", params: {
+      title: "Other shop task",
+      description: "Not managed",
+      shop_id: unmanaged_shop.id.to_s
+    }
+
+    expect(response).to have_http_status(:forbidden)
+    expect(VolunteerTask.where(title: "Other shop task")).to be_empty
+  end
+
+  it "allows task creation in a managed shop" do
+    post "/api/admin/volunteer_tasks", params: {
+      title: "Managed task",
+      description: "Managed",
+      shop_id: managed_shop.id.to_s
+    }
+
+    expect(response).to have_http_status(:ok)
+    expect(VolunteerTask.find_by(title: "Managed task").shop_id).to eq(managed_shop.id)
+  end
+
   it "rejects an update when the existing task belongs to an unmanaged shop" do
     task = create_task(unmanaged_shop)
 
