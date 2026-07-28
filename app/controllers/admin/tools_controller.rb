@@ -147,19 +147,27 @@ class Admin::ToolsController < ApplicationController
   end
 
   def prevent_deletion_if_prerequisite_is_referenced
-    tool_id = @tool.id.to_s
-    checkout_tools = Tool.where(:prerequisite_ids.in => [tool_id]).pluck(:name)
+    prerequisite_ids = [@tool.id, @tool.id.to_s]
+    checkout_tools = Tool.where(:prerequisite_ids.in => prerequisite_ids).pluck(:name)
     reservation_tools = Tool.where(
-      :reservation_prerequisite_tool_ids.in => [tool_id]
+      :reservation_prerequisite_tool_ids.in => prerequisite_ids
     ).pluck(:name)
     reservation_shops = Shop.where(
-      :reservation_prerequisite_tool_ids.in => [tool_id]
+      :reservation_prerequisite_tool_ids.in => prerequisite_ids
     ).pluck(:name)
+    volunteer_tasks = VolunteerTask.where(
+      :prerequisite_tool_ids.in => prerequisite_ids
+    ).pluck(:title)
+    volunteer_events = VolunteerEvent.where(
+      :prerequisite_tool_ids.in => prerequisite_ids
+    ).pluck(:title)
 
     references = []
     references << "checkout prerequisite for tools: #{checkout_tools.join(', ')}" if checkout_tools.any?
     references << "reservation prerequisite for tools: #{reservation_tools.join(', ')}" if reservation_tools.any?
     references << "reservation prerequisite for shops: #{reservation_shops.join(', ')}" if reservation_shops.any?
+    references << "volunteer prerequisite for tasks: #{volunteer_tasks.join(', ')}" if volunteer_tasks.any?
+    references << "volunteer prerequisite for events: #{volunteer_events.join(', ')}" if volunteer_events.any?
     return if references.empty?
 
     raise ::Error::Conflict.new(
