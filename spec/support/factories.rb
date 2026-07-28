@@ -462,6 +462,16 @@ FactoryBot.define do
     status { "approved" }
   end
 
+  factory :reservation_blackout do
+    association :shop
+    association :created_by, factory: [:member, :current]
+    title { "Open House" }
+    recurrence { "weekly" }
+    weekday { 1 }
+    start_time { "17:00" }
+    end_time { "20:00" }
+  end
+
   factory :dispute_notification, parent: :notification do
     kind { Braintree::WebhookNotification::Kind::DisputeOpened }
     payload { JSON.generate(build(:dispute)) }

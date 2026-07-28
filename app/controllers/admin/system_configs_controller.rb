@@ -25,6 +25,8 @@ class Admin::SystemConfigsController < AdminController
     'volunteer_bounty_token',
     'volunteer_rolling_days',
     'volunteer_leaderboard_top',
+    # Reservation settings
+    'reservation_token',
     # Security settings
     'devise_timeout_minutes',
   ].freeze
@@ -79,6 +81,10 @@ class Admin::SystemConfigsController < AdminController
       devise_timeout_minutes: SystemConfig.get('devise_timeout_minutes') || '30',
     }
 
+    reservation = {
+      reservation_token: SystemConfig.get('reservation_token') || '',
+    }
+
     render json: {
       flags:     flags,
       jobs:      jobs,
@@ -86,6 +92,7 @@ class Admin::SystemConfigsController < AdminController
       volunteer: volunteer,
       totp:      totp,
       security:  security,
+      reservation: reservation,
     }, status: :ok
   end
 

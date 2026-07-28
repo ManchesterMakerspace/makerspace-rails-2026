@@ -30,10 +30,12 @@ class Slack::InteractionsController < ApplicationController
       }
     )
 
-    Service::SlackConnector.send_slack_message(
-      "Reservation *#{reservation.title}* was submitted and is *#{reservation.status}*.",
-      payload.dig("user", "id")
-    )
+    message = "Reservation *#{reservation.title}* was submitted and is *#{reservation.status}*."
+    if reservation.status == "pending" && reservation.effective_approval_details.present?
+      reasons = reservation.effective_approval_details.map { |detail| "• #{detail['message']}" }
+      message += "\nApproval required because:\n#{reasons.join("\n")}"
+    end
+    Service::SlackConnector.send_slack_message(message, payload.dig("user", "id"))
     render json: { response_action: "clear" }
   rescue ::Error::CustomError => error
     Rails.logger.warn(

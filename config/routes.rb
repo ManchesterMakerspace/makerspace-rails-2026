@@ -27,6 +27,8 @@ Rails.application.routes.draw do
     get '/leaderboard',  to: 'leaderboard#index'
   end
 
+  get '/reservations/agenda', to: 'reservation_agendas#index'
+
   scope :api, defaults: { format: :json } do
     devise_for :members, skip: [:registrations], controllers: { sessions: "sessions" }
     devise_scope :member do
@@ -162,6 +164,7 @@ Rails.application.routes.draw do
             post :deny
           end
         end
+        resources :reservation_blackouts, only: [:index, :create, :update, :destroy]
 
         # Rentals — admin manage + approve/deny
         resources :rentals, only: [:create, :update, :destroy, :index] do

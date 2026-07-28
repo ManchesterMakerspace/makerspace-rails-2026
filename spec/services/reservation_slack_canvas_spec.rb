@@ -171,6 +171,29 @@ RSpec.describe Service::ReservationSlackCanvas do
     end
   end
 
+  it "creates a canvas for a blackout-only day without a member or link" do
+    travel_to(zone.local(2026, 7, 27, 8, 0)) do
+      create(
+        :reservation_blackout,
+        shop: shop,
+        title: "Open House",
+        recurrence: "weekly",
+        weekday: 1,
+        start_time: "17:00",
+        end_time: "20:00"
+      )
+
+      described_class.sync!(shop, dates: ["2026-07-27"])
+
+      expect(Service::SlackConnector).to have_received(:replace_canvas).with(
+        "FTODAY",
+        a_string_including("| 17:00-20:00 | Open House |  | Entire shop | Blackout |")
+      )
+      expect(Service::SlackConnector).not_to have_received(:replace_canvas)
+        .with("FTODAY", a_string_including("[Open House]"))
+    end
+  end
+
   it "grants canvas ownership to admins, board members, and assigned resource managers" do
     admin = create(:member, :admin)
     board = create(:member, :board_member)

@@ -19,6 +19,7 @@ class Shop
   field :volunteer_canvas_id, type: String
 
   has_many :tools, dependent: :destroy
+  has_many :reservation_blackouts, dependent: :destroy
 
   validates :name, presence: true, uniqueness: { case_sensitive: false }
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }

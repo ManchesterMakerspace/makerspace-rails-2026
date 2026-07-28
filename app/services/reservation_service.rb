@@ -15,6 +15,7 @@ class ReservationService
           missingPrerequisites: [],
           requiresApproval: reservation.status == "pending",
           approvalReasons: reasons,
+          approvalDetails: reservation.effective_approval_details,
           maximumDurationHours: ((reservation.end_at - reservation.start_at) / 1.hour).to_f
         }
       end
@@ -27,6 +28,7 @@ class ReservationService
         missingPrerequisites: evaluation[:missing_prerequisites],
         requiresApproval: evaluation[:approval_reasons].present?,
         approvalReasons: evaluation[:approval_reasons],
+        approvalDetails: evaluation[:approval_details],
         maximumDurationHours: evaluation[:maximum_duration_hours]
       }
     end
@@ -47,6 +49,7 @@ class ReservationService
             member_id: member.id,
             status: evaluation[:approval_reasons].present? ? "pending" : "approved",
             approval_reasons: evaluation[:approval_reasons],
+            approval_details: evaluation[:approval_details],
             source: source,
             calendar_sync_status: "pending"
           )
@@ -90,6 +93,7 @@ class ReservationService
           normalized.merge(
             status: evaluation[:approval_reasons].present? ? "pending" : "approved",
             approval_reasons: evaluation[:approval_reasons],
+            approval_details: evaluation[:approval_details],
             decided_by_id: nil,
             decided_at: nil,
             decision_note: nil,
@@ -182,6 +186,8 @@ class ReservationService
       conflicts = []
       missing = []
       approval_reasons = []
+      approval_details = []
+      duration_session_existing = nil
       board_override = board_reservation_override?(member)
 
       shop = Shop.where(id: attributes[:shop_id]).first
@@ -191,6 +197,7 @@ class ReservationService
           conflicts: [],
           missing_prerequisites: [],
           approval_reasons: [],
+          approval_details: [],
           maximum_duration_hours: 0
         }
       end
@@ -235,6 +242,25 @@ class ReservationService
         duration_hours = (attributes[:end_at] - attributes[:start_at]) / 1.hour
         strict_duration = board_override ? 72.0 : resources.map(&:max_reservation_duration_hours).min.to_f
         errors << "Reservation exceeds the maximum duration" if duration_hours > strict_duration
+        unless duration_session_exempt?(member)
+          duration_session_existing = duration_session_existing_by_resource(
+            member: member,
+            shop: shop,
+            resources: resources,
+            reservation_scope: attributes[:reservation_scope],
+            reservation: reservation
+          )
+          errors.concat(duration_session_errors(
+            member: member,
+            shop: shop,
+            tools: tools,
+            reservation_scope: attributes[:reservation_scope],
+            start_at: attributes[:start_at],
+            end_at: attributes[:end_at],
+            reservation: reservation,
+            existing_by_resource: duration_session_existing
+          ))
+        end
       end
 
       prerequisite_ids = if attributes[:reservation_scope] == "shop"
@@ -266,12 +292,41 @@ class ReservationService
           ))
 
           member_overlap = overlapping.where(member_id: member.id).exists?
-          approval_reasons << "overlapping_member_reservation" if member_overlap
+          if member_overlap
+            approval_reasons << "overlapping_member_reservation"
+            approval_details << approval_detail(
+              "overlapping_member_reservation",
+              "This reservation overlaps another reservation you hold."
+            )
+          end
         end
       end
 
       if !board_override && resources.any?(&:reservation_requires_approval)
         approval_reasons << "resource_requires_approval"
+        approval_details << approval_detail(
+          "resource_requires_approval",
+          "The selected resource requires manager approval."
+        )
+      end
+      if !board_override && attributes[:start_at].present? && attributes[:end_at].present?
+        blackout_occurrences = ReservationBlackout.occurrences_overlapping(
+          shop_id: shop.id,
+          start_at: attributes[:start_at],
+          end_at: attributes[:end_at]
+        )
+        blackout_occurrences
+          .uniq { |occurrence| occurrence[:blackout].id.to_s }
+          .each do |occurrence|
+            blackout = occurrence[:blackout]
+            approval_reasons << "blackout"
+            approval_details << approval_detail(
+              "blackout",
+              "This reservation overlaps the shop blackout “#{blackout.title}”.",
+              blackoutId: blackout.id.to_s,
+              blackoutTitle: blackout.title
+            )
+          end
       end
       maximum_duration = maximum_duration_hours(
         member: member,
@@ -280,7 +335,8 @@ class ReservationService
         reservation_scope: attributes[:reservation_scope],
         start_at: attributes[:start_at],
         resources: resources,
-        reservation: reservation
+        reservation: reservation,
+        duration_session_existing: duration_session_existing
       )
 
       {
@@ -288,6 +344,7 @@ class ReservationService
         conflicts: conflicts.uniq,
         missing_prerequisites: missing,
         approval_reasons: approval_reasons.uniq,
+        approval_details: approval_details.uniq,
         maximum_duration_hours: maximum_duration
       }
     rescue Mongoid::Errors::DocumentNotFound, Mongoid::Errors::InvalidFind
@@ -296,6 +353,7 @@ class ReservationService
         conflicts: [],
         missing_prerequisites: [],
         approval_reasons: [],
+        approval_details: [],
         maximum_duration_hours: 0
       }
     end
@@ -310,7 +368,16 @@ class ReservationService
       time.present? && (time.min == 0 || time.min == 30) && time.sec == 0
     end
 
-    def maximum_duration_hours(member:, shop:, tools:, reservation_scope:, start_at:, resources:, reservation:)
+    def maximum_duration_hours(
+      member:,
+      shop:,
+      tools:,
+      reservation_scope:,
+      start_at:,
+      resources:,
+      reservation:,
+      duration_session_existing:
+    )
       return 0 unless start_at.present? && resources.present?
 
       return 72.0 if board_reservation_override?(member)
@@ -331,6 +398,18 @@ class ReservationService
 
       1.upto(steps) do |step|
         candidate_end = start_at + (step * 0.5).hours
+        unless duration_session_exempt?(member)
+          break if duration_session_errors(
+            member: member,
+            shop: shop,
+            tools: tools,
+            reservation_scope: reservation_scope,
+            start_at: start_at,
+            end_at: candidate_end,
+            reservation: reservation,
+            existing_by_resource: duration_session_existing
+          ).present?
+        end
         candidate_overlaps = overlaps.select do |existing|
           existing.start_at < candidate_end && existing.end_at > start_at
         end
@@ -350,6 +429,110 @@ class ReservationService
 
     def board_reservation_override?(member)
       member.role == "board_member"
+    end
+
+    def duration_session_exempt?(member)
+      member.role.in?(%w[admin board_member])
+    end
+
+    def duration_session_errors(
+      member:,
+      shop:,
+      tools:,
+      reservation_scope:,
+      start_at:,
+      end_at:,
+      reservation:,
+      existing_by_resource: nil
+    )
+      resources = reservation_scope == "shop" ? [shop] : tools
+      resources.filter_map do |resource|
+        existing = existing_by_resource&.fetch(resource.id.to_s, nil) ||
+          member_resource_reservations(
+            member: member,
+            shop: shop,
+            resource: resource,
+            reservation_scope: reservation_scope,
+            reservation: reservation
+          )
+        maximum = resource.max_reservation_duration_hours.to_f
+        gap_hours = ((maximum / 3.0) * 2).ceil / 2.0
+        entries = existing.map do |item|
+          {
+            start_at: item.start_at,
+            end_at: item.end_at,
+            duration: (item.end_at - item.start_at) / 1.hour,
+            candidate: false
+          }
+        end
+        entries << {
+          start_at: start_at,
+          end_at: end_at,
+          duration: (end_at - start_at) / 1.hour,
+          candidate: true
+        }
+        candidate_cluster = reservation_session_clusters(entries, gap_hours)
+          .find { |cluster| cluster.any? { |entry| entry[:candidate] } }
+        total = candidate_cluster.to_a.sum { |entry| entry[:duration] }
+        next if total <= maximum + 0.0001
+
+        label = reservation_scope == "shop" ? shop.name : resource.name
+        "#{label} reservations separated by less than #{format_hours(gap_hours)} " \
+          "may total at most #{format_hours(maximum)}"
+      end
+    end
+
+    def duration_session_existing_by_resource(
+      member:,
+      shop:,
+      resources:,
+      reservation_scope:,
+      reservation:
+    )
+      resources.index_with do |resource|
+        member_resource_reservations(
+          member: member,
+          shop: shop,
+          resource: resource,
+          reservation_scope: reservation_scope,
+          reservation: reservation
+        )
+      end.transform_keys { |resource| resource.id.to_s }
+    end
+
+    def member_resource_reservations(member:, shop:, resource:, reservation_scope:, reservation:)
+      criteria = Reservation.blocking.where(
+        member_id: member.id,
+        shop_id: shop.id,
+        reservation_scope: reservation_scope
+      )
+      criteria = criteria.where(tool_ids: resource.id.to_s) if reservation_scope == "tools"
+      criteria = criteria.where(:id.ne => reservation.id) if reservation
+      criteria.to_a
+    end
+
+    def reservation_session_clusters(entries, gap_hours)
+      clusters = []
+      entries.sort_by { |entry| [entry[:start_at], entry[:end_at]] }.each do |entry|
+        cluster = clusters.last
+        cluster_end = cluster&.map { |item| item[:end_at] }&.max
+        if cluster.nil? || entry[:start_at] - cluster_end >= gap_hours.hours
+          clusters << [entry]
+        else
+          cluster << entry
+        end
+      end
+      clusters
+    end
+
+    def format_hours(value)
+      number = value.to_f
+      label = number == number.to_i ? number.to_i : number
+      "#{label} hour#{number == 1.0 ? '' : 's'}"
+    end
+
+    def approval_detail(code, message, extra = {})
+      { code: code, message: message }.merge(extra)
     end
 
     def capacity_conflicts(shop:, tools:, reservation_scope:, overlaps:, start_at:, end_at:)

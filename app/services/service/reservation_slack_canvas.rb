@@ -167,11 +167,17 @@ module Service
           last_date.day
         ).utc
 
-        Reservation.blocking.where(
+        return true if Reservation.blocking.where(
           shop_id: shop.id,
           :start_at.lt => window_end,
           :end_at.gt => window_start
         ).exists?
+
+        ReservationBlackout.occurrences_overlapping(
+          shop_id: shop.id,
+          start_at: window_start,
+          end_at: window_end
+        ).present?
       end
 
       def log_rebuild_failure(shop, dates, error)
@@ -304,6 +310,25 @@ module Service
           )
           .order_by(start_at: :asc)
           .to_a
+        blackouts = ReservationBlackout.occurrences_overlapping(
+          shop_id: shop.id,
+          start_at: day_start,
+          end_at: day_end
+        )
+        agenda_items = reservations.map do |reservation|
+          {
+            kind: :reservation,
+            start_at: reservation.start_at,
+            reservation: reservation
+          }
+        end + blackouts.map do |occurrence|
+          {
+            kind: :blackout,
+            start_at: occurrence[:start_at],
+            occurrence: occurrence
+          }
+        end
+        agenda_items.sort_by! { |item| item[:start_at] }
 
         lines = [
           "# #{escape_markdown(shop.name)} Reservations",
@@ -311,21 +336,33 @@ module Service
           ""
         ]
 
-        if reservations.empty?
+        if agenda_items.empty?
           lines << "_No pending or approved reservations._"
         else
           lines.concat([
             "| Time | Reservation | Member | Resources | Status |",
             "| --- | --- | --- | --- | --- |"
           ])
-          reservations.each do |reservation|
-            cells = [
-              reservation_time(reservation),
-              reservation_title(reservation),
-              escape_table_cell(reservation.member&.fullname),
-              escape_table_cell(resource_names(reservation)),
-              escape_table_cell(reservation.status.to_s.titleize)
-            ]
+          agenda_items.each do |item|
+            cells = if item[:kind] == :blackout
+              occurrence = item[:occurrence]
+              [
+                period_time(occurrence[:start_at], occurrence[:end_at]),
+                escape_table_cell(occurrence[:blackout].title),
+                "",
+                "Entire shop",
+                "Blackout"
+              ]
+            else
+              reservation = item[:reservation]
+              [
+                reservation_time(reservation),
+                reservation_title(reservation),
+                escape_table_cell(reservation.member&.fullname),
+                escape_table_cell(resource_names(reservation)),
+                escape_table_cell(reservation.status.to_s.titleize)
+              ]
+            end
             lines << "| #{cells.join(' | ')} |"
           end
         end
@@ -337,8 +374,12 @@ module Service
       end
 
       def reservation_time(reservation)
-        start_at = reservation.start_at.in_time_zone(ReservationService::ZONE)
-        end_at = reservation.end_at.in_time_zone(ReservationService::ZONE)
+        period_time(reservation.start_at, reservation.end_at)
+      end
+
+      def period_time(period_start, period_end)
+        start_at = period_start.in_time_zone(ReservationService::ZONE)
+        end_at = period_end.in_time_zone(ReservationService::ZONE)
         if start_at.to_date == end_at.to_date
           "#{start_at.strftime('%H:%M')}-#{end_at.strftime('%H:%M')}"
         else

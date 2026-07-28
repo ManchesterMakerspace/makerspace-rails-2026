@@ -1340,6 +1340,19 @@
           "endAt": { "type": "string", "format": "date-time" },
           "status": { "type": "string", "enum": ["pending", "approved", "denied", "cancelled"] },
           "approvalReasons": { "type": "array", "items": { "type": "string" } },
+          "approvalDetails": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "blackoutId": { "type": "string", "nullable": true },
+                "blackoutTitle": { "type": "string", "nullable": true }
+              },
+              "required": ["code", "message"]
+            }
+          },
           "source": { "type": "string", "enum": ["portal", "slack"] },
           "calendarEventId": { "type": "string", "nullable": true },
           "calendarHtmlLink": { "type": "string", "format": "uri", "nullable": true },
@@ -1366,9 +1379,82 @@
           },
           "requiresApproval": { "type": "boolean" },
           "approvalReasons": { "type": "array", "items": { "type": "string" } },
+          "approvalDetails": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "blackoutId": { "type": "string", "nullable": true },
+                "blackoutTitle": { "type": "string", "nullable": true }
+              },
+              "required": ["code", "message"]
+            }
+          },
           "maximumDurationHours": { "type": "number", "multipleOf": 0.5, "minimum": 0 }
         },
-        "required": ["eligible", "errors", "conflicts", "missingPrerequisites", "requiresApproval", "approvalReasons", "maximumDurationHours"]
+        "required": ["eligible", "errors", "conflicts", "missingPrerequisites", "requiresApproval", "approvalReasons", "approvalDetails", "maximumDurationHours"]
+      },
+      "ReservationBlackout": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "shopId": { "type": "string" },
+          "shopName": { "type": "string" },
+          "recurrence": { "type": "string", "enum": ["daily", "weekly"] },
+          "weekday": { "type": "integer", "minimum": 0, "maximum": 6, "nullable": true },
+          "startTime": { "type": "string", "pattern": "^\\d{2}:(?:00|30)$" },
+          "endTime": { "type": "string", "pattern": "^\\d{2}:(?:00|30)$" },
+          "startDate": { "type": "string", "format": "date", "nullable": true },
+          "endDate": { "type": "string", "format": "date", "nullable": true }
+        },
+        "required": ["id", "title", "shopId", "recurrence", "startTime", "endTime"]
+      },
+      "ReservationAgenda": {
+        "type": "object",
+        "properties": {
+          "shopName": { "type": "string" },
+          "toolName": { "type": "string", "nullable": true },
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "windowStart": { "type": "string", "format": "date-time" },
+          "windowEnd": { "type": "string", "format": "date-time" },
+          "upNext": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "memberName": { "type": "string" },
+              "slackUsername": { "type": "string", "nullable": true },
+              "startAt": { "type": "string", "format": "date-time" }
+            },
+            "required": ["memberName", "startAt"]
+          },
+          "reservations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": { "type": "string" },
+                "memberName": { "type": "string" },
+                "slackUsername": { "type": "string", "nullable": true },
+                "startAt": { "type": "string", "format": "date-time" },
+                "endAt": { "type": "string", "format": "date-time" },
+                "status": { "type": "string", "enum": ["pending", "approved"] },
+                "reservationScope": { "type": "string", "enum": ["shop", "tools"] },
+                "toolNames": { "type": "array", "items": { "type": "string" } },
+                "inProgress": { "type": "boolean" }
+              },
+              "required": [
+                "title", "memberName", "startAt", "endAt", "status",
+                "reservationScope", "toolNames", "inProgress"
+              ]
+            }
+          }
+        },
+        "required": [
+          "shopName", "generatedAt", "windowStart", "windowEnd", "reservations"
+        ]
       },
       "SubscriptionCancellationImpact": {
         "type": "object",
@@ -1395,6 +1481,91 @@
     }
   },
   "paths": {
+    "/reservations/agenda": {
+      "get": {
+        "summary": "Public 24-hour reservation agenda",
+        "tags": ["Reservations"],
+        "parameters": [
+          { "name": "shop", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "tool", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "token", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML or JSON agenda for the next 24 hours",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReservationAgenda" },
+                "example": {
+                  "shopName": "Woodshop",
+                  "toolName": "Planer",
+                  "generatedAt": "2026-07-28T14:00:00Z",
+                  "windowStart": "2026-07-28T14:00:00Z",
+                  "windowEnd": "2026-07-29T14:00:00Z",
+                  "upNext": {
+                    "memberName": "Ada Lovelace",
+                    "slackUsername": "ada",
+                    "startAt": "2026-07-28T15:00:00Z"
+                  },
+                  "reservations": [
+                    {
+                      "title": "Cabinet doors",
+                      "memberName": "Ada Lovelace",
+                      "slackUsername": "ada",
+                      "startAt": "2026-07-28T15:00:00Z",
+                      "endAt": "2026-07-28T17:00:00Z",
+                      "status": "approved",
+                      "reservationScope": "tools",
+                      "toolNames": ["Planer"],
+                      "inProgress": false
+                    }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": {
+            "description": "Shop parameter missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } },
+                  "required": ["error"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Configured token missing or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } },
+                  "required": ["error"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Shop or tool not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } },
+                  "required": ["error"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/analytics": {
       "get": {
         "summary": "Lists analytic counts",

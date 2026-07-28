@@ -27,6 +27,22 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
     end
   end
 
+  describe "reservation_token" do
+    before { sign_in admin }
+
+    it "returns an empty default and persists the editable token setting" do
+      get :index, format: :json
+      expect(JSON.parse(response.body).dig("reservation", "reservation_token")).to eq("")
+
+      put :update_setting,
+          params: { key: "reservation_token", value: "agenda-secret" },
+          format: :json
+
+      expect(response).to have_http_status(200)
+      expect(SystemConfig.get("reservation_token")).to eq("agenda-secret")
+    end
+  end
+
   describe "PUT #update_setting — devise_timeout_minutes" do
     before { sign_in admin }
 
