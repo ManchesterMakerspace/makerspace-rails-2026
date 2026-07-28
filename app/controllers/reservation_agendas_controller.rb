@@ -19,6 +19,11 @@ class ReservationAgendasController < ApplicationController
       )
     end
     reservations = reservations.order_by(start_at: :asc).to_a
+    @agenda_tools = Tool.where(
+      shop_id: @shop.id,
+      reservable: true,
+      :disabled.ne => true
+    ).order_by(name: :asc).to_a
 
     rows = reservations.map { |reservation| agenda_row(reservation, now) }
     next_reservation = @tool &&

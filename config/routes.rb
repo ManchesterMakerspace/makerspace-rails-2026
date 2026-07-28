@@ -77,11 +77,13 @@ Rails.application.routes.draw do
 
       # Member sees their own checkouts
       resources :tool_checkouts, only: [:index]
+      resources :workshops, only: [:index]
       resources :tool_checkout_requests, only: [:index, :create, :update, :destroy]
       resources :reservation_catalog, only: [:index]
       resources :reservations, only: [:index, :create, :update, :destroy] do
         collection do
           get :availability
+          get :blackouts
           post :preview
         end
         member do

@@ -1288,10 +1288,12 @@
             "properties": {
               "id": { "type": "string" },
               "name": { "type": "string" },
+              "wikiUrl": { "type": "string", "format": "uri" },
+              "wikiUrlOverride": { "type": "string", "format": "uri", "nullable": true },
               "slackChannel": { "type": "string", "nullable": true },
               "disabled": { "type": "boolean" }
             },
-            "required": ["id", "name", "reservable"]
+            "required": ["id", "name", "wikiUrl", "reservable"]
           }
         ]
       },
@@ -1304,11 +1306,13 @@
               "id": { "type": "string" },
               "shopId": { "type": "string" },
               "name": { "type": "string" },
+              "wikiUrl": { "type": "string", "format": "uri" },
+              "wikiUrlOverride": { "type": "string", "format": "uri", "nullable": true },
               "description": { "type": "string", "nullable": true },
               "disabled": { "type": "boolean" },
               "effectiveReservationPrerequisiteIds": { "type": "array", "items": { "type": "string" } }
             },
-            "required": ["id", "shopId", "name", "reservable"]
+            "required": ["id", "shopId", "name", "wikiUrl", "reservable"]
           }
         ]
       },

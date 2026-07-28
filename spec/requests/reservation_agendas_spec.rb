@@ -72,6 +72,17 @@ RSpec.describe "Public reservation agenda", type: :request do
     end
   end
 
+  it "offers only visible reservable tools in the HTML agenda menu" do
+    create(:tool, shop: shop, name: "Visible Reservable", reservable: true)
+    create(:tool, shop: shop, name: "Hidden Reservable", reservable: true, disabled: true)
+    create(:tool, shop: shop, name: "Visible Not Reservable", reservable: false)
+
+    get "/reservations/agenda", params: { shop: shop.name }
+
+    expect(response.body).to include("Select agenda", "Visible Reservable")
+    expect(response.body).not_to include("Hidden Reservable", "Visible Not Reservable")
+  end
+
   it "returns format-specific errors for missing or unknown names" do
     get "/reservations/agenda.json"
     expect(response).to have_http_status(:bad_request)

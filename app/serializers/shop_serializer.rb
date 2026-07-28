@@ -1,5 +1,5 @@
 class ShopSerializer < ActiveModel::Serializer
-  attributes :id, :name, :slack_channel, :disabled, :reservable,
+  attributes :id, :name, :wiki_url, :slack_channel, :disabled, :reservable,
              :max_concurrent_reservations, :reservation_horizon_days,
              :max_reservation_duration_hours, :reservation_requires_approval,
              :reservation_prerequisite_tool_ids, :reservation_prerequisite_names,
@@ -7,6 +7,14 @@ class ShopSerializer < ActiveModel::Serializer
 
   attribute :tool_count do
     object.tools.count
+  end
+
+  attribute :wiki_url_override do
+    object.wiki_url
+  end
+
+  def wiki_url
+    object.effective_wiki_url
   end
 
   def reservation_prerequisite_names

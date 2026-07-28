@@ -12,6 +12,25 @@ Contact @lynch16 for variables for the Manchester Makerspace.
 $ rails s
 ```
 
+### Wiki URLs
+
+Set `WIKI_URL` to the public wiki base URL, without a required trailing slash:
+
+```env
+WIKI_URL=https://wiki.manchestermakerspace.org
+```
+
+The React footer uses this runtime value. Shops and tools may store an explicit
+Wiki URL. When blank, shop links default to
+`<WIKI_URL>/workshops/<slugified-shop-name>` and tool links default to
+`<WIKI_URL>/workshops/<slugified-shop-name>#<slugified-tool-name>`. Slugs are
+lowercase and punctuation/whitespace are converted to hyphens.
+
+Authenticated members can browse these links at `/workshops`. Disabled shops
+are restricted to admins and board members. Hidden tools are shown only to
+admins/board, the shop's resource managers, or members with an active checkout
+for that tool.
+
 ## With Docker
 
 1. Install [Docker](https://docs.docker.com/get-started/get-docker/)
@@ -97,7 +116,9 @@ Example:
 future reservation in the window, never an in-progress reservation. In HTML it is
 rendered as `Up Next @SLACKUSERNAME at HH:MM`, falling back to the member's full
 name when no Slack account is linked. Agenda rows contain time, title, full member
-name, Slack username, resources, and status as plain text.
+name, Slack username, resources, and status as plain text. The HTML view includes
+a top-right menu for switching between the whole-shop agenda and each visible,
+reservable tool in that shop.
 
 Set the `reservation_token` portal setting or the `RESERVATION_TOKEN` environment
 variable to protect both formats. When configured, callers must append the exact

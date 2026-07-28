@@ -3,6 +3,7 @@ class Shop
   include ActiveModel::Serializers::JSON
 
   field :name, type: String
+  field :wiki_url, type: String
   field :slack_channel, type: String  # e.g. "shop-woodworking" — used for slash command routing
   field :disabled, type: Boolean, default: false
   field :reservable, type: Boolean, default: false
@@ -21,6 +22,8 @@ class Shop
   has_many :tools, dependent: :destroy
   has_many :reservation_blackouts, dependent: :destroy
 
+  before_validation :normalize_wiki_url
+
   validates :name, presence: true, uniqueness: { case_sensitive: false }
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :reservation_horizon_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
@@ -34,12 +37,20 @@ class Shop
     value.nil? ? false : value
   end
 
+  def effective_wiki_url
+    wiki_url.to_s.strip.presence || WikiUrlBuilder.shop_url(name)
+  end
+
   def reservation_prerequisites
     ids = Array(reservation_prerequisite_tool_ids).map(&:to_s)
     ids.present? ? Tool.where(:id.in => ids) : Tool.none
   end
 
   private
+
+  def normalize_wiki_url
+    self.wiki_url = wiki_url.to_s.strip.presence
+  end
 
   def reservation_duration_uses_half_hours
     value = max_reservation_duration_hours.to_f

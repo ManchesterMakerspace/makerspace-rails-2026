@@ -391,6 +391,8 @@ RSpec.configure do |config|
           properties: {
             id: { type: :string },
             name: { type: :string },
+            wikiUrl: { type: :string, format: :uri },
+            wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
             slackChannel: { type: :string, 'x-nullable': true },
             disabled: { type: :boolean },
             colorId: { type: :string, pattern: '^\d+$', 'x-nullable': true },
@@ -398,7 +400,7 @@ RSpec.configure do |config|
             googleResourceId: { type: :string, 'x-nullable': true },
             resourceEmail: { type: :string, 'x-nullable': true }
           },
-          required: [:id, :name, :reservable]
+          required: [:id, :name, :wikiUrl, :reservable]
         }
       ]
     },
@@ -411,11 +413,13 @@ RSpec.configure do |config|
             id: { type: :string },
             shopId: { type: :string },
             name: { type: :string },
+            wikiUrl: { type: :string, format: :uri },
+            wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
             description: { type: :string, 'x-nullable': true },
             disabled: { type: :boolean },
             effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } }
           },
-          required: [:id, :shopId, :name, :reservable]
+          required: [:id, :shopId, :name, :wikiUrl, :reservable]
         }
       ]
     },

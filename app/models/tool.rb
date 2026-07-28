@@ -3,6 +3,7 @@ class Tool
   include ActiveModel::Serializers::JSON
 
   field :name, type: String
+  field :wiki_url, type: String
   field :description, type: String
   field :disabled, type: Boolean, default: false
   field :announce, type: Boolean, default: false
@@ -20,6 +21,8 @@ class Tool
   field :resource_email, type: String
 
   belongs_to :shop
+
+  before_validation :normalize_wiki_url
 
   validates :name, presence: true
   validates :name, uniqueness: { scope: :shop_id, case_sensitive: false }
@@ -40,6 +43,10 @@ class Tool
     value.nil? ? false : value
   end
 
+  def effective_wiki_url
+    wiki_url.to_s.strip.presence || WikiUrlBuilder.tool_url(shop&.name, name)
+  end
+
   def effective_reservation_prerequisite_ids
     (Array(reservation_prerequisite_tool_ids).map(&:to_s) + [id.to_s]).reject(&:blank?).uniq
   end
@@ -54,6 +61,10 @@ class Tool
   end
 
   private
+
+  def normalize_wiki_url
+    self.wiki_url = wiki_url.to_s.strip.presence
+  end
 
   def reservation_duration_uses_half_hours
     value = max_reservation_duration_hours.to_f

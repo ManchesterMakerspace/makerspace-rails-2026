@@ -1,7 +1,7 @@
 class ReservationsController < ApplicationController
   around_action :handle_unexpected_reservation_errors
   before_action :authenticate_member!
-  before_action :require_active_member, only: [:availability, :preview, :preview_update, :create, :update]
+  before_action :require_active_member, only: [:availability, :blackouts, :preview, :preview_update, :create, :update]
   before_action :find_reservation, only: [:preview_update, :update, :destroy]
   before_action :authorize_owner, only: [:preview_update, :update, :destroy]
 
@@ -48,6 +48,36 @@ class ReservationsController < ApplicationController
       each_serializer: ReservationSerializer,
       adapter: :attributes,
       scope: current_member
+  rescue Date::Error
+    raise ::Error::UnprocessableEntity.new("Invalid reservation date")
+  end
+
+  def blackouts
+    day = Date.iso8601(params.require(:date))
+    shop = Shop.find(params.require(:shop_id))
+    if shop.disabled? && !is_admin? && !is_board_member?
+      raise ::Error::NotFound.new
+    end
+
+    day_start = ReservationService::ZONE.local(day.year, day.month, day.day).utc
+    next_day = day + 1
+    day_end = ReservationService::ZONE.local(
+      next_day.year, next_day.month, next_day.day
+    ).utc
+    occurrences = ReservationBlackout.occurrences_overlapping(
+      shop_id: shop.id,
+      start_at: day_start,
+      end_at: day_end
+    )
+
+    render json: occurrences.map { |occurrence|
+      {
+        blackoutId: occurrence[:blackout].id.to_s,
+        title: occurrence[:blackout].title,
+        startAt: occurrence[:start_at].iso8601,
+        endAt: occurrence[:end_at].iso8601
+      }
+    }
   rescue Date::Error
     raise ::Error::UnprocessableEntity.new("Invalid reservation date")
   end
