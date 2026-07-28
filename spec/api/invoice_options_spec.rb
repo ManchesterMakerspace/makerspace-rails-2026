@@ -5,6 +5,7 @@ describe 'InvoiceOptions API', type: :request do
     get 'Gets invoice options eligible for signup' do
       tags 'InvoiceOptions'
       operationId "listSignupInvoiceOptions"
+      produces 'application/json'
 
       response '200', 'signup invoice options found' do
         schema type: :array,

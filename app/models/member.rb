@@ -409,6 +409,8 @@ class Member
     :expirationTime
   end
 
+  public
+
   # Devise hook — prevents revoked/suspended members from signing in.
   def active_for_authentication?
     super && !%w[revoked suspended].include?(status)

@@ -3306,7 +3306,17 @@
         "operationId": "listSignupInvoiceOptions",
         "responses": {
           "200": {
-            "description": "signup invoice options found"
+            "description": "signup invoice options found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InvoiceOption"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -3647,6 +3657,90 @@
             "description": "User not authenciated"
           }
         }
+      },
+      "post": {
+        "summary": "Registers new member",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "registerMember",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Member registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Email already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "registerMemberDetails",
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "firstname": {
+                    "type": "string"
+                  },
+                  "lastname": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "object",
+                    "properties": {
+                      "street": {
+                        "type": "string"
+                      },
+                      "unit": {
+                        "type": "string"
+                      },
+                      "city": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string"
+                      },
+                      "postalCode": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "email",
+                  "password",
+                  "firstname",
+                  "lastname"
+                ]
+              }
+            }
+          },
+          "required": true
+        }
       }
     },
     "/members/{id}": {
@@ -3757,6 +3851,213 @@
                     "type": "string"
                   }
                 }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/members/sign_in": {
+      "post": {
+        "summary": "Signs in user",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "signIn",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "User signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "User unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "signInDetails",
+                "type": "object",
+                "properties": {
+                  "member": {
+                    "type": "object",
+                    "properties": {
+                      "email": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/members/sign_out": {
+      "delete": {
+        "summary": "Signs out user",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "signOut",
+        "responses": {
+          "204": {
+            "description": "User signed out"
+          }
+        }
+      }
+    },
+    "/members/password": {
+      "post": {
+        "summary": "Sends password reset instructions",
+        "tags": [
+          "Password"
+        ],
+        "operationId": "requestPasswordReset",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Instructions sent"
+          },
+          "422": {
+            "description": "Email not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/passwordError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "passwordResetDetails",
+                "type": "object",
+                "properties": {
+                  "member": {
+                    "type": "object",
+                    "properties": {
+                      "email": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      },
+      "put": {
+        "summary": "Updates member password",
+        "tags": [
+          "Password"
+        ],
+        "operationId": "resetPassword",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Password reset"
+          },
+          "422": {
+            "description": "Invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/passwordResetError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "passwordResetDetails",
+                "type": "object",
+                "properties": {
+                  "member": {
+                    "type": "object",
+                    "properties": {
+                      "resetPasswordToken": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/send_registration": {
+      "post": {
+        "summary": "Sends registration email",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "sendRegistrationEmail",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Registration email sent"
+          },
+          "409": {
+            "description": "Email already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "registrationEmailDetails",
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email"
+                ]
               }
             }
           },
