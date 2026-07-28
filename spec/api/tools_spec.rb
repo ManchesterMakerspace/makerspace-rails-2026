@@ -246,4 +246,135 @@ RSpec.describe 'Tools API', type: :request do
       expect(visible_tool.reload.description).to eq("Updated description")
     end
   end
+
+  describe 'DELETE /api/admin/tools/:id' do
+    let(:admin) { create(:member, :admin, :current) }
+
+    before { sign_in admin }
+
+    it 'identifies every checkout and reservation prerequisite reference' do
+      checkout_tool = Tool.create!(
+        name: 'Jointer', shop: shop, prerequisite_ids: [visible_tool.id]
+      )
+      reservation_tool = Tool.create!(
+        name: 'Planer', shop: shop,
+        reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
+      )
+      shop.set(reservation_prerequisite_tool_ids: [visible_tool.id.to_s])
+      volunteer_task = VolunteerTask.create!(
+        title: 'Dust collection', description: 'Clean ducts', shop_id: shop.id,
+        prerequisite_tool_ids: [visible_tool.id], created_by_id: admin.id
+      )
+      volunteer_event = VolunteerEvent.create!(
+        title: 'Safety day', description: 'Review safety', shop_id: shop.id,
+        prerequisite_tool_ids: [visible_tool.id.to_s], created_by_id: admin.id
+      )
+
+      delete "/api/admin/tools/#{visible_tool.id}"
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.body).to include(
+        'Jointer', 'Planer', 'Woodshop', 'Dust collection', 'Safety day'
+      )
+      expect(Tool.where(id: visible_tool.id)).to exist
+
+      checkout_tool.set(prerequisite_ids: [])
+      reservation_tool.set(reservation_prerequisite_tool_ids: [])
+      shop.set(reservation_prerequisite_tool_ids: [])
+      volunteer_task.set(prerequisite_tool_ids: [])
+      volunteer_event.set(prerequisite_tool_ids: [])
+      visible_tool.set(
+        prerequisite_ids: [visible_tool.id],
+        reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
+      )
+
+      delete "/api/admin/tools/#{visible_tool.id}"
+
+      expect(response).to have_http_status(:no_content)
+      expect(Tool.where(id: visible_tool.id)).not_to exist
+    end
+
+
+    it 'allows a board member to force-delete a circular prerequisite and cleans references' do
+      board_member = create(:member, :board_member, :current)
+      sign_in board_member
+      dependent = Tool.create!(name: 'Circular dependent', shop: shop)
+      visible_tool.set(prerequisite_ids: [dependent.id])
+      dependent.set(
+        prerequisite_ids: [visible_tool.id],
+        reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
+      )
+      shop.set(reservation_prerequisite_tool_ids: [visible_tool.id])
+      task = VolunteerTask.create!(
+        title: 'Force cleanup task', description: 'Help out', shop_id: shop.id,
+        prerequisite_tool_ids: [visible_tool.id], created_by_id: board_member.id
+      )
+      event = VolunteerEvent.create!(
+        title: 'Force cleanup event', description: 'Help out', shop_id: shop.id,
+        prerequisite_tool_ids: [visible_tool.id.to_s], created_by_id: board_member.id
+      )
+
+      delete "/api/admin/tools/#{visible_tool.id}", params: { force: true }
+
+      expect(response).to have_http_status(:no_content)
+      expect(Tool.where(id: visible_tool.id)).not_to exist
+      expect(dependent.reload.prerequisite_ids).to eq([])
+      expect(dependent.reservation_prerequisite_tool_ids).to eq([])
+      expect(shop.reload.reservation_prerequisite_tool_ids).to eq([])
+      expect(task.reload.prerequisite_tool_ids).to eq([])
+      expect(event.reload.prerequisite_tool_ids).to eq([])
+    end
+  end
+
+  describe 'DELETE /api/admin/shops/:id' do
+    let(:admin) { create(:member, :admin, :current) }
+
+    before { sign_in admin }
+
+    it 'blocks surviving references but ignores references deleted with the shop' do
+      internal_tool = Tool.create!(
+        name: 'Internal dependent', shop: shop,
+        prerequisite_ids: [visible_tool.id.to_s],
+        reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
+      )
+      shop.set(reservation_prerequisite_tool_ids: [visible_tool.id.to_s])
+
+      surviving_shop = Shop.create!(name: 'Surviving shop')
+      checkout_tool = Tool.create!(name: 'External checkout dependent', shop: surviving_shop)
+      reservation_tool = Tool.create!(name: 'External reservation dependent', shop: surviving_shop)
+      checkout_tool.set(prerequisite_ids: [visible_tool.id])
+      reservation_tool.set(reservation_prerequisite_tool_ids: [visible_tool.id])
+      surviving_shop.set(reservation_prerequisite_tool_ids: [visible_tool.id.to_s])
+      volunteer_task = VolunteerTask.create!(
+        title: 'External volunteer task', description: 'Help out', shop_id: shop.id,
+        prerequisite_tool_ids: [visible_tool.id], created_by_id: admin.id
+      )
+      volunteer_event = VolunteerEvent.create!(
+        title: 'External volunteer event', description: 'Help together', shop_id: shop.id,
+        prerequisite_tool_ids: [disabled_tool.id.to_s], created_by_id: admin.id
+      )
+
+      delete "/api/admin/shops/#{shop.id}"
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.body).to include(
+        'External checkout dependent', 'External reservation dependent', 'Surviving shop',
+        'External volunteer task', 'External volunteer event'
+      )
+      expect(response.body).not_to include('Internal dependent')
+      expect(Shop.where(id: shop.id)).to exist
+
+      checkout_tool.set(prerequisite_ids: [])
+      reservation_tool.set(reservation_prerequisite_tool_ids: [])
+      surviving_shop.set(reservation_prerequisite_tool_ids: [])
+      volunteer_task.set(prerequisite_tool_ids: [])
+      volunteer_event.set(prerequisite_tool_ids: [])
+
+      delete "/api/admin/shops/#{shop.id}"
+
+      expect(response).to have_http_status(:no_content)
+      expect(Shop.where(id: shop.id)).not_to exist
+      expect(Tool.where(id: [visible_tool.id, internal_tool.id])).not_to exist
+    end
+  end
 end
