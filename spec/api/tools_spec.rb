@@ -246,4 +246,73 @@ RSpec.describe 'Tools API', type: :request do
       expect(visible_tool.reload.description).to eq("Updated description")
     end
   end
+
+  describe 'DELETE /api/admin/tools/:id' do
+    before { sign_in create(:member, :admin, :current) }
+
+    it 'identifies every checkout and reservation prerequisite reference' do
+      checkout_tool = Tool.create!(
+        name: 'Jointer', shop: shop, prerequisite_ids: [visible_tool.id.to_s]
+      )
+      reservation_tool = Tool.create!(
+        name: 'Planer', shop: shop,
+        reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
+      )
+      shop.set(reservation_prerequisite_tool_ids: [visible_tool.id.to_s])
+
+      delete "/api/admin/tools/#{visible_tool.id}"
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.body).to include('Jointer', 'Planer', 'Woodshop')
+      expect(Tool.where(id: visible_tool.id)).to exist
+
+      checkout_tool.set(prerequisite_ids: [])
+      reservation_tool.set(reservation_prerequisite_tool_ids: [])
+      shop.set(reservation_prerequisite_tool_ids: [])
+
+      delete "/api/admin/tools/#{visible_tool.id}"
+
+      expect(response).to have_http_status(:no_content)
+      expect(Tool.where(id: visible_tool.id)).not_to exist
+    end
+  end
+
+  describe 'DELETE /api/admin/shops/:id' do
+    before { sign_in create(:member, :admin, :current) }
+
+    it 'blocks surviving references but ignores references deleted with the shop' do
+      internal_tool = Tool.create!(
+        name: 'Internal dependent', shop: shop,
+        prerequisite_ids: [visible_tool.id.to_s],
+        reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
+      )
+      shop.set(reservation_prerequisite_tool_ids: [visible_tool.id.to_s])
+
+      surviving_shop = Shop.create!(name: 'Surviving shop')
+      checkout_tool = Tool.create!(name: 'External checkout dependent', shop: surviving_shop)
+      reservation_tool = Tool.create!(name: 'External reservation dependent', shop: surviving_shop)
+      checkout_tool.set(prerequisite_ids: [visible_tool.id.to_s])
+      reservation_tool.set(reservation_prerequisite_tool_ids: [visible_tool.id.to_s])
+      surviving_shop.set(reservation_prerequisite_tool_ids: [visible_tool.id.to_s])
+
+      delete "/api/admin/shops/#{shop.id}"
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.body).to include(
+        'External checkout dependent', 'External reservation dependent', 'Surviving shop'
+      )
+      expect(response.body).not_to include('Internal dependent')
+      expect(Shop.where(id: shop.id)).to exist
+
+      checkout_tool.set(prerequisite_ids: [])
+      reservation_tool.set(reservation_prerequisite_tool_ids: [])
+      surviving_shop.set(reservation_prerequisite_tool_ids: [])
+
+      delete "/api/admin/shops/#{shop.id}"
+
+      expect(response).to have_http_status(:no_content)
+      expect(Shop.where(id: shop.id)).not_to exist
+      expect(Tool.where(id: [visible_tool.id, internal_tool.id])).not_to exist
+    end
+  end
 end

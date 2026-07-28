@@ -64,6 +64,7 @@ class Admin::ShopsController < ApplicationController
     if Reservation.blocking.where(shop_id: @shop.id, :end_at.gt => Time.current).exists?
       raise ::Error::Conflict.new("Cancel future reservations before deleting this shop")
     end
+    prevent_deletion_if_tools_are_referenced
     before = @shop.attributes.dup
     deleted_tool_ids = @shop.tools.pluck(:id).map(&:to_s)
     google_resources = [[@shop.google_resource_id, @shop.id.to_s]] +
@@ -124,5 +125,31 @@ class Admin::ShopsController < ApplicationController
 
   def authorize_update
     raise ::Error::Forbidden.new unless can_manage_shop?(@shop)
+  end
+
+  def prevent_deletion_if_tools_are_referenced
+    deleted_tool_ids = @shop.tools.pluck(:id).map(&:to_s)
+    return if deleted_tool_ids.empty?
+
+    surviving_tools = Tool.where(:shop_id.ne => @shop.id)
+    checkout_tools = surviving_tools.where(
+      :prerequisite_ids.in => deleted_tool_ids
+    ).pluck(:name)
+    reservation_tools = surviving_tools.where(
+      :reservation_prerequisite_tool_ids.in => deleted_tool_ids
+    ).pluck(:name)
+    reservation_shops = Shop.where(:id.ne => @shop.id).where(
+      :reservation_prerequisite_tool_ids.in => deleted_tool_ids
+    ).pluck(:name)
+
+    references = []
+    references << "checkout prerequisites for tools: #{checkout_tools.join(', ')}" if checkout_tools.any?
+    references << "reservation prerequisites for tools: #{reservation_tools.join(', ')}" if reservation_tools.any?
+    references << "reservation prerequisites for shops: #{reservation_shops.join(', ')}" if reservation_shops.any?
+    return if references.empty?
+
+    raise ::Error::Conflict.new(
+      "Cannot delete #{@shop.name}; its tools are #{references.join('; ')}"
+    )
   end
 end

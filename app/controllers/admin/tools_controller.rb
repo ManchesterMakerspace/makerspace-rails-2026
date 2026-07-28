@@ -70,6 +70,7 @@ class Admin::ToolsController < ApplicationController
     if current_or_future_blocking_reservations.exists?
       raise ::Error::Conflict.new("Cancel future reservations before deleting this tool")
     end
+    prevent_deletion_if_prerequisite_is_referenced
     before = @tool.attributes.dup
     google_resource_id = @tool.google_resource_id
     label_source_id = @tool.id.to_s
@@ -142,6 +143,27 @@ class Admin::ToolsController < ApplicationController
     Reservation.blocking.where(
       tool_ids: @tool.id.to_s,
       :end_at.gt => Time.current
+    )
+  end
+
+  def prevent_deletion_if_prerequisite_is_referenced
+    tool_id = @tool.id.to_s
+    checkout_tools = Tool.where(:prerequisite_ids.in => [tool_id]).pluck(:name)
+    reservation_tools = Tool.where(
+      :reservation_prerequisite_tool_ids.in => [tool_id]
+    ).pluck(:name)
+    reservation_shops = Shop.where(
+      :reservation_prerequisite_tool_ids.in => [tool_id]
+    ).pluck(:name)
+
+    references = []
+    references << "checkout prerequisite for tools: #{checkout_tools.join(', ')}" if checkout_tools.any?
+    references << "reservation prerequisite for tools: #{reservation_tools.join(', ')}" if reservation_tools.any?
+    references << "reservation prerequisite for shops: #{reservation_shops.join(', ')}" if reservation_shops.any?
+    return if references.empty?
+
+    raise ::Error::Conflict.new(
+      "Cannot delete #{@tool.name}; it is a #{references.join('; ')}"
     )
   end
 end
