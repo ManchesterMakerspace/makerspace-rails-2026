@@ -11,8 +11,12 @@
 #
 class ClientConfigController < ApplicationController
   def index
-  firebase_auth_domain=ENV['FIREBASE_PROJECT_ID'].to_s + ".firebaseapp.com"
+  wiki_url="https://wiki.manchestermakerspace.org/"
+  if ENV['WIKI_URL'].present?
+    wiki_url= WikiUrlBuilder.base_url
+  end
 
+  firebase_auth_domain=ENV['FIREBASE_PROJECT_ID'].to_s + ".firebaseapp.com"
   firebase_auth_type="signInWithPopup"
   if ENV['FIREBASE_AUTH_TYPE'].present?
     firebase_auth_type=ENV['FIREBASE_AUTH_TYPE']
@@ -23,14 +27,12 @@ class ClientConfigController < ApplicationController
 #  else
 #    $stderr.puts "[config] Missing mandatory environment variable FIREBASE_AUTH_DOMAIN, using fallback #{firebase_auth_domain}"
   end
- 
-    render json: {
-      firebase_api_key:    ENV['FIREBASE_API_KEY'].to_s,
-      firebase_project_id: ENV['FIREBASE_PROJECT_ID'].to_s,
-      firebase_auth_domain: firebase_auth_domain,
-      firebase_auth_type: firebase_auth_type
-    }.merge(
-       ENV['WIKI_URL'].present? ? { wiki_url: WikiUrlBuilder.base_url } : {}
+   render json: {
+    firebase_api_key:    ENV['FIREBASE_API_KEY'].to_s,
+    firebase_project_id: ENV['FIREBASE_PROJECT_ID'].to_s,
+    firebase_auth_domain: firebase_auth_domain,
+    firebase_auth_type:   firebase_auth_type,
+    wkiki_url: wiki_url
     ), status: :ok
   end
 end
