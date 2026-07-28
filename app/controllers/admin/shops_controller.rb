@@ -135,30 +135,52 @@ class Admin::ShopsController < ApplicationController
     surviving_tools = Tool.where(:shop_id.ne => @shop.id)
     checkout_tools = surviving_tools.where(
       :prerequisite_ids.in => prerequisite_ids
-    ).pluck(:name)
+    ).to_a
     reservation_tools = surviving_tools.where(
       :reservation_prerequisite_tool_ids.in => prerequisite_ids
-    ).pluck(:name)
+    ).to_a
     reservation_shops = Shop.where(:id.ne => @shop.id).where(
       :reservation_prerequisite_tool_ids.in => prerequisite_ids
-    ).pluck(:name)
+    ).to_a
     volunteer_tasks = VolunteerTask.where(
       :prerequisite_tool_ids.in => prerequisite_ids
-    ).pluck(:title)
+    ).to_a
     volunteer_events = VolunteerEvent.where(
       :prerequisite_tool_ids.in => prerequisite_ids
-    ).pluck(:title)
+    ).to_a
+
+    referenced_records = checkout_tools + reservation_tools + reservation_shops +
+      volunteer_tasks + volunteer_events
+    return if referenced_records.empty?
+    if force_deletion?
+      remove_prerequisite_ids(checkout_tools, :prerequisite_ids, prerequisite_ids)
+      remove_prerequisite_ids(reservation_tools, :reservation_prerequisite_tool_ids, prerequisite_ids)
+      remove_prerequisite_ids(reservation_shops, :reservation_prerequisite_tool_ids, prerequisite_ids)
+      remove_prerequisite_ids(volunteer_tasks, :prerequisite_tool_ids, prerequisite_ids)
+      remove_prerequisite_ids(volunteer_events, :prerequisite_tool_ids, prerequisite_ids)
+      return
+    end
 
     references = []
-    references << "checkout prerequisites for tools: #{checkout_tools.join(', ')}" if checkout_tools.any?
-    references << "reservation prerequisites for tools: #{reservation_tools.join(', ')}" if reservation_tools.any?
-    references << "reservation prerequisites for shops: #{reservation_shops.join(', ')}" if reservation_shops.any?
-    references << "volunteer prerequisites for tasks: #{volunteer_tasks.join(', ')}" if volunteer_tasks.any?
-    references << "volunteer prerequisites for events: #{volunteer_events.join(', ')}" if volunteer_events.any?
-    return if references.empty?
+    references << "checkout prerequisites for tools: #{checkout_tools.map(&:name).join(', ')}" if checkout_tools.any?
+    references << "reservation prerequisites for tools: #{reservation_tools.map(&:name).join(', ')}" if reservation_tools.any?
+    references << "reservation prerequisites for shops: #{reservation_shops.map(&:name).join(', ')}" if reservation_shops.any?
+    references << "volunteer prerequisites for tasks: #{volunteer_tasks.map(&:title).join(', ')}" if volunteer_tasks.any?
+    references << "volunteer prerequisites for events: #{volunteer_events.map(&:title).join(', ')}" if volunteer_events.any?
 
     raise ::Error::Conflict.new(
       "Cannot delete #{@shop.name}; its tools are #{references.join('; ')}"
     )
+  end
+
+  def force_deletion?
+    ActiveModel::Type::Boolean.new.cast(params[:force])
+  end
+
+  def remove_prerequisite_ids(records, field, removed_ids)
+    removed_ids = removed_ids.map(&:to_s)
+    records.each do |record|
+      record.set(field => Array(record.public_send(field)).reject { |id| removed_ids.include?(id.to_s) })
+    end
   end
 end

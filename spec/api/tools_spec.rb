@@ -283,11 +283,46 @@ RSpec.describe 'Tools API', type: :request do
       shop.set(reservation_prerequisite_tool_ids: [])
       volunteer_task.set(prerequisite_tool_ids: [])
       volunteer_event.set(prerequisite_tool_ids: [])
+      visible_tool.set(
+        prerequisite_ids: [visible_tool.id],
+        reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
+      )
 
       delete "/api/admin/tools/#{visible_tool.id}"
 
       expect(response).to have_http_status(:no_content)
       expect(Tool.where(id: visible_tool.id)).not_to exist
+    end
+
+
+    it 'allows a board member to force-delete a circular prerequisite and cleans references' do
+      board_member = create(:member, :board_member, :current)
+      sign_in board_member
+      dependent = Tool.create!(name: 'Circular dependent', shop: shop)
+      visible_tool.set(prerequisite_ids: [dependent.id])
+      dependent.set(
+        prerequisite_ids: [visible_tool.id],
+        reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
+      )
+      shop.set(reservation_prerequisite_tool_ids: [visible_tool.id])
+      task = VolunteerTask.create!(
+        title: 'Force cleanup task', description: 'Help out', shop_id: shop.id,
+        prerequisite_tool_ids: [visible_tool.id], created_by_id: board_member.id
+      )
+      event = VolunteerEvent.create!(
+        title: 'Force cleanup event', description: 'Help out', shop_id: shop.id,
+        prerequisite_tool_ids: [visible_tool.id.to_s], created_by_id: board_member.id
+      )
+
+      delete "/api/admin/tools/#{visible_tool.id}", params: { force: true }
+
+      expect(response).to have_http_status(:no_content)
+      expect(Tool.where(id: visible_tool.id)).not_to exist
+      expect(dependent.reload.prerequisite_ids).to eq([])
+      expect(dependent.reservation_prerequisite_tool_ids).to eq([])
+      expect(shop.reload.reservation_prerequisite_tool_ids).to eq([])
+      expect(task.reload.prerequisite_tool_ids).to eq([])
+      expect(event.reload.prerequisite_tool_ids).to eq([])
     end
   end
 
