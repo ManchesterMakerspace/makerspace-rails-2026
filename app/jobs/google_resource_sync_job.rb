@@ -5,6 +5,8 @@ class GoogleResourceSyncJob < ApplicationJob
   def perform(resource_type, resource_id)
     klass = resource_type.to_s.constantize
     record = klass.find(resource_id)
+    return unless record
+
     category = klass == Shop ? "CONFERENCE_ROOM" : "OTHER"
     Service::GoogleWorkspace.ensure_resource!(record, category)
     Service::GoogleWorkspace.ensure_label!(record)
