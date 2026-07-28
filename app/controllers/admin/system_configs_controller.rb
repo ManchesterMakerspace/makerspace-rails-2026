@@ -134,6 +134,14 @@ class Admin::SystemConfigsController < AdminController
       render json: { error: "Unknown setting key: #{key}" }, status: :unprocessable_content and return
     end
 
+    if slack_channel_setting?(key)
+      value = Service::SlackChannelCache.normalize_name(value)
+      Service::SlackChannelCache.lookup(
+        value,
+        refresh_on_miss: !Rails.env.test?
+      ) if value.present?
+    end
+
     old_value = SystemConfig.get(key).to_s
     return unless valid_setting_value?(key, value)
 
@@ -182,6 +190,11 @@ class Admin::SystemConfigsController < AdminController
   end
 
   private
+
+  def slack_channel_setting?(key)
+    key.start_with?("slack_channel_") ||
+      key == "volunteer_pending_slack_channel"
+  end
 
   # Posts to logs and treasurer channels when the volunteer discount setting changes.
   # Fetches discount descriptions from Braintree for a human-readable audit trail.

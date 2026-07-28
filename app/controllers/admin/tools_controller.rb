@@ -97,7 +97,7 @@ class Admin::ToolsController < ApplicationController
   private
 
   def tool_params
-    params.permit(:name, :wiki_url, :description, :shop_id, :disabled, :announce,
+    params.permit(:name, :wiki_url, :gdrive_id, :description, :shop_id, :disabled, :announce,
       :announce_channel, :users_channel, :reservable,
       :max_concurrent_reservations, :reservation_horizon_days,
       :max_reservation_duration_hours, :reservation_requires_approval,

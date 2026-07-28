@@ -31,6 +31,29 @@ are restricted to admins and board members. Hidden tools are shown only to
 admins/board, the shop's resource managers, or members with an active checkout
 for that tool.
 
+Shops and tools can also store an optional Google Drive folder ID. The workshop
+page uses shop IDs for an embedded Documentation tab and tool IDs for links to
+their Drive folders.
+
+### Slack public channel cache
+
+Public Slack channel metadata is cached in Redis under
+`slack:public_channel:<normalized-name>`. Each value contains the channel ID,
+name, topic, and purpose and expires after 1000 hours. Shop/tool and Slack portal
+setting saves remove leading `#` characters from channel names. A cache miss
+during a channel-name change opportunistically pages through
+`conversations.list`, caching every public channel encountered until the
+requested name is found.
+
+Refresh the complete public-channel cache manually with:
+
+```sh
+bundle exec rake slack:refresh_public_channel_cache
+```
+
+`config/schedule.rb` runs this rake task monthly. The configured Slack token
+must include permission to list public conversations.
+
 ## With Docker
 
 1. Install [Docker](https://docs.docker.com/get-started/get-docker/)

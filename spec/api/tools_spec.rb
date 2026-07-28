@@ -80,6 +80,22 @@ RSpec.describe 'Tools API', type: :request do
   describe 'POST /api/admin/shops' do
     before { sign_in create(:member, :admin, :current) }
 
+    it 'normalizes Slack names and stores Wiki and GDrive fields' do
+      post '/api/admin/shops', params: {
+        name: 'Documentation Shop',
+        slack_channel: '#shop-docs',
+        wiki_url: 'https://wiki.example.test/docs',
+        gdrive_id: 'folder-shop'
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to include(
+        'slackChannel' => 'shop-docs',
+        'wikiUrl' => 'https://wiki.example.test/docs',
+        'gdriveId' => 'folder-shop'
+      )
+    end
+
     it 'rejects a shop whose name differs only by case from an existing shop' do
       post '/api/admin/shops', params: {
         name: 'woodSHOP',
@@ -107,6 +123,25 @@ RSpec.describe 'Tools API', type: :request do
         "colorId" => "7",
         "reservationPrerequisiteToolIds" => [visible_tool.id.to_s],
         "reservationPrerequisiteNames" => [visible_tool.name]
+      )
+    end
+  end
+
+  describe 'PUT /api/admin/tools/:id' do
+    before { sign_in create(:member, :admin, :current) }
+
+    it 'normalizes channel fields and stores a GDrive folder ID' do
+      put "/api/admin/tools/#{visible_tool.id}", params: {
+        announce_channel: '#shop-announcements',
+        users_channel: '##bandsaw-users',
+        gdrive_id: 'folder-tool'
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to include(
+        'announceChannel' => 'shop-announcements',
+        'usersChannel' => 'bandsaw-users',
+        'gdriveId' => 'folder-tool'
       )
     end
   end

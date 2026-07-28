@@ -13,6 +13,7 @@ RSpec.describe "Workshops", type: :request do
   end
 
   before do
+    allow(Service::SlackChannelCache).to receive(:fetch).and_return(nil)
     create(:tool_checkout, member: member, tool: checked_out_hidden_tool)
     sign_in member
   end
@@ -54,5 +55,110 @@ RSpec.describe "Workshops", type: :request do
     get "/api/workshops"
     expect(JSON.parse(response.body).dig("workshops", 0, "reservationsAvailable"))
       .to be(true)
+  end
+
+  it "includes cached Slack details, GDrive links, checkout state, requests, and upcoming events" do
+    shop.update!(
+      slack_channel: "wood-shop",
+      gdrive_id: "shop-folder"
+    )
+    visible_tool.update!(
+      users_channel: "planer-users",
+      gdrive_id: "tool-folder"
+    )
+    checkout = create(:tool_checkout, member: member, tool: visible_tool)
+    ToolCheckoutRequest.create!(
+      member: member,
+      tool: other_hidden_tool,
+      note: "Please train me",
+      status: "open"
+    )
+    VolunteerEvent.create!(
+      title: "Shop Cleanup",
+      description: "Sweep and organize",
+      credit_value: 1.5,
+      event_date: Date.current + 2.days,
+      shop_id: shop.id,
+      created_by_id: member.id
+    )
+    allow(Service::SlackChannelCache).to receive(:fetch)
+      .with("wood-shop")
+      .and_return(
+        id: "C123",
+        name: "wood-shop",
+        topic: "Woodworking",
+        purpose: "Coordinate the shop"
+      )
+    allow(Service::SlackChannelCache).to receive(:fetch)
+      .with("planer-users")
+      .and_return(
+        id: "C456",
+        name: "planer-users",
+        topic: "",
+        purpose: ""
+      )
+
+    get "/api/workshops"
+
+    woodshop = JSON.parse(response.body)["workshops"]
+      .find { |row| row["id"] == shop.id.to_s }
+    expect(woodshop).to include(
+      "gdriveId" => "shop-folder",
+      "slackChannelDetails" => include(
+        "id" => "C123",
+        "topic" => "Woodworking",
+        "purpose" => "Coordinate the shop"
+      )
+    )
+    planer = woodshop["tools"].find { |row| row["id"] == visible_tool.id.to_s }
+    expect(planer).to include(
+      "gdriveId" => "tool-folder",
+      "checkout" => include("id" => checkout.id.to_s, "active" => true),
+      "usersChannelDetails" => include("id" => "C456")
+    )
+    expect(woodshop["upcomingVolunteerEvents"].first).to include(
+      "title" => "Shop Cleanup",
+      "creditValue" => 1.5
+    )
+  end
+
+  it "sorts unmet visible bounty prerequisites last and hides unmet hidden prerequisites" do
+    visible_task = VolunteerTask.create!(
+      title: "General cleanup",
+      description: "Clean benches",
+      credit_value: 1,
+      shop_id: shop.id,
+      prerequisite_tool_ids: [],
+      created_by_id: member.id,
+      status: "available"
+    )
+    unmet_task = VolunteerTask.create!(
+      title: "Planer cleanup",
+      description: "Clean the planer",
+      credit_value: 1,
+      shop_id: shop.id,
+      prerequisite_tool_ids: [visible_tool.id.to_s],
+      created_by_id: member.id,
+      status: "available"
+    )
+    VolunteerTask.create!(
+      title: "Hidden maintenance",
+      description: "Maintain hidden equipment",
+      credit_value: 1,
+      shop_id: shop.id,
+      prerequisite_tool_ids: [other_hidden_tool.id.to_s],
+      created_by_id: member.id,
+      status: "available"
+    )
+
+    get "/api/workshops"
+
+    tasks = JSON.parse(response.body).dig("workshops", 0, "volunteerTasks")
+    expect(tasks.map { |task| task["id"] })
+      .to eq([visible_task.id.to_s, unmet_task.id.to_s])
+    expect(tasks.last).to include(
+      "eligible" => false,
+      "missingPrerequisiteToolNames" => [visible_tool.name]
+    )
   end
 end

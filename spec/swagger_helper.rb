@@ -393,6 +393,7 @@ RSpec.configure do |config|
             name: { type: :string },
             wikiUrl: { type: :string, format: :uri },
             wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
+            gdriveId: { type: :string, 'x-nullable': true },
             slackChannel: { type: :string, 'x-nullable': true },
             disabled: { type: :boolean },
             colorId: { type: :string, pattern: '^\d+$', 'x-nullable': true },
@@ -415,6 +416,7 @@ RSpec.configure do |config|
             name: { type: :string },
             wikiUrl: { type: :string, format: :uri },
             wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
+            gdriveId: { type: :string, 'x-nullable': true },
             description: { type: :string, 'x-nullable': true },
             disabled: { type: :boolean },
             effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } }

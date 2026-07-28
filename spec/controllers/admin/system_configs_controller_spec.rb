@@ -43,6 +43,26 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
     end
   end
 
+  describe "Slack channel settings" do
+    before do
+      sign_in admin
+      allow(Service::SlackChannelCache).to receive(:lookup)
+    end
+
+    it "removes leading hashes and checks the public-channel cache" do
+      put :update_setting,
+          params: { key: "slack_channel_logs", value: "##portal-logs" },
+          format: :json
+
+      expect(response).to have_http_status(200)
+      expect(SystemConfig.get("slack_channel_logs")).to eq("portal-logs")
+      expect(Service::SlackChannelCache).to have_received(:lookup).with(
+        "portal-logs",
+        refresh_on_miss: false
+      )
+    end
+  end
+
   describe "PUT #update_setting — devise_timeout_minutes" do
     before { sign_in admin }
 

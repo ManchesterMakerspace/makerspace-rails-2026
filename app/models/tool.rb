@@ -4,6 +4,7 @@ class Tool
 
   field :name, type: String
   field :wiki_url, type: String
+  field :gdrive_id, type: String
   field :description, type: String
   field :disabled, type: Boolean, default: false
   field :announce, type: Boolean, default: false
@@ -22,7 +23,8 @@ class Tool
 
   belongs_to :shop
 
-  before_validation :normalize_wiki_url
+  before_validation :normalize_external_fields
+  after_save :warm_changed_slack_channel_cache
 
   validates :name, presence: true
   validates :name, uniqueness: { scope: :shop_id, case_sensitive: false }
@@ -62,8 +64,27 @@ class Tool
 
   private
 
-  def normalize_wiki_url
+  def normalize_external_fields
     self.wiki_url = wiki_url.to_s.strip.presence
+    self.gdrive_id = gdrive_id.to_s.strip.presence
+    self.announce_channel =
+      Service::SlackChannelCache.normalize_name(announce_channel).presence
+    self.users_channel =
+      Service::SlackChannelCache.normalize_name(users_channel).presence
+  end
+
+  def warm_changed_slack_channel_cache
+    return if Rails.env.test?
+
+    %w[announce_channel users_channel].each do |field|
+      next unless previous_changes.key?(field)
+
+      channel_name = public_send(field)
+      Service::SlackChannelCache.lookup(
+        channel_name,
+        refresh_on_miss: true
+      ) if channel_name.present?
+    end
   end
 
   def reservation_duration_uses_half_hours

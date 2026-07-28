@@ -1296,6 +1296,7 @@
               "name": { "type": "string" },
               "wikiUrl": { "type": "string", "format": "uri" },
               "wikiUrlOverride": { "type": "string", "format": "uri", "nullable": true },
+              "gdriveId": { "type": "string", "nullable": true },
               "slackChannel": { "type": "string", "nullable": true },
               "disabled": { "type": "boolean" }
             },
@@ -1314,6 +1315,7 @@
               "name": { "type": "string" },
               "wikiUrl": { "type": "string", "format": "uri" },
               "wikiUrlOverride": { "type": "string", "format": "uri", "nullable": true },
+              "gdriveId": { "type": "string", "nullable": true },
               "description": { "type": "string", "nullable": true },
               "disabled": { "type": "boolean" },
               "effectiveReservationPrerequisiteIds": { "type": "array", "items": { "type": "string" } }

@@ -1,4 +1,10 @@
 namespace :slack do
+  desc "Refresh the Redis cache of active public Slack channels"
+  task refresh_public_channel_cache: :environment do
+    count = Service::SlackChannelCache.refresh_all!
+    puts "Cached #{count || 0} public Slack channels"
+  end
+
   desc "Bulk sync Slack workspace users to SlackUser records, matching by email to Member accounts.
         Controlled via SystemConfig key 'slack_sync_enabled' — toggle from the admin settings UI.
         For on-demand single-user sync, use Service::SlackUserSync.sync_single(slack_id) directly."

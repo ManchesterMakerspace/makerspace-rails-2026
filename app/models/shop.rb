@@ -4,6 +4,7 @@ class Shop
 
   field :name, type: String
   field :wiki_url, type: String
+  field :gdrive_id, type: String
   field :slack_channel, type: String  # e.g. "shop-woodworking" — used for slash command routing
   field :disabled, type: Boolean, default: false
   field :reservable, type: Boolean, default: false
@@ -22,7 +23,8 @@ class Shop
   has_many :tools, dependent: :destroy
   has_many :reservation_blackouts, dependent: :destroy
 
-  before_validation :normalize_wiki_url
+  before_validation :normalize_external_fields
+  after_save :warm_changed_slack_channel_cache
 
   validates :name, presence: true, uniqueness: { case_sensitive: false }
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
@@ -48,8 +50,21 @@ class Shop
 
   private
 
-  def normalize_wiki_url
+  def normalize_external_fields
     self.wiki_url = wiki_url.to_s.strip.presence
+    self.gdrive_id = gdrive_id.to_s.strip.presence
+    self.slack_channel = Service::SlackChannelCache.normalize_name(slack_channel).presence
+  end
+
+  def warm_changed_slack_channel_cache
+    return if Rails.env.test?
+    return unless previous_changes.key?("slack_channel")
+    return if slack_channel.blank?
+
+    Service::SlackChannelCache.lookup(
+      slack_channel,
+      refresh_on_miss: true
+    )
   end
 
   def reservation_duration_uses_half_hours

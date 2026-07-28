@@ -119,6 +119,9 @@ module Service
       requested = channel_name.to_s.delete_prefix('#').strip
       return if requested.blank?
 
+      cached = Service::SlackChannelCache.fetch(requested)
+      return cached[:id] if cached&.dig(:id).present?
+
       if requested.match?(/\A[CG][A-Z0-9]+\z/i)
         response = with_rate_limit_retry("conversations.info") do
           client.conversations_info(channel: requested)
@@ -271,6 +274,11 @@ module Service
       id = team_id
       return nil if id.blank? || slack_id.blank?
       "slack://user?team=#{id}&id=#{slack_id}"
+    end
+    def self.slack_channel_url(channel_id)
+      id = team_id
+      return nil if id.blank? || channel_id.blank?
+      "slack://channel?team=#{id}&id=#{channel_id}"
     end
     def invite_to_slack(email, lastname, firstname)
       ::Service::SlackConnector.invite_to_slack(email, lastname, firstname)

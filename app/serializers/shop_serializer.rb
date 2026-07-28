@@ -1,5 +1,5 @@
 class ShopSerializer < ActiveModel::Serializer
-  attributes :id, :name, :wiki_url, :slack_channel, :disabled, :reservable,
+  attributes :id, :name, :wiki_url, :gdrive_id, :slack_channel, :disabled, :reservable,
              :max_concurrent_reservations, :reservation_horizon_days,
              :max_reservation_duration_hours, :reservation_requires_approval,
              :reservation_prerequisite_tool_ids, :reservation_prerequisite_names,
