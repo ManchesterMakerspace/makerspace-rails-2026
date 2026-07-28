@@ -121,8 +121,13 @@ module Service
     def invite_to_slack(email, lastname, firstname)
       ::Service::SlackConnector.invite_to_slack(email, lastname, firstname)
     end
+
+    def self.slack_invites_enabled?
+      ENV['SLACK_INVITES_ENABLED'] == 'true' && ENV['SLACK_ADMIN_TOKEN'].present?
+    end
+
     def self.invite_to_slack(email, lastname, firstname)
-      unless ENV['SLACK_INVITES_ENABLED'] == 'true'
+      unless slack_invites_enabled?
         raise Error::NotAllowed.new('Slack invites are not enabled in this environment')
       end
       client.users_admin_invite(

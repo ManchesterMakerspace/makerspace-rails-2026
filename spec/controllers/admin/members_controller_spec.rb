@@ -75,6 +75,34 @@ RSpec.describe Admin::MembersController, type: :controller do
       end
     end
 
+    describe "POST #invite_slack" do
+      let!(:member) { create(:member) }
+
+      it "returns no content when the invite succeeds" do
+        allow(::Service::SlackConnector).to receive(:invite_to_slack)
+
+        post :invite_slack, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(204)
+        expect(::Service::SlackConnector).to have_received(:invite_to_slack).with(
+          member.email,
+          member.lastname,
+          member.firstname
+        )
+      end
+
+      it "returns the Slack failure message to the admin" do
+        allow(::Service::SlackConnector).to receive(:invite_to_slack)
+          .and_raise(StandardError.new("not_authed"))
+        allow(Honeybadger).to receive(:notify)
+
+        post :invite_slack, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+        expect(JSON.parse(response.body)).to eq("message" => "not_authed")
+      end
+    end
+
     describe "PUT #update" do
       context "with valid params" do
         let(:new_attributes) {
@@ -331,6 +359,20 @@ RSpec.describe Admin::MembersController, type: :controller do
         put :update, params: { id: board_member.to_param, silenceEmails: false }, format: :json
         expect(response).to have_http_status(200)
         expect(board_member.reload.silence_emails).to be false
+      end
+    end
+
+    describe "POST #invite_slack" do
+      it "returns the Slack failure message to the board member" do
+        member = create(:member)
+        allow(::Service::SlackConnector).to receive(:invite_to_slack)
+          .and_raise(StandardError.new("account_inactive"))
+        allow(Honeybadger).to receive(:notify)
+
+        post :invite_slack, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+        expect(JSON.parse(response.body)).to eq("message" => "account_inactive")
       end
     end
   end

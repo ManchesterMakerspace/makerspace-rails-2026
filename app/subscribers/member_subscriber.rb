@@ -35,15 +35,52 @@ module MemberSubscriber
   private
 
   def send_slack_invite(member)
+    invite_to_slack(member.email, member.lastname, member.firstname)
+  rescue Error::NotAllowed
+    # Slack invites disabled in this environment — silent skip
+  rescue => err
+    report_slack_invite_failure(member, err)
+  end
+
+  def report_slack_invite_failure(member, error)
+    failure_message = "#{error.class}: #{error.message}"
+    Rails.logger.error(
+      "[MemberSubscriber] Slack invite failed for #{member.email}: #{failure_message}"
+    )
+
     begin
-      invite_to_slack(member.email, member.lastname, member.firstname)
-    rescue Error::NotAllowed
-      # Slack invites disabled in this environment — silent skip
-    rescue Slack::Web::Api::Errors::NotAllowedTokenType
-      # Token type doesn't support users.admin.invite (e.g. bot token in dev/test)
-      Rails.logger.warn("[MemberSubscriber] Slack invite skipped for #{member.email}: token type not allowed")
-    rescue => err
-      ::Service::SlackConnector.send_slack_message("Error inviting #{member.fullname} to Slack. Error: #{err}")
+      ::Service::AuditLogger.log(
+        log_type:      'member',
+        event_type:    'slack_invite_failed',
+        resource_type: 'Member',
+        resource_id:   member.id,
+        subject:       member,
+        field_changes: {
+          'slack_invite' => ['requested', "failed: #{failure_message}"]
+        },
+        slack_channel: ::Service::SlackConnector.logs_channel
+      )
+    rescue => audit_error
+      Rails.logger.error(
+        "[MemberSubscriber] Could not audit Slack invite failure for #{member.email}: " \
+        "#{audit_error.class}: #{audit_error.message}"
+      )
+    end
+
+    begin
+      Honeybadger.notify(
+        error,
+        context: {
+          event_type: 'slack_invite_failed',
+          member_id: member.id.to_s,
+          member_email: member.email
+        }
+      ) if defined?(Honeybadger)
+    rescue => honeybadger_error
+      Rails.logger.error(
+        "[MemberSubscriber] Could not notify Honeybadger of Slack invite failure for " \
+        "#{member.email}: #{honeybadger_error.class}: #{honeybadger_error.message}"
+      )
     end
   end
 
@@ -66,4 +103,3 @@ module MemberSubscriber
     end
   end
 end
-  
