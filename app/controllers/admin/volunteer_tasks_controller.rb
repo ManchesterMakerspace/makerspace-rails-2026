@@ -37,7 +37,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
   # PUT /api/admin/volunteer_tasks/:id
   def update
     if task_params.key?(:shop_id)
-      authorize_shop_assignment!(task_params[:shop_id], allow_blank: false)
+      authorize_shop_assignment!(task_params[:shop_id])
     end
     previous_shop_id = @task.shop_id
     @task.update!(task_params)
@@ -111,7 +111,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
   end
 
   def authorize_current_task_shop!
-    authorize_shop_assignment!(@task.shop_id, allow_blank: false)
+    authorize_shop_assignment!(@task.shop_id)
   end
 
   def task_params
@@ -126,10 +126,8 @@ class Admin::VolunteerTasksController < AdminOrRmController
     )
   end
 
-  def authorize_shop_assignment!(shop_id, allow_blank: true)
-    return if is_admin? || is_board_member?
-    return if shop_id.blank? && allow_blank
-    return if shop_id.present? && manages_shop?(shop_id)
+  def authorize_shop_assignment!(shop_id)
+    return if VolunteerAdministrationAuthorization.allowed?(current_member, shop_id)
 
     raise ::Error::Forbidden.new
   end

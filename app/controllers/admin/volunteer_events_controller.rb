@@ -29,7 +29,7 @@ class Admin::VolunteerEventsController < AdminOrRmController
   # PUT /api/admin/volunteer_events/:id
   def update
     if event_params.key?(:shop_id)
-      authorize_shop_assignment!(event_params[:shop_id], allow_blank: false)
+      authorize_shop_assignment!(event_params[:shop_id])
     end
     previous_shop_id = @event.shop_id
     @event.update!(event_params)
@@ -112,7 +112,7 @@ class Admin::VolunteerEventsController < AdminOrRmController
   end
 
   def authorize_current_event_shop!
-    authorize_shop_assignment!(@event.shop_id, allow_blank: false)
+    authorize_shop_assignment!(@event.shop_id)
   end
 
   def event_params
@@ -126,10 +126,8 @@ class Admin::VolunteerEventsController < AdminOrRmController
     )
   end
 
-  def authorize_shop_assignment!(shop_id, allow_blank: true)
-    return if is_admin? || is_board_member?
-    return if shop_id.blank? && allow_blank
-    return if shop_id.present? && manages_shop?(shop_id)
+  def authorize_shop_assignment!(shop_id)
+    return if VolunteerAdministrationAuthorization.allowed?(current_member, shop_id)
 
     raise ::Error::Forbidden.new
   end

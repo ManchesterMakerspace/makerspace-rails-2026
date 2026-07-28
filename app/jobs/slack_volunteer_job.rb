@@ -389,6 +389,11 @@ class SlackVolunteerJob < ApplicationJob
       return
     end
 
+    unless authorized_to_administer?(invoker, task)
+      post_response(response_url, :ephemeral, '❌ You are not authorized to administer volunteer tasks for this shop.')
+      return
+    end
+
     task.complete!(invoker)
 
     post_response(response_url, :in_channel,
@@ -422,6 +427,11 @@ class SlackVolunteerJob < ApplicationJob
 
     unless task.status == 'claimed'
       post_response(response_url, :ephemeral, "❌ Task *#{task.title}* is not currently claimed.")
+      return
+    end
+
+    unless authorized_to_administer?(invoker, task)
+      post_response(response_url, :ephemeral, '❌ You are not authorized to administer volunteer tasks for this shop.')
       return
     end
 
@@ -462,6 +472,11 @@ class SlackVolunteerJob < ApplicationJob
       return
     end
 
+    unless authorized_to_administer?(invoker, task)
+      post_response(response_url, :ephemeral, '❌ You are not authorized to administer volunteer tasks for this shop.')
+      return
+    end
+
     task.reject_pending!(invoker, reason)
     post_response(response_url, :in_channel,
       "❌ Task *#{task.title}* (#{task.display_number}) rejected. Reason: #{reason}.")
@@ -492,6 +507,11 @@ class SlackVolunteerJob < ApplicationJob
     end
 
     attendee_count = event.attendee_count
+    unless authorized_to_administer?(invoker, event)
+      post_response(response_url, :ephemeral, '❌ You are not authorized to administer volunteer events for this shop.')
+      return
+    end
+
     event.close!(invoker)
 
     post_response(response_url, :in_channel,
@@ -542,6 +562,10 @@ class SlackVolunteerJob < ApplicationJob
   # blocked from all Slack volunteer commands. Now consistent with AdminOrRmController.
   def privileged?(member)
     member.role.in?(%w[admin board_member resource_manager])
+  end
+
+  def authorized_to_administer?(member, record)
+    VolunteerAdministrationAuthorization.allowed?(member, record.shop_id)
   end
 
   def find_member_by_slack_id(slack_id)
