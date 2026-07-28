@@ -33,6 +33,8 @@ RSpec.describe Service::SlackChannelCache do
     allow(Service::SlackConnector).to receive(:client).and_return(client)
     allow(REDIS).to receive(:get).and_return(nil)
     allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:del).and_return(1)
+    allow(REDIS).to receive(:scan_each).and_return([].each)
   end
 
   it "normalizes names and caches every channel encountered until the target is found" do
@@ -67,5 +69,37 @@ RSpec.describe Service::SlackChannelCache do
 
     expect(described_class.lookup("#wood-shop")).to include("id" => "C123")
     expect(client).not_to receive(:conversations_list)
+  end
+
+  it "reports the current key count and last full update" do
+    allow(REDIS).to receive(:get).with(described_class::STATUS_KEY)
+      .and_return(JSON.generate(lastUpdatedAt: "2026-07-28T12:00:00Z"))
+    allow(REDIS).to receive(:scan_each)
+      .with(match: "slack:public_channel:*")
+      .and_return(%w[channel-one channel-two].each)
+
+    expect(described_class.status).to eq(
+      available: true,
+      total_channels: 2,
+      last_updated_at: "2026-07-28T12:00:00Z"
+    )
+  end
+
+  it "clears stale keys before rebuilding and records cache metadata" do
+    allow(REDIS).to receive(:scan_each)
+      .with(match: "slack:public_channel:*")
+      .and_return(%w[slack:public_channel:old].each)
+    allow(client).to receive(:conversations_list)
+      .and_return(first_page, second_page)
+
+    expect(described_class.rebuild!).to eq(2)
+
+    expect(REDIS).to have_received(:del)
+      .with("slack:public_channel:old")
+    expect(REDIS).to have_received(:set).with(
+      described_class::STATUS_KEY,
+      include('"totalChannels":2', '"lastUpdatedAt"'),
+      ex: 1000.hours.to_i
+    )
   end
 end

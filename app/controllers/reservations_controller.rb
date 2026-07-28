@@ -70,7 +70,7 @@ class ReservationsController < ApplicationController
       end_at: day_end
     )
 
-    render json: occurrences.map { |occurrence|
+    occurrence_rows = occurrences.map { |occurrence|
       {
         blackoutId: occurrence[:blackout].id.to_s,
         title: occurrence[:blackout].title,
@@ -78,6 +78,10 @@ class ReservationsController < ApplicationController
         endAt: occurrence[:end_at].iso8601
       }
     }
+    # These rows are plain hashes rather than model instances. Passing the
+    # array directly lets ActiveModel Serializers try (and fail) to infer a
+    # collection root key when at least one occurrence exists.
+    render json: occurrence_rows.to_json
   rescue Date::Error
     raise ::Error::UnprocessableEntity.new("Invalid reservation date")
   end

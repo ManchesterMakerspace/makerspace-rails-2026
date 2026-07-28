@@ -37,6 +37,28 @@ RSpec.describe GoogleResourceSyncJob, type: :job do
     }.to raise_error(error)
   end
 
+  it "redacts authorization headers before logging and retry propagation" do
+    error = StandardError.new(
+      '#<Faraday::Response request_headers={' \
+      '"Authorization"=>"Bearer super-secret-token"}>'
+    )
+    allow(Service::GoogleWorkspace).to receive(:ensure_resource!)
+      .and_raise(error)
+
+    expect {
+      described_class.new.perform("Shop", shop.id.to_s)
+    }.to raise_error(error)
+
+    expect(error.message).to include('"Authorization"=>"[FILTERED]"')
+    expect(error.message).not_to include("super-secret-token")
+    expect(Rails.logger).to have_received(:warn).with(
+      include('"Authorization"=>"[FILTERED]"')
+    )
+    expect(Rails.logger).not_to have_received(:warn).with(
+      include("super-secret-token")
+    )
+  end
+
   it "reports permission errors before propagating them" do
     error = StandardError.new("PERMISSION_DENIED: owner access required")
     allow(Service::GoogleWorkspace).to receive(:ensure_resource!)

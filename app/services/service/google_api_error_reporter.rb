@@ -1,7 +1,25 @@
 module Service
   module GoogleApiErrorReporter
+    AUTHORIZATION_HEADER_VALUE = /
+      (
+        (?:
+          ["']authorization["'] |
+          :authorization |
+          \bauthorization
+        )
+        \s*(?:=>|:)\s*
+      )
+      (
+        "(?:\\.|[^"\\])*" |
+        '(?:\\.|[^'\\])*'
+      )
+    /ix
+    AUTHORIZATION_HEADER_LINE =
+      /(\bauthorization\s*:\s*)(?:\[FILTERED\]|[^\r\n,}\]]+)/i
+
     class << self
       def report_if_permission_denied(error, operation:, resource_type: "GoogleApi", resource_id: nil)
+        sanitize_error!(error)
         return false unless permission_denied?(error)
         return true if error.instance_variable_get(:@permission_denied_reported)
 
@@ -45,11 +63,34 @@ module Service
       end
 
       def full_error_message(error)
+        sanitize_error!(error)
         [
           "#{error.class}: #{error.message}",
           (error.body if error.respond_to?(:body)),
           (error.response_header if error.respond_to?(:response_header))
-        ].compact.map(&:to_s).reject(&:blank?).uniq.join("\n")
+        ].compact.map { |value| redact_authorization_headers(value) }
+          .reject(&:blank?).uniq.join("\n")
+      end
+
+      # Google API exceptions can embed a complete Faraday response in their
+      # message. Active Job logs that message again when a retry is scheduled,
+      # so sanitize the exception itself in addition to our explicit log text.
+      def sanitize_error!(error)
+        safe_message = redact_authorization_headers(error.message)
+        safe_inspect = redact_authorization_headers(error.inspect)
+
+        error.define_singleton_method(:message) { safe_message }
+        error.define_singleton_method(:to_s) { safe_message }
+        error.define_singleton_method(:inspect) { safe_inspect }
+        error
+      rescue TypeError, FrozenError
+        error
+      end
+
+      def redact_authorization_headers(value)
+        value.to_s
+          .gsub(AUTHORIZATION_HEADER_VALUE, '\1"[FILTERED]"')
+          .gsub(AUTHORIZATION_HEADER_LINE, '\1[FILTERED]')
       end
 
       def slack_alert(operation:, resource_type:, resource_id:, full_message:)

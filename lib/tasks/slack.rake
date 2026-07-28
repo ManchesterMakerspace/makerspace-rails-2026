@@ -1,7 +1,7 @@
 namespace :slack do
   desc "Refresh the Redis cache of active public Slack channels"
   task refresh_public_channel_cache: :environment do
-    count = Service::SlackChannelCache.refresh_all!
+    count = SlackChannelCacheRefreshJob.perform_now
     puts "Cached #{count || 0} public Slack channels"
   end
 

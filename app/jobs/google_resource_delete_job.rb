@@ -29,6 +29,7 @@ class GoogleResourceDeleteJob < ApplicationJob
   end
 
   def report(error, operation, resource_id)
+    Service::GoogleApiErrorReporter.sanitize_error!(error)
     Service::GoogleApiErrorReporter.report_if_permission_denied(
       error,
       operation: operation,

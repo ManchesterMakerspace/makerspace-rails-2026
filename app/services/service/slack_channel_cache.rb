@@ -1,6 +1,7 @@
 module Service
   class SlackChannelCache
     CACHE_PREFIX = "slack:public_channel".freeze
+    STATUS_KEY = "slack:public_channel_cache:status".freeze
     CACHE_TTL_SECONDS = 1000.hours.to_i
     PAGE_SIZE = 200
 
@@ -34,7 +35,45 @@ module Service
       end
 
       def refresh_all!
-        scan_public_channels
+        count = scan_public_channels
+        write_status(count) unless count.nil?
+        count
+      end
+
+      def rebuild!
+        clear!
+        count = refresh_all!
+        raise "Slack public-channel cache rebuild failed" if count.nil?
+
+        count
+      end
+
+      def clear!
+        keys = REDIS.scan_each(match: "#{CACHE_PREFIX}:*").to_a
+        keys.each_slice(500) { |batch| REDIS.del(*batch) } if keys.present?
+        REDIS.del(STATUS_KEY)
+        keys.length
+      end
+
+      def status
+        metadata = parse_status(REDIS.get(STATUS_KEY))
+        {
+          available: true,
+          total_channels: REDIS.scan_each(
+            match: "#{CACHE_PREFIX}:*"
+          ).count,
+          last_updated_at: metadata["lastUpdatedAt"]
+        }
+      rescue Redis::BaseError, JSON::ParserError, TypeError => error
+        Rails.logger.warn(
+          "[SlackChannelCache] cache status failed " \
+          "error=#{error.class}: #{error.message}"
+        )
+        {
+          available: false,
+          total_channels: nil,
+          last_updated_at: nil
+        }
       end
 
       def refresh_until(channel_name)
@@ -118,6 +157,23 @@ module Service
           "[SlackChannelCache] cache write failed name=#{details[:name].inspect} " \
           "error=#{error.class}: #{error.message}"
         )
+      end
+
+      def write_status(count)
+        REDIS.set(
+          STATUS_KEY,
+          JSON.generate(
+            totalChannels: count,
+            lastUpdatedAt: Time.current.iso8601
+          ),
+          ex: CACHE_TTL_SECONDS
+        )
+      end
+
+      def parse_status(raw)
+        return {} if raw.blank?
+
+        JSON.parse(raw)
       end
 
       def cache_key(name)

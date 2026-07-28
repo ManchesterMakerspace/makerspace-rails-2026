@@ -6,6 +6,14 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
   let(:admin)  { create(:member, role: 'admin') }
   let(:member) { create(:member) }
 
+  before do
+    allow(Service::SlackChannelCache).to receive(:status).and_return(
+      available: true,
+      total_channels: 42,
+      last_updated_at: "2026-07-28T12:00:00Z"
+    )
+  end
+
   describe "GET #index — devise_timeout_minutes" do
     before { sign_in admin }
 
@@ -47,6 +55,23 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
     before do
       sign_in admin
       allow(Service::SlackChannelCache).to receive(:lookup)
+    end
+
+    it "returns Slack channel cache status and its tracked job" do
+      get :index, format: :json
+
+      body = JSON.parse(response.body)
+      expect(body.dig("slack", "channel_cache")).to include(
+        "available" => true,
+        "total_channels" => 42,
+        "last_updated_at" => "2026-07-28T12:00:00Z"
+      )
+      expect(body["jobs"]).to include(
+        include(
+          "key" => "slack_channel_cache",
+          "task" => "slack:refresh_public_channel_cache"
+        )
+      )
     end
 
     it "removes leading hashes and checks the public-channel cache" do
@@ -132,6 +157,7 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
     before do
       sign_in admin
       allow(ReservationSlackCanvasRebuildJob).to receive(:perform_later)
+      allow(SlackChannelCacheRefreshJob).to receive(:perform_later)
     end
 
     it "enqueues the reservation canvas rake job" do
@@ -141,6 +167,15 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
 
       expect(response).to have_http_status(200)
       expect(ReservationSlackCanvasRebuildJob).to have_received(:perform_later)
+    end
+
+    it "enqueues the Slack channel cache rebuild job" do
+      post :run_job,
+           params: { key: "slack_channel_cache" },
+           format: :json
+
+      expect(response).to have_http_status(200)
+      expect(SlackChannelCacheRefreshJob).to have_received(:perform_later)
     end
   end
 end

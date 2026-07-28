@@ -187,7 +187,9 @@ RSpec.describe Service::ReservationSlackCanvas do
 
       expect(Service::SlackConnector).to have_received(:replace_canvas).with(
         "FTODAY",
-        a_string_including("| 17:00-20:00 | Open House |  | Entire shop | Blackout |")
+        a_string_including(
+          "| 17:00-20:00 | No Reservations Available: Open House |  | Entire shop | Unavailable |"
+        )
       )
       expect(Service::SlackConnector).not_to have_received(:replace_canvas)
         .with("FTODAY", a_string_including("[Open House]"))

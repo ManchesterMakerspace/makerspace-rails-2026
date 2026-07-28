@@ -348,10 +348,12 @@ module Service
               occurrence = item[:occurrence]
               [
                 period_time(occurrence[:start_at], occurrence[:end_at]),
-                escape_table_cell(occurrence[:blackout].title),
+                escape_table_cell(
+                  "No Reservations Available: #{occurrence[:blackout].title}"
+                ),
                 "",
                 "Entire shop",
-                "Blackout"
+                "Unavailable"
               ]
             else
               reservation = item[:reservation]

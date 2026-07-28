@@ -3,6 +3,7 @@ class Admin::SystemConfigsController < AdminController
   # Keys that can be toggled as boolean flags
   FLAG_KEYS = [
     SystemConfig::SLACK_SYNC_ENABLED,
+    SystemConfig::SLACK_PROFILE_SYNC_ENABLED,
     'volunteer_bounty_token_enabled',
     'require_totp_admin',
     'require_totp_board',
@@ -37,6 +38,7 @@ class Admin::SystemConfigsController < AdminController
   def index
     flags = {
       slack_sync_enabled:             SystemConfig.enabled?(SystemConfig::SLACK_SYNC_ENABLED),
+      slack_profile_sync_enabled:     SystemConfig.enabled?(SystemConfig::SLACK_PROFILE_SYNC_ENABLED),
       volunteer_bounty_token_enabled: SystemConfig.enabled?('volunteer_bounty_token_enabled'),
       require_totp_admin:             SystemConfig.enabled?('require_totp_admin'),
       require_totp_board:             SystemConfig.enabled?('require_totp_board'),
@@ -59,6 +61,7 @@ class Admin::SystemConfigsController < AdminController
       slack_channel_admin:              SystemConfig.get('slack_channel_admin')               || 'general',
       slack_channel_logs:               SystemConfig.get('slack_channel_logs')               || 'interface-logs',
       volunteer_pending_slack_channel:  SystemConfig.get('volunteer_pending_slack_channel')  || 'general',
+      channel_cache:                     Service::SlackChannelCache.status,
     }
 
     volunteer = {
@@ -178,6 +181,8 @@ class Admin::SystemConfigsController < AdminController
 
     case job_key
     when 'slack_sync'      then SlackSyncJob.perform_later
+    when 'slack_profile_sync' then SlackProfileSyncJob.perform_later
+    when 'slack_channel_cache' then SlackChannelCacheRefreshJob.perform_later
     when 'member_review'   then MemberReviewJob.perform_later
     when 'invoice_review'  then InvoiceReviewJob.perform_later
     when 'garbage_collect' then GarbageCollectJob.perform_later

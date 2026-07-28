@@ -43,6 +43,33 @@ RSpec.describe "Reservations API", type: :request do
     )
   end
 
+  it "returns blackout occurrences as a top-level JSON array" do
+    day = start_at.in_time_zone(ReservationService::ZONE).to_date
+    blackout = create(
+      :reservation_blackout,
+      shop: shop,
+      title: "Open House",
+      recurrence: "daily",
+      weekday: nil,
+      start_time: "09:00",
+      end_time: "12:00"
+    )
+
+    get "/api/reservations/blackouts",
+      params: { date: day.iso8601, shop_id: shop.id.to_s }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq("application/json")
+    expect(JSON.parse(response.body)).to contain_exactly(
+      include(
+        "blackoutId" => blackout.id.to_s,
+        "title" => "Open House",
+        "startAt" => be_a(String),
+        "endAt" => be_a(String)
+      )
+    )
+  end
+
   it "rejects tool reservations when the selected shop is disabled" do
     shop.update!(disabled: true)
 

@@ -17,6 +17,7 @@ class SystemConfig
   JOB_KEYS = {
     "slack_sync"      => "slack:sync_users",
     "slack_profile_sync" => "slack:sync_profiles",
+    "slack_channel_cache" => "slack:refresh_public_channel_cache",
     "member_review"   => "member_review",
     "invoice_review"  => "invoice_review",
     "garbage_collect" => "gc",
