@@ -184,24 +184,41 @@ describe 'Registrations API', type: :request do
       operationId 'sendRegistrationEmail'
       consumes 'application/json'
       produces 'application/json'
+      before do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with('REGISTRATION_EMAIL_TOKEN').and_return('registration-email-secret')
+      end
       parameter name: :registrationEmailDetails, in: :body, schema: {
         title: :registrationEmailDetails,
         type: :object,
         properties: {
-          email: { type: :string }
+          email: { type: :string },
+          token: { type: :string }
         },
-        required: [:email]
+        required: [:email, :token]
       }, required: true
 
       response '204', 'Registration email sent' do
-        let(:registrationEmailDetails) { { email: 'first@last.com' } }
+        let(:registrationEmailDetails) do
+          token = OpenSSL::HMAC.hexdigest("SHA256", "registration-email-secret", "first@last.com").first(16)
+          { email: 'first@last.com', token: token }
+        end
         run_test!
       end
 
       response '409', 'Email already exists' do
         before { create(:member, email: 'existing@example.com') }
         schema '$ref' => '#/components/schemas/error'
-        let(:registrationEmailDetails) { { email: 'existing@example.com' } }
+        let(:registrationEmailDetails) do
+          token = OpenSSL::HMAC.hexdigest("SHA256", "registration-email-secret", "existing@example.com").first(16)
+          { email: 'existing@example.com', token: token }
+        end
+        run_test!
+      end
+
+      response '401', 'Registration email token is invalid' do
+        schema '$ref' => '#/components/schemas/error'
+        let(:registrationEmailDetails) { { email: 'first@last.com', token: 'incorrect' } }
         run_test!
       end
     end
