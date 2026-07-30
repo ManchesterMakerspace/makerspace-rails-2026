@@ -64,7 +64,12 @@ class PaypalController < ApplicationController
       completed_message = "Payment Completed: $#{@payment.amount} for #{@payment.product} from #{@payment.firstname} #{@payment.lastname} ~ email: #{@payment.payer_email} - Member found: #{@payment.member.fullname}. <#{base_url}/members/#{@payment.member.id}|Renew Member>"
       failed_message    = "Error completing payment: $#{@payment.amount} for #{@payment.product} from #{@payment.firstname} #{@payment.lastname} ~ email: #{@payment.payer_email} - Member found: #{@payment.member.fullname}"
     else
-      completed_message = "Payment Completed: $#{@payment.amount} for #{@payment.product} from #{@payment.firstname} #{@payment.lastname} ~ email: #{@payment.payer_email}. No member found. <#{base_url}/send-registration/#{@payment.payer_email}|Send registration email to #{@payment.payer_email}>"
+      registration_email = @payment.payer_email.to_s.strip.downcase
+      registration_email_hash = OpenSSL::HMAC.hexdigest(
+        "SHA256", ENV["REGISTRATION_EMAIL_TOKEN"].to_s, registration_email
+      ).first(16)
+      registration_email_url = "#{base_url}/send-registration/#{ERB::Util.url_encode(registration_email)}?token=#{registration_email_hash}"
+      completed_message = "Payment Completed: $#{@payment.amount} for #{@payment.product} from #{@payment.firstname} #{@payment.lastname} ~ email: #{@payment.payer_email}. No member found. <#{registration_email_url}|Send registration email to #{@payment.payer_email}>"
       failed_message    = "Error completing payment: $#{@payment.amount} for #{@payment.product} from #{@payment.firstname} #{@payment.lastname} ~ email: #{@payment.payer_email}. No member found. <mailto:#{@payment.payer_email}|Contact #{@payment.payer_email}>"
     end
 

@@ -44,6 +44,25 @@ RSpec.describe PaypalController, type: :controller do
         post :notify, params: valid_attributes, format: :json
       end
 
+      it "includes a short registration email hash in links for unmatched payers" do
+        original_token = ENV["REGISTRATION_EMAIL_TOKEN"]
+        ENV["REGISTRATION_EMAIL_TOKEN"] = "slack registration/secret"
+        valid_attributes[:payer_email] = "new+payer@example.com"
+
+        post :notify, params: valid_attributes, format: :json
+
+        messages = REDIS.mget(*REDIS.keys).map { |payload| JSON.load(payload)["message"] }
+        expected_hash = OpenSSL::HMAC.hexdigest(
+          "SHA256", "slack registration/secret", "new+payer@example.com"
+        ).first(16)
+        expect(messages.join("\n")).to include(
+          "/send-registration/new%2Bpayer%40example.com?token=#{expected_hash}"
+        )
+        expect(messages.join("\n")).not_to include("slack%20registration%2Fsecret")
+      ensure
+        ENV["REGISTRATION_EMAIL_TOKEN"] = original_token
+      end
+
       it "Attributes the correct member to the payment" do
         post :notify, params: valid_attributes, format: :json
         expect(Payment.last.member).to eq(member)

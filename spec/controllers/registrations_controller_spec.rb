@@ -3,7 +3,18 @@ require 'rails_helper'
 RSpec.describe RegistrationsController, type: :controller do
   set_devise_mapping
 
+  around do |example|
+    original_token = ENV["REGISTRATION_EMAIL_TOKEN"]
+    ENV["REGISTRATION_EMAIL_TOKEN"] = "registration-email-secret"
+    example.run
+  ensure
+    ENV["REGISTRATION_EMAIL_TOKEN"] = original_token
+  end
+
   email = 'new_emails@email.com'
+  let(:registration_email_hash) {
+    OpenSSL::HMAC.hexdigest("SHA256", "registration-email-secret", "foo@foo.com").first(16)
+  }
   let(:token) {SecureRandom.urlsafe_base64(nil, false)}
   let(:encrypted_token) {BCrypt::Password.create(token)}
   let(:token_model) { create(:registration_token, email: email)}
@@ -134,13 +145,29 @@ RSpec.describe RegistrationsController, type: :controller do
 
   describe "GET #new" do
     it "throws errors if email missing" do
-      get :new, format: :json
+      get :new, params: { token: registration_email_hash }, format: :json
       expect(response).to have_http_status(422)
+    end
+
+    it "rejects requests without the registration email token" do
+      expect(MemberMailer).not_to receive(:welcome_email)
+
+      get :new, params: { email: "foo@foo.com" }, format: :json
+
+      expect(response).to have_http_status(401)
+    end
+
+    it "rejects requests with an invalid registration email token" do
+      expect(MemberMailer).not_to receive(:welcome_email)
+
+      get :new, params: { email: "foo@foo.com", token: "incorrect" }, format: :json
+
+      expect(response).to have_http_status(401)
     end
 
     it "it notifies admin and raises error if email already exists" do
       create(:member, email: "foo@foo.com")
-      get :new, params: {email: "foo@foo.com"}, format: :json
+      get :new, params: {email: "foo@foo.com", token: registration_email_hash}, format: :json
       expect(response).to have_http_status(409)
     end
 
@@ -148,7 +175,17 @@ RSpec.describe RegistrationsController, type: :controller do
       allow(MemberMailer).to receive_message_chain(:welcome_email, :deliver_later)
       expect(MemberMailer).to receive_message_chain(:welcome_email, :deliver_later)
       expect(MemberMailer).to receive(:welcome_email).with("foo@foo.com")
-      get :new, params: {email: "foo@foo.com"}, format: :json
+      get :new, params: {email: "foo@foo.com", token: registration_email_hash}, format: :json
+    end
+
+    it "allows requests without a token when the server token is unset or empty" do
+      allow(MemberMailer).to receive_message_chain(:welcome_email, :deliver_later)
+
+      [nil, ""].each do |server_token|
+        ENV["REGISTRATION_EMAIL_TOKEN"] = server_token
+        get :new, params: { email: "unprotected@example.com" }, format: :json
+        expect(response).to have_http_status(204)
+      end
     end
   end
 end
