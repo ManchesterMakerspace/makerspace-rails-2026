@@ -33,7 +33,59 @@ RSpec.describe RegistrationsController, type: :controller do
     token_model.update(token: encrypted_token)
   end
 
+  around do |example|
+    previous_secret = ENV['TURNSTILE_SECRET']
+    ENV.delete('TURNSTILE_SECRET')
+    example.run
+  ensure
+    if previous_secret.nil?
+      ENV.delete('TURNSTILE_SECRET')
+    else
+      ENV['TURNSTILE_SECRET'] = previous_secret
+    end
+  end
+
   describe "POST #create" do
+    context "when Turnstile is configured" do
+      let(:verifier) { instance_double(Service::TurnstileVerifier) }
+
+      before do
+        ENV['TURNSTILE_SECRET'] = 'test-secret'
+      end
+
+      it "creates the member after a successful verification" do
+        expect(Service::TurnstileVerifier).to receive(:new).with(
+          token: 'browser-token',
+          remote_ip: anything
+        ).and_return(verifier)
+        allow(verifier).to receive(:valid?).and_return(true)
+
+        expect {
+          post :create,
+            params: valid_attributes.merge('cf-turnstile-response' => 'browser-token'),
+            format: :json
+        }.to change(Member, :count).by(1)
+      end
+
+      it "returns forbidden without creating a member after a failed verification" do
+        allow(Service::TurnstileVerifier).to receive(:new).and_return(verifier)
+        allow(verifier).to receive(:valid?).and_return(false)
+
+        expect {
+          post :create,
+            params: valid_attributes.merge('cf-turnstile-response' => 'invalid-token'),
+            format: :json
+        }.not_to change(Member, :count)
+
+        expect(response).to have_http_status(:forbidden)
+        expect(JSON.parse(response.body)).to eq(
+          'status' => 403,
+          'error' => 'forbidden',
+          'message' => 'Turnstile verification failed'
+        )
+      end
+    end
+
     context "with valid params" do
       it "creates a new Member" do
         expect {

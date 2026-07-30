@@ -140,6 +140,10 @@ describe 'Registrations API', type: :request do
           firstname: { type: :string },
           lastname: { type: :string },
           phone: { type: :string },
+          'cf-turnstile-response': {
+            type: :string,
+            description: 'Cloudflare Turnstile token; enforced when TURNSTILE_SECRET is configured'
+          },
           address: {
             type: :object,
             properties: {
