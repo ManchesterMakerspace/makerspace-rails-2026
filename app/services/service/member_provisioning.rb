@@ -36,15 +36,14 @@ module Service
       initialize_tracking(member)
       ensure_slack_invite_allowed!(member)
 
-      if matching_slack_user(member)
-        live_user = lookup_slack_user(member.email)
-        if active_slack_user?(live_user, member.email)
-          reconcile_slack_member(member, live_user, promote: false, lookup: false)
-          return { status: :confirmed, source: :slack_user_record }
-        end
-
-        clear_slack_live_confirmation(member)
+      local_user = matching_slack_user(member)
+      live_user = lookup_slack_user(member.email)
+      if active_slack_user?(live_user, member.email)
+        reconcile_slack_member(member, live_user, promote: false, lookup: false)
+        return { status: :confirmed, source: :slack_user_record }
       end
+
+      clear_slack_live_confirmation(member) if local_user
 
       member.set(slack_last_attempt_at: Time.current, slack_last_error: nil)
       response = ::Service::SlackConnector.invite_to_slack(
@@ -83,6 +82,7 @@ module Service
       initialize_tracking(member)
       ensure_google_provisioning_allowed!(member)
       member.set(google_last_attempt_at: Time.current, google_last_error: nil)
+      revoke_previous_google_permissions(member)
 
       results = {}
       results[:resources] = ensure_google_permission(
@@ -480,6 +480,36 @@ module Service
         member.google_resources_access_confirmed_at,
         member.google_transfer_access_confirmed_at
       ].any? { |confirmed_at| confirmed_at.blank? || confirmed_at < cutoff }
+    end
+
+    def revoke_previous_google_permissions(member)
+      previous_email = normalize_email(member.google_previous_email)
+      return if previous_email.blank?
+      if previous_email == normalize_email(member.email)
+        member.set(google_previous_email: nil)
+        return
+      end
+
+      drive = ::Service::GoogleDrive.load_gdrive
+      [ENV['RESOURCES_FOLDER'], ENV['GOOGLE_TRANSFER_SHARE']].each do |folder_id|
+        raise Error::NotAllowed.new('Google Drive folder is not configured') if folder_id.blank?
+
+        google_permissions(
+          drive,
+          folder_id,
+          permission_fields: 'id,emailAddress,role'
+        ).each do |permission|
+          next unless normalize_email(permission.email_address) == previous_email
+
+          drive.delete_permission(folder_id, permission.id)
+        end
+      end
+      member.set(google_previous_email: nil)
+      audit(
+        member,
+        'google_drive_previous_email_revoked',
+        "Google Drive access revoked from previous email #{previous_email}"
+      )
     end
 
     def active_slack_user?(live_user, email)

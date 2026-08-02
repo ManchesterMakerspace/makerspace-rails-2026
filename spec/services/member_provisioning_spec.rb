@@ -114,6 +114,25 @@ RSpec.describe Service::MemberProvisioning do
       )
     end
 
+    it 'confirms a live Slack user and rebuilds its local record when none exists' do
+      member = create(:member, email: 'member@example.com')
+      allow(described_class).to receive(:lookup_slack_user).with(member.email).and_return(
+        'id' => 'U123',
+        'name' => 'member',
+        'deleted' => false,
+        'profile' => { 'email' => member.email, 'real_name' => member.fullname }
+      )
+      expect(Service::SlackConnector).not_to receive(:invite_to_slack)
+
+      result = described_class.invite_slack(member)
+
+      expect(result[:status]).to eq(:confirmed)
+      expect(SlackUser.find_by(slack_id: 'U123')).to have_attributes(
+        member_id: member.id,
+        slack_email: member.email
+      )
+    end
+
     it 'records API confirmation and the selected invitation mode' do
       member = create(:member)
       allow(Service::SlackConnector).to receive(:invite_to_slack).and_return(ok: true)
@@ -270,6 +289,64 @@ RSpec.describe Service::MemberProvisioning do
         'resources',
         hash_including(page_token: 'page-2')
       )
+    end
+
+    it 'revokes the previous email before granting permissions to the current email' do
+      member = active_member_with_card
+      previous_email = 'previous@example.com'
+      member.set(google_previous_email: previous_email)
+      allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
+      allow(ENV).to receive(:[]).with('RESOURCES_FOLDER').and_return('resources')
+      allow(ENV).to receive(:[]).with('GOOGLE_TRANSFER_SHARE').and_return('transfer')
+      permissions = {
+        'resources' => [double(email_address: previous_email, role: 'reader', id: 'old-resources')],
+        'transfer' => [double(email_address: previous_email, role: 'writer', id: 'old-transfer')]
+      }
+      drive = double
+      allow(Service::GoogleDrive).to receive(:load_gdrive).and_return(drive)
+      allow(drive).to receive(:list_permissions) do |folder_id, _options|
+        double(permissions: permissions.fetch(folder_id), next_page_token: nil)
+      end
+      allow(drive).to receive(:delete_permission) do |folder_id, permission_id|
+        permissions.fetch(folder_id).reject! { |permission| permission.id == permission_id }
+      end
+      allow(drive).to receive(:create_permission)
+
+      described_class.provision_google(member, raise_errors: true)
+
+      expect(drive).to have_received(:delete_permission).with('resources', 'old-resources').ordered
+      expect(drive).to have_received(:delete_permission).with('transfer', 'old-transfer').ordered
+      expect(drive).to have_received(:create_permission).with('resources', anything).ordered
+      expect(drive).to have_received(:create_permission).with('transfer', anything).ordered
+      member.reload
+      expect(member.google_previous_email).to be_nil
+      expect(member.google_resources_access_confirmed_at).to be_present
+      expect(member.google_transfer_access_confirmed_at).to be_present
+    end
+
+    it 'retains the previous email and does not grant new access when revocation fails' do
+      member = active_member_with_card
+      previous_email = 'previous@example.com'
+      member.set(google_previous_email: previous_email)
+      allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
+      allow(ENV).to receive(:[]).with('RESOURCES_FOLDER').and_return('resources')
+      allow(ENV).to receive(:[]).with('GOOGLE_TRANSFER_SHARE').and_return('transfer')
+      old_permission = double(email_address: previous_email, role: 'reader', id: 'old-resources')
+      drive = double
+      allow(Service::GoogleDrive).to receive(:load_gdrive).and_return(drive)
+      allow(drive).to receive(:list_permissions)
+        .and_return(double(permissions: [old_permission], next_page_token: nil))
+      allow(drive).to receive(:delete_permission)
+        .and_raise(StandardError.new('Drive unavailable'))
+      expect(drive).not_to receive(:create_permission)
+
+      expect do
+        described_class.provision_google(member, raise_errors: true)
+      end.to raise_error(StandardError, 'Drive unavailable')
+
+      expect(member.reload.google_previous_email).to eq(previous_email)
+      expect(member.google_resources_access_confirmed_at).to be_nil
+      expect(member.google_transfer_access_confirmed_at).to be_nil
     end
 
     it 'strictly rejects members who are not activated' do

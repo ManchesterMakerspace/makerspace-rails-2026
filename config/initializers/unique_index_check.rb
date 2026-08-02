@@ -13,8 +13,13 @@ Rails.application.config.after_initialize do
       indexed_fields = keys.keys.map(&:to_s)
       direction = keys['name'] || keys[:name]
       unique = index['unique'] || index[:unique]
+      collation = index['collation'] || index[:collation] || {}
 
-      indexed_fields == ['name'] && direction == 1 && unique == true
+      indexed_fields == ['name'] &&
+        direction == 1 &&
+        unique == true &&
+        collation['locale'].to_s == 'en' &&
+        collation['strength'].to_i == 2
     end
 
     unless tool_name_index_present

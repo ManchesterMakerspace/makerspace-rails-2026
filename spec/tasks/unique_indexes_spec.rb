@@ -30,4 +30,39 @@ RSpec.describe 'data:ensure_unique_indexes' do
     end
     expect(slack_id_index).to include('unique' => true)
   end
+
+  it 'creates and recognizes a case-insensitive unique tool-name index' do
+    Tool.delete_all
+
+    expect { task.invoke }.not_to raise_error
+
+    tool_name_index = Tool.collection.indexes.to_a.find do |index|
+      index.fetch('key', {}).keys == ['name']
+    end
+    expect(tool_name_index).to include('unique' => true)
+    expect(tool_name_index.fetch('collation')).to include('locale' => 'en', 'strength' => 2)
+
+    Tool.collection.insert_one(name: 'Lathe')
+    expect do
+      Tool.collection.insert_one(name: 'lathe')
+    end.to raise_error(Mongo::Error::OperationFailure, /duplicate key/i)
+  end
+
+  it 'rejects tool names that differ only by case before creating the index' do
+    Tool.delete_all
+    existing_index = Tool.collection.indexes.to_a.find do |index|
+      index.fetch('key', {}).keys == ['name']
+    end
+    Tool.collection.indexes.drop_one(existing_index.fetch('name')) if existing_index
+    Tool.collection.insert_many([{ name: 'Lathe' }, { name: 'lathe' }])
+
+    expect { task.invoke }.to raise_error(
+      RuntimeError,
+      /Cannot create unique index on tools.name.*Lathe.*records/i
+    )
+  ensure
+    Tool.collection.delete_many({})
+    task.reenable
+    task.invoke
+  end
 end

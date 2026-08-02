@@ -81,6 +81,7 @@ class Member
   field :slack_last_error, type: String
   field :google_resources_access_confirmed_at, type: Time
   field :google_transfer_access_confirmed_at, type: Time
+  field :google_previous_email, type: String
   field :google_last_attempt_at, type: Time
   field :google_last_error, type: String
 
@@ -667,6 +668,8 @@ class Member
   def handle_successful_email_change
     return unless previous_changes.key?("email")
 
+    previous_email = previous_changes["email"].first.to_s.strip.downcase.presence
+
     set(
       firebase_uid: nil,
       session_token: SecureRandom.hex,
@@ -683,13 +686,14 @@ class Member
       slack_last_error: "Member email changed; manual reprovisioning is required",
       google_resources_access_confirmed_at: nil,
       google_transfer_access_confirmed_at: nil,
+      google_previous_email: google_previous_email.presence || previous_email,
       google_last_attempt_at: nil,
       google_last_error: nil
     )
   end
 
   def enqueue_member_provisioning
-    return unless previous_changes.keys.any? { |key| %w[expirationTime status].include?(key.to_s) }
+    return unless previous_changes.keys.any? { |key| %w[email expirationTime status].include?(key.to_s) }
 
     MemberProvisioningJob.perform_later(id.to_s)
   end
