@@ -26,3 +26,7 @@ end
 every :day, at: '7am' do
   runner "SlackProfileSyncJob.perform_later"
 end
+
+every 1.hour do
+  runner "MemberProvisioningReconciliationJob.perform_now"
+end

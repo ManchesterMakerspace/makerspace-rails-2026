@@ -267,6 +267,47 @@ RSpec.configure do |config|
       ]
     },
 
+    SlackProvisioning: {
+      type: :object,
+      properties: {
+        status: {
+          type: :string,
+          enum: %w[
+            unknown blocked not_invited invite_confirmed invite_pending guest
+            manual_invite_required manual_promotion_required full_member
+          ]
+        },
+        inviteConfirmedAt: { type: :string, format: :'date-time', 'x-nullable': true },
+        inviteSource: { type: :string, enum: %w[api slack_user_record], 'x-nullable': true },
+        inviteMode: { type: :string, enum: %w[full_member single_channel_guest], 'x-nullable': true },
+        joinedAt: { type: :string, format: :'date-time', 'x-nullable': true },
+        fullMemberAt: { type: :string, format: :'date-time', 'x-nullable': true },
+        manualActionRequired: { type: :string, enum: %w[invite promotion], 'x-nullable': true }
+      },
+      required: [:status]
+    },
+    GoogleDriveProvisioning: {
+      type: :object,
+      properties: {
+        status: {
+          type: :string,
+          enum: %w[unknown blocked pending_activation not_provisioned partial failed complete]
+        },
+        resourcesAccessConfirmedAt: { type: :string, format: :'date-time', 'x-nullable': true },
+        transferAccessConfirmedAt: { type: :string, format: :'date-time', 'x-nullable': true }
+      },
+      required: [:status]
+    },
+    MemberProvisioning: {
+      type: :object,
+      properties: {
+        activationEligible: { type: :boolean },
+        email: { type: :string },
+        slack: { '$ref' => '#/components/schemas/SlackProvisioning' },
+        googleDrive: { '$ref' => '#/components/schemas/GoogleDriveProvisioning' }
+      },
+      required: [:activationEligible, :email, :slack, :googleDrive]
+    },
     BaseMember: {
       type: :object,
       properties: {
@@ -283,6 +324,14 @@ RSpec.configure do |config|
         resourceManagerShopIds: { type: :array, items: { type: :string } },
         checkoutApproverShopIds: { type: :array, items: { type: :string } },
         checkoutApproverToolIds: { type: :array, items: { type: :string } },
+        slackManualDeactivationRequired: {
+          type: :boolean,
+          description: 'True for revoked members when Slack must be deactivated manually because SLACK_ADMIN_TOKEN is not configured.'
+        },
+        provisioning: {
+          allOf: [{ '$ref' => '#/components/schemas/MemberProvisioning' }],
+          'x-nullable': true
+        },
       },
       required: [
         :firstname,

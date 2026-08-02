@@ -8,7 +8,8 @@ class Card
 
   before_create :set_expiration, :set_holder
   before_update :set_expiration
-  after_create :update_rejection_card, :settle_open_member_invoices
+  after_create :update_rejection_card, :settle_open_member_invoices, :enqueue_member_provisioning
+  after_update :enqueue_member_provisioning
 
   validates :uid, presence: true, uniqueness: true
 
@@ -63,5 +64,9 @@ class Card
       open_invoices = self.member.invoices.where(:transaction_id.nin => ["", nil], settled_at: nil)
       open_invoices.each { |i| i.send(:execute_invoice_operation) }
     end
+  end
+
+  def enqueue_member_provisioning
+    MemberProvisioningJob.perform_later(member_id.to_s)
   end
 end

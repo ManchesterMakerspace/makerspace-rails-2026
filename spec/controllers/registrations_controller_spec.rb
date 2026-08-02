@@ -116,7 +116,10 @@ RSpec.describe RegistrationsController, type: :controller do
 
       it "continues signup and reports a Slack invite failure without returning 500" do
         slack_error = StandardError.new("not_authed")
-        allow(MemberSubscriber).to receive(:invite_to_slack).and_raise(slack_error)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("SLACK_INVITES_ENABLED").and_return("true")
+        allow(ENV).to receive(:[]).with("SLACK_ADMIN_TOKEN").and_return("admin-token")
+        allow(::Service::SlackConnector).to receive(:invite_to_slack).and_raise(slack_error)
         allow(::Service::SlackConnector).to receive(:send_slack_message).and_return(true)
         allow(Honeybadger).to receive(:notify)
 
@@ -126,21 +129,19 @@ RSpec.describe RegistrationsController, type: :controller do
 
         expect(response).to have_http_status(200)
 
-        audit_entry = AuditLog.where(event_type: "slack_invite_failed").last
+        audit_entry = AuditLog.where(event_type: "slack_manual_invite_required").last
         expect(audit_entry).to be_present
         expect(audit_entry.resource_id).to eq(Member.last.id)
-        expect(audit_entry.slack_channel).to eq(::Service::SlackConnector.logs_channel)
+        expect(audit_entry.slack_channel).to eq(::Service::SlackConnector.admin_channel)
         expect(audit_entry.slack_posted).to be(true)
-        expect(audit_entry.field_changes.dig("slack_invite", 1)).to include("not_authed")
 
         expect(::Service::SlackConnector).to have_received(:send_slack_message).with(
-          /Slack invite failed.*not_authed/i,
-          ::Service::SlackConnector.logs_channel
+          /Manual Slack invite required.*not_authed/i,
+          ::Service::SlackConnector.admin_channel
         )
         expect(Honeybadger).to have_received(:notify).with(
           slack_error,
           context: hash_including(
-            event_type: "slack_invite_failed",
             member_email: email
           )
         )
@@ -149,24 +150,27 @@ RSpec.describe RegistrationsController, type: :controller do
       it "continues signup when posting the invite failure to Slack also fails" do
         invite_error = StandardError.new("not_authed")
         log_error = StandardError.new("interface log not_authed")
-        allow(MemberSubscriber).to receive(:invite_to_slack).and_raise(invite_error)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("SLACK_INVITES_ENABLED").and_return("true")
+        allow(ENV).to receive(:[]).with("SLACK_ADMIN_TOKEN").and_return("admin-token")
+        allow(::Service::SlackConnector).to receive(:invite_to_slack).and_raise(invite_error)
         allow(::Service::SlackConnector).to receive(:send_slack_message).and_raise(log_error)
         allow(Honeybadger).to receive(:notify)
 
         post :create, params: valid_attributes, format: :json
 
         expect(response).to have_http_status(200)
-        audit_entry = AuditLog.where(event_type: "slack_invite_failed").last
+        audit_entry = AuditLog.where(event_type: "slack_manual_invite_required").last
         expect(audit_entry).to be_present
-        expect(audit_entry.slack_channel).to eq(::Service::SlackConnector.logs_channel)
+        expect(audit_entry.slack_channel).to eq(::Service::SlackConnector.admin_channel)
         expect(audit_entry.slack_posted).to be(false)
         expect(Honeybadger).to have_received(:notify).with(
           invite_error,
-          context: hash_including(event_type: "slack_invite_failed")
+          context: hash_including(manual_action: "invite")
         )
         expect(Honeybadger).to have_received(:notify).with(
           log_error,
-          context: hash_including(slack_channel: ::Service::SlackConnector.logs_channel)
+          context: hash_including(slack_channel: ::Service::SlackConnector.admin_channel)
         )
       end
     end

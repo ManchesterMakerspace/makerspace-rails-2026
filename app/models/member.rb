@@ -64,6 +64,24 @@ class Member
   field :silence_emails, type: Boolean # Stop marketing emails to user
   field :notes, type: String
 
+  # External account provisioning is scoped to the member's current email.
+  # AuditLog retains history when these current-state fields are reset.
+  field :provisioning_initialized_at, type: Time
+  field :provisioning_email, type: String
+  field :slack_invite_confirmed_at, type: Time
+  field :slack_invite_source, type: String
+  field :slack_invite_mode, type: String
+  field :slack_acceptance_pending, type: Boolean
+  field :slack_joined_at, type: Time
+  field :slack_full_member_at, type: Time
+  field :slack_manual_action_required, type: String
+  field :slack_last_attempt_at, type: Time
+  field :slack_last_error, type: String
+  field :google_resources_access_confirmed_at, type: Time
+  field :google_transfer_access_confirmed_at, type: Time
+  field :google_last_attempt_at, type: Time
+  field :google_last_error, type: String
+
   search_in :email, :lastname
   search_in :firstname, index: :_firstname_keywords
 
@@ -79,7 +97,8 @@ class Member
   after_initialize :verify_group_expiry
   after_create :apply_default_permissions, :publish_create
   after_update :handle_reservation_membership_changes, :update_card, :handle_successful_email_change,
-               :publish_update, :check_household_exit, :sync_expiration_to_group
+               :publish_update, :check_household_exit, :sync_expiration_to_group,
+               :enqueue_member_provisioning
   after_destroy :publish_destroy
 
   has_many :permissions, class_name: 'Permission', dependent: :destroy, :autosave => true
@@ -232,6 +251,25 @@ class Member
 
   def active_unexpired?
     status == 'activeMember' && expirationTime.present? && expirationTime > (Time.now.to_i * 1000)
+  end
+
+  def provisioning_eligible?
+    expirationTime.present? &&
+      expirationTime > (Time.current.to_i * 1000) &&
+      !%w[revoked inactive].include?(status) &&
+      access_cards.any? { |card| !%w[lost stolen].include?(card.validity) }
+  end
+
+  def provisioning_email_current?
+    provisioning_email.present? &&
+      provisioning_email.to_s.strip.downcase == email.to_s.strip.downcase
+  end
+
+  def matching_slack_user
+    normalized_email = email.to_s.strip.downcase
+    return nil if normalized_email.blank?
+
+    SlackUser.where(slack_email: /\A#{Regexp.escape(normalized_email)}\z/i).first
   end
 
   def membership_expires_at
@@ -614,7 +652,31 @@ class Member
   def handle_successful_email_change
     return unless previous_changes.key?("email")
 
-    set(firebase_uid: nil, session_token: SecureRandom.hex)
+    set(
+      firebase_uid: nil,
+      session_token: SecureRandom.hex,
+      provisioning_initialized_at: Time.current,
+      provisioning_email: email.to_s.strip.downcase,
+      slack_invite_confirmed_at: nil,
+      slack_invite_source: nil,
+      slack_invite_mode: nil,
+      slack_acceptance_pending: nil,
+      slack_joined_at: nil,
+      slack_full_member_at: nil,
+      slack_manual_action_required: "invite",
+      slack_last_attempt_at: nil,
+      slack_last_error: "Member email changed; manual reprovisioning is required",
+      google_resources_access_confirmed_at: nil,
+      google_transfer_access_confirmed_at: nil,
+      google_last_attempt_at: nil,
+      google_last_error: nil
+    )
+  end
+
+  def enqueue_member_provisioning
+    return unless previous_changes.keys.any? { |key| %w[expirationTime status].include?(key.to_s) }
+
+    MemberProvisioningJob.perform_later(id.to_s)
   end
 
   def publish_destroy

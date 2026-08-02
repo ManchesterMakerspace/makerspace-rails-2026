@@ -283,14 +283,10 @@ RSpec.describe Member, type: :model do
 
   context "Callbacks" do
     describe "on create" do
-      it "schedules a slack and google drive invite" do
+      it "schedules only the signup Slack invite" do
         member = build(:member)
-        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
-        expect(MemberSubscriber).to receive(:invite_to_slack).with(
-          member.email,
-          member.lastname,
-          member.firstname,
-        )
+        expect(Service::MemberProvisioning).to receive(:invite_slack).with(member)
+        expect(MemberSubscriber).not_to receive(:send_google_invite)
         member.save!
       end
     end
@@ -333,8 +329,7 @@ RSpec.describe Member, type: :model do
       end
 
       it "Updates billing if a customer" do 
-        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
-        allow(MemberSubscriber).to receive(:invite_to_slack).and_return(nil)
+        allow(Service::MemberProvisioning).to receive(:invite_slack).and_return(nil)
         customer = create(:member, customer_id: "foo")
         mock_customer_chain = double
         # The subscriber's connect_gateway instance method delegates to

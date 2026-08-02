@@ -38,14 +38,16 @@ class MembersController < AuthenticationController
       return render_with_total_items(members, {
         each_serializer: MemberSummarySerializer,
         adapter: :attributes,
-        mailtrap_events_by_member_id_email: mailtrap_events_by_member_id_email(members)
+        mailtrap_events_by_member_id_email: mailtrap_events_by_member_id_email(members),
+        include_provisioning: is_admin? || is_board_member?
       })
     end
 
     def show
         raise Error::NotFound.new unless defined?(@member.id)
          if @member.id == current_member.id || is_admin? || is_board_member? || is_resource_manager?
-            render json: @member, serializer: MemberSerializer, adapter: :attributes and return
+            render json: @member, serializer: MemberSerializer, adapter: :attributes,
+              include_provisioning: is_admin? || is_board_member? and return
          else
              Rails.logger.warn("Calling show for #{@member.id} while logged in as #{@current_member.id}!")
              raise Error::Forbidden.new

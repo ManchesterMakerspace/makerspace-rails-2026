@@ -24,11 +24,16 @@ class ClientConfigController < ApplicationController
 #    $stderr.puts "[config] Missing mandatory environment variable FIREBASE_AUTH_DOMAIN, using fallback #{firebase_auth_domain}"
   end
 
-    render json: {
+    config = {
       firebase_api_key:    ENV['FIREBASE_API_KEY'].to_s,
       firebase_project_id: ENV['FIREBASE_PROJECT_ID'].to_s,
       firebase_auth_domain: firebase_auth_domain,
       firebase_auth_type: firebase_auth_type
-    }, status: :ok
+    }
+
+    turnstile_site_key = ENV['TURNSTILE_SITE_KEY'].to_s.strip
+    config[:turnstile_site_key] = turnstile_site_key if turnstile_site_key.present?
+
+    render json: config, status: :ok
   end
 end

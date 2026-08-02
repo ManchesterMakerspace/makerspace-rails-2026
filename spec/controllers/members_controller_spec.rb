@@ -12,6 +12,7 @@ RSpec.describe MembersController, type: :controller do
         expect(response).to have_http_status(200)
         expect(response.media_type).to eq "application/json"
         expect(parsed_response.last['id']).to eq(Member.last.id.as_json)
+        expect(parsed_response.last).to have_key("provisioning")
       end
 
       it "filters to current members when current_members param is true" do
@@ -55,6 +56,7 @@ RSpec.describe MembersController, type: :controller do
         expect(response).to have_http_status(200)
         expect(response.media_type).to eq "application/json"
         expect(parsed_response).not_to be_empty
+        expect(parsed_response.first).not_to have_key("provisioning")
       end
 
       it "can search members by name" do
@@ -88,6 +90,7 @@ RSpec.describe MembersController, type: :controller do
         expect(response).to have_http_status(200)
         expect(parsed_response.length).to eq(1)
         expect(parsed_response.first['id']).to eq(current_user.id.as_json)
+        expect(parsed_response.first).not_to have_key("provisioning")
       end
 
       it "does not return other members even when searching" do
@@ -140,6 +143,7 @@ RSpec.describe MembersController, type: :controller do
       parsed_response = JSON.parse(response.body)
       expect(response).to have_http_status(200)
       expect(parsed_response["slackManualDeactivationRequired"]).to be true
+      expect(parsed_response).to have_key("provisioning")
     end
 
     it "does not request manual Slack deactivation when an admin token is configured" do

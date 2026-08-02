@@ -12,7 +12,8 @@ class Admin::MembersController < AdminController
     @member.reload
     send_welcome_email
     enqueue_rm_canvas_access_sync([], rm_shop_ids_for(@member))
-    render json: @member, adapter: :attributes and return
+    render json: @member, serializer: MemberSerializer, adapter: :attributes,
+      include_provisioning: true and return
   end
 
   def update
@@ -83,7 +84,8 @@ class Admin::MembersController < AdminController
       rm_shop_ids_for(@member)
     )
 
-    render json: @member, adapter: :attributes and return
+    render json: @member, serializer: MemberSerializer, adapter: :attributes,
+      include_provisioning: true and return
   end
 
   # POST /api/admin/members/:id/update_password
@@ -120,7 +122,7 @@ class Admin::MembersController < AdminController
   # POST /api/admin/members/:id/invite_google_drive
   # Re-sends a Google Drive folder invite to the member.
   def invite_google_drive
-    invite_gdrive(@member.email)
+    ::Service::MemberProvisioning.provision_google(@member, raise_errors: true)
     render json: {}, status: 204 and return
   rescue Error::NotAllowed => e
     render json: { message: e.message }, status: :unprocessable_content and return
@@ -134,7 +136,7 @@ class Admin::MembersController < AdminController
   # Safe to call even if the member is already in the workspace — Slack
   # will return an error which is surfaced to the admin.
   def invite_slack
-    ::Service::SlackConnector.invite_to_slack(@member.email, @member.lastname, @member.firstname)
+    ::Service::MemberProvisioning.invite_slack(@member, raise_errors: true)
     render json: {}, status: 204 and return
   rescue Error::NotAllowed => e
     render json: { message: e.message }, status: :unprocessable_content and return
