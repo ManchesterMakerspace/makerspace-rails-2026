@@ -30,6 +30,9 @@ namespace :db do
 
     puts "DB cleaned, seeding..."
     SeedData.new.call
+    puts "Creating verified unique indexes..."
+    Rake::Task["data:ensure_unique_indexes"].reenable
+    Rake::Task["data:ensure_unique_indexes"].invoke
     puts "Seeding complete, done."
   end
 

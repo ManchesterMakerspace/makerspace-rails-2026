@@ -1,6 +1,6 @@
 class ToolsController < AuthenticationController
   def index
-    unless current_member.active_unexpired?
+    unless current_member.status == 'pending' || current_member.active_unexpired?
       raise ::Error::Forbidden.new(
         "Your membership must first be activated and you must complete your Orientation checkout before requesting additional Safety Checkouts"
       )

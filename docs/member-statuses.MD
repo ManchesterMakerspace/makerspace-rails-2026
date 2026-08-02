@@ -31,7 +31,8 @@ required.
 Reservations and member-initiated Safety Checkout requests apply narrower
 rules to pending members:
 
-- A pending member may reserve only tools with `allow_pending: true`.
+- A pending member may reserve only tools with `allow_pending: true`; pending
+  onboarding access does not require `expirationTime` to be set.
 - Pending members cannot create shop-wide reservations.
 - A pending member may request a Safety Checkout only for a tool with
   `allow_pending: true`.

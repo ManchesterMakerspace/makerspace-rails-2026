@@ -199,7 +199,7 @@ class ReservationService
       resources = attributes[:reservation_scope] == "shop" ? [shop] : tools
 
       errors << "Title is required" if attributes[:title].blank?
-      unless board_override || member.active_unexpired?
+      unless board_override || member.status == 'pending' || member.active_unexpired?
         errors << "Your membership is inactive or expired. An active membership is required to make a reservation"
       end
       if !board_override && member.status == 'pending'
@@ -220,7 +220,7 @@ class ReservationService
         errors << "One or more selected tools are not reservable"
       end
 
-      if attributes[:end_at].present? && !board_override && !member.active_membership_subscription?
+      if attributes[:end_at].present? && !board_override && member.status != 'pending' && !member.active_membership_subscription?
         membership_expiration = member.membership_expires_at
         if membership_expiration.present? && attributes[:end_at] > membership_expiration
           expiration_text = membership_expiration.in_time_zone(ZONE).strftime("%B %-d, %Y at %H:%M")

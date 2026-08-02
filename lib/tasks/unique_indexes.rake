@@ -6,7 +6,9 @@ namespace :data do
       [Shop, :name],
       [Card, :uid],
       [Group, :groupName],
-      [Member, :email]
+      [Member, :email],
+      [RentalType, :display_name],
+      [SlackUser, :slack_id]
     ]
 
     targets.each do |model, field|

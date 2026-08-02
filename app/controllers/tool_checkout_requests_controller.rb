@@ -16,8 +16,12 @@ class ToolCheckoutRequestsController < AuthenticationController
 
   def create
     tool = Tool.find(request_params[:tool_id])
-    unless current_member.active_unexpired? &&
-        (current_member.status == 'activeMember' || tool.allow_pending)
+    eligible = if current_member.status == 'pending'
+      tool.allow_pending
+    else
+      current_member.active_unexpired? && current_member.status == 'activeMember'
+    end
+    unless eligible
       raise ::Error::Forbidden.new(
         "Your membership must first be activated and you must complete your Orientation checkout before requesting this Safety Checkout"
       )

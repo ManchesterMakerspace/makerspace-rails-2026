@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe 'Pending-member Safety Checkout requests', type: :request do
-  let(:member) { create(:member, :current, status: 'pending') }
+  let(:member) { create(:member, status: 'pending', expirationTime: nil) }
   let(:shop) { create(:shop, name: 'Facilities') }
   let!(:orientation) do
     create(:tool, name: 'Orientation', shop: shop, allow_pending: true)

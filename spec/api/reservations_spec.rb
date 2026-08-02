@@ -99,7 +99,7 @@ RSpec.describe "Reservations API", type: :request do
   end
 
   it "allows a pending member to reserve an allow-pending tool without already having its checkout" do
-    member.update!(status: "pending")
+    member.update!(status: "pending", expirationTime: nil)
     tool.update!(allow_pending: true)
     ToolCheckout.where(member_id: member.id).delete_all
 
@@ -112,7 +112,7 @@ RSpec.describe "Reservations API", type: :request do
   it "hides ordinary tools and rejects their reservations for a pending member" do
     orientation = create(:tool, name: "Orientation", shop: shop, reservable: true, allow_pending: true)
     shop.update!(reservable: true)
-    member.update!(status: "pending")
+    member.update!(status: "pending", expirationTime: nil)
 
     get "/api/reservation_catalog"
 
