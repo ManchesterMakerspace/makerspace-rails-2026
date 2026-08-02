@@ -36,7 +36,31 @@ namespace :data do
         puts "#{model.collection_name}.#{field}: no duplicate values found"
       end
 
-      model.create_indexes
+      matching_indexes = model.collection.indexes.to_a.select do |index|
+        keys = index['key'] || index[:key] || {}
+        keys.keys.map(&:to_s) == [field.to_s] && (keys[field.to_s] || keys[field.to_sym]) == 1
+      end
+      existing_unique_index = matching_indexes.find do |index|
+        (index['unique'] || index[:unique]) == true
+      end
+
+      if existing_unique_index
+        index_name = existing_unique_index['name'] || existing_unique_index[:name]
+        puts "#{model.collection_name}.#{field}: compatible unique index already enabled (#{index_name})"
+        next
+      end
+
+      matching_indexes.each do |index|
+        index_name = index['name'] || index[:name]
+        puts "#{model.collection_name}.#{field}: replacing non-unique index #{index_name.inspect}"
+        model.collection.indexes.drop_one(index_name)
+      end
+
+      model.collection.indexes.create_one(
+        { field => 1 },
+        unique: true,
+        partial_filter_expression: { field => { '$type' => 'string' } }
+      )
       puts "#{model.collection_name}.#{field}: unique index enabled"
     end
   end
