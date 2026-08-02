@@ -73,6 +73,12 @@ RSpec.describe Service::MemberProvisioning do
         slack_id: 'U123',
         name: 'member'
       )
+      allow(described_class).to receive(:lookup_slack_user).with(member.email).and_return(
+        'id' => 'U123',
+        'name' => 'member',
+        'deleted' => false,
+        'profile' => { 'email' => member.email }
+      )
       expect(Service::SlackConnector).not_to receive(:invite_to_slack)
 
       result = described_class.invite_slack(member)
@@ -81,6 +87,31 @@ RSpec.describe Service::MemberProvisioning do
       member.reload
       expect(member.slack_invite_source).to eq('slack_user_record')
       expect(member.slack_invite_confirmed_at).to be_present
+    end
+
+    it 'reinvites when the matching local SlackUser has been deactivated remotely' do
+      member = create(:member, email: 'member@example.com')
+      SlackUser.create!(
+        slack_email: member.email,
+        slack_id: 'U123',
+        name: 'member'
+      )
+      allow(described_class).to receive(:lookup_slack_user).with(member.email).and_return(
+        'id' => 'U123',
+        'deleted' => true,
+        'profile' => { 'email' => member.email }
+      )
+      allow(Service::SlackConnector).to receive(:invite_to_slack).and_return(ok: true)
+      allow(Service::SlackConnector).to receive(:new_signup_invite_mode).and_return('full_member')
+
+      result = described_class.invite_slack(member)
+
+      expect(result[:status]).to eq(:invited)
+      expect(Service::SlackConnector).to have_received(:invite_to_slack).with(
+        member.email,
+        member.lastname,
+        member.firstname
+      )
     end
 
     it 'records API confirmation and the selected invitation mode' do
@@ -137,15 +168,23 @@ RSpec.describe Service::MemberProvisioning do
         role: 'writer',
         id: 'permission-1'
       )
+      created_reader = double(
+        email_address: member.email,
+        role: 'reader',
+        id: 'permission-2'
+      )
+      resources_permissions = []
       drive = double
       allow(Service::GoogleDrive).to receive(:load_gdrive).and_return(drive)
       allow(drive).to receive(:list_permissions)
         .with('resources', anything)
-        .and_return(double(permissions: []))
+        .and_return(double(permissions: resources_permissions, next_page_token: nil))
       allow(drive).to receive(:list_permissions)
         .with('transfer', anything)
-        .and_return(double(permissions: [existing_writer]))
-      allow(drive).to receive(:create_permission)
+        .and_return(double(permissions: [existing_writer], next_page_token: nil))
+      allow(drive).to receive(:create_permission) do |folder_id, _permission|
+        resources_permissions << created_reader if folder_id == 'resources'
+      end
 
       result = described_class.provision_google(member, raise_errors: true)
 
@@ -156,8 +195,81 @@ RSpec.describe Service::MemberProvisioning do
       expect(member.google_resources_access_confirmed_at).to be_present
       expect(member.google_transfer_access_confirmed_at).to be_present
 
+      member.set(
+        google_resources_access_confirmed_at: 3.weeks.ago,
+        google_transfer_access_confirmed_at: 3.weeks.ago
+      )
       described_class.provision_google(member, raise_errors: true)
       expect(drive).to have_received(:create_permission).once
+      member.reload
+      expect(member.google_resources_access_confirmed_at).to be > 1.day.ago
+      expect(member.google_transfer_access_confirmed_at).to be > 1.day.ago
+    end
+
+    it 'revalidates and repairs removed or downgraded permissions after prior confirmation' do
+      member = active_member_with_card
+      previous_confirmation = 1.day.ago
+      member.set(
+        google_resources_access_confirmed_at: previous_confirmation,
+        google_transfer_access_confirmed_at: previous_confirmation
+      )
+      allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
+      allow(ENV).to receive(:[]).with('RESOURCES_FOLDER').and_return('resources')
+      allow(ENV).to receive(:[]).with('GOOGLE_TRANSFER_SHARE').and_return('transfer')
+      downgraded_permission = double(
+        email_address: member.email,
+        role: 'reader',
+        id: 'permission-1'
+      )
+      drive = double
+      allow(Service::GoogleDrive).to receive(:load_gdrive).and_return(drive)
+      allow(drive).to receive(:list_permissions)
+        .with('resources', anything)
+        .and_return(double(permissions: [], next_page_token: nil))
+      allow(drive).to receive(:list_permissions)
+        .with('transfer', anything)
+        .and_return(double(permissions: [downgraded_permission], next_page_token: nil))
+      allow(drive).to receive(:create_permission)
+      allow(drive).to receive(:update_permission)
+
+      described_class.provision_google(member, raise_errors: true)
+
+      expect(drive).to have_received(:create_permission).with('resources', anything)
+      expect(drive).to have_received(:update_permission).with(
+        'transfer',
+        'permission-1',
+        anything
+      )
+      expect(member.reload.google_resources_access_confirmed_at).to be > previous_confirmation
+      expect(member.google_transfer_access_confirmed_at).to be > previous_confirmation
+    end
+
+    it 'follows Drive permission pagination before deciding access is absent' do
+      member = active_member_with_card
+      allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
+      allow(ENV).to receive(:[]).with('RESOURCES_FOLDER').and_return('resources')
+      allow(ENV).to receive(:[]).with('GOOGLE_TRANSFER_SHARE').and_return('transfer')
+      permission = double(email_address: member.email, role: 'writer', id: 'permission-1')
+      drive = double
+      allow(Service::GoogleDrive).to receive(:load_gdrive).and_return(drive)
+      allow(drive).to receive(:list_permissions) do |folder_id, options|
+        if options[:page_token] == 'page-2'
+          double(permissions: [permission], next_page_token: nil)
+        elsif folder_id == 'resources'
+          double(permissions: [], next_page_token: 'page-2')
+        else
+          double(permissions: [permission], next_page_token: nil)
+        end
+      end
+      expect(drive).not_to receive(:create_permission)
+
+      result = described_class.provision_google(member, raise_errors: true)
+
+      expect(result[:resources][:status]).to eq(:confirmed)
+      expect(drive).to have_received(:list_permissions).with(
+        'resources',
+        hash_including(page_token: 'page-2')
+      )
     end
 
     it 'strictly rejects members who are not activated' do
@@ -166,6 +278,42 @@ RSpec.describe Service::MemberProvisioning do
       expect do
         described_class.provision_google(member, raise_errors: true)
       end.to raise_error(Error::NotAllowed, /usable fob/)
+    end
+  end
+
+  describe '.reconcile_all!' do
+    it 'revalidates Drive access when a local confirmation is at least two weeks old' do
+      member = active_member_with_card
+      member.set(
+        provisioning_initialized_at: 1.day.ago,
+        provisioning_email: member.email,
+        google_resources_access_confirmed_at: 3.weeks.ago,
+        google_transfer_access_confirmed_at: 1.day.ago
+      )
+      allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
+      allow(described_class).to receive(:slack_users_by_email).and_return({})
+      allow(described_class).to receive(:reconcile_slack_member)
+      allow(described_class).to receive(:provision_google)
+
+      described_class.reconcile_all!
+
+      expect(described_class).to have_received(:provision_google).with(member)
+    end
+
+    it 'skips Drive revalidation when both confirmations are less than two weeks old' do
+      member = active_member_with_card
+      member.set(
+        provisioning_initialized_at: 1.day.ago,
+        provisioning_email: member.email,
+        google_resources_access_confirmed_at: 1.day.ago,
+        google_transfer_access_confirmed_at: 13.days.ago
+      )
+      allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
+      allow(described_class).to receive(:slack_users_by_email).and_return({})
+      allow(described_class).to receive(:reconcile_slack_member)
+      expect(described_class).not_to receive(:provision_google)
+
+      described_class.reconcile_all!
     end
   end
 

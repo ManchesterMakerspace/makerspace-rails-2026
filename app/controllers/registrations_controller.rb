@@ -49,7 +49,7 @@ class RegistrationsController < ApplicationController
   private
   def turnstile_valid?
     ::Service::TurnstileVerifier.new(
-      token: params[:cf_turnstile_response],
+      token: params['cf-turnstile-response'],
       remote_ip: Current.ip_address.presence || request.remote_ip
     ).valid?
   end

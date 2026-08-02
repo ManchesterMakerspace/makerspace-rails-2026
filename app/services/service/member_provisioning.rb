@@ -37,8 +37,13 @@ module Service
       ensure_slack_invite_allowed!(member)
 
       if matching_slack_user(member)
-        confirm_slack_invite(member, source: 'slack_user_record')
-        return { status: :confirmed, source: :slack_user_record }
+        live_user = lookup_slack_user(member.email)
+        if active_slack_user?(live_user, member.email)
+          reconcile_slack_member(member, live_user, promote: false, lookup: false)
+          return { status: :confirmed, source: :slack_user_record }
+        end
+
+        clear_slack_live_confirmation(member)
       end
 
       member.set(slack_last_attempt_at: Time.current, slack_last_error: nil)
@@ -181,7 +186,7 @@ module Service
           )
           if ENV['GDRIVE_INVITES_ENABLED'] == 'true' &&
               member.provisioning_eligible? &&
-              !google_complete?(member)
+              google_revalidation_due?(member)
             provision_google(member)
           end
         rescue => error
@@ -328,17 +333,18 @@ module Service
 
     def ensure_google_permission(member, field:, folder_id:, role:, adequate_roles:, label:)
       raise Error::NotAllowed.new("#{label} folder is not configured") if folder_id.blank?
-      return { status: :confirmed } if member.public_send(field).present?
 
       drive = ::Service::GoogleDrive.load_gdrive
-      permissions = drive.list_permissions(
+      permissions = google_permissions(
+        drive,
         folder_id,
-        fields: 'permissions(id,emailAddress,role)'
+        permission_fields: 'id,emailAddress,role'
       )
-      permission = Array(permissions.permissions).find do |candidate|
+      permission = permissions.find do |candidate|
         normalize_email(candidate.email_address) == normalize_email(member.email)
       end
 
+      status = :confirmed
       if permission.nil?
         drive.create_permission(
           folder_id,
@@ -348,17 +354,22 @@ module Service
             role: role
           )
         )
+        status = :created
       elsif !adequate_roles.include?(permission.role.to_s)
         drive.update_permission(
           folder_id,
           permission.id,
           Google::Apis::DriveV3::Permission.new(role: role)
         )
+        status = :updated
       end
 
+      previously_confirmed = member.public_send(field).present?
       member.set(field => Time.current)
-      audit(member, 'google_drive_access_confirmed', "#{label} access confirmed as #{role}")
-      { status: permission.nil? ? :created : :confirmed }
+      unless status == :confirmed && previously_confirmed
+        audit(member, 'google_drive_access_confirmed', "#{label} access confirmed as #{role}")
+      end
+      { status: status }
     end
 
     def lookup_slack_user(email)
@@ -384,6 +395,8 @@ module Service
           cursor: cursor
         )
         Array(response.respond_to?(:members) ? response.members : response['members']).each do |user|
+          next if slack_value(user, 'deleted') == true
+
           email = live_user_email(user)
           users[email] = user if email.present?
         end
@@ -418,11 +431,13 @@ module Service
     def google_permission_emails(folder_id, adequate_roles)
       return Set.new if folder_id.blank?
 
-      permissions = ::Service::GoogleDrive.load_gdrive.list_permissions(
+      drive = ::Service::GoogleDrive.load_gdrive
+      permissions = google_permissions(
+        drive,
         folder_id,
-        fields: 'permissions(emailAddress,role)'
+        permission_fields: 'emailAddress,role'
       )
-      Array(permissions.permissions).each_with_object(Set.new) do |permission, emails|
+      permissions.each_with_object(Set.new) do |permission, emails|
         next unless adequate_roles.include?(permission.role.to_s)
 
         email = normalize_email(permission.email_address)
@@ -434,9 +449,51 @@ module Service
       Set.new
     end
 
-    def google_complete?(member)
-      member.google_resources_access_confirmed_at.present? &&
-        member.google_transfer_access_confirmed_at.present?
+    def google_permissions(drive, folder_id, permission_fields:)
+      permissions = []
+      page_token = nil
+      loop do
+        response = drive.list_permissions(
+          folder_id,
+          fields: "nextPageToken,permissions(#{permission_fields})",
+          page_token: page_token
+        )
+        page_permissions = if response.respond_to?(:permissions)
+          response.permissions
+        else
+          response['permissions']
+        end
+        permissions.concat(Array(page_permissions))
+        page_token = if response.respond_to?(:next_page_token)
+          response.next_page_token
+        else
+          response['nextPageToken'] || response['next_page_token']
+        end
+        break if page_token.blank?
+      end
+      permissions
+    end
+
+    def google_revalidation_due?(member)
+      cutoff = 2.weeks.ago
+      [
+        member.google_resources_access_confirmed_at,
+        member.google_transfer_access_confirmed_at
+      ].any? { |confirmed_at| confirmed_at.blank? || confirmed_at < cutoff }
+    end
+
+    def active_slack_user?(live_user, email)
+      live_user.present? &&
+        slack_value(live_user, 'deleted') != true &&
+        live_user_email(live_user) == normalize_email(email)
+    end
+
+    def clear_slack_live_confirmation(member)
+      member.set(
+        slack_acceptance_pending: nil,
+        slack_joined_at: nil,
+        slack_full_member_at: nil
+      )
     end
 
     def slack_status(member, current:, matching_slack_user:)

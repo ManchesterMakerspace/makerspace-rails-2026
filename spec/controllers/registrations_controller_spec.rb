@@ -67,6 +67,23 @@ RSpec.describe RegistrationsController, type: :controller do
         }.to change(Member, :count).by(1)
       end
 
+      it "uses the canonical Turnstile response when an underscored parameter is also present" do
+        expect(Service::TurnstileVerifier).to receive(:new).with(
+          token: 'canonical-token',
+          remote_ip: anything
+        ).and_return(verifier)
+        allow(verifier).to receive(:valid?).and_return(true)
+
+        expect {
+          post :create,
+            params: valid_attributes.merge(
+              'cf_turnstile_response' => 'noncanonical-token',
+              'cf-turnstile-response' => 'canonical-token'
+            ),
+            format: :json
+        }.to change(Member, :count).by(1)
+      end
+
       it "returns forbidden without creating a member after a failed verification" do
         allow(Service::TurnstileVerifier).to receive(:new).and_return(verifier)
         allow(verifier).to receive(:valid?).and_return(false)
