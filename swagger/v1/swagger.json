@@ -16,6 +16,7 @@
         "type": "string",
         "enum": [
           "activeMember",
+          "pending",
           "inactive",
           "nonMember",
           "revoked"
@@ -101,6 +102,7 @@
             "type": "string",
             "enum": [
               "activeMember",
+              "pending",
               "expired",
               "inactive",
               "lost",
@@ -987,6 +989,10 @@
               },
               "disabled": {
                 "type": "boolean"
+              },
+              "allowPending": {
+                "type": "boolean",
+                "default": false
               },
               "effectiveReservationPrerequisiteIds": {
                 "type": "array",

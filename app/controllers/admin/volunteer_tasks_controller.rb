@@ -50,7 +50,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
   def complete
     if @task.claimed_by_id.present?
       claimant = Member.find(@task.claimed_by_id)
-      if claimant.nil? || claimant.status != 'activeMember'
+      if claimant.nil? || !claimant.active_membership_status?
         render json: { error: 'Cannot approve credit for a member who is not an active member' }, status: :forbidden and return
       end
     end

@@ -26,6 +26,7 @@ class RegistrationsController < ApplicationController
     end
 
     @member = Member.new(member_params)
+    @member.status = 'pending'
     @member.save!
     @member.reload
     sign_in(@member)

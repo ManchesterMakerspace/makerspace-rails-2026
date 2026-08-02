@@ -28,6 +28,11 @@ class Shop
   validate :reservation_duration_uses_half_hours
   validate :reservation_prerequisites_belong_to_shop
 
+  index({ name: 1 }, {
+    unique: true,
+    partial_filter_expression: { name: { '$type' => 'string' } }
+  })
+
   def reservable
     value = read_attribute(:reservable)
     value.nil? ? false : value

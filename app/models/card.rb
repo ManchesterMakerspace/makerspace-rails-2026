@@ -8,10 +8,15 @@ class Card
 
   before_create :set_expiration, :set_holder
   before_update :set_expiration
-  after_create :update_rejection_card, :settle_open_member_invoices, :enqueue_member_provisioning
+  after_create :activate_pending_member, :update_rejection_card, :settle_open_member_invoices, :enqueue_member_provisioning
   after_update :enqueue_member_provisioning
 
   validates :uid, presence: true, uniqueness: true
+
+  index({ uid: 1 }, {
+    unique: true,
+    partial_filter_expression: { uid: { '$type' => 'string' } }
+  })
 
   belongs_to :member, class_name: 'Member', inverse_of: :access_cards
 
@@ -41,6 +46,13 @@ class Card
   end
 
   private
+  def activate_pending_member
+    return unless member&.status == 'pending'
+
+    member.update!(status: 'activeMember')
+    set(validity: 'activeMember') if validity == 'pending'
+  end
+
   def set_holder
     self.holder = self.member.fullname
   end

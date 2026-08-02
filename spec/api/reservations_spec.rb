@@ -98,6 +98,37 @@ RSpec.describe "Reservations API", type: :request do
     expect(Reservation.count).to eq(0)
   end
 
+  it "allows a pending member to reserve an allow-pending tool without already having its checkout" do
+    member.update!(status: "pending")
+    tool.update!(allow_pending: true)
+    ToolCheckout.where(member_id: member.id).delete_all
+
+    post "/api/reservations", params: reservation_params
+
+    expect(response).to have_http_status(:created)
+    expect(JSON.parse(response.body)["toolIds"]).to eq([tool.id.to_s])
+  end
+
+  it "hides ordinary tools and rejects their reservations for a pending member" do
+    orientation = create(:tool, name: "Orientation", shop: shop, reservable: true, allow_pending: true)
+    shop.update!(reservable: true)
+    member.update!(status: "pending")
+
+    get "/api/reservation_catalog"
+
+    expect(response).to have_http_status(:ok)
+    catalog_tool_ids = JSON.parse(response.body).fetch("tools").map { |item| item.fetch("id") }
+    catalog_shop = JSON.parse(response.body).fetch("shops").find { |item| item.fetch("id") == shop.id.to_s }
+    expect(catalog_tool_ids).to include(orientation.id.to_s)
+    expect(catalog_tool_ids).not_to include(tool.id.to_s)
+    expect(catalog_shop.fetch("reservable")).to be(false)
+
+    post "/api/reservations", params: reservation_params
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)["message"]).to include("Pending members")
+  end
+
   it "lets an inactive member list and cancel an existing reservation but not create one" do
     reservation = create(
       :reservation,

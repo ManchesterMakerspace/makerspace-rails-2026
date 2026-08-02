@@ -15,9 +15,13 @@ class ToolCheckoutRequestsController < AuthenticationController
   end
 
   def create
-    raise ::Error::Forbidden.new unless current_member.active_unexpired?
-
     tool = Tool.find(request_params[:tool_id])
+    unless current_member.active_unexpired? &&
+        (current_member.status == 'activeMember' || tool.allow_pending)
+      raise ::Error::Forbidden.new(
+        "Your membership must first be activated and you must complete your Orientation checkout before requesting this Safety Checkout"
+      )
+    end
     raise ::Error::Forbidden.new if tool.disabled?
     raise ::Error::UnprocessableEntity.new("A checkout record already exists for this tool") if ToolCheckout.where(member_id: current_member.id, tool_id: tool.id).exists?
     raise ::Error::UnprocessableEntity.new("An open request already exists for this tool") if ToolCheckoutRequest.where(member_id: current_member.id, tool_id: tool.id, status: "open").exists?

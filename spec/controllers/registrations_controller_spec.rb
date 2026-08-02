@@ -99,6 +99,12 @@ RSpec.describe RegistrationsController, type: :controller do
         expect(Member.last).to be_persisted
       end
 
+      it "marks a newly registered member as pending until a card is issued" do
+        post :create, params: valid_attributes, format: :json
+
+        expect(Member.last.status).to eq('pending')
+      end
+
       it "renders json of the created member" do
         post :create, params: valid_attributes, format: :json
 

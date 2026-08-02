@@ -16,6 +16,10 @@ RSpec.describe 'Tools API', type: :request do
   end
   let!(:disabled_tool) { Tool.create!(name: 'Hidden Lathe', shop: shop, disabled: true) }
 
+  before do
+    allow(REDIS).to receive(:set).and_return(true)
+  end
+
   describe 'GET /api/tools' do
     before { sign_in member }
 
@@ -25,6 +29,7 @@ RSpec.describe 'Tools API', type: :request do
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body.map { |tool| tool['name'] }).to eq(['Bandsaw'])
+      expect(body.first['allowPending']).to be(false)
       expect(body.first).not_to have_key('announceChannel')
       expect(body.first).not_to have_key('usersChannel')
       expect(body.first).not_to have_key('announce')
@@ -144,6 +149,30 @@ RSpec.describe 'Tools API', type: :request do
       expect(response).to have_http_status(:unprocessable_content)
       expect(Tool.where(name: 'bandSAW', shop_id: shop.id)).not_to exist
       expect(Tool.where(shop_id: shop.id).count).to eq(2)
+    end
+
+    it 'stores whether pending members may use the tool' do
+      post '/api/admin/tools', params: {
+        name: 'Orientation',
+        shop_id: shop.id.to_s,
+        allow_pending: true
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(Tool.find_by(name: 'Orientation').allow_pending).to be(true)
+      expect(JSON.parse(response.body)['allowPending']).to be(true)
+    end
+
+    it 'requires tool names to be unique across shops' do
+      other_shop = create(:shop, name: 'Facilities')
+
+      post '/api/admin/tools', params: {
+        name: visible_tool.name,
+        shop_id: other_shop.id.to_s
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(Tool.where(name: visible_tool.name).count).to eq(1)
     end
   end
 

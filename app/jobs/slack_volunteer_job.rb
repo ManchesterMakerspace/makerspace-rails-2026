@@ -140,7 +140,7 @@ class SlackVolunteerJob < ApplicationJob
     end
 
     # activeMember guard
-    unless invoker.status == 'activeMember'
+    unless invoker.active_membership_status?
       post_response(response_url, :ephemeral, '❌ Only active members can claim tasks.')
       return
     end
@@ -328,7 +328,7 @@ class SlackVolunteerJob < ApplicationJob
       return
     end
 
-    unless member.status == 'activeMember'
+    unless member.active_membership_status?
       post_response(response_url, :ephemeral, "❌ Cannot award a credit to #{member.fullname} — they are not an active member.")
       return
     end
@@ -384,7 +384,7 @@ class SlackVolunteerJob < ApplicationJob
 
     # activeMember check on claimant
     claimant = Member.find(task.claimed_by_id) rescue nil
-    if claimant && claimant.status != 'activeMember'
+    if claimant && !claimant.active_membership_status?
       post_response(response_url, :ephemeral, "❌ Cannot verify — #{claimant.fullname} is no longer an active member.")
       return
     end

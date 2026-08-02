@@ -34,7 +34,9 @@ class Member
   field :address_state
   field :address_postal_code
 
-  field :status,                         default: "activeMember" # activeMember, nonMember, revoked, inactive
+  ACTIVE_MEMBERSHIP_STATUSES = %w[activeMember pending].freeze
+
+  field :status,                         default: "activeMember" # activeMember, pending, nonMember, revoked, inactive
   field :expirationTime,  type: Integer  #pre-calcualted time of expiration
   field :startDate, default: -> { Time.now }
   field :groupName, type: String #potentially member is in a group/partner membership
@@ -90,8 +92,13 @@ class Member
   validates :email, uniqueness: true
   validates :email, email_deliverability: true, unless: :skip_email_deliverability_validation
   validates :cardID, uniqueness: true, allow_nil: true
-  validates_inclusion_of :status, in: ["activeMember", "nonMember", "revoked", "inactive", "suspended"]
+  validates_inclusion_of :status, in: ["activeMember", "pending", "nonMember", "revoked", "inactive", "suspended"]
   validates_inclusion_of :role, in: ["admin", "board_member", "resource_manager", "member"]
+
+  index({ email: 1 }, {
+    unique: true,
+    partial_filter_expression: { email: { '$type' => 'string' } }
+  })
 
   before_validation :normalize_email, :normalize_group_name
   after_initialize :verify_group_expiry
@@ -250,6 +257,14 @@ class Member
   end
 
   def active_unexpired?
+    active_membership_status? && expirationTime.present? && expirationTime > (Time.now.to_i * 1000)
+  end
+
+  def active_membership_status?
+    ACTIVE_MEMBERSHIP_STATUSES.include?(status)
+  end
+
+  def fully_active_unexpired?
     status == 'activeMember' && expirationTime.present? && expirationTime > (Time.now.to_i * 1000)
   end
 
@@ -434,7 +449,7 @@ class Member
     now_ms    = Time.now.to_i * 1000
     lapsed    = expirationTime.nil? ||
                 expirationTime < now_ms ||
-                status != 'activeMember'
+                !active_membership_status?
     return unless lapsed
 
     member_url = "#{Rails.configuration.x.app_base_url}/members/#{id}"

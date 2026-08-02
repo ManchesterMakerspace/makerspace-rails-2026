@@ -24,6 +24,11 @@ class Group
   after_update :update_active_members, :handle_reservation_subscription_change
   after_create :update_active_members
 
+  index({ groupName: 1 }, {
+    unique: true,
+    partial_filter_expression: { groupName: { '$type' => 'string' } }
+  })
+
   def group_display_name
     "#{groupRep}'s Household"
   end

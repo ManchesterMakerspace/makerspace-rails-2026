@@ -49,6 +49,10 @@ RSpec.describe Member, type: :model do
         expect(member.errors[:role]).not_to be_empty
       end
     end
+
+    it "accepts pending as a valid member status" do
+      expect(build(:member, status: 'pending')).to be_valid
+    end
     it { is_expected.to validate_uniqueness_of(:email) }
     it { is_expected.to have_many(:access_cards).as_inverse_of(:member) }
   end
@@ -166,6 +170,14 @@ RSpec.describe Member, type: :model do
     let(:member) { create(:member) }
     let(:expired_member) { create(:member, :expired) }
     let(:expired_card) { create(:card, member: expired_member) }
+
+    it "treats a current pending member as active for general membership checks" do
+      pending_member = build(:member, :current, status: 'pending')
+
+      expect(pending_member.active_membership_status?).to be(true)
+      expect(pending_member.active_unexpired?).to be(true)
+      expect(pending_member.fully_active_unexpired?).to be(false)
+    end
 
     describe "Renewing members" do
       it "Adds renewal to Now if member is expired" do

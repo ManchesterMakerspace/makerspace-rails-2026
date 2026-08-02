@@ -54,6 +54,15 @@ RSpec.describe Card, type: :model do
         rejection_card.reload
         expect(rejection_card.holder).to eq(member.fullname)
       end
+
+      it "activates a pending member when their card is issued" do
+        pending_member = create(:member, :current, status: 'pending')
+
+        issued_card = create(:card, member: pending_member)
+
+        expect(pending_member.reload.status).to eq('activeMember')
+        expect(issued_card.reload.validity).to eq('activeMember')
+      end
     end
 
     describe "on update" do

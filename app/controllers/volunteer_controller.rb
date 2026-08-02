@@ -105,7 +105,7 @@ class VolunteerController < AuthenticationController
 
   # POST /api/volunteer/tasks/:id/claim
   def claim_task
-    unless current_member.status == 'activeMember'
+    unless current_member.active_membership_status?
       render json: { error: 'Only active members may claim tasks' }, status: :forbidden and return
     end
 
@@ -155,7 +155,7 @@ class VolunteerController < AuthenticationController
     event = VolunteerEvent.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerEvent, { id: params[:id] }) if event.nil?
 
-    unless current_member.status == 'activeMember'
+    unless current_member.active_membership_status?
       render json: { error: 'Only active members may check in to events' }, status: :forbidden and return
     end
 

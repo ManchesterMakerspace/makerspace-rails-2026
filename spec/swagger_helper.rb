@@ -22,7 +22,7 @@ RSpec.configure do |config|
         expiry: { type: :number },
         validity: {
           type: :string,
-          enum: ["activeMember", "expired", "inactive", "lost", "nonMember", "revoked", "stolen"]
+          enum: ["activeMember", "pending", "expired", "inactive", "lost", "nonMember", "revoked", "stolen"]
         },
         uid: { type: :string },
       },
@@ -462,6 +462,7 @@ RSpec.configure do |config|
             name: { type: :string },
             description: { type: :string, 'x-nullable': true },
             disabled: { type: :boolean },
+            allowPending: { type: :boolean, default: false },
             effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } }
           },
           required: [:id, :shopId, :name, :reservable]
@@ -883,7 +884,7 @@ RSpec.configure do |config|
         schemas: {
           MemberStatus: {
             type: :string,
-            enum: ["activeMember", "inactive", "nonMember", "revoked"]
+            enum: ["activeMember", "pending", "inactive", "nonMember", "revoked"]
           },
           MemberRole: {
             type: :string,

@@ -75,7 +75,7 @@ class Admin::AnalyticsController < AdminController
   #
   # For each month in the range, counts members where:
   #   startDate <= end_of_month  AND  expirationTime >= end_of_month_ms
-  #   AND status == 'activeMember'
+  #   AND status is activeMember or pending
   #
   # Params:
   #   year (integer, optional) — filter to a calendar year
@@ -106,7 +106,7 @@ class Admin::AnalyticsController < AdminController
       count = Member.where(
         :startDate.lte      => month_end.to_time,
         :expirationTime.gte => month_end_ms,
-        status:               'activeMember'
+        :status.in          => Member::ACTIVE_MEMBERSHIP_STATUSES
       ).count
 
       data << { date: cursor.strftime('%Y-%m'), count: count }
