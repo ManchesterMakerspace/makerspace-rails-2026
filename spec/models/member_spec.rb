@@ -328,6 +328,11 @@ RSpec.describe Member, type: :model do
       it "does not reinvite services if email changes and invalidates external auth/session state" do
         new_email = "foo_changed@test.com"
         previous_email = member.email
+        previous_slack_user = SlackUser.create!(
+          member: member,
+          slack_email: previous_email,
+          slack_id: 'U_PREVIOUS'
+        )
         member.set(firebase_uid: "firebase-123", session_token: "old-token")
 
         expect(MemberSubscriber).not_to receive(:send_google_invite)
@@ -342,6 +347,7 @@ RSpec.describe Member, type: :model do
         expect(member.session_token).to be_present
         expect(member.session_token).not_to eq("old-token")
         expect(member.google_previous_email).to eq(previous_email)
+        expect(member.slack_previous_user_id).to eq(previous_slack_user.id)
       end
 
       it "Updates billing if a customer" do 

@@ -3,7 +3,7 @@ namespace :data do
   task ensure_unique_indexes: :environment do
     targets = [
       [Tool, :name, { locale: 'en', strength: 2 }],
-      [Shop, :name, nil],
+      [Shop, :name, { locale: 'en', strength: 2 }],
       [Card, :uid, nil],
       [Group, :groupName, nil],
       [Member, :email, nil],

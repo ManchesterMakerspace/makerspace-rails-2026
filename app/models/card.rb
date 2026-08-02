@@ -49,7 +49,7 @@ class Card
   def activate_pending_member
     return unless member&.status == 'pending'
 
-    member.update!(status: 'activeMember')
+    member.set(status: 'activeMember')
     set(validity: 'activeMember') if validity == 'pending'
   end
 

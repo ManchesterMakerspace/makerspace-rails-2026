@@ -65,4 +65,21 @@ RSpec.describe 'data:ensure_unique_indexes' do
     task.reenable
     task.invoke
   end
+
+  it 'creates a case-insensitive unique shop-name index' do
+    Shop.delete_all
+
+    expect { task.invoke }.not_to raise_error
+
+    shop_name_index = Shop.collection.indexes.to_a.find do |index|
+      index.fetch('key', {}).keys == ['name']
+    end
+    expect(shop_name_index).to include('unique' => true)
+    expect(shop_name_index.fetch('collation')).to include('locale' => 'en', 'strength' => 2)
+
+    Shop.collection.insert_one(name: 'Woodshop')
+    expect do
+      Shop.collection.insert_one(name: 'woodshop')
+    end.to raise_error(Mongo::Error::OperationFailure, /duplicate key/i)
+  end
 end

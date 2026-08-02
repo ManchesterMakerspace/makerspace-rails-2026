@@ -35,6 +35,7 @@ module Service
     def invite_slack(member, raise_errors: false)
       initialize_tracking(member)
       ensure_slack_invite_allowed!(member)
+      invalidate_previous_slack_identity(member)
 
       local_user = matching_slack_user(member)
       live_user = lookup_slack_user(member.email)
@@ -510,6 +511,56 @@ module Service
         'google_drive_previous_email_revoked',
         "Google Drive access revoked from previous email #{previous_email}"
       )
+    end
+
+    def invalidate_previous_slack_identity(member)
+      previous_user_id = member.slack_previous_user_id
+      return if previous_user_id.blank?
+
+      previous_user = SlackUser.where(id: previous_user_id).first
+      unless previous_user
+        member.set(slack_previous_user_id: nil)
+        return
+      end
+
+      invalidation_reason = 'member_email_changed'
+      begin
+        raise Error::NotAllowed.new('previous Slack user ID is unavailable') if previous_user.slack_id.blank?
+
+        admin_client = ::Service::SlackConnector.admin_client('users.admin.setInactive')
+        raise Error::NotAllowed.new('Slack revocation unavailable') if admin_client.nil?
+
+        admin_client.users_admin_setInactive(user: previous_user.slack_id)
+        audit(
+          member,
+          'slack_previous_identity_revoked',
+          "Previous Slack identity #{previous_user.slack_id} was deactivated after an email change"
+        )
+      rescue => error
+        invalidation_reason = "member_email_changed; revocation unavailable: #{error_message(error)}"
+        Rails.logger.error(
+          "[MemberProvisioning] previous Slack identity could not be revoked " \
+          "member_id=#{member.id} slack_id=#{previous_user.slack_id}: #{error_message(error)}"
+        )
+        audit(
+          member,
+          'slack_previous_identity_detached',
+          "Previous Slack identity #{previous_user.slack_id} was detached without deactivation: #{error_message(error)}"
+        )
+        Honeybadger.notify(
+          error,
+          context: { member_id: member.id.to_s, slack_id: previous_user.slack_id }
+        ) if defined?(Honeybadger)
+      ensure
+        SlackUser.collection.find(_id: previous_user.id).update_one(
+          '$unset' => { member_id: '' },
+          '$set' => {
+            invalidated_at: Time.current,
+            invalidation_reason: invalidation_reason
+          }
+        )
+        member.set(slack_previous_user_id: nil)
+      end
     end
 
     def active_slack_user?(live_user, email)

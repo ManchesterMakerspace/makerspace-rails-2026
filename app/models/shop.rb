@@ -30,6 +30,7 @@ class Shop
 
   index({ name: 1 }, {
     unique: true,
+    collation: { locale: 'en', strength: 2 },
     partial_filter_expression: { name: { '$type' => 'string' } }
   })
 

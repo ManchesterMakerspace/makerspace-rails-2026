@@ -133,6 +133,63 @@ RSpec.describe Service::MemberProvisioning do
       )
     end
 
+    it 'revokes and detaches the previous Slack identity before inviting the current email' do
+      member = create(:member, email: 'current@example.com')
+      previous_user = SlackUser.create!(
+        member: member,
+        slack_email: 'previous@example.com',
+        slack_id: 'U_PREVIOUS'
+      )
+      member.set(slack_previous_user_id: previous_user.id)
+      admin_client = double
+      allow(Service::SlackConnector).to receive(:admin_client)
+        .with('users.admin.setInactive')
+        .and_return(admin_client)
+      expect(admin_client).to receive(:users_admin_setInactive)
+        .with(user: 'U_PREVIOUS')
+        .ordered
+      allow(described_class).to receive(:lookup_slack_user).with(member.email).and_return(nil)
+      expect(Service::SlackConnector).to receive(:invite_to_slack)
+        .with(member.email, member.lastname, member.firstname)
+        .ordered
+        .and_return(ok: true)
+      allow(Service::SlackConnector).to receive(:new_signup_invite_mode).and_return('full_member')
+
+      result = described_class.invite_slack(member)
+
+      expect(result[:status]).to eq(:invited)
+      expect(previous_user.reload.member_id).to be_nil
+      expect(previous_user.invalidated_at).to be_present
+      expect(previous_user.invalidation_reason).to eq('member_email_changed')
+      expect(member.reload.slack_previous_user_id).to be_nil
+    end
+
+    it 'keeps but detaches the previous Slack record when remote revocation is unavailable' do
+      member = create(:member, email: 'current@example.com')
+      previous_user = SlackUser.create!(
+        member: member,
+        slack_email: 'previous@example.com',
+        slack_id: 'U_PREVIOUS'
+      )
+      member.set(slack_previous_user_id: previous_user.id)
+      allow(Service::SlackConnector).to receive(:admin_client)
+        .with('users.admin.setInactive')
+        .and_return(nil)
+      allow(described_class).to receive(:lookup_slack_user).with(member.email).and_return(nil)
+      allow(Service::SlackConnector).to receive(:invite_to_slack).and_return(ok: true)
+      allow(Service::SlackConnector).to receive(:new_signup_invite_mode).and_return('full_member')
+
+      result = described_class.invite_slack(member)
+
+      expect(result[:status]).to eq(:invited)
+      expect(SlackUser.find(previous_user.id)).to have_attributes(
+        member_id: nil,
+        slack_id: 'U_PREVIOUS'
+      )
+      expect(previous_user.reload.invalidated_at).to be_present
+      expect(previous_user.invalidation_reason).to match(/revocation unavailable/i)
+    end
+
     it 'records API confirmation and the selected invitation mode' do
       member = create(:member)
       allow(Service::SlackConnector).to receive(:invite_to_slack).and_return(ok: true)

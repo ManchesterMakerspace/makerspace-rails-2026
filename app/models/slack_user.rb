@@ -7,6 +7,8 @@ class SlackUser
   field :slack_id, type: String
   field :name, type: String
   field :real_name, type: String
+  field :invalidated_at, type: Time
+  field :invalidation_reason, type: String
 
   validates :slack_id, uniqueness: true, allow_nil: true
 

@@ -79,6 +79,7 @@ class Member
   field :slack_manual_action_required, type: String
   field :slack_last_attempt_at, type: Time
   field :slack_last_error, type: String
+  field :slack_previous_user_id, type: BSON::ObjectId
   field :google_resources_access_confirmed_at, type: Time
   field :google_transfer_access_confirmed_at, type: Time
   field :google_previous_email, type: String
@@ -669,6 +670,12 @@ class Member
     return unless previous_changes.key?("email")
 
     previous_email = previous_changes["email"].first.to_s.strip.downcase.presence
+    previous_slack_user = if previous_email.present?
+      SlackUser.where(
+        member_id: id,
+        slack_email: /\A#{Regexp.escape(previous_email)}\z/i
+      ).first || SlackUser.where(member_id: id).first
+    end
 
     set(
       firebase_uid: nil,
@@ -684,6 +691,7 @@ class Member
       slack_manual_action_required: "invite",
       slack_last_attempt_at: nil,
       slack_last_error: "Member email changed; manual reprovisioning is required",
+      slack_previous_user_id: slack_previous_user_id.presence || previous_slack_user&.id,
       google_resources_access_confirmed_at: nil,
       google_transfer_access_confirmed_at: nil,
       google_previous_email: google_previous_email.presence || previous_email,
