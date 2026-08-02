@@ -1,6 +1,14 @@
 Rails.application.config.after_initialize do
   begin
-    tool_name_index_present = Mongoid.default_client[:tools].indexes.to_a.any? do |index|
+    tool_indexes = begin
+      Mongoid.default_client[:tools].indexes.to_a
+    rescue Mongo::Error::OperationFailure => error
+      raise unless error.code == 26 # NamespaceNotFound: an empty database has no tools collection yet
+
+      []
+    end
+
+    tool_name_index_present = tool_indexes.any? do |index|
       keys = index['key'] || index[:key] || {}
       indexed_fields = keys.keys.map(&:to_s)
       direction = keys['name'] || keys[:name]

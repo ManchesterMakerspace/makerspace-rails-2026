@@ -36,7 +36,15 @@ namespace :data do
         puts "#{model.collection_name}.#{field}: no duplicate values found"
       end
 
-      matching_indexes = model.collection.indexes.to_a.select do |index|
+      existing_indexes = begin
+        model.collection.indexes.to_a
+      rescue Mongo::Error::OperationFailure => error
+        raise unless error.code == 26 # NamespaceNotFound: collection has not been created yet
+
+        []
+      end
+
+      matching_indexes = existing_indexes.select do |index|
         keys = index['key'] || index[:key] || {}
         keys.keys.map(&:to_s) == [field.to_s] && (keys[field.to_s] || keys[field.to_sym]) == 1
       end
