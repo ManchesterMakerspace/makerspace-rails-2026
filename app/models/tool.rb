@@ -5,6 +5,7 @@ class Tool
   field :name, type: String
   field :description, type: String
   field :disabled, type: Boolean, default: false
+  field :allow_pending, type: Boolean, default: false
   field :announce, type: Boolean, default: false
   field :announce_channel, type: String
   field :users_channel, type: String
@@ -22,13 +23,19 @@ class Tool
   belongs_to :shop
 
   validates :name, presence: true
-  validates :name, uniqueness: { scope: :shop_id, case_sensitive: false }
+  validates :name, uniqueness: { case_sensitive: false }
   validates :shop, presence: true
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :reservation_horizon_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :max_reservation_duration_hours, numericality: { greater_than: 0 }
   validate :reservation_duration_uses_half_hours
   validate :reservation_prerequisites_belong_to_shop
+
+  index({ name: 1 }, {
+    unique: true,
+    collation: { locale: 'en', strength: 2 },
+    partial_filter_expression: { name: { '$type' => 'string' } }
+  })
 
   def disabled
     value = read_attribute(:disabled)
@@ -37,6 +44,11 @@ class Tool
 
   def reservable
     value = read_attribute(:reservable)
+    value.nil? ? false : value
+  end
+
+  def allow_pending
+    value = read_attribute(:allow_pending)
     value.nil? ? false : value
   end
 

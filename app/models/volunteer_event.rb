@@ -83,7 +83,7 @@ class VolunteerEvent
   end
 
   def eligible_for?(member)
-    return false unless member&.status == 'activeMember'
+    return false unless member&.active_membership_status?
     return true if %w[admin board_member resource_manager].include?(member.role)
 
     missing_prerequisite_tool_ids(member).empty?
@@ -108,7 +108,7 @@ class VolunteerEvent
   # Guards: event must be open, member must be activeMember, not already checked in.
   def checkin!(member)
     raise Error::Forbidden.new unless status == 'open'
-    raise Error::Forbidden.new unless member.status == 'activeMember'
+    raise Error::Forbidden.new unless member.active_membership_status?
     raise Error::Forbidden.new unless eligible_for?(member)
     raise Error::Forbidden.new if attendee_ids.include?(member.id)
     push(attendee_ids: member.id)
@@ -156,7 +156,7 @@ class VolunteerEvent
     attendee_ids.each do |member_id|
       member = Member.find(member_id) rescue nil
       next if member.nil?
-      next unless member.status == 'activeMember'
+      next unless member.active_membership_status?
 
       credit = VolunteerCredit.create!(
         member_id:    member_id,

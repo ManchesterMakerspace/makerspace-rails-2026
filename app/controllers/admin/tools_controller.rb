@@ -98,7 +98,7 @@ class Admin::ToolsController < ApplicationController
 
   def tool_params
     params.permit(:name, :description, :shop_id, :disabled, :announce,
-      :announce_channel, :users_channel, :reservable,
+      :announce_channel, :users_channel, :reservable, :allow_pending,
       :max_concurrent_reservations, :reservation_horizon_days,
       :max_reservation_duration_hours, :reservation_requires_approval,
       prerequisite_ids: [], reservation_prerequisite_tool_ids: [])

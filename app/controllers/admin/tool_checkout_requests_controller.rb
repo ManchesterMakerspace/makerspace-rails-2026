@@ -12,7 +12,9 @@ class Admin::ToolCheckoutRequestsController < ApplicationController
       ordinary_tool_ids = CheckoutApprover.allowed_tool_ids_for_member(current_member.id)
       ordinary_tool_ids &= Tool.where(:disabled.ne => true).pluck(:id).map(&:to_s)
       tool_ids = (managed_tool_ids + ordinary_tool_ids).uniq
-      valid_member_ids = Member.all.select(&:active_unexpired?).map(&:id)
+      valid_member_ids = Member.all.select do |member|
+        member.status == 'pending' || member.active_unexpired?
+      end.map(&:id)
       requests = requests.where(:tool_id.in => tool_ids, :member_id.in => valid_member_ids)
     end
 

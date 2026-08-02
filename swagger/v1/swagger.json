@@ -16,6 +16,7 @@
         "type": "string",
         "enum": [
           "activeMember",
+          "pending",
           "inactive",
           "nonMember",
           "revoked"
@@ -101,6 +102,7 @@
             "type": "string",
             "enum": [
               "activeMember",
+              "pending",
               "expired",
               "inactive",
               "lost",
@@ -525,6 +527,120 @@
           }
         ]
       },
+      "SlackProvisioning": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "blocked",
+              "not_invited",
+              "invite_confirmed",
+              "invite_pending",
+              "guest",
+              "manual_invite_required",
+              "manual_promotion_required",
+              "full_member"
+            ]
+          },
+          "inviteConfirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          },
+          "inviteSource": {
+            "type": "string",
+            "enum": [
+              "api",
+              "slack_user_record"
+            ],
+            "x-nullable": true
+          },
+          "inviteMode": {
+            "type": "string",
+            "enum": [
+              "full_member",
+              "single_channel_guest"
+            ],
+            "x-nullable": true
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          },
+          "fullMemberAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          },
+          "manualActionRequired": {
+            "type": "string",
+            "enum": [
+              "invite",
+              "promotion"
+            ],
+            "x-nullable": true
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "GoogleDriveProvisioning": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "blocked",
+              "pending_activation",
+              "not_provisioned",
+              "partial",
+              "failed",
+              "complete"
+            ]
+          },
+          "resourcesAccessConfirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          },
+          "transferAccessConfirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "MemberProvisioning": {
+        "type": "object",
+        "properties": {
+          "activationEligible": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": "string"
+          },
+          "slack": {
+            "$ref": "#/components/schemas/SlackProvisioning"
+          },
+          "googleDrive": {
+            "$ref": "#/components/schemas/GoogleDriveProvisioning"
+          }
+        },
+        "required": [
+          "activationEligible",
+          "email",
+          "slack",
+          "googleDrive"
+        ]
+      },
       "BaseMember": {
         "type": "object",
         "properties": {
@@ -547,10 +663,6 @@
             "type": "number",
             "x-nullable": true
           },
-          "slackManualDeactivationRequired": {
-            "type": "boolean",
-            "description": "True for revoked members when Slack must be deactivated manually because SLACK_ADMIN_TOKEN is not configured."
-          },
           "memberContractSignedDate": {
             "type": "string",
             "x-nullable": true
@@ -568,15 +680,33 @@
           },
           "resourceManagerShopIds": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "checkoutApproverShopIds": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "checkoutApproverToolIds": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
+          },
+          "slackManualDeactivationRequired": {
+            "type": "boolean",
+            "description": "True for revoked members when Slack must be deactivated manually because SLACK_ADMIN_TOKEN is not configured."
+          },
+          "provisioning": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemberProvisioning"
+              }
+            ],
+            "x-nullable": true
           }
         },
         "required": [
@@ -705,7 +835,9 @@
           },
           "resourceManagerShopIds": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "phone": {
             "type": "string"
@@ -748,6 +880,383 @@
               "id"
             ]
           }
+        ]
+      },
+      "ReservationResourceConfig": {
+        "type": "object",
+        "properties": {
+          "reservable": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxConcurrentReservations": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "reservationHorizonDays": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 7
+          },
+          "maxReservationDurationHours": {
+            "type": "number",
+            "minimum": 0.5,
+            "multipleOf": 0.5,
+            "default": 8
+          },
+          "reservationRequiresApproval": {
+            "type": "boolean",
+            "default": false
+          },
+          "reservationPrerequisiteToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Shop": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ReservationResourceConfig"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "slackChannel": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "colorId": {
+                "type": "string",
+                "pattern": "^\\d+$",
+                "x-nullable": true
+              },
+              "reservationPrerequisiteNames": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "googleResourceId": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "resourceEmail": {
+                "type": "string",
+                "x-nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "reservable"
+            ]
+          }
+        ]
+      },
+      "Tool": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ReservationResourceConfig"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "shopId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "allowPending": {
+                "type": "boolean",
+                "default": false
+              },
+              "effectiveReservationPrerequisiteIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "shopId",
+              "name",
+              "reservable"
+            ]
+          }
+        ]
+      },
+      "CheckoutApprover": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "shopIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "shopNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "memberId",
+          "shopIds",
+          "toolIds"
+        ]
+      },
+      "Reservation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "shopId": {
+            "type": "string"
+          },
+          "shopName": {
+            "type": "string"
+          },
+          "reservationScope": {
+            "type": "string",
+            "enum": [
+              "shop",
+              "tools"
+            ]
+          },
+          "toolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "denied",
+              "cancelled"
+            ]
+          },
+          "approvalReasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "portal",
+              "slack"
+            ]
+          },
+          "calendarEventId": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "calendarHtmlLink": {
+            "type": "string",
+            "format": "uri",
+            "x-nullable": true
+          },
+          "calendarSyncStatus": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "calendarSyncError": {
+            "type": "string",
+            "x-nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "memberId",
+          "shopId",
+          "reservationScope",
+          "toolIds",
+          "startAt",
+          "endAt",
+          "status"
+        ]
+      },
+      "ReservationPreview": {
+        "type": "object",
+        "properties": {
+          "eligible": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missingPrerequisites": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "requiresApproval": {
+            "type": "boolean"
+          },
+          "approvalReasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "maximumDurationHours": {
+            "type": "number",
+            "multipleOf": 0.5,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "eligible",
+          "errors",
+          "conflicts",
+          "missingPrerequisites",
+          "requiresApproval",
+          "approvalReasons",
+          "maximumDurationHours"
+        ]
+      },
+      "SubscriptionCancellationImpact": {
+        "type": "object",
+        "properties": {
+          "reservationCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "membershipExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          },
+          "reservations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "calendarHtmlLink": {
+                  "type": "string",
+                  "format": "uri",
+                  "x-nullable": true
+                },
+                "startAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "endAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "startAt",
+                "endAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "reservationCount",
+          "reservations"
         ]
       },
       "PayPalAccount": {
@@ -1274,129 +1783,6 @@
           "memberId",
           "paymentMethodDetails"
         ]
-      },
-      "ReservationResourceConfig": {
-        "type": "object",
-        "properties": {
-          "reservable": { "type": "boolean", "default": false },
-          "maxConcurrentReservations": { "type": "integer", "minimum": 1, "default": 1 },
-          "reservationHorizonDays": { "type": "integer", "minimum": 0, "default": 7 },
-          "maxReservationDurationHours": { "type": "number", "minimum": 0.5, "multipleOf": 0.5, "default": 8 },
-          "reservationRequiresApproval": { "type": "boolean", "default": false },
-          "reservationPrerequisiteToolIds": { "type": "array", "items": { "type": "string" } }
-        }
-      },
-      "Shop": {
-        "allOf": [
-          { "$ref": "#/components/schemas/ReservationResourceConfig" },
-          {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string" },
-              "name": { "type": "string" },
-              "slackChannel": { "type": "string", "nullable": true },
-              "disabled": { "type": "boolean" }
-            },
-            "required": ["id", "name", "reservable"]
-          }
-        ]
-      },
-      "Tool": {
-        "allOf": [
-          { "$ref": "#/components/schemas/ReservationResourceConfig" },
-          {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string" },
-              "shopId": { "type": "string" },
-              "name": { "type": "string" },
-              "description": { "type": "string", "nullable": true },
-              "disabled": { "type": "boolean" },
-              "effectiveReservationPrerequisiteIds": { "type": "array", "items": { "type": "string" } }
-            },
-            "required": ["id", "shopId", "name", "reservable"]
-          }
-        ]
-      },
-      "CheckoutApprover": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "memberId": { "type": "string" },
-          "shopIds": { "type": "array", "items": { "type": "string" } },
-          "toolIds": { "type": "array", "items": { "type": "string" } },
-          "shopNames": { "type": "array", "items": { "type": "string" } },
-          "toolNames": { "type": "array", "items": { "type": "string" } }
-        },
-        "required": ["id", "memberId", "shopIds", "toolIds"]
-      },
-      "Reservation": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "title": { "type": "string" },
-          "memberId": { "type": "string" },
-          "memberName": { "type": "string" },
-          "shopId": { "type": "string" },
-          "shopName": { "type": "string" },
-          "reservationScope": { "type": "string", "enum": ["shop", "tools"] },
-          "toolIds": { "type": "array", "items": { "type": "string" } },
-          "toolNames": { "type": "array", "items": { "type": "string" } },
-          "startAt": { "type": "string", "format": "date-time" },
-          "endAt": { "type": "string", "format": "date-time" },
-          "status": { "type": "string", "enum": ["pending", "approved", "denied", "cancelled"] },
-          "approvalReasons": { "type": "array", "items": { "type": "string" } },
-          "source": { "type": "string", "enum": ["portal", "slack"] },
-          "calendarEventId": { "type": "string", "nullable": true },
-          "calendarHtmlLink": { "type": "string", "format": "uri", "nullable": true },
-          "calendarSyncStatus": { "type": "string", "nullable": true },
-          "calendarSyncError": { "type": "string", "nullable": true }
-        },
-        "required": ["id", "title", "memberId", "shopId", "reservationScope", "toolIds", "startAt", "endAt", "status"]
-      },
-      "ReservationPreview": {
-        "type": "object",
-        "properties": {
-          "eligible": { "type": "boolean" },
-          "errors": { "type": "array", "items": { "type": "string" } },
-          "conflicts": { "type": "array", "items": { "type": "string" } },
-          "missingPrerequisites": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": { "type": "string" },
-                "name": { "type": "string" }
-              }
-            }
-          },
-          "requiresApproval": { "type": "boolean" },
-          "approvalReasons": { "type": "array", "items": { "type": "string" } },
-          "maximumDurationHours": { "type": "number", "multipleOf": 0.5, "minimum": 0 }
-        },
-        "required": ["eligible", "errors", "conflicts", "missingPrerequisites", "requiresApproval", "approvalReasons", "maximumDurationHours"]
-      },
-      "SubscriptionCancellationImpact": {
-        "type": "object",
-        "properties": {
-          "reservationCount": { "type": "integer", "minimum": 0 },
-          "membershipExpiresAt": { "type": "string", "format": "date-time", "nullable": true },
-          "reservations": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": { "type": "string" },
-                "title": { "type": "string" },
-                "calendarHtmlLink": { "type": "string", "format": "uri", "nullable": true },
-                "startAt": { "type": "string", "format": "date-time" },
-                "endAt": { "type": "string", "format": "date-time" }
-              },
-              "required": ["id", "title", "startAt", "endAt"]
-            }
-          }
-        },
-        "required": ["reservationCount", "reservations"]
       }
     }
   },
@@ -3851,6 +4237,10 @@
                   },
                   "phone": {
                     "type": "string"
+                  },
+                  "cf-turnstile-response": {
+                    "type": "string",
+                    "description": "Cloudflare Turnstile token; enforced when TURNSTILE_SECRET is configured"
                   },
                   "address": {
                     "type": "object",

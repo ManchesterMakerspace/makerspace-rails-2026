@@ -46,6 +46,11 @@ Emails in the development environment are published to MailTrap under the adgran
 # Swagger
 An OpenSwagger spec of the JSON API can be generated or updated with `rake rswag:specs:swaggerize`. To view an interactive version of this swagger, start a development server with `rails s` and navigate to `/api-docs`
 
+# Documentation
+
+- [Member statuses](docs/member-statuses.MD)
+- [Shop and tool reservations](docs/reservations.MD)
+
 # CONTRIBUTIONS
 
 Bug reports and pull requests are welcome on GitHub at https://github.com/ManchesterMakerspace/makerspace-interface. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the Contributor Covenant code of conduct.

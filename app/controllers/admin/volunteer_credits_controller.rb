@@ -19,7 +19,7 @@ class Admin::VolunteerCreditsController < AdminOrRmController
     raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: credit_params[:member_id] }) if member.nil?
     raise ::Error::Forbidden.new if member.id == current_member.id
 
-    unless member.status == 'activeMember'
+    unless member.active_membership_status?
       render json: { error: 'Cannot award a credit to a member who is not an active member' }, status: :forbidden and return
     end
 

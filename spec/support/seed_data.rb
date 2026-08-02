@@ -225,6 +225,19 @@ class SeedData
   def create_shops_and_tools
     return if Shop.count > 0
     shop_data = [
+      {
+        name: "Facilities",
+        slack_channel: "facilities",
+        tools: [{
+          name: "Orientation",
+          description: "Orientation is your first step towards active membership, and is available during scheduled Open House hours or by special arrangement",
+          reservable: true,
+          max_concurrent_reservations: 6,
+          reservation_horizon_days: 15,
+          max_reservation_duration_hours: 0.5,
+          allow_pending: true
+        }]
+      },
       { name: "3D Printers",  slack_channel: "shop-3dprinting",  tools: ["Prusa MK4", "Bambu X1C"] },
       { name: "Woodshop",     slack_channel: "shop-woodworking",  tools: ["Table Saw", "Band Saw", "Planer", "Jointer", "Drill Press"] },
       { name: "Metal Shop",   slack_channel: "shop-metalwork",    tools: ["MIG Welder", "TIG Welder", "Angle Grinder", "Metal Lathe"] },
@@ -236,8 +249,12 @@ class SeedData
     ]
     shop_data.each do |s|
       shop = Shop.create!(name: s[:name], slack_channel: s[:slack_channel])
-      s[:tools].each do |t|
-        Tool.create!(name: t, description: "#{t} in #{s[:name]}", shop: shop)
+      s[:tools].each do |tool_data|
+        attributes = tool_data.is_a?(Hash) ? tool_data : {
+          name: tool_data,
+          description: "#{tool_data} in #{s[:name]}"
+        }
+        Tool.create!(attributes.merge(shop: shop))
       end
     end
     shop_ids = Shop.all.pluck(:id).map(&:to_s)

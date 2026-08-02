@@ -116,7 +116,7 @@ class Admin::ReservationsController < ApplicationController
   def delegated_member
     @delegated_member ||= begin
       member = Member.find(params.require(:member_id))
-      unless member.active_unexpired?
+      unless member.status == 'pending' || member.active_unexpired?
         raise ::Error::UnprocessableEntity.new(
           "Reservations may only be created on behalf of an active, unexpired member"
         )

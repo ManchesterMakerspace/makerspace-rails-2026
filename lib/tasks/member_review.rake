@@ -44,7 +44,7 @@ task :member_review => :environment do
       @expired_with_rentals = Rental.where(:status.in => ["active", "vacating"]).map(&:member).compact.select do |member|
         member.expirationTime.nil? ||
         member.expirationTime < now_ms ||
-        member.status != "activeMember"
+        !member.active_membership_status?
       end.uniq
 
       # Helpers

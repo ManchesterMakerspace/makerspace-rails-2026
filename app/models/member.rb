@@ -34,7 +34,9 @@ class Member
   field :address_state
   field :address_postal_code
 
-  field :status,                         default: "activeMember" # activeMember, nonMember, revoked, inactive
+  ACTIVE_MEMBERSHIP_STATUSES = %w[activeMember pending].freeze
+
+  field :status,                         default: "activeMember" # activeMember, pending, nonMember, revoked, inactive
   field :expirationTime,  type: Integer  #pre-calcualted time of expiration
   field :startDate, default: -> { Time.now }
   field :groupName, type: String #potentially member is in a group/partner membership
@@ -64,6 +66,26 @@ class Member
   field :silence_emails, type: Boolean # Stop marketing emails to user
   field :notes, type: String
 
+  # External account provisioning is scoped to the member's current email.
+  # AuditLog retains history when these current-state fields are reset.
+  field :provisioning_initialized_at, type: Time
+  field :provisioning_email, type: String
+  field :slack_invite_confirmed_at, type: Time
+  field :slack_invite_source, type: String
+  field :slack_invite_mode, type: String
+  field :slack_acceptance_pending, type: Boolean
+  field :slack_joined_at, type: Time
+  field :slack_full_member_at, type: Time
+  field :slack_manual_action_required, type: String
+  field :slack_last_attempt_at, type: Time
+  field :slack_last_error, type: String
+  field :slack_previous_user_id, type: BSON::ObjectId
+  field :google_resources_access_confirmed_at, type: Time
+  field :google_transfer_access_confirmed_at, type: Time
+  field :google_previous_email, type: String
+  field :google_last_attempt_at, type: Time
+  field :google_last_error, type: String
+
   search_in :email, :lastname
   search_in :firstname, index: :_firstname_keywords
 
@@ -72,14 +94,20 @@ class Member
   validates :email, uniqueness: true
   validates :email, email_deliverability: true, unless: :skip_email_deliverability_validation
   validates :cardID, uniqueness: true, allow_nil: true
-  validates_inclusion_of :status, in: ["activeMember", "nonMember", "revoked", "inactive", "suspended"]
+  validates_inclusion_of :status, in: ["activeMember", "pending", "nonMember", "revoked", "inactive", "suspended"]
   validates_inclusion_of :role, in: ["admin", "board_member", "resource_manager", "member"]
+
+  index({ email: 1 }, {
+    unique: true,
+    partial_filter_expression: { email: { '$type' => 'string' } }
+  })
 
   before_validation :normalize_email, :normalize_group_name
   after_initialize :verify_group_expiry
   after_create :apply_default_permissions, :publish_create
   after_update :handle_reservation_membership_changes, :update_card, :handle_successful_email_change,
-               :publish_update, :check_household_exit, :sync_expiration_to_group
+               :publish_update, :check_household_exit, :sync_expiration_to_group,
+               :enqueue_member_provisioning
   after_destroy :publish_destroy
 
   has_many :permissions, class_name: 'Permission', dependent: :destroy, :autosave => true
@@ -231,7 +259,34 @@ class Member
   end
 
   def active_unexpired?
+    active_membership_status? && expirationTime.present? && expirationTime > (Time.now.to_i * 1000)
+  end
+
+  def active_membership_status?
+    ACTIVE_MEMBERSHIP_STATUSES.include?(status)
+  end
+
+  def fully_active_unexpired?
     status == 'activeMember' && expirationTime.present? && expirationTime > (Time.now.to_i * 1000)
+  end
+
+  def provisioning_eligible?
+    expirationTime.present? &&
+      expirationTime > (Time.current.to_i * 1000) &&
+      !%w[revoked inactive].include?(status) &&
+      access_cards.any? { |card| !%w[lost stolen].include?(card.validity) }
+  end
+
+  def provisioning_email_current?
+    provisioning_email.present? &&
+      provisioning_email.to_s.strip.downcase == email.to_s.strip.downcase
+  end
+
+  def matching_slack_user
+    normalized_email = email.to_s.strip.downcase
+    return nil if normalized_email.blank?
+
+    SlackUser.where(slack_email: /\A#{Regexp.escape(normalized_email)}\z/i).first
   end
 
   def membership_expires_at
@@ -396,7 +451,7 @@ class Member
     now_ms    = Time.now.to_i * 1000
     lapsed    = expirationTime.nil? ||
                 expirationTime < now_ms ||
-                status != 'activeMember'
+                !active_membership_status?
     return unless lapsed
 
     member_url = "#{Rails.configuration.x.app_base_url}/members/#{id}"
@@ -614,7 +669,41 @@ class Member
   def handle_successful_email_change
     return unless previous_changes.key?("email")
 
-    set(firebase_uid: nil, session_token: SecureRandom.hex)
+    previous_email = previous_changes["email"].first.to_s.strip.downcase.presence
+    previous_slack_user = if previous_email.present?
+      SlackUser.where(
+        member_id: id,
+        slack_email: /\A#{Regexp.escape(previous_email)}\z/i
+      ).first || SlackUser.where(member_id: id).first
+    end
+
+    set(
+      firebase_uid: nil,
+      session_token: SecureRandom.hex,
+      provisioning_initialized_at: Time.current,
+      provisioning_email: email.to_s.strip.downcase,
+      slack_invite_confirmed_at: nil,
+      slack_invite_source: nil,
+      slack_invite_mode: nil,
+      slack_acceptance_pending: nil,
+      slack_joined_at: nil,
+      slack_full_member_at: nil,
+      slack_manual_action_required: "invite",
+      slack_last_attempt_at: nil,
+      slack_last_error: "Member email changed; manual reprovisioning is required",
+      slack_previous_user_id: slack_previous_user_id.presence || previous_slack_user&.id,
+      google_resources_access_confirmed_at: nil,
+      google_transfer_access_confirmed_at: nil,
+      google_previous_email: google_previous_email.presence || previous_email,
+      google_last_attempt_at: nil,
+      google_last_error: nil
+    )
+  end
+
+  def enqueue_member_provisioning
+    return unless previous_changes.keys.any? { |key| %w[email expirationTime status].include?(key.to_s) }
+
+    MemberProvisioningJob.perform_later(id.to_s)
   end
 
   def publish_destroy
