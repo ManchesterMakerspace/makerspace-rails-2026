@@ -190,8 +190,18 @@ class VolunteerCredit
     slack_user = SlackUser.find_by(member_id: m.id)
     return unless slack_user
 
-    message = "🌟 You've been awarded a volunteer credit for: #{description}. " \
-              "You now have #{year_total} credit#{'s' if year_total != 1.0} this year."
+    common = ::Service::EmailTemplate.common_variables(m)
+    message = ::Service::EmailTemplate.render(
+      :volunteer_credit_awarded,
+      common.merge(
+        credit_description: description,
+        credit_value: credit_value,
+        year_total: year_total,
+        credit_plural: year_total == 1.0 ? 'credit' : 'credits'
+      ),
+      fallback: true,
+      format: :text
+    )
 
     if VolunteerCredit.discount_id.present? && !m.subscription_id.present?
       threshold      = VolunteerCredit.credits_per_discount
@@ -203,11 +213,19 @@ class VolunteerCredit
         credits_needed = [next_threshold - year_total, 0].max
 
         if credits_needed == 0
-          message += "\n\n💡 You've earned a volunteer discount! " \
-                     "Activate a subscription to have it automatically applied to your billing."
+          message += "\n\n" + ::Service::EmailTemplate.render(
+            :volunteer_credit_discount_earned, common, fallback: true, format: :text
+          )
         elsif credits_needed <= 1.0
-          message += "\n\n💡 You're #{credits_needed} credit#{'s' if credits_needed != 1.0} away from " \
-                     "earning a volunteer discount! Activate a subscription to have it applied automatically."
+          message += "\n\n" + ::Service::EmailTemplate.render(
+            :volunteer_credit_discount_progress,
+            common.merge(
+              credits_needed: credits_needed,
+              credit_plural: credits_needed == 1.0 ? 'credit' : 'credits'
+            ),
+            fallback: true,
+            format: :text
+          )
         end
       end
     end
@@ -223,12 +241,19 @@ class VolunteerCredit
     slack_user = SlackUser.find_by(member_id: m.id)
     return unless slack_user
 
-    ::Service::SlackConnector.send_slack_message(
-      "⚠️ A volunteer credit has been reversed: *#{description}* " \
-      "(#{credit_value.abs} credit#{'s' if credit_value.abs != 1.0}). " \
-      "Reason: #{reason}. Contact us if you have questions.",
-      slack_user.slack_id
+    message = ::Service::EmailTemplate.render(
+      :volunteer_credit_reversed,
+      ::Service::EmailTemplate.common_variables(m).merge(
+        credit_description: description,
+        credit_value: credit_value.abs,
+        credit_plural: credit_value.abs == 1.0 ? 'credit' : 'credits',
+        reason: reason,
+        reversed_by_name: reversed_by.fullname
+      ),
+      fallback: true,
+      format: :text
     )
+    ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
   end
@@ -239,12 +264,17 @@ class VolunteerCredit
     m          = member
     member_url = ::BraintreeService::Notification.get_member_profile(m)
 
-    ::Service::SlackConnector.send_slack_message(
-      "💳 Manual Braintree review needed: A volunteer credit for #{member_url} " \
-      "that contributed to a discount award has been reversed by *#{reversed_by.fullname}*. " \
-      "Reason: #{reason}. Please review and adjust discount billing cycles in Braintree if appropriate.",
-      ::Service::SlackConnector.treasurer_channel
+    message = ::Service::EmailTemplate.render(
+      :volunteer_braintree_review,
+      ::Service::EmailTemplate.common_variables(m).merge(
+        member_url: member_url,
+        reversed_by_name: reversed_by.fullname,
+        reason: reason
+      ),
+      fallback: true,
+      format: :text
     )
+    ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.treasurer_channel)
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
   end
@@ -328,18 +358,29 @@ class VolunteerCredit
 
     slack_user = SlackUser.find_by(member_id: m.id)
     if slack_user
-      ::Service::SlackConnector.send_slack_message(
-        "🎉 You've earned a volunteer discount! *#{amount_str}* will be applied " \
-        "to your next #{cycles_str}.",
-        slack_user.slack_id
+      member_message = ::Service::EmailTemplate.render(
+        :volunteer_discount_applied_member,
+        ::Service::EmailTemplate.common_variables(m).merge(amount: amount_str, billing_cycles: cycles_str),
+        fallback: true,
+        format: :text
       )
+      ::Service::SlackConnector.send_slack_message(member_message, slack_user.slack_id)
     end
 
-    ::Service::SlackConnector.send_slack_message(
-      "💰 Volunteer discount applied for #{member_url} (ID: #{id_str}) — " \
-      "*#{amount_str}* for #{cycles_str} (#{total} total queued). Discount: #{description}",
-      ::Service::SlackConnector.treasurer_channel
+    admin_message = ::Service::EmailTemplate.render(
+      :volunteer_discount_applied_admin,
+      ::Service::EmailTemplate.common_variables(m).merge(
+        member_url: member_url,
+        member_id: id_str,
+        amount: amount_str,
+        billing_cycles: cycles_str,
+        total_cycles: total,
+        discount_description: description
+      ),
+      fallback: true,
+      format: :text
     )
+    ::Service::SlackConnector.send_slack_message(admin_message, ::Service::SlackConnector.treasurer_channel)
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
     notify_discount_error(m, e) rescue nil
@@ -348,11 +389,13 @@ class VolunteerCredit
   def notify_no_subscription(m)
     member_url = ::BraintreeService::Notification.get_member_profile(m)
 
-    ::Service::SlackConnector.send_slack_message(
-      "⚠️ Volunteer discount earned by #{member_url} (ID: #{m.id}) but no active " \
-      "subscription found. Credits preserved — will apply automatically once a subscription is activated.",
-      ::Service::SlackConnector.logs_channel
+    message = ::Service::EmailTemplate.render(
+      :volunteer_discount_no_subscription,
+      ::Service::EmailTemplate.common_variables(m).merge(member_url: member_url),
+      fallback: true,
+      format: :text
     )
+    ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.logs_channel)
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
   end
@@ -360,10 +403,16 @@ class VolunteerCredit
   def notify_discount_error(m, error)
     member_url = (::BraintreeService::Notification.get_member_profile(m) rescue m.fullname)
 
-    ::Service::SlackConnector.send_slack_message(
-      "🚨 Error applying volunteer discount for #{member_url} (ID: #{m.id}): #{error.message}",
-      ::Service::SlackConnector.logs_channel
+    message = ::Service::EmailTemplate.render(
+      :volunteer_discount_error,
+      ::Service::EmailTemplate.common_variables(m).merge(
+        member_url: member_url,
+        error_message: error.message
+      ),
+      fallback: true,
+      format: :text
     )
+    ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.logs_channel)
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
   end

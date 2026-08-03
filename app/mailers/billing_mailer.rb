@@ -17,13 +17,13 @@ class BillingMailer < ApplicationMailer
     @subscription = subscription
     @payment_method = payment_method
     @invoice = invoice
-    @google_doc_content = ::Service::EmailTemplate.render(:new_subscription, {
+    @google_doc_content = ::Service::EmailTemplate.render(:new_subscription, ::Service::EmailTemplate.common_variables(member).merge(
       member_name: member.fullname,
       friendly_type: invoice.resource_class == "member" ? "membership" : "rental",
       quantity: invoice.quantity.to_s,
       next_billing_date: Date.parse(subscription.billing_period_end_date.to_s).strftime("%m/%d/%Y"),
       url: get_profile_url_string(member)
-    })
+    ))
     send_mail(member.email, "Subscription to Manchester Makerspace", __method__.to_s)
   end
 
@@ -86,11 +86,11 @@ class BillingMailer < ApplicationMailer
   def _canceled_subscription(member, invoice_resource_class)
     @member = member
     @type = invoice_resource_class
-    @google_doc_content = ::Service::EmailTemplate.render(:canceled_subscription, {
+    @google_doc_content = ::Service::EmailTemplate.render(:canceled_subscription, ::Service::EmailTemplate.common_variables(member).merge(
       member_name: member.fullname,
       friendly_type: invoice_resource_class == "member" ? "membership" : "rental",
       url: get_profile_url_string(member)
-    })
+    ))
     send_mail(member.email, "Canceled Manchester Makerspace Subscription", __method__.to_s)
   end
 
@@ -104,12 +104,12 @@ class BillingMailer < ApplicationMailer
     @error_status = error_status
     @member = member
     @invoice = invoice
-    @google_doc_content = ::Service::EmailTemplate.render(:failed_payment, {
+    @google_doc_content = ::Service::EmailTemplate.render(:failed_payment, ::Service::EmailTemplate.common_variables(member).merge(
       member_name: member.fullname,
       friendly_type: invoice.resource_class == "member" ? "membership" : "rental",
       error_status: error_status.to_s,
       url: get_profile_url_string(member)
-    })
+    ))
     send_mail(member.email, "Failed payment to Manchester Makerspace", __method__.to_s)
   end
 

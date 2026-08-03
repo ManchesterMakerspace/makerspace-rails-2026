@@ -3,6 +3,7 @@
 This project uses Google for federated authentication (optional), drive, calendar, and resources.
 In the Google Cloud Console API Library, select the project associated with GOOGLE_ID and enable:
 * Google Drive API
+* Google Docs API
 * Google Calendar API
 * Admin SDK API
 
@@ -71,3 +72,61 @@ That task queues Directory resource and Calendar label synchronization for exist
 shops and tools. Confirm the worker logs show successful resource creation or
 matching and label creation, followed by successful Calendar synchronization when
 making a test reservation.
+
+## Editable email and notification templates
+
+The application can export Google Docs as editable message templates. The Rails
+service keeps the metadata and content from the last valid export in Redis. A bad,
+empty, inaccessible, or unavailable document does not replace that last valid
+content. If no valid export has ever been cached, the application uses the ERB or
+text fallback compiled into `app/views`.
+
+Set each variable below to a Google document ID (the value between `/d/` and
+`/edit` in a Google Docs URL). The OAuth account identified by `GOOGLE_TOKEN` must
+have edit permission for Restore default and Populate, and at least view permission
+for normal rendering and Refresh. Template controls are available to administrators
+under **System Settings → Templates**.
+
+Placeholders use `{{placeholder_name}}`. Every template accepts these common
+placeholders in addition to its template-specific placeholders:
+
+`first_name`, `last_name`, `full_name`, `email`, `member_id`, `join_date`,
+`expiration_date`, `slack_username`, `slack_id`, `profile_url`, `portal_url`,
+`base_url`, and `open_house_schedule`.
+
+| Template | Environment variable | Template-specific placeholders |
+|---|---|---|
+| Password changed email | `EMAIL_PASSWORD_CHANGED_ID` | `member_firstname`, `url` |
+| Welcome email | `EMAIL_WELCOME_ID` | `url` |
+| Manual-registration welcome email | `EMAIL_WELCOME_MANUAL_ID` | `member_email`, `reset_url` |
+| Member registered email | `EMAIL_MEMBER_REGISTERED_ID` | `member_name` |
+| New subscription email | `EMAIL_NEW_SUBSCRIPTION_ID` | `member_name`, `friendly_type`, `quantity`, `next_billing_date`, `url` |
+| Failed payment email | `EMAIL_FAILED_PAYMENT_ID` | `member_name`, `friendly_type`, `error_status`, `url` |
+| Canceled subscription email | `EMAIL_CANCELED_SUBSCRIPTION_ID` | `member_name`, `friendly_type`, `url` |
+| Household disbanded email, primary | `EMAIL_HOUSEHOLD_DISBANDED_PRIMARY_ID` | `support_email` |
+| Household disbanded email, secondary | `EMAIL_HOUSEHOLD_DISBANDED_SECONDARY_ID` | `primary_member_name`, `support_email` |
+| Reservation reminder | `DOC_RESERVATION_REMINDER_ID` | `reservation_title`, `reservation_time`, `resources`, `reservations_url` |
+| Volunteer credit awarded | `DOC_VOLUNTEER_CREDIT_AWARDED_ID` | `credit_description`, `credit_value`, `year_total`, `credit_plural` |
+| Volunteer discount earned nudge | `DOC_VOLUNTEER_CREDIT_DISCOUNT_EARNED_ID` | none |
+| Volunteer discount progress nudge | `DOC_VOLUNTEER_CREDIT_DISCOUNT_PROGRESS_ID` | `credits_needed`, `credit_plural` |
+| Volunteer credit reversed | `DOC_VOLUNTEER_CREDIT_REVERSED_ID` | `credit_description`, `credit_value`, `credit_plural`, `reason`, `reversed_by_name` |
+| Volunteer Braintree review | `DOC_VOLUNTEER_BRAINTREE_REVIEW_ID` | `member_url`, `reversed_by_name`, `reason` |
+| Volunteer discount applied, member | `DOC_VOLUNTEER_DISCOUNT_APPLIED_MEMBER_ID` | `amount`, `billing_cycles` |
+| Volunteer discount applied, admin | `DOC_VOLUNTEER_DISCOUNT_APPLIED_ADMIN_ID` | `member_url`, `amount`, `billing_cycles`, `total_cycles`, `discount_description` |
+| Volunteer discount without subscription | `DOC_VOLUNTEER_DISCOUNT_NO_SUBSCRIPTION_ID` | `member_url` |
+| Volunteer discount error | `DOC_VOLUNTEER_DISCOUNT_ERROR_ID` | `member_url`, `error_message` |
+| Household disbanded Slack DM, primary | `DOC_HOUSEHOLD_DISBANDED_PRIMARY_ID` | none |
+| Household disbanded Slack DM, secondary | `DOC_HOUSEHOLD_DISBANDED_SECONDARY_ID` | `primary_member_name` |
+| Household disbanded admin message | `DOC_HOUSEHOLD_DISBANDED_ADMIN_ID` | none |
+| Member review orientation | `DOC_MEMBER_REVIEW_ORIENTATION_ID` | none |
+| Member review no purchase | `DOC_MEMBER_REVIEW_NO_PURCHASE_ID` | none |
+| Member review PayPal migration | `DOC_MEMBER_REVIEW_PAYPAL_ID` | none |
+| Member review missing contract | `DOC_MEMBER_REVIEW_MISSING_CONTRACT_ID` | `contract_type`, `document_url` |
+| Member review expired rental | `DOC_MEMBER_REVIEW_EXPIRED_RENTAL_ID` | `rental_numbers`, `renewal_url` |
+
+Unknown placeholders make an export invalid, and the prior Redis copy remains in
+place. Substitution values and final HTML are sanitized before use. Refresh updates
+only the cache. Restore default overwrites a non-empty Google document with the
+compiled fallback after an administrator confirms the warning. Populate is offered
+only for an effectively empty document. Successful and failed menu actions are sent
+to the portal audit log; Google permission errors are returned directly to the UI.
