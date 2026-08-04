@@ -174,6 +174,28 @@ RSpec.describe Service::EmailTemplate do
       expect(described_class.status(:reservation_reminder)[:status]).to eq('error')
     end
 
+    it 'wraps revoked Google credentials as a permission error' do
+      authorization_error = Signet::AuthorizationError.new('token revoked')
+      allow(Service::GoogleDrive).to receive(:load_gdrive).and_raise(authorization_error)
+
+      expect { described_class.refresh!(:reservation_reminder) }
+        .to raise_error(Service::EmailTemplate::PermissionError, 'token revoked') do |error|
+          expect(error.cause).to equal(authorization_error)
+        end
+      expect(described_class.status(:reservation_reminder)[:status]).to eq('permission_error')
+    end
+
+    it 'wraps non-Google Drive failures as template errors' do
+      drive_error = IOError.new('connection reset')
+      allow(drive).to receive(:get_file).and_raise(drive_error)
+
+      expect { described_class.refresh!(:reservation_reminder) }
+        .to raise_error(Service::EmailTemplate::TemplateError, 'connection reset') do |error|
+          expect(error.cause).to equal(drive_error)
+        end
+      expect(described_class.status(:reservation_reminder)[:status]).to eq('error')
+    end
+
     it 'uses the compiled fallback when the environment variable is missing' do
       allow(ENV).to receive(:[]).with('DOC_RESERVATION_REMINDER_ID').and_return(nil)
 

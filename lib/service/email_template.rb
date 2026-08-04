@@ -2,6 +2,7 @@ require 'erb'
 require 'cgi'
 require 'json'
 require 'net/http'
+require 'signet/errors'
 require 'stringio'
 require 'time'
 require 'uri'
@@ -168,8 +169,10 @@ module Service
         write_status(name, status_payload(name, permission ? 'permission_error' : 'error', Time.current.iso8601, error: error.message)) if name
         raise wrapped
       rescue => error
-        write_status(name, status_payload(name, 'error', Time.current.iso8601, error: error.message)) if name
-        raise
+        permission = error.is_a?(Signet::AuthorizationError)
+        wrapped = permission ? PermissionError.new(error.message) : TemplateError.new(error.message)
+        write_status(name, status_payload(name, permission ? 'permission_error' : 'error', Time.current.iso8601, error: error.message)) if name
+        raise wrapped
       end
 
       def statuses

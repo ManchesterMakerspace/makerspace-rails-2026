@@ -59,4 +59,16 @@ RSpec.describe Admin::TemplatesController, type: :controller do
     expect(JSON.parse(response.body)['error']).to include('writer access required')
     expect(Service::AuditLogger).to have_received(:log).with(hash_including(event_type: 'template_action_failed'))
   end
+
+  it 'reports and audits wrapped template refresh failures' do
+    sign_in admin
+    allow(Service::EmailTemplate).to receive(:refresh!)
+      .and_raise(Service::EmailTemplate::TemplateError, 'connection reset')
+
+    post :refresh, params: { id: 'reservation_reminder' }, format: :json
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(JSON.parse(response.body)['error']).to eq('connection reset')
+    expect(Service::AuditLogger).to have_received(:log).with(hash_including(event_type: 'template_action_failed'))
+  end
 end
