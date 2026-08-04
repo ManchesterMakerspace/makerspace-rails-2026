@@ -94,6 +94,11 @@ placeholders in addition to its template-specific placeholders:
 `expiration_date`, `slack_username`, `slack_id`, `profile_url`, `portal_url`,
 `base_url`, and `open_house_schedule`.
 
+For Slack links, keep the mrkdwn structure in the template and substitute the URL
+and label separately, for example `<{{profile_url}}|{{full_name}}>`. Do not put a
+preformatted Slack link into a single placeholder; separate substitution preserves
+the trusted link structure while escaping member-controlled label text.
+
 | Template | Environment variable | Template-specific placeholders |
 |---|---|---|
 | Password changed email | `EMAIL_PASSWORD_CHANGED_ID` | `member_firstname`, `url` |
@@ -110,11 +115,11 @@ placeholders in addition to its template-specific placeholders:
 | Volunteer discount earned nudge | `DOC_VOLUNTEER_CREDIT_DISCOUNT_EARNED_ID` | none |
 | Volunteer discount progress nudge | `DOC_VOLUNTEER_CREDIT_DISCOUNT_PROGRESS_ID` | `credits_needed`, `credit_plural` |
 | Volunteer credit reversed | `DOC_VOLUNTEER_CREDIT_REVERSED_ID` | `credit_description`, `credit_value`, `credit_plural`, `reason`, `reversed_by_name` |
-| Volunteer Braintree review | `DOC_VOLUNTEER_BRAINTREE_REVIEW_ID` | `member_url`, `reversed_by_name`, `reason` |
+| Volunteer Braintree review | `DOC_VOLUNTEER_BRAINTREE_REVIEW_ID` | `reversed_by_name`, `reason` |
 | Volunteer discount applied, member | `DOC_VOLUNTEER_DISCOUNT_APPLIED_MEMBER_ID` | `amount`, `billing_cycles` |
-| Volunteer discount applied, admin | `DOC_VOLUNTEER_DISCOUNT_APPLIED_ADMIN_ID` | `member_url`, `amount`, `billing_cycles`, `total_cycles`, `discount_description` |
-| Volunteer discount without subscription | `DOC_VOLUNTEER_DISCOUNT_NO_SUBSCRIPTION_ID` | `member_url` |
-| Volunteer discount error | `DOC_VOLUNTEER_DISCOUNT_ERROR_ID` | `member_url`, `error_message` |
+| Volunteer discount applied, admin | `DOC_VOLUNTEER_DISCOUNT_APPLIED_ADMIN_ID` | `amount`, `billing_cycles`, `total_cycles`, `discount_description` |
+| Volunteer discount without subscription | `DOC_VOLUNTEER_DISCOUNT_NO_SUBSCRIPTION_ID` | none |
+| Volunteer discount error | `DOC_VOLUNTEER_DISCOUNT_ERROR_ID` | `error_message` |
 | Household disbanded Slack DM, primary | `DOC_HOUSEHOLD_DISBANDED_PRIMARY_ID` | none |
 | Household disbanded Slack DM, secondary | `DOC_HOUSEHOLD_DISBANDED_SECONDARY_ID` | `primary_member_name` |
 | Household disbanded admin message | `DOC_HOUSEHOLD_DISBANDED_ADMIN_ID` | none |

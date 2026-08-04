@@ -80,11 +80,11 @@ module Service
       volunteer_credit_discount_earned: { format: :text, placeholders: [], fallback: 'external_templates/volunteer_credit_discount_earned' },
       volunteer_credit_discount_progress: { format: :text, placeholders: %w[credits_needed credit_plural], fallback: 'external_templates/volunteer_credit_discount_progress' },
       volunteer_credit_reversed: { format: :text, placeholders: %w[credit_description credit_value credit_plural reason reversed_by_name], fallback: 'external_templates/volunteer_credit_reversed' },
-      volunteer_braintree_review: { format: :text, placeholders: %w[member_url reversed_by_name reason], fallback: 'external_templates/volunteer_braintree_review' },
+      volunteer_braintree_review: { format: :text, placeholders: %w[reversed_by_name reason], fallback: 'external_templates/volunteer_braintree_review' },
       volunteer_discount_applied_member: { format: :text, placeholders: %w[amount billing_cycles], fallback: 'external_templates/volunteer_discount_applied_member' },
-      volunteer_discount_applied_admin: { format: :text, placeholders: %w[member_url amount billing_cycles total_cycles discount_description], fallback: 'external_templates/volunteer_discount_applied_admin' },
-      volunteer_discount_no_subscription: { format: :text, placeholders: %w[member_url], fallback: 'external_templates/volunteer_discount_no_subscription' },
-      volunteer_discount_error: { format: :text, placeholders: %w[member_url error_message], fallback: 'external_templates/volunteer_discount_error' },
+      volunteer_discount_applied_admin: { format: :text, placeholders: %w[amount billing_cycles total_cycles discount_description], fallback: 'external_templates/volunteer_discount_applied_admin' },
+      volunteer_discount_no_subscription: { format: :text, placeholders: [], fallback: 'external_templates/volunteer_discount_no_subscription' },
+      volunteer_discount_error: { format: :text, placeholders: %w[error_message], fallback: 'external_templates/volunteer_discount_error' },
       household_disbanded_primary: { format: :text, placeholders: [], fallback: 'external_templates/household_disbanded_primary' },
       household_disbanded_secondary: { format: :text, placeholders: %w[primary_member_name], fallback: 'external_templates/household_disbanded_secondary' },
       household_disbanded_admin: { format: :text, placeholders: [], fallback: 'external_templates/household_disbanded_admin' },
@@ -103,10 +103,14 @@ module Service
         name = normalize_name(template_name)
         definition = definition_for(name)
         selected_format = (format || definition[:format]).to_sym
+        # Valid exports use the Redis fast path. Invalid, unreadable, missing,
+        # and empty documents have no cached content, so each use retries the
+        # Google export until the document becomes valid.
         record = force_refresh ? refresh!(name) : cached_record(name)
         record ||= refresh!(name)
         render_content(record.fetch('content'), name, variables, selected_format)
       rescue => error
+        discard_cached_content!(name) if name && (error.is_a?(InvalidTemplate) || error.is_a?(KeyError))
         report_error(error, template: template_name)
         return render_fallback(name, variables, selected_format) if fallback && name && definition
         nil
@@ -126,6 +130,7 @@ module Service
         now = Time.current.iso8601
 
         if effectively_empty?(content)
+          discard_cached_content!(name)
           write_status(name, status_payload(name, 'empty', now, metadata: metadata, empty: true))
           raise InvalidTemplate, "#{env_key} refers to an effectively empty document"
         end
@@ -143,9 +148,11 @@ module Service
         write_status(name, status_payload(name, 'ok', now, metadata: metadata, empty: false))
         record
       rescue MissingEnvironmentVariable
+        discard_cached_content!(name) if name
         write_status(name, status_payload(name, 'missing_env', Time.current.iso8601, error: "#{env_key} is not set")) if name
         raise
       rescue InvalidTemplate => error
+        discard_cached_content!(name) if name
         current = REDIS.get(status_key(name)) if name
         empty_status = begin
           current && JSON.parse(current)['status'] == 'empty'
@@ -157,14 +164,17 @@ module Service
         end
         raise
       rescue JSON::ParserError => error
+        discard_cached_content!(name) if name
         write_status(name, status_payload(name, 'invalid', Time.current.iso8601, error: error.message)) if name
         raise InvalidTemplate, error.message
       rescue Google::Apis::Error => error
+        discard_cached_content!(name) if name
         permission = error.respond_to?(:status_code) && [401, 403].include?(error.status_code.to_i)
         wrapped = permission ? PermissionError.new(error.message) : TemplateError.new(error.message)
         write_status(name, status_payload(name, permission ? 'permission_error' : 'error', Time.current.iso8601, error: error.message)) if name
         raise wrapped
       rescue => error
+        discard_cached_content!(name) if name
         write_status(name, status_payload(name, 'error', Time.current.iso8601, error: error.message)) if name
         raise
       end
@@ -183,15 +193,11 @@ module Service
           parsed_status = JSON.parse(raw) rescue nil
           raw = nil unless parsed_status && parsed_status['document_id'] == ENV[env_key]
         end
-        unless raw
-          begin
-            refresh!(name)
-          rescue StandardError
-            # refresh! persists a user-facing status; return it below.
-          end
-          raw = REDIS.get(status_key(name))
-        end
-        public_status(raw ? JSON.parse(raw) : status_payload(name, 'error', nil, error: 'Template status is unavailable'))
+        return public_status(JSON.parse(raw)) if raw
+
+        cached = cached_record(name)
+        state = cached ? 'ok' : 'uncached'
+        public_status(status_payload(name, state, nil))
       end
 
       def restore_default!(template_name)
@@ -277,6 +283,10 @@ module Service
         REDIS.set(status_key(name), JSON.generate(payload))
       end
 
+      def discard_cached_content!(name)
+        REDIS.del(cache_key(name))
+      end
+
       def status_payload(name, status, checked_at, metadata: nil, error: nil, empty: false)
         env_key = TEMPLATE_ENV_KEYS.fetch(name)
         cached = cached_record(name)
@@ -346,10 +356,14 @@ module Service
       def render_fallback(name, variables, format)
         template = definition_for(name)[:fallback]
         raise InvalidTemplate, "No fallback is configured for #{name}" if template.blank?
+        locals = variables.to_h.symbolize_keys
+        if format != :html
+          locals = locals.transform_values { |value| sanitize_template_value(value, format: :text) }
+        end
         ApplicationController.render(
           template: template,
           formats: [format == :html ? :html : :text],
-          locals: variables.to_h.symbolize_keys,
+          locals: locals,
           layout: false
         ).to_s.strip
       end

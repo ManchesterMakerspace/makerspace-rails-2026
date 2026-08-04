@@ -262,12 +262,9 @@ class VolunteerCredit
   # so they can manually review and adjust Braintree billing cycles if appropriate.
   def notify_braintree_review_needed(reversed_by, reason)
     m          = member
-    member_url = ::BraintreeService::Notification.get_member_profile(m)
-
     message = ::Service::EmailTemplate.render(
       :volunteer_braintree_review,
       ::Service::EmailTemplate.common_variables(m).merge(
-        member_url: member_url,
         reversed_by_name: reversed_by.fullname,
         reason: reason
       ),
@@ -351,7 +348,6 @@ class VolunteerCredit
     cycles      = discount_info[:cycles_added]
     total       = discount_info[:total_cycles]
     description = discount_info[:description]
-    member_url  = ::BraintreeService::Notification.get_member_profile(m)
     id_str      = m.id.to_s
     cycles_str  = cycles == 1 ? '1 billing cycle' : "#{cycles} billing cycles"
     amount_str  = "$#{format('%.2f', amount)}/mo"
@@ -370,7 +366,6 @@ class VolunteerCredit
     admin_message = ::Service::EmailTemplate.render(
       :volunteer_discount_applied_admin,
       ::Service::EmailTemplate.common_variables(m).merge(
-        member_url: member_url,
         member_id: id_str,
         amount: amount_str,
         billing_cycles: cycles_str,
@@ -387,11 +382,9 @@ class VolunteerCredit
   end
 
   def notify_no_subscription(m)
-    member_url = ::BraintreeService::Notification.get_member_profile(m)
-
     message = ::Service::EmailTemplate.render(
       :volunteer_discount_no_subscription,
-      ::Service::EmailTemplate.common_variables(m).merge(member_url: member_url),
+      ::Service::EmailTemplate.common_variables(m),
       fallback: true,
       format: :text
     )
@@ -401,12 +394,9 @@ class VolunteerCredit
   end
 
   def notify_discount_error(m, error)
-    member_url = (::BraintreeService::Notification.get_member_profile(m) rescue m.fullname)
-
     message = ::Service::EmailTemplate.render(
       :volunteer_discount_error,
       ::Service::EmailTemplate.common_variables(m).merge(
-        member_url: member_url,
         error_message: error.message
       ),
       fallback: true,
