@@ -7,6 +7,7 @@ class Admin::AnalyticsController < AdminController
       total_members:      Service::Analytics::Members.query_total_members.count,
       new_members:        Service::Analytics::Members.query_new_members.count,
       subscribed_members: Service::Analytics::Members.query_braintree_members.count,
+      members_with_expiring_payment_methods: Service::CardExpirationCheck.expiring_member_count,
       past_due_invoices:  Service::Analytics::Invoices.query_past_due.count,
       refunds_pending:    Service::Analytics::Invoices.query_refunds_pending.count,
     }
