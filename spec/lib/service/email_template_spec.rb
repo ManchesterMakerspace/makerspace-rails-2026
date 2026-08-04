@@ -88,14 +88,15 @@ RSpec.describe Service::EmailTemplate do
       )
     end
 
-    it 'rejects unknown placeholders and evicts the previously valid cache entry' do
+    it 'rejects unknown placeholders without replacing the previously valid cache entry' do
       export_html('<html><body>Valid {{reservation_title}}</body></html>')
       described_class.refresh!(:reservation_reminder)
       export_html('<html><body>Bad {{execute_code}}</body></html>')
 
       expect { described_class.refresh!(:reservation_reminder) }
         .to raise_error(Service::EmailTemplate::InvalidTemplate, /execute_code/)
-      expect(redis_values).not_to have_key('external_template:v1:reservation_reminder:content')
+      cached = JSON.parse(redis_values.fetch('external_template:v1:reservation_reminder:content'))
+      expect(cached['content']).to include('Valid {{reservation_title}}')
       status = JSON.parse(redis_values.fetch('external_template:v1:reservation_reminder:status'))
       expect(status['status']).to eq('invalid')
     end
@@ -121,7 +122,7 @@ RSpec.describe Service::EmailTemplate do
       expect(redis_values).to have_key(key)
     end
 
-    it 'evicts an empty document, uses the fallback, and checks Google again on each use' do
+    it 'retains the last valid export when a refreshed document is empty' do
       export_html('<html><body>Valid {{reservation_title}}</body></html>')
       described_class.refresh!(:reservation_reminder)
       export_html("<html><body> \n\t </body></html>")
@@ -140,18 +141,20 @@ RSpec.describe Service::EmailTemplate do
         )
       end
 
-      expect(results).to all(include('Lathe'))
-      expect(drive).to have_received(:export_file).exactly(4).times
-      expect(redis_values).not_to have_key('external_template:v1:reservation_reminder:content')
+      expect(results).to all(eq('Valid Lathe'))
+      expect(drive).to have_received(:export_file).twice
+      expect(redis_values).to have_key('external_template:v1:reservation_reminder:content')
       expect(described_class.status(:reservation_reminder)[:status]).to eq('empty')
     end
 
-    it 'evicts an unreadable document and retries Google before every fallback' do
+    it 'retains the last valid export when a refresh fails with a transient Google error' do
       export_html('<html><body>Valid {{reservation_title}}</body></html>')
       described_class.refresh!(:reservation_reminder)
-      allow(drive).to receive(:get_file).and_raise(StandardError, 'file not found')
+      allow(drive).to receive(:get_file).and_raise(
+        Google::Apis::ServerError.new('backend error', status_code: 500)
+      )
       expect { described_class.refresh!(:reservation_reminder) }
-        .to raise_error(StandardError, 'file not found')
+        .to raise_error(Service::EmailTemplate::TemplateError, 'backend error')
 
       results = 2.times.map do
         described_class.render(
@@ -165,9 +168,9 @@ RSpec.describe Service::EmailTemplate do
         )
       end
 
-      expect(results).to all(include('Lathe'))
-      expect(drive).to have_received(:get_file).exactly(4).times
-      expect(redis_values).not_to have_key('external_template:v1:reservation_reminder:content')
+      expect(results).to all(eq('Valid Lathe'))
+      expect(drive).to have_received(:get_file).twice
+      expect(redis_values).to have_key('external_template:v1:reservation_reminder:content')
       expect(described_class.status(:reservation_reminder)[:status]).to eq('error')
     end
 

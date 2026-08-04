@@ -82,4 +82,24 @@ RSpec.describe 'data:ensure_unique_indexes' do
       Shop.collection.insert_one(name: 'woodshop')
     end.to raise_error(Mongo::Error::OperationFailure, /duplicate key/i)
   end
+
+  it 'creates a partial unique member customer-id index that permits nil values' do
+    expect { task.invoke }.not_to raise_error
+
+    customer_id_index = Member.collection.indexes.to_a.find do |index|
+      index.fetch('key', {}).keys == ['customer_id']
+    end
+    expect(customer_id_index).to include('unique' => true)
+    expect(customer_id_index.fetch('partialFilterExpression')).to eq(
+      'customer_id' => { '$type' => 'string' }
+    )
+
+    inserted_ids = Member.collection.insert_many([
+      { customer_id: nil },
+      { customer_id: nil }
+    ]).inserted_ids
+    expect(inserted_ids.length).to eq(2)
+  ensure
+    Member.collection.delete_many('_id' => { '$in' => inserted_ids }) if inserted_ids.present?
+  end
 end

@@ -103,14 +103,13 @@ module Service
         name = normalize_name(template_name)
         definition = definition_for(name)
         selected_format = (format || definition[:format]).to_sym
-        # Valid exports use the Redis fast path. Invalid, unreadable, missing,
-        # and empty documents have no cached content, so each use retries the
-        # Google export until the document becomes valid.
+        # The last valid export uses the Redis fast path. When no valid export
+        # exists, each use retries Google until the document becomes valid.
         record = force_refresh ? refresh!(name) : cached_record(name)
         record ||= refresh!(name)
         render_content(record.fetch('content'), name, variables, selected_format)
       rescue => error
-        discard_cached_content!(name) if name && (error.is_a?(InvalidTemplate) || error.is_a?(KeyError))
+        discard_cached_content!(name) if name && record && (error.is_a?(InvalidTemplate) || error.is_a?(KeyError))
         report_error(error, template: template_name)
         return render_fallback(name, variables, selected_format) if fallback && name && definition
         nil
@@ -130,7 +129,6 @@ module Service
         now = Time.current.iso8601
 
         if effectively_empty?(content)
-          discard_cached_content!(name)
           write_status(name, status_payload(name, 'empty', now, metadata: metadata, empty: true))
           raise InvalidTemplate, "#{env_key} refers to an effectively empty document"
         end
@@ -148,11 +146,9 @@ module Service
         write_status(name, status_payload(name, 'ok', now, metadata: metadata, empty: false))
         record
       rescue MissingEnvironmentVariable
-        discard_cached_content!(name) if name
         write_status(name, status_payload(name, 'missing_env', Time.current.iso8601, error: "#{env_key} is not set")) if name
         raise
       rescue InvalidTemplate => error
-        discard_cached_content!(name) if name
         current = REDIS.get(status_key(name)) if name
         empty_status = begin
           current && JSON.parse(current)['status'] == 'empty'
@@ -164,17 +160,14 @@ module Service
         end
         raise
       rescue JSON::ParserError => error
-        discard_cached_content!(name) if name
         write_status(name, status_payload(name, 'invalid', Time.current.iso8601, error: error.message)) if name
         raise InvalidTemplate, error.message
       rescue Google::Apis::Error => error
-        discard_cached_content!(name) if name
         permission = error.respond_to?(:status_code) && [401, 403].include?(error.status_code.to_i)
         wrapped = permission ? PermissionError.new(error.message) : TemplateError.new(error.message)
         write_status(name, status_payload(name, permission ? 'permission_error' : 'error', Time.current.iso8601, error: error.message)) if name
         raise wrapped
       rescue => error
-        discard_cached_content!(name) if name
         write_status(name, status_payload(name, 'error', Time.current.iso8601, error: error.message)) if name
         raise
       end

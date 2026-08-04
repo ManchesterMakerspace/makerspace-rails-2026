@@ -101,6 +101,10 @@ class Member
     unique: true,
     partial_filter_expression: { email: { '$type' => 'string' } }
   })
+  index({ customer_id: 1 }, {
+    unique: true,
+    partial_filter_expression: { customer_id: { '$type' => 'string' } }
+  })
 
   before_validation :normalize_email, :normalize_group_name
   after_initialize :verify_group_expiry
