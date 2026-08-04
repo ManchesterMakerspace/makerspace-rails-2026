@@ -6,7 +6,6 @@ describe 'Admin::InvoiceOptions API', type: :request do
 
   path '/admin/invoice_options' do
     post 'Creates an invoice option' do
-      tags 'InvoiceOptions'
       operationId "adminCreateInvoiceOption"
       consumes 'application/json'
 
@@ -63,7 +62,6 @@ describe 'Admin::InvoiceOptions API', type: :request do
 
   path "/admin/invoice_options/{id}" do
     put 'Updates an invoice option' do
-      tags 'InvoiceOptions'
       operationId "adminUpdateInvoiceOption"
       consumes 'application/json'
       parameter name: :id, in: :path, type: :string
@@ -136,7 +134,6 @@ describe 'Admin::InvoiceOptions API', type: :request do
     end
 
     delete 'Deletes an invoice option' do
-      tags 'InvoiceOptions'
       operationId "adminDeleteInvoiceOption"
       parameter name: :id, in: :path, type: :string
 

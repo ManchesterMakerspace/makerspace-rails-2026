@@ -12,7 +12,6 @@ describe 'Billing::Transactions API', type: :request do
 
   path '/admin/billing/transactions' do 
     get 'Gets a list of transactions' do 
-      tags 'Transactions'
       operationId "adminListTransaction"
       parameter name: :startDate, in: :query, type: :string, required: false
       parameter name: :endDate, in: :query, type: :string, required: false
@@ -60,8 +59,6 @@ describe 'Billing::Transactions API', type: :request do
     get 'Gets a transaction' do 
       let(:transaction) { build(:credit_card_transaction, id: "foo") }
       let(:invoice) { create(:invoice, member: basic, transaction_id: transaction.id)}
-
-      tags 'Transactions'
       operationId "adminGetTransaction"
       parameter name: :id, in: :path, type: :string
       response '200', 'transaction found' do 
@@ -96,8 +93,6 @@ describe 'Billing::Transactions API', type: :request do
       before do 
         allow(BraintreeService::Transaction).to receive(:refund).with(gateway, transaction.id)
       end
-
-      tags 'Transactions'
       operationId 'adminDeleteTransaction'
       parameter name: :id, in: :path, type: :string
 

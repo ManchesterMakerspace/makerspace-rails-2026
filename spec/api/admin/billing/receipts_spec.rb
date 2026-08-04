@@ -14,7 +14,6 @@ describe 'Billing::Receipts API', type: :request do
 
   path '/admin/billing/receipts/{id}' do 
     get 'Get a receipt for an invoice' do 
-      tags 'Receipts'
       operationId 'adminGetReceipt'
       parameter name: :id, in: :path, type: :string
       

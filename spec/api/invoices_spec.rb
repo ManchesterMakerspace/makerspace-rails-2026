@@ -3,7 +3,6 @@ require 'swagger_helper'
 describe 'Invoices API', type: :request do
   path '/invoices' do
     get 'Gets a list of invoices' do
-      tags 'Invoices'
       operationId "listInvoices"
       consumes 'application/json'
       parameter name: :pageNum, in: :query, type: :number, required: false
@@ -37,7 +36,6 @@ describe 'Invoices API', type: :request do
     end
 
     post 'Create an invoice' do
-      tags 'Invoices'
       operationId 'createInvoice'
       consumes 'application/json'
       parameter name: :createInvoiceDetails, in: :body, schema: {

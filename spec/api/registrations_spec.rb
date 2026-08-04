@@ -5,7 +5,6 @@ describe 'Registrations API', type: :request do
 
   path '/members/sign_in' do
     post 'Signs in user' do
-      tags 'Authentication'
       operationId 'signIn'
       consumes 'application/json'
       produces 'application/json'
@@ -39,7 +38,6 @@ describe 'Registrations API', type: :request do
 
   path '/members/sign_out' do
     delete 'Signs out user' do
-      tags 'Authentication'
       operationId 'signOut'
 
       response '204', 'User signed out' do
@@ -51,7 +49,6 @@ describe 'Registrations API', type: :request do
 
   path '/members/password' do
     post 'Sends password reset instructions' do
-      tags 'Password'
       operationId 'requestPasswordReset'
       consumes 'application/json'
       produces 'application/json'
@@ -82,7 +79,6 @@ describe 'Registrations API', type: :request do
     end
 
     put 'Updates member password' do
-      tags 'Password'
       operationId 'resetPassword'
       consumes 'application/json'
       produces 'application/json'
@@ -127,7 +123,6 @@ describe 'Registrations API', type: :request do
 
   path '/members' do
     post 'Registers new member' do
-      tags 'Authentication'
       operationId 'registerMember'
       consumes 'application/json'
       produces 'application/json'
@@ -184,7 +179,6 @@ describe 'Registrations API', type: :request do
 
   path '/send_registration' do
     post 'Sends registration email' do
-      tags 'Authentication'
       operationId 'sendRegistrationEmail'
       consumes 'application/json'
       produces 'application/json'

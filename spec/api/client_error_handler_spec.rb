@@ -3,7 +3,6 @@ require 'swagger_helper'
 describe 'ClientErrorHandler API', type: :request do
   path '/client_error_handler' do 
     post 'Sends a slack message' do 
-      tags 'ClientErrorHandler'
       operationId 'message'
       consumes 'application/json'
 

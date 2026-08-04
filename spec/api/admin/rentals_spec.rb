@@ -7,7 +7,6 @@ describe 'Admin::Rentals API', type: :request do
 
   path '/admin/rentals' do
     get 'Gets a list of rentals' do
-      tags 'Rentals'
       operationId "adminListRentals"
       consumes 'application/json'
       parameter name: :pageNum, in: :query, type: :number, required: false
@@ -37,7 +36,6 @@ describe 'Admin::Rentals API', type: :request do
     end
 
     post 'Creates a rental' do
-      tags 'Rentals'
       operationId "adminCreateRental"
       consumes 'application/json'
       parameter name: :createRentalDetails, in: :body, schema: {
@@ -85,7 +83,6 @@ describe 'Admin::Rentals API', type: :request do
 
   path "/admin/rentals/{id}" do
     put 'Updates a rental' do
-      tags 'Rentals'
       operationId "adminUpdateRental"
       consumes 'application/json'
       parameter name: :id, in: :path, type: :string
@@ -146,7 +143,6 @@ describe 'Admin::Rentals API', type: :request do
     end
 
     delete 'Deletes a rental' do
-      tags 'Rentals'
       operationId "adminDeleteRental"
       parameter name: :id, in: :path, type: :string
 

@@ -3,7 +3,6 @@ require 'swagger_helper'
 describe 'Rentals API', type: :request do
   path '/rentals' do 
     get 'Gets a list of rentals' do 
-      tags 'Rentals'
       operationId "listRentals"
       consumes 'application/json'
       parameter name: :pageNum, in: :query, type: :number, required: false
@@ -24,7 +23,6 @@ describe 'Rentals API', type: :request do
 
   path '/rentals/{id}' do
     get 'Gets a rental' do 
-      tags 'Rentals'
       operationId "getRental"
       consumes 'application/json'
       parameter name: :id, in: :path, type: :string
@@ -54,7 +52,6 @@ describe 'Rentals API', type: :request do
     end
 
     put 'Updates a rental and uploads signature' do
-      tags 'Rentals'
       operationId "updateRental"
       consumes 'application/json'
       parameter name: :id, in: :path, type: :string

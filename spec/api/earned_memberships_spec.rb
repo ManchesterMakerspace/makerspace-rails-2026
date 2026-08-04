@@ -3,7 +3,6 @@ require 'swagger_helper'
 describe 'EarnedMemberships API', type: :request do
   path '/earned_memberships/{id}' do
     get 'Gets an earned membership' do 
-      tags 'EarnedMemberships'
       operationId "getEarnedMembership"
       parameter name: :id, in: :path, type: :string
 

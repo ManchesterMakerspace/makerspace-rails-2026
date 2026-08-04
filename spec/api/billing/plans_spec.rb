@@ -12,7 +12,6 @@ describe 'Plans API', type: :request do
 
   path '/billing/plans' do 
     get 'Gets a list of billing plans' do 
-      tags 'Plans'
       operationId "listBillingPlans"
       parameter name: :pageNum, in: :query, type: :number, required: false
       parameter name: :orderBy, in: :query, type: :string, required: false

@@ -3,7 +3,6 @@ require 'swagger_helper'
 describe 'Permissions API', type: :request do 
   path '/members/{id}/permissions' do
     get "Gets a member's permissions" do 
-      tags 'Permissions'
       operationId "listMembersPermissions"
       parameter name: :id, in: :path, type: :string
 

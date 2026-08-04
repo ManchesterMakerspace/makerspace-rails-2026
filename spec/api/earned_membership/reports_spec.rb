@@ -3,7 +3,6 @@ require 'swagger_helper'
 describe 'Reports API', type: :request do
   path '/earned_memberships/{id}/reports' do
     get 'Gets a list of reports for current member' do
-      tags 'Reports'
       operationId "listEarnedMembershipReports"
       consumes 'application/json'
       parameter name: :id, :in => :path, :type => :string
@@ -36,7 +35,6 @@ describe 'Reports API', type: :request do
     end
 
     post 'Create an report' do
-      tags 'Reports'
       operationId 'createEarnedMembershipReport'
       consumes 'application/json'
       parameter name: :id, :in => :path, :type => :string

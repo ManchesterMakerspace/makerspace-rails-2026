@@ -3,7 +3,6 @@ require 'swagger_helper'
 describe 'Members API', type: :request do
   path '/members' do
     get 'Gets a list of members' do
-      tags 'Members'
       operationId "listMembers"
       consumes 'application/json'
       parameter name: :pageNum, in: :query, type: :number, required: false
@@ -81,7 +80,6 @@ describe 'Members API', type: :request do
 
   path '/members/{id}' do
     get 'Gets a member' do
-      tags 'Members'
       operationId "getMember"
       consumes 'application/json'
       parameter name: :id, in: :path, type: :string
@@ -111,7 +109,6 @@ describe 'Members API', type: :request do
     end
 
     put 'Updates a member and uploads signature' do
-      tags 'Members'
       operationId "updateMember"
       consumes 'application/json'
       parameter name: :id, in: :path, type: :string

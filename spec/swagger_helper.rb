@@ -877,11 +877,64 @@ RSpec.configure do |config|
       info: {
         title: 'Makerspace Server V2',
         version: 'v2',
+        description: <<~DESCRIPTION.strip,
+          HTTP interface for the Manchester Makerspace member portal and its
+          provider callbacks. Browser API operations use the
+          `_member-interface_session` cookie. Mutating browser requests also
+          send the value of the Rails `XSRF-TOKEN` cookie in the
+          `X-XSRF-TOKEN` header. A small number of document and receipt
+          operations return HTML for direct iframe or browser rendering.
+
+          Resource tags describe the business domain. The additional
+          Frontend, Webhook, and Orphaned tags record the currently known
+          consumer of each operation; Orphaned is an audit finding, not a
+          guarantee that an endpoint is safe to remove without owner review.
+        DESCRIPTION
       },
+      tags: [
+        {
+          name: 'Frontend',
+          description: 'Called through the generated client, Axios/fetch, or a direct browser/iframe URL in makerspace-react-2026.'
+        },
+        {
+          name: 'Webhook',
+          description: 'Invoked by an external provider rather than the member portal frontend.'
+        },
+        {
+          name: 'Orphaned',
+          description: 'No current frontend, direct-browser, callback, scheduled, or documented external caller was found; removal still requires owner validation.'
+        }
+      ],
       servers: [
         { url: '/api', description: 'API base path' }
       ],
       components: {
+        securitySchemes: {
+          cookieAuth: {
+            type: :apiKey,
+            in: :cookie,
+            name: '_member-interface_session',
+            description: 'Devise-backed Rails member session cookie.'
+          },
+          csrfToken: {
+            type: :apiKey,
+            in: :header,
+            name: 'X-XSRF-TOKEN',
+            description: 'Value of the XSRF-TOKEN cookie returned by Rails; required for protected mutating requests.'
+          },
+          mailtrapSignature: {
+            type: :apiKey,
+            in: :header,
+            name: 'Mailtrap-Signature',
+            description: 'HMAC-SHA256 of the raw request body when MAILTRAP_WEBHOOK_SIGNATURE is configured.'
+          },
+          slackSignature: {
+            type: :apiKey,
+            in: :header,
+            name: 'X-Slack-Signature',
+            description: 'Slack v0 request signature; X-Slack-Request-Timestamp is also checked to prevent replay.'
+          }
+        },
         schemas: {
           MemberStatus: {
             type: :string,
@@ -918,7 +971,8 @@ RSpec.configure do |config|
             type: :string, enum: ["member", "rental"]
           }
         }.merge(definitions)
-      }
+      },
+      paths: OpenapiRouteCatalog.paths
     }
   }
 end

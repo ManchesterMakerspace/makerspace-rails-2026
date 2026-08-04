@@ -7,7 +7,6 @@ describe 'Admin::Invoices API', type: :request do
   let(:invoices) { create_list(:invoice, 3) }
   path '/admin/invoices' do
     get 'Gets a list of invoices' do
-      tags 'Invoices'
       operationId "adminListInvoices"
       consumes 'application/json'
       parameter name: :pageNum, in: :query, type: :number, required: false
@@ -46,7 +45,6 @@ describe 'Admin::Invoices API', type: :request do
     end
 
     post 'Creates an invoice' do
-      tags 'Invoices'
       operationId "adminCreateInvoices"
       consumes 'application/json'
       parameter name: :createInvoiceDetails, in: :body, schema: {
@@ -132,7 +130,6 @@ describe 'Admin::Invoices API', type: :request do
 
   path "/admin/invoices/{id}" do
     put 'Updates an invoice' do
-      tags 'Invoices'
       operationId "adminUpdateInvoice"
       consumes 'application/json'
       parameter name: :id, in: :path, type: :string
@@ -188,7 +185,6 @@ describe 'Admin::Invoices API', type: :request do
     end
 
     delete 'Deletes an invoice' do
-      tags 'Invoices'
       operationId "adminDeleteInvoice"
       parameter name: :id, in: :path, type: :string
 

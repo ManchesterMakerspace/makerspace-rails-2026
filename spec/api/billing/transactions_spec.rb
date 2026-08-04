@@ -14,7 +14,6 @@ describe 'Billing::Transactions API', type: :request do
 
   path '/billing/transactions' do
     get 'Gets a list of transactions' do
-      tags 'Transactions'
       operationId "listTransactions"
       consumes 'application/json'
       parameter name: :startDate, in: :query, type: :string, required: false
@@ -67,8 +66,6 @@ describe 'Billing::Transactions API', type: :request do
         allow(invoice).to receive(:submit_for_settlement).with(gateway, "1234").and_return(transaction)
         allow(BraintreeService::PaymentMethod).to receive(:find_payment_method_for_customer).and_return(true)
       end
-
-      tags 'Transactions'
       operationId "createTransaction"
       consumes 'application/json'
       parameter name: :createTransactionDetails, in: :body, schema: {
@@ -161,8 +158,6 @@ describe 'Billing::Transactions API', type: :request do
         allow(BraintreeService::Transaction).to receive(:get_transaction).with(gateway, transaction.id).and_return(transaction)
         create(:invoice, transaction_id: transaction.id, member: customer)
       end
-
-      tags 'Transactions'
       operationId "deleteTransaction"
       parameter name: :id, in: :path, type: :string
 

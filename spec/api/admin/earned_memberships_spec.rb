@@ -5,7 +5,6 @@ describe 'Admin::EarnedMemberships API', type: :request do
   let(:basic) { create(:member) }
   path '/admin/earned_memberships' do
     get 'Gets a list of earned memberships' do
-      tags 'EarnedMemberships'
       operationId "adminListEarnedMemberships"
       consumes 'application/json'
       parameter name: :pageNum, in: :query, type: :number, required: false
@@ -33,7 +32,6 @@ describe 'Admin::EarnedMemberships API', type: :request do
     end
 
     post 'Creates an earned membership' do
-      tags 'EarnedMemberships'
       operationId "adminCreateEarnedMembership"
       consumes 'application/json'
       parameter name: :createEarnedMembershipDetails, in: :body, schema: {
@@ -79,7 +77,6 @@ describe 'Admin::EarnedMemberships API', type: :request do
     get 'Gets an earned membership' do
       operationId "adminGetEarnedMembership"
       consumes 'application/json'
-      tags 'EarnedMemberships'
       parameter name: :id, in: :path, type: :string
 
       response '200', 'earned membership found' do
@@ -113,7 +110,6 @@ describe 'Admin::EarnedMemberships API', type: :request do
     end
 
     put 'Updates an earned membership' do
-      tags 'EarnedMemberships'
       operationId "adminUpdateEarnedMembership"
       consumes 'application/json'
       parameter name: :id, in: :path, type: :string

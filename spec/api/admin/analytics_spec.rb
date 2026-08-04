@@ -5,7 +5,6 @@ describe 'Analytics API', type: :request do
 
   path '/admin/analytics' do
     get 'Lists analytic counts' do
-      tags 'Analytics'
       operationId "adminListAnalytics"
 
 

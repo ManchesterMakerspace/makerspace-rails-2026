@@ -18,7 +18,6 @@ describe 'Billing::Subscriptions API', type: :request do
 
   path '/billing/subscriptions/{id}' do
     get 'Gets a subscription' do
-      tags 'Subscriptions'
       operationId "getSubscription"
       consumes 'application/json'
       parameter name: :id, in: :path, type: :string
@@ -76,7 +75,6 @@ describe 'Billing::Subscriptions API', type: :request do
     end
 
     put "Update a subscription" do
-      tags 'Subscriptions'
       operationId "updateSubscription"
       consumes 'application/json'
       parameter name: :id, in: :path, type: :string
@@ -132,8 +130,6 @@ describe 'Billing::Subscriptions API', type: :request do
       before do
         allow(BraintreeService::Subscription).to receive(:cancel).with(gateway, subscription.id)
       end
-
-      tags 'Subscriptions'
       operationId "cancelSubscription"
       parameter name: :id, in: :path, type: :string
 

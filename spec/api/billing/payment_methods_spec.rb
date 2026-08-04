@@ -14,7 +14,6 @@ describe 'Billing::PaymentMethods API', type: :request do
 
   path '/billing/payment_methods/new' do
     get 'Initiate new payment method creation' do
-      tags 'PaymentMethods'
       operationId "getNewPaymentMethod"
       consumes 'application/json'
       response '200', 'Token created' do
@@ -43,7 +42,6 @@ describe 'Billing::PaymentMethods API', type: :request do
 
   path '/billing/payment_methods' do
     get 'Gets a list of payment_methods' do
-      tags 'PaymentMethods'
       operationId "listPaymentMethods"
       consumes 'application/json'
 
@@ -73,7 +71,6 @@ describe 'Billing::PaymentMethods API', type: :request do
     end
 
     post 'Create an payment_method' do
-      tags 'PaymentMethods'
       operationId "createPaymentMethod"
       consumes 'application/json'
       parameter name: :createPaymentMethodDetails, in: :body, schema: {
@@ -121,8 +118,6 @@ describe 'Billing::PaymentMethods API', type: :request do
       before do
         allow(BraintreeService::PaymentMethod).to receive(:find_payment_method_for_customer).with(gateway, payment_method.token, customer.customer_id).and_return(payment_method)
       end
-
-      tags 'PaymentMethods'
       operationId "getPaymentMethod"
       parameter name: :id, in: :path, type: :string
 
@@ -154,8 +149,6 @@ describe 'Billing::PaymentMethods API', type: :request do
         allow(BraintreeService::PaymentMethod).to receive(:find_payment_method_for_customer).with(gateway, payment_method.token, customer.customer_id).and_return(payment_method)
         allow(BraintreeService::PaymentMethod).to receive(:delete_payment_method).with(gateway, payment_method.token).and_return(success_result)
       end
-
-      tags 'PaymentMethods'
       operationId "deletePaymentMethod"
       parameter name: :id, in: :path, type: :string
 

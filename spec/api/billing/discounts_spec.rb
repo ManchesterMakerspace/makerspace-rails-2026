@@ -12,7 +12,6 @@ describe 'Discounts API', type: :request do
 
   path '/billing/discounts' do 
     get 'Gets a list of discounts' do 
-      tags 'Discounts'
       operationId "listBillingDiscounts"
       parameter name: :pageNum, in: :query, type: :number, required: false
       parameter name: :orderBy, in: :query, type: :string, required: false

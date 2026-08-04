@@ -3,7 +3,6 @@ require 'swagger_helper'
 describe 'InvoiceOptions API', type: :request do
   path '/invoice_options/signup' do
     get 'Gets invoice options eligible for signup' do
-      tags 'InvoiceOptions'
       operationId "listSignupInvoiceOptions"
       produces 'application/json'
 
@@ -19,7 +18,6 @@ describe 'InvoiceOptions API', type: :request do
 
   path '/invoice_options' do 
     get 'Gets a list of invoice_options' do 
-      tags 'InvoiceOptions'
       operationId "listInvoiceOptions"
       parameter name: :pageNum, in: :query, type: :number, required: false
       parameter name: :orderBy, in: :query, type: :string, required: false
@@ -40,7 +38,6 @@ describe 'InvoiceOptions API', type: :request do
 
   path '/invoice_options/{id}' do 
     get 'Gets an Invoice Option' do 
-      tags 'InvoiceOptions'
       operationId "getInvoiceOption"
       parameter name: :id, in: :path, type: :string
 
