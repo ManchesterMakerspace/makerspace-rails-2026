@@ -95,4 +95,23 @@ RSpec.describe Service::CardExpirationCheck do
     expect(redis_hashes[key]).to eq({})
     expect(Service::SlackConnector).not_to have_received(:send_slack_message)
   end
+
+  it 'includes active Braintree members backed by subscription_id when the legacy flag is false' do
+    member = create(
+      :member,
+      customer_id: 'customer-subscription-id',
+      subscription: false,
+      subscription_id: 'subscription-123',
+      status: 'activeMember',
+      expirationTime: (at + 2.months).to_i * 1000
+    )
+    customers = [customer('customer-subscription-id', [card('Visa')])]
+    allow(customer_gateway).to receive(:search).and_yield(search).and_return(customers)
+
+    records = described_class.run!(at: at, gateway: gateway)
+
+    expect(records.map { |record| record[:customer_id] }).to eq(['customer-subscription-id'])
+    expect(described_class.expiring_member_count(at: at)).to eq(1)
+    expect(described_class.card_types_for_member(member.id, at: at)).to eq('Visa')
+  end
 end

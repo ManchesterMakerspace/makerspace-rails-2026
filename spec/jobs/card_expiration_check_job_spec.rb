@@ -2,13 +2,13 @@ require 'rails_helper'
 
 RSpec.describe CardExpirationCheckJob, type: :job do
   before do
-    Rails.application.load_tasks
-    Rake::Task['card_on_file_expiration_check'].reenable
     allow(Service::CardExpirationCheck).to receive(:run!)
     allow(SystemConfig).to receive(:record_run)
   end
 
-  it 'runs the rake task and records success' do
+  it 'runs the service without requiring Rake and records success' do
+    hide_const('Rake') if Object.const_defined?(:Rake)
+
     described_class.perform_now
 
     expect(Service::CardExpirationCheck).to have_received(:run!)

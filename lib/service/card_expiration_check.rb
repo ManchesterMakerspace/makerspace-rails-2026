@@ -68,7 +68,10 @@ module Service
           {
             '$match' => {
               'customer_id' => { '$in' => customer_ids },
-              'subscription' => true,
+              '$or' => [
+                { 'subscription' => true },
+                { 'subscription_id' => { '$ne' => nil } }
+              ],
               'status' => 'activeMember',
               'expirationTime' => { '$gt' => at.to_i * 1000 }
             }
