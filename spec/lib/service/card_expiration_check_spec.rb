@@ -114,4 +114,22 @@ RSpec.describe Service::CardExpirationCheck do
     expect(described_class.expiring_member_count(at: at)).to eq(1)
     expect(described_class.card_types_for_member(member.id, at: at)).to eq('Visa')
   end
+
+  it 'includes subscribed pending members with a future expiration' do
+    member = create(
+      :member,
+      customer_id: 'customer-pending',
+      subscription: true,
+      status: 'pending',
+      expirationTime: (at + 2.months).to_i * 1000
+    )
+    customers = [customer('customer-pending', [card('Discover')])]
+    allow(customer_gateway).to receive(:search).and_yield(search).and_return(customers)
+
+    records = described_class.run!(at: at, gateway: gateway)
+
+    expect(records.map { |record| record[:customer_id] }).to eq(['customer-pending'])
+    expect(described_class.expiring_member_count(at: at)).to eq(1)
+    expect(described_class.card_types_for_member(member.id, at: at)).to eq('Discover')
+  end
 end

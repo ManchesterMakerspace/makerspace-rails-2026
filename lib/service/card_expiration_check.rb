@@ -72,7 +72,7 @@ module Service
                 { 'subscription' => true },
                 { 'subscription_id' => { '$ne' => nil } }
               ],
-              'status' => 'activeMember',
+              'status' => { '$in' => Member::ACTIVE_MEMBERSHIP_STATUSES },
               'expirationTime' => { '$gt' => at.to_i * 1000 }
             }
           },
