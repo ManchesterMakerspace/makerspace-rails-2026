@@ -47,7 +47,7 @@ class MembersController < AuthenticationController
         raise Error::NotFound.new unless defined?(@member.id)
          if @member.id == current_member.id || is_admin? || is_board_member? || is_resource_manager?
             render json: @member, serializer: MemberSerializer, adapter: :attributes,
-              include_provisioning: is_admin? || is_board_member? and return
+              include_provisioning: is_admin? || is_board_member?, viewer: current_member and return
          else
              Rails.logger.warn("Calling show for #{@member.id} while logged in as #{@current_member.id}!")
              raise Error::Forbidden.new

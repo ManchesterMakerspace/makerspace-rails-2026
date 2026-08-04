@@ -7,6 +7,7 @@ namespace :data do
       [Card, :uid, nil],
       [Group, :groupName, nil],
       [Member, :email, nil],
+      [Member, :customer_id, nil],
       [RentalType, :display_name, nil],
       [SlackUser, :slack_id, nil]
     ]

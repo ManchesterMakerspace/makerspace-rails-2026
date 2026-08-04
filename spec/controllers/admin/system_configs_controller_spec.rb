@@ -106,5 +106,16 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
       expect(response).to have_http_status(200)
       expect(ReservationSlackCanvasRebuildJob).to have_received(:perform_later)
     end
+
+    it "enqueues the card expiration check job" do
+      allow(CardExpirationCheckJob).to receive(:perform_later)
+
+      post :run_job,
+           params: { key: "card_expiration_check" },
+           format: :json
+
+      expect(response).to have_http_status(200)
+      expect(CardExpirationCheckJob).to have_received(:perform_later)
+    end
   end
 end

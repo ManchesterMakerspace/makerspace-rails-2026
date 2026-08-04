@@ -372,6 +372,7 @@ RSpec.configure do |config|
             subscriptionId: { type: :string, 'x-nullable': true },
             subscription: { type: :boolean },
             customerId: { type: :string, 'x-nullable': true },
+            expiringPaymentCardTypes: { type: :string, 'x-nullable': true },
             earnedMembershipId: { type: :string, 'x-nullable': true },
           },
           required: [:id, :expirationTime]

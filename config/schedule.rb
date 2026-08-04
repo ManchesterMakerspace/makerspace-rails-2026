@@ -30,3 +30,7 @@ end
 every 1.hour do
   runner "MemberProvisioningReconciliationJob.perform_now"
 end
+
+every '0 8 1 * *' do
+  runner 'CardExpirationCheckJob.perform_later'
+end

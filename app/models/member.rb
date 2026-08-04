@@ -101,6 +101,10 @@ class Member
     unique: true,
     partial_filter_expression: { email: { '$type' => 'string' } }
   })
+  index({ customer_id: 1 }, {
+    unique: true,
+    partial_filter_expression: { customer_id: { '$type' => 'string' } }
+  })
 
   before_validation :normalize_email, :normalize_group_name
   after_initialize :verify_group_expiry
@@ -620,21 +624,26 @@ class Member
   def notify_household_disbanded(members)
     members.each do |member|
       primary = member.id == self.id
-      message = if primary
-                  "Your Manchester Makerspace household membership has been disbanded because your account was renewed with an individual membership plan."
-                else
-                  "Your Manchester Makerspace household membership has been disbanded because the primary household member renewed with an individual membership plan. Please elect a new membership plan before your current expiration date."
-                end
+      template = primary ? :household_disbanded_primary : :household_disbanded_secondary
+      message = ::Service::EmailTemplate.render(
+        template,
+        ::Service::EmailTemplate.common_variables(member).merge(primary_member_name: fullname),
+        fallback: true,
+        format: :text
+      )
 
       slack_user = SlackUser.find_by(member_id: member.id)
       ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id) if slack_user
       MemberMailer.household_disbanded(member.id.to_s, self.id.to_s, primary).deliver_later
     end
 
-    ::Service::SlackConnector.send_slack_message(
-      "#{fullname}'s household membership was disbanded after renewal with an individual membership plan.",
-      ::Service::SlackConnector.members_relations_channel
+    message = ::Service::EmailTemplate.render(
+      :household_disbanded_admin,
+      ::Service::EmailTemplate.common_variables(self),
+      fallback: true,
+      format: :text
     )
+    ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.members_relations_channel)
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
   end

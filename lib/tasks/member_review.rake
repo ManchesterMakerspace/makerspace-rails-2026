@@ -101,6 +101,20 @@ task :member_review => :environment do
         ::Service::SlackConnector.send_slack_message(messages, slack_user.slack_id)
       end
 
+      def render_member_template(template, slack_user, variables = {})
+        member = Member.find(slack_user.member_id)
+        common = ::Service::EmailTemplate.common_variables(member).merge(
+          full_name: slack_user.real_name.presence || member.fullname,
+          slack_id: slack_user.slack_id
+        )
+        ::Service::EmailTemplate.render(
+          template,
+          common.merge(variables),
+          fallback: true,
+          format: :text
+        )
+      end
+
       # Construct Messages
       def notify_orientaion_message
         send_report(
@@ -108,7 +122,7 @@ task :member_review => :environment do
           "Members who need orientation",
           Proc.new do |slack_user| 
             notify_member(
-              "Hi #{slack_user.real_name}, please come to the next open house #{ENV["OPEN_HOUSE_SCHEDULE"]} to complete your new member orientation and recieve your key to start using the Makerspace!",
+              render_member_template(:member_review_orientation, slack_user),
               slack_user
             ) 
           end
@@ -126,7 +140,7 @@ task :member_review => :environment do
             "People who created an account but did not purchase membership",
             Proc.new do |slack_user| 
               notify_member(
-                "Hi #{slack_user.real_name}, we noticed you signed up but never purchased a membership. Is there anything we can help you with? Please come to the next open house #{ENV["OPEN_HOUSE_SCHEDULE"]} to meet the members and see the Makerspace.",
+                render_member_template(:member_review_no_purchase, slack_user),
                 slack_user
               ) 
             end
@@ -145,7 +159,7 @@ task :member_review => :environment do
             "Members who are still on PayPal billing",
             Proc.new do |slack_user| 
               notify_member(
-                "Hi #{slack_user.real_name}, it seems your membership is still tied to a PayPal account. Please help us finish moving memberships to our new payment provider by viewing your profile. You will not encounter any additional charges by moving your membership.",
+                render_member_template(:member_review_paypal, slack_user),
                 slack_user
               ) 
             end
@@ -159,7 +173,12 @@ task :member_review => :environment do
           "Members who need to sign #{contract_type}s",
           Proc.new do |slack_user| 
             notify_member(
-              "Hi #{slack_user.real_name}, we are missing a #{contract_type} from you and need this document in order to keep your membership in good standing. <#{@base_url}/members/#{slack_user.member_id}|Please login to complete the document>", 
+              render_member_template(
+                :member_review_missing_contract,
+                slack_user,
+                contract_type: contract_type,
+                document_url: "#{@base_url}/members/#{slack_user.member_id}"
+              ),
               slack_user
             )
             ::MemberMailer.request_document(contract_type, slack_user.member_id.as_json).deliver_later
@@ -197,12 +216,13 @@ task :member_review => :environment do
           rentals = Rental.where(member_id: member.id, :status.in => ["active", "vacating"])
           rental_numbers = rentals.map { |r| "##{r.number}" }.join(", ")
 
-          ::Service::SlackConnector.send_slack_message(
-            "Hi #{member.firstname}, your membership has expired but you still have an active rental (#{rental_numbers}). " \
-            "You must renew your membership to keep your rental in good standing. " \
-            "Please <#{@base_url}/members/#{member.id}|log in and renew> as soon as possible.",
-            slack_user.slack_id
+          message = render_member_template(
+            :member_review_expired_rental,
+            slack_user,
+            rental_numbers: rental_numbers,
+            renewal_url: "#{@base_url}/members/#{member.id}"
           )
+          ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
         end
       end
 
