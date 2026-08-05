@@ -7,7 +7,7 @@ ruby '~> 3.4.0'
 gem 'base64'
 gem 'csv'
 
-gem "rails", "~> 8.0.4.1"
+gem "rails", "~> 8.0.5.1"
 
 gem 'rack-cors', '~> 3.0'
 gem 'puma', '~> 8.0'
