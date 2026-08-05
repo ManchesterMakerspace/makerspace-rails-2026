@@ -61,6 +61,7 @@ end
 group :development, :test do
   gem 'debug'
   gem 'factory_bot_rails', '~> 6.0'
+  gem "minitest", "~> 5"
 end
 gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw, :jruby]
 gem 'honeybadger', '~> 6.9'
