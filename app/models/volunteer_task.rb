@@ -149,7 +149,7 @@ class VolunteerTask
   end
 
   def eligible_for?(member)
-    return false unless member&.active_membership_status?
+    return false unless member&.status == "activeMember"
     return true if %w[admin board_member resource_manager].include?(member.role)
 
     missing_prerequisite_tool_ids(member).empty?
@@ -173,7 +173,7 @@ class VolunteerTask
   # Repeatable: creates a child task; same member may claim multiple times.
   # Recurring:  creates a child task; respects next_available cooldown; sets parent claimed_at + status + next_available.
   def claim!(member)
-    raise Error::Forbidden.new unless member.active_membership_status?
+    raise Error::Forbidden.new unless member.status == "activeMember"
     raise Error::Forbidden.new unless eligible_for?(member)
 
     result = case status

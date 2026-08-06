@@ -58,6 +58,55 @@ RSpec.describe "Workshops", type: :request do
       .to be(true)
   end
 
+  it "uses allow_pending for pending checkout and reservation actions" do
+    member.update!(status: "pending", expirationTime: nil)
+    shop.update!(reservable: true)
+    visible_tool.update!(reservable: true, allow_pending: false)
+    pending_tool = create(
+      :tool,
+      shop: shop,
+      name: "Orientation",
+      reservable: true,
+      allow_pending: true
+    )
+
+    get "/api/workshops"
+
+    woodshop = JSON.parse(response.body).fetch("workshops")
+      .find { |row| row["id"] == shop.id.to_s }
+    tools = woodshop.fetch("tools").index_by { |tool| tool.fetch("id") }
+    expect(tools.fetch(pending_tool.id.to_s)).to include(
+      "checkoutRequestable" => true,
+      "reservationAvailable" => true
+    )
+    expect(tools.fetch(visible_tool.id.to_s)).to include(
+      "checkoutRequestable" => false,
+      "reservationAvailable" => false
+    )
+    expect(woodshop.fetch("reservationsAvailable")).to be(true)
+  end
+
+  it "does not let a future expiration bypass pending tool restrictions" do
+    member.update!(
+      status: "pending",
+      expirationTime: 1.month.from_now.to_i * 1000
+    )
+    shop.update!(reservable: true)
+    visible_tool.update!(reservable: true, allow_pending: false)
+
+    get "/api/workshops"
+
+    woodshop = JSON.parse(response.body).fetch("workshops")
+      .find { |row| row["id"] == shop.id.to_s }
+    tool = woodshop.fetch("tools")
+      .find { |row| row["id"] == visible_tool.id.to_s }
+    expect(tool).to include(
+      "checkoutRequestable" => false,
+      "reservationAvailable" => false
+    )
+    expect(woodshop.fetch("reservationsAvailable")).to be(false)
+  end
+
   it "includes cached Slack details, GDrive links, checkout state, requests, and upcoming events" do
     shop.update!(
       slack_channel: "wood-shop",

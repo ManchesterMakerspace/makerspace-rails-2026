@@ -4,6 +4,7 @@ describe VolunteerTask, type: :model do
   let(:admin)      { create(:member, :admin) }
   let(:member)     { create(:member, status: 'activeMember') }
   let(:inactive)   { create(:member, status: 'inactive') }
+  let(:pending)    { create(:member, status: 'pending') }
   let(:revoked)    { create(:member, status: 'revoked') }
   let(:non_member) { create(:member, status: 'nonMember') }
 
@@ -100,6 +101,11 @@ describe VolunteerTask, type: :model do
 
     it 'raises Forbidden for inactive member' do
       expect { task.claim!(inactive) }.to raise_error(Error::Forbidden)
+    end
+
+    it 'raises Forbidden for a pending member' do
+      expect(task.eligible_for?(pending)).to be(false)
+      expect { task.claim!(pending) }.to raise_error(Error::Forbidden)
     end
 
     it 'raises Forbidden for revoked member' do

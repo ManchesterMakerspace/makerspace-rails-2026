@@ -42,7 +42,7 @@ class WorkshopSerializer < ActiveModel::Serializer
         checkout: checkout && checkout_details(checkout),
         checkoutRequest: request && checkout_request_details(request),
         checkoutRequestable: checkout.nil? && request.nil? &&
-          viewer.active_unexpired? && !tool.disabled?,
+          checkout_requestable?(tool) && !tool.disabled?,
         reservationAvailable: tool_reservation_available?(tool),
         usersChannel: checkout&.active? ? tool.users_channel : nil,
         usersChannelDetails: checkout&.active? ?
@@ -99,8 +99,8 @@ class WorkshopSerializer < ActiveModel::Serializer
         next if hidden_or_missing_prerequisite
       end
 
-      eligible = global_privilege? || (
-        viewer.status == "activeMember" && missing_ids.empty?
+      eligible = viewer.status == "activeMember" && (
+        global_privilege? || missing_ids.empty?
       )
       {
         id: task.id.to_s,
@@ -123,13 +123,10 @@ class WorkshopSerializer < ActiveModel::Serializer
   def reservations_available
     return false unless viewer_can_reserve?
     return false if object.disabled?
-    return true if object.reservable &&
+    return true if !pending_reservation_restrictions? && object.reservable &&
       reservation_requirements_met?(object.reservation_prerequisite_tool_ids)
 
-    visible_tools.any? do |tool|
-      !tool.disabled? && tool.reservable &&
-        reservation_requirements_met?(tool.effective_reservation_prerequisite_ids)
-    end
+    visible_tools.any? { |tool| tool_reservation_available?(tool) }
   end
 
   def can_add_tool
@@ -168,19 +165,42 @@ class WorkshopSerializer < ActiveModel::Serializer
   end
 
   def viewer_can_reserve?
-    viewer.role == "board_member" || viewer.active_unexpired?
+    viewer.role == "board_member" || viewer.status == "pending" ||
+      viewer.active_unexpired?
   end
 
   def tool_reservation_available?(tool)
     viewer_can_reserve? && !object.disabled? && !tool.disabled? &&
-      tool.reservable &&
-      reservation_requirements_met?(tool.effective_reservation_prerequisite_ids)
+      tool.reservable && pending_tool_allowed?(tool) &&
+      reservation_requirements_met?(
+        tool.effective_reservation_prerequisite_ids,
+        pending_tool: tool
+      )
   end
 
-  def reservation_requirements_met?(required_ids)
+  def reservation_requirements_met?(required_ids, pending_tool: nil)
     return true if viewer.role == "board_member"
 
-    (Array(required_ids).map(&:to_s) - checked_out_tool_ids).empty?
+    required_ids = Array(required_ids).map(&:to_s)
+    if pending_reservation_restrictions? && pending_tool&.allow_pending
+      required_ids -= [pending_tool.id.to_s]
+    end
+
+    (required_ids - checked_out_tool_ids).empty?
+  end
+
+  def checkout_requestable?(tool)
+    return tool.allow_pending if viewer.status == "pending"
+
+    viewer.status == "activeMember" && viewer.active_unexpired?
+  end
+
+  def pending_tool_allowed?(tool)
+    !pending_reservation_restrictions? || tool.allow_pending
+  end
+
+  def pending_reservation_restrictions?
+    viewer.status == "pending" && viewer.role != "board_member"
   end
 
   def checked_out_tool_ids

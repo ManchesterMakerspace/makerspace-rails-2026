@@ -73,4 +73,23 @@ RSpec.describe SlackVolunteerJob, type: :job do
       )
     expect(restricted.reload.status).to eq("available")
   end
+
+  it "rejects a Slack claim from a pending member with all prerequisites" do
+    member.update!(status: "pending")
+    create(:tool_checkout, member: member, tool: tool)
+    restricted = create_task(
+      "Pending-ineligible task",
+      prerequisite_tool_ids: [tool.id.to_s]
+    )
+
+    perform_as("UMEMBER", "claim #{restricted.task_number}")
+
+    expect(job).to have_received(:post_response)
+      .with(
+        "https://example.test/response",
+        :ephemeral,
+        a_string_including("Only active members can claim tasks")
+      )
+    expect(restricted.reload.status).to eq("available")
+  end
 end

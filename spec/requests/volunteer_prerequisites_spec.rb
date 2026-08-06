@@ -69,6 +69,26 @@ RSpec.describe "Volunteer prerequisite eligibility", type: :request do
     expect(restricted_task.reload.status).to eq("available")
   end
 
+  it "does not list or permit claims by pending members with prerequisites" do
+    pending_member = create(:member, status: "pending")
+    restricted_task = task(
+      title: "Pending-ineligible task",
+      prerequisite_tool_ids: [required_tool.id.to_s]
+    )
+    create(:tool_checkout, member: pending_member, tool: required_tool)
+    sign_in pending_member
+
+    get "/api/volunteer/tasks"
+    expect(JSON.parse(response.body).map { |record| record.fetch("id") })
+      .not_to include(restricted_task.id.to_s)
+
+    post "/api/volunteer/tasks/#{restricted_task.id}/claim"
+    expect(response).to have_http_status(:forbidden)
+    expect(JSON.parse(response.body).fetch("error"))
+      .to eq("Only active members may claim tasks")
+    expect(restricted_task.reload.status).to eq("available")
+  end
+
   it "filters events and rejects a direct check-in for a regular member" do
     open_event = event(title: "Open event")
     restricted_event = event(
