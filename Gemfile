@@ -54,6 +54,7 @@ group :test do
   gem 'database_cleaner-mongoid'
   gem 'simplecov', '~> 1.0'
   gem 'rswag-specs', '~> 2.14'
+  gem 'parallel_tests'
 end
 group :development do
   gem 'listen', '~> 3.8'
