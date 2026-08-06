@@ -50,7 +50,19 @@ class ReservationBlackout
     occurrence_end = ReservationService::ZONE.local(
       date.year, date.month, date.day, end_hour, end_minute
     )
-    occurrence_end += 1.day if occurrence_end <= occurrence_start
+    if start_time == end_time
+      occurrence_end = occurrence_start + 1.day
+    elsif (end_hour * 60 + end_minute) < (start_hour * 60 + start_minute)
+      next_date = date + 1.day
+      occurrence_end = ReservationService::ZONE.local(
+        next_date.year, next_date.month, next_date.day, end_hour, end_minute
+      )
+    end
+
+    # A nonexistent DST wall time can normalize forward until distinct clock
+    # values represent the same instant. Such an interval contains no time;
+    # only explicitly equal clock values represent a 24-hour occurrence.
+    return nil unless occurrence_end > occurrence_start
 
     {
       blackout: self,

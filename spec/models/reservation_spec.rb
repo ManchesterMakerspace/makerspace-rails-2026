@@ -172,6 +172,20 @@ RSpec.describe ReservationService do
     }).to contain_exactly("Cleanup", "Orientation")
   end
 
+  it "does not expand blackouts for a reservation beyond its maximum duration" do
+    tool.update!(max_reservation_duration_hours: 1)
+    create(:tool_checkout, member: member, tool: tool)
+    expect(ReservationBlackout).not_to receive(:occurrences_overlapping)
+
+    preview = described_class.preview(
+      member: member,
+      attributes: attributes.merge(end_at: start_at + 10.years)
+    )
+
+    expect(preview[:eligible]).to be(false)
+    expect(preview[:errors]).to include("Reservation exceeds the maximum duration")
+  end
+
   it "applies a blackout on a material edit without changing existing reservations retroactively" do
     create(:tool_checkout, member: member, tool: tool)
     reservation = described_class.create!(member: member, attributes: attributes)

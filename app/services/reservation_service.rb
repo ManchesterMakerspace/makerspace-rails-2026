@@ -187,6 +187,7 @@ class ReservationService
       missing = []
       approval_reasons = []
       approval_details = []
+      blackout_window_valid = false
       duration_session_existing = nil
       board_override = board_reservation_override?(member)
 
@@ -247,6 +248,8 @@ class ReservationService
         duration_hours = (attributes[:end_at] - attributes[:start_at]) / 1.hour
         strict_duration = board_override ? 72.0 : resources.map(&:max_reservation_duration_hours).min.to_f
         errors << "Reservation exceeds the maximum duration" if duration_hours > strict_duration
+        blackout_window_valid = duration_hours.positive? &&
+          duration_hours <= strict_duration
         unless duration_session_exempt?(member)
           duration_session_existing = duration_session_existing_by_resource(
             member: member,
@@ -317,7 +320,7 @@ class ReservationService
           "The selected resource requires manager approval."
         )
       end
-      if !board_override && attributes[:start_at].present? && attributes[:end_at].present?
+      if !board_override && blackout_window_valid
         blackout_occurrences = ReservationBlackout.occurrences_overlapping(
           shop_id: shop.id,
           start_at: attributes[:start_at],

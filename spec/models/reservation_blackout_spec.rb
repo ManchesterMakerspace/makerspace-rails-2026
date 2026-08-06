@@ -30,6 +30,25 @@ RSpec.describe ReservationBlackout do
       .to eq(zone.local(2026, 7, 28, 9, 0))
   end
 
+  it "does not turn DST-normalized equality into an overnight occurrence" do
+    blackout.update!(
+      recurrence: "daily",
+      weekday: nil,
+      start_time: "02:30",
+      end_time: "03:30",
+      start_date: Date.new(2026, 3, 8),
+      end_date: Date.new(2026, 3, 8)
+    )
+
+    expect(blackout.occurrence_on(Date.new(2026, 3, 8))).to be_nil
+    expect(
+      blackout.occurrences_overlapping(
+        zone.local(2026, 3, 8, 0, 0),
+        zone.local(2026, 3, 9, 0, 0)
+      )
+    ).to be_empty
+  end
+
   it "requires half-hour boundaries and ordered date bounds" do
     record = build(
       :reservation_blackout,
