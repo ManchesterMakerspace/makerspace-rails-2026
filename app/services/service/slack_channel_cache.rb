@@ -2,6 +2,7 @@ module Service
   class SlackChannelCache
     CACHE_PREFIX = "slack:public_channel".freeze
     STATUS_KEY = "slack:public_channel_cache:status".freeze
+    REBUILD_PREFIX = "slack:public_channel_cache:rebuild".freeze
     CACHE_TTL_SECONDS = 1000.hours.to_i
     PAGE_SIZE = 200
 
@@ -45,11 +46,40 @@ module Service
         count = scan_public_channels { |details| channels << details }
         raise "Slack public-channel cache rebuild failed" if count.nil?
 
-        clear!
-        channels.each { |details| write(details) }
-        write_status(count)
+        staging_prefix = "#{REBUILD_PREFIX}:#{SecureRandom.hex(16)}"
+        staged_keys = []
+        channels.each do |details|
+          key = "#{staging_prefix}:#{normalize_name(details[:name])}"
+          staged_keys << key
+          write(details, key: key, raise_on_error: true)
+        end
+        live_keys = REDIS.scan_each(match: "#{CACHE_PREFIX}:*").to_a
+
+        results = REDIS.multi do |transaction|
+          transaction.del(*live_keys) if live_keys.present?
+          channels.zip(staged_keys).each do |details, staged_key|
+            transaction.rename(staged_key, cache_key(details[:name]))
+          end
+          transaction.set(
+            STATUS_KEY,
+            status_payload(count),
+            ex: CACHE_TTL_SECONDS
+          )
+        end
+        transaction_error = Array(results).find do |result|
+          result.is_a?(Redis::BaseError)
+        end
+        raise transaction_error if transaction_error
 
         count
+      rescue Redis::BaseError => error
+        Rails.logger.warn(
+          "[SlackChannelCache] Redis rebuild failed " \
+          "error=#{error.class}: #{error.message}"
+        )
+        raise
+      ensure
+        cleanup_staging_keys(staged_keys)
       end
 
       def clear!
@@ -150,9 +180,9 @@ module Service
         ""
       end
 
-      def write(details)
+      def write(details, key: cache_key(details[:name]), raise_on_error: false)
         REDIS.set(
-          cache_key(details[:name]),
+          key,
           JSON.generate(details),
           ex: CACHE_TTL_SECONDS
         )
@@ -161,16 +191,32 @@ module Service
           "[SlackChannelCache] cache write failed name=#{details[:name].inspect} " \
           "error=#{error.class}: #{error.message}"
         )
+        raise if raise_on_error
       end
 
       def write_status(count)
         REDIS.set(
           STATUS_KEY,
-          JSON.generate(
-            totalChannels: count,
-            lastUpdatedAt: Time.current.iso8601
-          ),
+          status_payload(count),
           ex: CACHE_TTL_SECONDS
+        )
+      end
+
+      def status_payload(count)
+        JSON.generate(
+          totalChannels: count,
+          lastUpdatedAt: Time.current.iso8601
+        )
+      end
+
+      def cleanup_staging_keys(staged_keys)
+        return if staged_keys.blank?
+
+        REDIS.del(*staged_keys)
+      rescue Redis::BaseError => error
+        Rails.logger.warn(
+          "[SlackChannelCache] staging cleanup failed " \
+          "error=#{error.class}: #{error.message}"
         )
       end
 

@@ -34,6 +34,11 @@ RSpec.describe Service::SlackChannelCache do
     allow(REDIS).to receive(:get).and_return(nil)
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:del).and_return(1)
+    allow(REDIS).to receive(:rename).and_return(true)
+    allow(REDIS).to receive(:multi) do |&block|
+      block.call(REDIS)
+      []
+    end
     allow(REDIS).to receive(:scan_each).and_return([].each)
   end
 
@@ -105,14 +110,26 @@ RSpec.describe Service::SlackChannelCache do
     expect(REDIS).to have_received(:del)
       .with("slack:public_channel:old")
     expect(REDIS).to have_received(:set).with(
-      "slack:public_channel:wood-shop",
+      a_string_matching(
+        /slack:public_channel_cache:rebuild:[^:]+:wood-shop/
+      ),
       include('"id":"C123"'),
       ex: 1000.hours.to_i
     )
     expect(REDIS).to have_received(:set).with(
-      "slack:public_channel:metal-shop",
+      a_string_matching(
+        /slack:public_channel_cache:rebuild:[^:]+:metal-shop/
+      ),
       include('"id":"C456"'),
       ex: 1000.hours.to_i
+    )
+    expect(REDIS).to have_received(:rename).with(
+      a_string_matching(/:wood-shop\z/),
+      "slack:public_channel:wood-shop"
+    )
+    expect(REDIS).to have_received(:rename).with(
+      a_string_matching(/:metal-shop\z/),
+      "slack:public_channel:metal-shop"
     )
     expect(REDIS).to have_received(:set).with(
       described_class::STATUS_KEY,
@@ -136,5 +153,29 @@ RSpec.describe Service::SlackChannelCache do
     expect(REDIS).not_to have_received(:scan_each)
     expect(REDIS).not_to have_received(:del)
     expect(REDIS).not_to have_received(:set)
+  end
+
+  it "fails without promoting or clearing when a staged Redis write fails" do
+    allow(REDIS).to receive(:scan_each)
+      .with(match: "slack:public_channel:*")
+      .and_return(%w[slack:public_channel:old].each)
+    allow(client).to receive(:conversations_list)
+      .and_return(first_page, second_page)
+    allow(REDIS).to receive(:set) do |key, _value, **_options|
+      if key.match?(/:metal-shop\z/)
+        raise Redis::CommandError, "temporary Redis failure"
+      end
+
+      true
+    end
+
+    expect { described_class.rebuild! }
+      .to raise_error(Redis::CommandError, "temporary Redis failure")
+
+    expect(REDIS).not_to have_received(:multi)
+    expect(REDIS).not_to have_received(:scan_each)
+    expect(REDIS).not_to have_received(:del)
+      .with("slack:public_channel:old")
+    expect(REDIS).not_to have_received(:rename)
   end
 end
