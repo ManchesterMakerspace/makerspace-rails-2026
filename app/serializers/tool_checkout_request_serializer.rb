@@ -1,5 +1,5 @@
 class ToolCheckoutRequestSerializer < ActiveModel::Serializer
-  attributes :id, :member_id, :member_name, :member_email, :tool_id, :tool_name,
+  attributes :id, :member_id, :member_name, :member_email, :member_status, :tool_id, :tool_name,
              :shop_id, :shop_name, :note, :request_date, :status, :message_id,
              :checked_out_id, :member_slack_url
 
@@ -9,6 +9,10 @@ class ToolCheckoutRequestSerializer < ActiveModel::Serializer
 
   def member_email
     object.member.try(:email)
+  end
+
+  def member_status
+    object.member.try(:status)
   end
 
   def member_slack_url

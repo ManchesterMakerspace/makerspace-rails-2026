@@ -7,7 +7,8 @@ ruby '~> 3.4.0'
 gem 'base64'
 gem 'csv'
 
-gem 'rails', '8.0.0'
+gem "rails", "~> 8.0.5.1"
+
 gem 'rack-cors', '~> 3.0'
 gem 'puma', '~> 8.0'
 gem 'active_model_serializers', '~> 0.10.15'
@@ -60,6 +61,7 @@ end
 group :development, :test do
   gem 'debug'
   gem 'factory_bot_rails', '~> 6.0'
+  gem "minitest", "~> 5"
 end
 gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw, :jruby]
 gem 'honeybadger', '~> 6.9'

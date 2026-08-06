@@ -300,11 +300,42 @@ module Service
         )
       end
 
-      slack_client.users_admin_invite(
+      arguments = {
         email: email,
         first_name: firstname,
         last_name: lastname
-      )
+      }
+
+      if ENV['CHANNEL_NEW_SIGNUPS'].present?
+        channel_id = find_channel_id(ENV['CHANNEL_NEW_SIGNUPS'])
+        if channel_id.blank?
+          raise Error::NotAllowed.new(
+            "Slack signup channel #{ENV['CHANNEL_NEW_SIGNUPS'].inspect} could not be found"
+          )
+        end
+        arguments[:channels] = channel_id
+        arguments[:ultra_restricted] = true
+      end
+
+      slack_client.users_admin_invite(**arguments)
+    end
+
+    def self.new_signup_invite_mode
+      ENV['CHANNEL_NEW_SIGNUPS'].present? ? 'single_channel_guest' : 'full_member'
+    end
+
+    # users.admin.setRegular is part of the same legacy, undocumented API
+    # family as the existing invite/deactivation calls and is not exposed as
+    # a generated helper by slack-ruby-client.
+    def self.promote_to_regular(slack_id)
+      slack_client = admin_client("users.admin.setRegular")
+      if slack_client.nil?
+        raise Error::NotAllowed.new(
+          "SLACK_ADMIN_TOKEN is required to promote Slack users"
+        )
+      end
+
+      slack_client.post('users.admin.setRegular', user: slack_id)
     end
 
     def self.team_billable_info(user:)

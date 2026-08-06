@@ -187,6 +187,7 @@ class Admin::SystemConfigsController < AdminController
     when 'invoice_review'  then InvoiceReviewJob.perform_later
     when 'garbage_collect' then GarbageCollectJob.perform_later
     when 'db_backup'       then DatabaseBackupJob.perform_later
+    when 'card_expiration_check' then CardExpirationCheckJob.perform_later
     when 'reservation_canvas_rebuild'
       ReservationSlackCanvasRebuildJob.perform_later
     end

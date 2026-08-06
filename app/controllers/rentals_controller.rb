@@ -16,7 +16,7 @@ class RentalsController < AuthenticationController
 
   # POST /api/rentals — member claims a rental spot
   def create
-    unless current_member.status == "activeMember"
+    unless current_member.active_membership_status?
       raise ::Error::Forbidden.new("Your membership is not active. Please renew before requesting a rental.")
     end
 

@@ -16,7 +16,17 @@ class RegistrationsController < ApplicationController
   end
 
   def create
+    unless turnstile_valid?
+      render json: Error::Helpers::Render.json(
+        :forbidden,
+        403,
+        "Turnstile verification failed"
+      ), status: :forbidden
+      return
+    end
+
     @member = Member.new(member_params)
+    @member.status = 'pending'
     @member.save!
     @member.reload
     sign_in(@member)
@@ -37,6 +47,13 @@ class RegistrationsController < ApplicationController
   end
 
   private
+  def turnstile_valid?
+    ::Service::TurnstileVerifier.new(
+      token: params['cf-turnstile-response'],
+      remote_ip: Current.ip_address.presence || request.remote_ip
+    ).valid?
+  end
+
   def new_member_params
     params.require(:email)
     params.permit(:email)

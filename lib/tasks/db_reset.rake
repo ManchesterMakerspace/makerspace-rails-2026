@@ -6,6 +6,9 @@ namespace :db do
       exit 1
     end
 
+    require Rails.root.join('lib/service/database_safety')
+    ::Service::DatabaseSafety.ensure_safe_mlab_uri!(operation: 'db:db_reset')
+
     require 'factory_bot'
     require "database_cleaner/mongoid"
 
@@ -30,6 +33,9 @@ namespace :db do
 
     puts "DB cleaned, seeding..."
     SeedData.new.call
+    puts "Creating verified unique indexes..."
+    Rake::Task["data:ensure_unique_indexes"].reenable
+    Rake::Task["data:ensure_unique_indexes"].invoke
     puts "Seeding complete, done."
   end
 

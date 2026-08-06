@@ -45,6 +45,7 @@ RSpec.describe "Workshops", type: :request do
   end
 
   it "only offers reservations when the current member meets resource prerequisites" do
+    shop.update!(reservable: false)
     visible_tool.update!(reservable: true)
 
     get "/api/workshops"

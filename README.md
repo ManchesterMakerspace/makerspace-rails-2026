@@ -148,6 +148,10 @@ variable to protect both formats. When configured, callers must append the exact
 token as `?token=...`; an absent or incorrect token returns 403. The portal value
 takes precedence over the environment value. When neither value is configured the
 endpoint is public.
+# Documentation
+
+- [Member statuses](docs/member-statuses.MD)
+- [Shop and tool reservations](docs/reservations.MD)
 
 # CONTRIBUTIONS
 

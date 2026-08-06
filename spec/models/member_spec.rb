@@ -49,6 +49,10 @@ RSpec.describe Member, type: :model do
         expect(member.errors[:role]).not_to be_empty
       end
     end
+
+    it "accepts pending as a valid member status" do
+      expect(build(:member, status: 'pending')).to be_valid
+    end
     it { is_expected.to validate_uniqueness_of(:email) }
     it { is_expected.to have_many(:access_cards).as_inverse_of(:member) }
   end
@@ -167,6 +171,14 @@ RSpec.describe Member, type: :model do
     let(:expired_member) { create(:member, :expired) }
     let(:expired_card) { create(:card, member: expired_member) }
 
+    it "treats a current pending member as active for general membership checks" do
+      pending_member = build(:member, :current, status: 'pending')
+
+      expect(pending_member.active_membership_status?).to be(true)
+      expect(pending_member.active_unexpired?).to be(true)
+      expect(pending_member.fully_active_unexpired?).to be(false)
+    end
+
     describe "Renewing members" do
       it "Adds renewal to Now if member is expired" do
         one_month_later = Time.now + 1.month;
@@ -283,14 +295,10 @@ RSpec.describe Member, type: :model do
 
   context "Callbacks" do
     describe "on create" do
-      it "schedules a slack and google drive invite" do
+      it "schedules only the signup Slack invite" do
         member = build(:member)
-        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
-        expect(MemberSubscriber).to receive(:invite_to_slack).with(
-          member.email,
-          member.lastname,
-          member.firstname,
-        )
+        expect(Service::MemberProvisioning).to receive(:invite_slack).with(member)
+        expect(MemberSubscriber).not_to receive(:send_google_invite)
         member.save!
       end
     end
@@ -319,22 +327,31 @@ RSpec.describe Member, type: :model do
 
       it "does not reinvite services if email changes and invalidates external auth/session state" do
         new_email = "foo_changed@test.com"
+        previous_email = member.email
+        previous_slack_user = SlackUser.create!(
+          member: member,
+          slack_email: previous_email,
+          slack_id: 'U_PREVIOUS'
+        )
         member.set(firebase_uid: "firebase-123", session_token: "old-token")
 
         expect(MemberSubscriber).not_to receive(:send_google_invite)
         expect(MemberSubscriber).not_to receive(:send_slack_invite)
 
-        member.update!({ email: new_email })
+        expect do
+          member.update!({ email: new_email })
+        end.to have_enqueued_job(MemberProvisioningJob).with(member.id.to_s)
 
         member.reload
         expect(member.firebase_uid).to be_nil
         expect(member.session_token).to be_present
         expect(member.session_token).not_to eq("old-token")
+        expect(member.google_previous_email).to eq(previous_email)
+        expect(member.slack_previous_user_id).to eq(previous_slack_user.id)
       end
 
       it "Updates billing if a customer" do 
-        allow(MemberSubscriber).to receive(:send_google_invite).and_return(nil)
-        allow(MemberSubscriber).to receive(:invite_to_slack).and_return(nil)
+        allow(Service::MemberProvisioning).to receive(:invite_slack).and_return(nil)
         customer = create(:member, customer_id: "foo")
         mock_customer_chain = double
         # The subscriber's connect_gateway instance method delegates to

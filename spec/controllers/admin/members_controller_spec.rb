@@ -101,6 +101,29 @@ RSpec.describe Admin::MembersController, type: :controller do
         expect(response).to have_http_status(422)
         expect(JSON.parse(response.body)).to eq("message" => "not_authed")
       end
+
+      it "rejects invitations for revoked members before calling Slack" do
+        member.set(status: "revoked")
+        expect(::Service::SlackConnector).not_to receive(:invite_to_slack)
+
+        post :invite_slack, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+        expect(JSON.parse(response.body)["message"]).to match(/revoked or inactive/i)
+      end
+    end
+
+    describe "POST #invite_google_drive" do
+      let!(:member) { create(:member, expirationTime: 1.month.from_now.to_i * 1000) }
+
+      it "strictly rejects Drive provisioning until the member has a usable fob" do
+        expect(Service::GoogleDrive).not_to receive(:load_gdrive)
+
+        post :invite_google_drive, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+        expect(JSON.parse(response.body)["message"]).to match(/usable fob/i)
+      end
     end
 
     describe "PUT #update" do

@@ -103,11 +103,17 @@ module Service
           "#{reservation.tools.map(&:name).join(', ')} in #{reservation.shop.name}"
         end
 
-        "Reminder: your reservation *#{reservation.title}* is coming up.\n" \
-          "*When:* #{time_range(start_at, end_at)}\n" \
-          "*Resources:* #{resources}\n" \
-          "If you won't be able to make it, please cancel the reservation in the " \
-          "<#{portal_reservations_url}|member portal>."
+        Service::EmailTemplate.render(
+          :reservation_reminder,
+          Service::EmailTemplate.common_variables(reservation.member).merge(
+            reservation_title: reservation.title,
+            reservation_time: time_range(start_at, end_at),
+            resources: resources,
+            reservations_url: portal_reservations_url
+          ),
+          fallback: true,
+          format: :text
+        )
       end
 
       def time_range(start_at, end_at)

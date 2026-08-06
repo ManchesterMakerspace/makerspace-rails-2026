@@ -1,7 +1,7 @@
 class ToolCatalogSerializer < ActiveModel::Serializer
   attributes :id, :name, :description, :shop_id, :shop_name, :prerequisite_ids,
              :prerequisite_names, :unmet_prerequisite_ids,
-             :unmet_prerequisite_names, :requestable
+             :unmet_prerequisite_names, :requestable, :allow_pending
 
   def shop_name
     object.shop.try(:name)

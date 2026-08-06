@@ -19,6 +19,8 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :slack_manual_deactivation_required,
              :firebase_uid
 
+  attribute :provisioning, if: :include_provisioning?
+
   attribute :is_checkout_approver do
     CheckoutApprover.exists?(member_id: object.id)
   end
@@ -104,5 +106,13 @@ class MemberSummarySerializer < ActiveModel::Serializer
 
   def slack_manual_deactivation_required
     object.status == "revoked" && !::Service::SlackConnector.admin_token_present?
+  end
+
+  def provisioning
+    ::Service::MemberProvisioning.provisioning_status(object)
+  end
+
+  def include_provisioning?
+    instance_options[:include_provisioning] == true
   end
 end

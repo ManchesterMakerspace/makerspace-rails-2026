@@ -145,6 +145,7 @@ class ReservationsController < ApplicationController
     return if current_member.role.in?(%w[admin board_member])
     return if current_member.role == "resource_manager" &&
       current_member.resource_manager_shop_ids.present?
+    return if current_member.status == 'pending'
     return if current_member.active_unexpired?
 
     raise ::Error::Forbidden.new(

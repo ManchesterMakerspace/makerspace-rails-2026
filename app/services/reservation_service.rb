@@ -206,8 +206,13 @@ class ReservationService
       resources = attributes[:reservation_scope] == "shop" ? [shop] : tools
 
       errors << "Title is required" if attributes[:title].blank?
-      unless board_override || member.active_unexpired?
+      unless board_override || member.status == 'pending' || member.active_unexpired?
         errors << "Your membership is inactive or expired. An active membership is required to make a reservation"
+      end
+      if !board_override && member.status == 'pending'
+        if attributes[:reservation_scope] != 'tools' || tools.any? { |tool| !tool.allow_pending }
+          errors << "Pending members may only reserve tools that allow pending-member access"
+        end
       end
       errors << "Start and end times are required" if attributes[:start_at].blank? || attributes[:end_at].blank?
       errors << "Start time must be in the future" if attributes[:start_at].present? && attributes[:start_at] < Time.current
@@ -222,7 +227,7 @@ class ReservationService
         errors << "One or more selected tools are not reservable"
       end
 
-      if attributes[:end_at].present? && !board_override && !member.active_membership_subscription?
+      if attributes[:end_at].present? && !board_override && member.status != 'pending' && !member.active_membership_subscription?
         membership_expiration = member.membership_expires_at
         if membership_expiration.present? && attributes[:end_at] > membership_expiration
           expiration_text = membership_expiration.in_time_zone(ZONE).strftime("%B %-d, %Y at %H:%M")
@@ -267,6 +272,9 @@ class ReservationService
         Array(shop.reservation_prerequisite_tool_ids).map(&:to_s)
       else
         tools.flat_map(&:effective_reservation_prerequisite_ids).uniq
+      end
+      if member.status == 'pending'
+        prerequisite_ids -= tools.select(&:allow_pending).map { |tool| tool.id.to_s }
       end
       unless board_override
         checked_out_ids = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)

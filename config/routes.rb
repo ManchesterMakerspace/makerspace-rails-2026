@@ -233,6 +233,13 @@ Rails.application.routes.draw do
             post :run_job
           end
         end
+        resources :templates, only: [:index] do
+          member do
+            post :refresh
+            post :restore
+            post :populate
+          end
+        end
 
         namespace :billing do
           resources :subscriptions, only: [:index, :destroy] do

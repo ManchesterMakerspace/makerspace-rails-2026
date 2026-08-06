@@ -17,6 +17,12 @@ class ShopSerializer < ActiveModel::Serializer
     object.effective_wiki_url
   end
 
+  def reservable
+    return false if scope&.status == 'pending'
+
+    object.reservable
+  end
+
   def reservation_prerequisite_names
     object.reservation_prerequisites.map(&:name)
   end

@@ -22,6 +22,7 @@ class SystemConfig
     "invoice_review"  => "invoice_review",
     "garbage_collect" => "gc",
     "db_backup"       => "db:backup",
+    "card_expiration_check" => "card_on_file_expiration_check",
     "reservation_canvas_rebuild" => "reservations:rebuild_slack_canvases"
   }.freeze
 

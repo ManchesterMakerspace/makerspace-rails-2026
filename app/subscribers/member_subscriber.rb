@@ -7,7 +7,6 @@ module MemberSubscriber
   def subscribe
     Member.subscribe(:create) do |event|
       send_slack_invite(event[:model])
-      send_google_invite(event[:model])
     end
 
 
@@ -35,7 +34,7 @@ module MemberSubscriber
   private
 
   def send_slack_invite(member)
-    invite_to_slack(member.email, member.lastname, member.firstname)
+    ::Service::MemberProvisioning.invite_slack(member)
   rescue Error::NotAllowed
     # Slack invites disabled in this environment — silent skip
   rescue => err

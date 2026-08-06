@@ -8,7 +8,10 @@ RSpec.describe 'Tool Checkouts API', type: :request do
     create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
   end
 
-  before { sign_in resource_manager }
+  before do
+    allow(REDIS).to receive(:set)
+    sign_in resource_manager
+  end
 
   describe 'POST /api/admin/tool_checkouts' do
     it 'allows resource managers to check out members on disabled tools' do
@@ -27,6 +30,36 @@ RSpec.describe 'Tool Checkouts API', type: :request do
         'shop: Woodshop',
         'tool: Disabled Bandsaw'
       )
+    end
+
+    it 'allows pending members to receive a checkout for an enabled onboarding tool' do
+      pending_member = create(:member, :current, status: 'pending')
+      orientation = Tool.create!(
+        name: 'Orientation',
+        shop: shop,
+        allow_pending: true
+      )
+
+      post '/api/admin/tool_checkouts', params: {
+        member_id: pending_member.id.to_s,
+        tool_id: orientation.id.to_s
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(ToolCheckout.where(member_id: pending_member.id, tool_id: orientation.id, revoked_at: nil)).to exist
+    end
+
+    it 'allows staff to issue an ordinary tool checkout to a pending member' do
+      pending_member = create(:member, :current, status: 'pending')
+      ordinary_tool = Tool.create!(name: 'Table Saw', shop: shop)
+
+      post '/api/admin/tool_checkouts', params: {
+        member_id: pending_member.id.to_s,
+        tool_id: ordinary_tool.id.to_s
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(ToolCheckout.where(member_id: pending_member.id, tool_id: ordinary_tool.id, revoked_at: nil)).to exist
     end
   end
 

@@ -12,6 +12,7 @@ RSpec.describe MembersController, type: :controller do
         expect(response).to have_http_status(200)
         expect(response.media_type).to eq "application/json"
         expect(parsed_response.last['id']).to eq(Member.last.id.as_json)
+        expect(parsed_response.last).to have_key("provisioning")
       end
 
       it "filters to current members when current_members param is true" do
@@ -55,6 +56,7 @@ RSpec.describe MembersController, type: :controller do
         expect(response).to have_http_status(200)
         expect(response.media_type).to eq "application/json"
         expect(parsed_response).not_to be_empty
+        expect(parsed_response.first).not_to have_key("provisioning")
       end
 
       it "can search members by name" do
@@ -88,6 +90,7 @@ RSpec.describe MembersController, type: :controller do
         expect(response).to have_http_status(200)
         expect(parsed_response.length).to eq(1)
         expect(parsed_response.first['id']).to eq(current_user.id.as_json)
+        expect(parsed_response.first).not_to have_key("provisioning")
       end
 
       it "does not return other members even when searching" do
@@ -121,6 +124,16 @@ RSpec.describe MembersController, type: :controller do
       expect(parsed_response['id']).to eq(current_user.id.as_json)
     end
 
+    it "includes the current member's expiring payment card types" do
+      allow(Service::CardExpirationCheck).to receive(:card_types_for_member)
+        .with(current_user.id).and_return('Visa, Discover')
+
+      get :show, params: { id: current_user.to_param }, format: :json
+
+      parsed_response = JSON.parse(response.body)
+      expect(parsed_response['expiringPaymentCardTypes']).to eq('Visa, Discover')
+    end
+
     it "raises not found if member doesn't exist" do
       get :show, params: {id: "foo" }, format: :json
       expect(response).to have_http_status(404)
@@ -140,6 +153,7 @@ RSpec.describe MembersController, type: :controller do
       parsed_response = JSON.parse(response.body)
       expect(response).to have_http_status(200)
       expect(parsed_response["slackManualDeactivationRequired"]).to be true
+      expect(parsed_response).to have_key("provisioning")
     end
 
     it "does not request manual Slack deactivation when an admin token is configured" do
@@ -152,6 +166,17 @@ RSpec.describe MembersController, type: :controller do
       parsed_response = JSON.parse(response.body)
       expect(response).to have_http_status(200)
       expect(parsed_response["slackManualDeactivationRequired"]).to be false
+    end
+
+    it "includes another member's expiring payment card types for an admin" do
+      member = create(:member)
+      allow(Service::CardExpirationCheck).to receive(:card_types_for_member)
+        .with(member.id).and_return('Visa')
+
+      get :show, params: { id: member.to_param }, format: :json
+
+      parsed_response = JSON.parse(response.body)
+      expect(parsed_response['expiringPaymentCardTypes']).to eq('Visa')
     end
   end
 

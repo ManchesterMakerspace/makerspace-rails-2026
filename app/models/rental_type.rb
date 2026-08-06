@@ -11,6 +11,11 @@ class RentalType
 
   validates :display_name, presence: true, uniqueness: true
 
+  index({ display_name: 1 }, {
+    unique: true,
+    partial_filter_expression: { display_name: { '$type' => 'string' } }
+  })
+
   def invoice_option
     return nil if invoice_option_id.blank?
     InvoiceOption.find(invoice_option_id)
