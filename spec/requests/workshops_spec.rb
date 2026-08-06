@@ -172,6 +172,43 @@ RSpec.describe "Workshops", type: :request do
     )
   end
 
+  it "only includes upcoming volunteer events the viewer is eligible for" do
+    eligible_event = VolunteerEvent.create!(
+      title: "General Cleanup",
+      description: "Clean the shop",
+      credit_value: 1,
+      event_date: Date.current + 1.day,
+      shop_id: shop.id,
+      created_by_id: member.id
+    )
+    restricted_event = VolunteerEvent.create!(
+      title: "Planer Maintenance",
+      description: "Maintain the planer",
+      credit_value: 1,
+      event_date: Date.current + 2.days,
+      shop_id: shop.id,
+      prerequisite_tool_ids: [visible_tool.id.to_s],
+      created_by_id: member.id
+    )
+
+    get "/api/workshops"
+
+    events = JSON.parse(response.body).dig(
+      "workshops", 0, "upcomingVolunteerEvents"
+    )
+    expect(events.map { |event| event.fetch("id") })
+      .to contain_exactly(eligible_event.id.to_s)
+
+    create(:tool_checkout, member: member, tool: visible_tool)
+    get "/api/workshops"
+
+    events = JSON.parse(response.body).dig(
+      "workshops", 0, "upcomingVolunteerEvents"
+    )
+    expect(events.map { |event| event.fetch("id") })
+      .to contain_exactly(eligible_event.id.to_s, restricted_event.id.to_s)
+  end
+
   it "sorts unmet visible bounty prerequisites last and hides unmet hidden prerequisites" do
     visible_task = VolunteerTask.create!(
       title: "General cleanup",

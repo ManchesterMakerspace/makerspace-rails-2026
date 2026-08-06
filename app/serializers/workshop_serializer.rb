@@ -71,7 +71,9 @@ class WorkshopSerializer < ActiveModel::Serializer
       shop_id: object.id,
       status: "open",
       :event_date.gte => Date.current
-    ).order_by(event_date: :asc).map do |event|
+    ).order_by(event_date: :asc).filter_map do |event|
+      next unless event.eligible_for?(viewer)
+
       {
         id: event.id.to_s,
         title: event.title,
