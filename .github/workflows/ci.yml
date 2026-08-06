@@ -146,6 +146,9 @@ jobs:
           ruby-version: '3.4'
           bundler-cache: true
 
+      - name: Report available CPU cores
+        run: nproc
+
       - name: Create stub UI assets for RSpec
         run: |
           mkdir -p app/assets/builds
@@ -153,7 +156,10 @@ jobs:
           touch app/assets/builds/makerspace-react.css
 
       - name: Run RSpec
-        run: bundle exec rspec
+        run: bundle exec parallel_rspec spec/ -n 2
+        env:
+          MLAB_URI: mongodb://localhost:27017/makerspace_test${TEST_ENV_NUMBER}
+          REDIS_URL: redis://localhost:6379/${TEST_ENV_NUMBER:-0}
 
 
   # -- 4. Production asset compile check ----------------------------------------
