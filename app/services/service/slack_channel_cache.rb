@@ -35,15 +35,19 @@ module Service
       end
 
       def refresh_all!
-        count = scan_public_channels
+        count = scan_public_channels { |details| write(details) }
         write_status(count) unless count.nil?
         count
       end
 
       def rebuild!
-        clear!
-        count = refresh_all!
+        channels = []
+        count = scan_public_channels { |details| channels << details }
         raise "Slack public-channel cache rebuild failed" if count.nil?
+
+        clear!
+        channels.each { |details| write(details) }
+        write_status(count)
 
         count
       end
@@ -81,7 +85,7 @@ module Service
         return nil if target.blank?
         return nil if target.match?(/\A[CG][A-Z0-9]{8,}\z/)
 
-        scan_public_channels(target: target)
+        scan_public_channels(target: target) { |details| write(details) }
       end
 
       private
@@ -107,7 +111,7 @@ module Service
             details = details_for(channel)
             next if details[:name].blank?
 
-            write(details)
+            yield(details)
             cached_count += 1
             found ||= details.with_indifferent_access if target == details[:name]
           end

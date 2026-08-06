@@ -85,21 +85,56 @@ RSpec.describe Service::SlackChannelCache do
     )
   end
 
-  it "clears stale keys before rebuilding and records cache metadata" do
+  it "finishes scanning before replacing stale keys and records cache metadata" do
+    events = []
     allow(REDIS).to receive(:scan_each)
       .with(match: "slack:public_channel:*")
       .and_return(%w[slack:public_channel:old].each)
-    allow(client).to receive(:conversations_list)
-      .and_return(first_page, second_page)
+    allow(client).to receive(:conversations_list) do
+      events << :scan
+      events.count(:scan) == 1 ? first_page : second_page
+    end
+    allow(REDIS).to receive(:del) do
+      events << :clear
+      1
+    end
 
     expect(described_class.rebuild!).to eq(2)
 
+    expect(events.index(:clear)).to be > events.rindex(:scan)
     expect(REDIS).to have_received(:del)
       .with("slack:public_channel:old")
+    expect(REDIS).to have_received(:set).with(
+      "slack:public_channel:wood-shop",
+      include('"id":"C123"'),
+      ex: 1000.hours.to_i
+    )
+    expect(REDIS).to have_received(:set).with(
+      "slack:public_channel:metal-shop",
+      include('"id":"C456"'),
+      ex: 1000.hours.to_i
+    )
     expect(REDIS).to have_received(:set).with(
       described_class::STATUS_KEY,
       include('"totalChannels":2', '"lastUpdatedAt"'),
       ex: 1000.hours.to_i
     )
+  end
+
+  it "preserves the existing cache when Slack pagination fails" do
+    requests = 0
+    allow(client).to receive(:conversations_list) do
+      requests += 1
+      raise StandardError, "temporary Slack failure" if requests == 2
+
+      first_page
+    end
+
+    expect { described_class.rebuild! }
+      .to raise_error(RuntimeError, "Slack public-channel cache rebuild failed")
+
+    expect(REDIS).not_to have_received(:scan_each)
+    expect(REDIS).not_to have_received(:del)
+    expect(REDIS).not_to have_received(:set)
   end
 end
