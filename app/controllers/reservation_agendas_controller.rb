@@ -66,7 +66,10 @@ class ReservationAgendasController < ApplicationController
       return
     end
 
-    @shop = Shop.where(name: /\A#{Regexp.escape(params[:shop].to_s.strip)}\z/i).first
+    @shop = Shop.where(
+      name: /\A#{Regexp.escape(params[:shop].to_s.strip)}\z/i,
+      :disabled.ne => true
+    ).first
     unless @shop
       render_agenda_error("Shop was not found.", :not_found)
       return
@@ -75,7 +78,8 @@ class ReservationAgendasController < ApplicationController
 
     @tool = Tool.where(
       shop_id: @shop.id,
-      name: /\A#{Regexp.escape(params[:tool].to_s.strip)}\z/i
+      name: /\A#{Regexp.escape(params[:tool].to_s.strip)}\z/i,
+      :disabled.ne => true
     ).first
     render_agenda_error("Tool was not found in #{@shop.name}.", :not_found) unless @tool
   end

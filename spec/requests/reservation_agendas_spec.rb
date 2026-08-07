@@ -97,6 +97,60 @@ RSpec.describe "Public reservation agenda", type: :request do
     expect(JSON.parse(response.body)["error"]).to include("Tool")
   end
 
+  it "returns 404 without exposing reservations for disabled resources" do
+    disabled_shop = create(:shop, name: "Hidden Shop", disabled: true)
+    disabled_tool = create(
+      :tool,
+      shop: shop,
+      name: "Hidden Planer",
+      disabled: true,
+      reservable: true
+    )
+    create(
+      :reservation,
+      member: member,
+      shop: disabled_shop,
+      title: "Private shop reservation",
+      start_at: 1.hour.from_now,
+      end_at: 2.hours.from_now
+    )
+    create(
+      :reservation,
+      member: member,
+      shop: shop,
+      title: "Private tool reservation",
+      reservation_scope: "tools",
+      tool_ids: [disabled_tool.id.to_s],
+      start_at: 1.hour.from_now,
+      end_at: 2.hours.from_now
+    )
+
+    get "/reservations/agenda.json", params: { shop: disabled_shop.name }
+    expect(response).to have_http_status(:not_found)
+    expect(response.parsed_body).to eq("error" => "Shop was not found.")
+    expect(response.body).not_to include("Private shop reservation", "Ada Lovelace")
+
+    get "/reservations/agenda", params: { shop: disabled_shop.name }
+    expect(response).to have_http_status(:not_found)
+    expect(response.body).to eq("Shop was not found.")
+
+    get "/reservations/agenda.json", params: {
+      shop: shop.name,
+      tool: disabled_tool.name
+    }
+    expect(response).to have_http_status(:not_found)
+    expect(response.parsed_body)
+      .to eq("error" => "Tool was not found in Wood Shop.")
+
+    get "/reservations/agenda", params: {
+      shop: shop.name,
+      tool: disabled_tool.name
+    }
+    expect(response).to have_http_status(:not_found)
+    expect(response.body).to eq("Tool was not found in Wood Shop.")
+    expect(response.body).not_to include("Private tool reservation", "Ada Lovelace")
+  end
+
   it "uses half-open 24-hour boundaries" do
     travel_to(zone.local(2026, 7, 28, 10, 0)) do
       create(:reservation, member: member, shop: shop, title: "Ends now",
