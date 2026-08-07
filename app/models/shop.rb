@@ -3,6 +3,8 @@ class Shop
   include ActiveModel::Serializers::JSON
 
   field :name, type: String
+  field :wiki_url, type: String
+  field :gdrive_id, type: String
   field :slack_channel, type: String  # e.g. "shop-woodworking" — used for slash command routing
   field :disabled, type: Boolean, default: false
   field :reservable, type: Boolean, default: false
@@ -19,6 +21,10 @@ class Shop
   field :volunteer_canvas_id, type: String
 
   has_many :tools, dependent: :destroy
+  has_many :reservation_blackouts, dependent: :destroy
+
+  before_validation :normalize_external_fields
+  after_save :warm_changed_slack_channel_cache
 
   validates :name, presence: true, uniqueness: { case_sensitive: false }
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
@@ -39,12 +45,33 @@ class Shop
     value.nil? ? false : value
   end
 
+  def effective_wiki_url
+    wiki_url.to_s.strip.presence || WikiUrlBuilder.shop_url(name)
+  end
+
   def reservation_prerequisites
     ids = Array(reservation_prerequisite_tool_ids).map(&:to_s)
     ids.present? ? Tool.where(:id.in => ids) : Tool.none
   end
 
   private
+
+  def normalize_external_fields
+    self.wiki_url = wiki_url.to_s.strip.presence
+    self.gdrive_id = gdrive_id.to_s.strip.presence
+    self.slack_channel = Service::SlackChannelCache.normalize_name(slack_channel).presence
+  end
+
+  def warm_changed_slack_channel_cache
+    return if Rails.env.test?
+    return unless previous_changes.key?("slack_channel")
+    return if slack_channel.blank?
+
+    Service::SlackChannelCache.lookup(
+      slack_channel,
+      refresh_on_miss: true
+    )
+  end
 
   def reservation_duration_uses_half_hours
     value = max_reservation_duration_hours.to_f

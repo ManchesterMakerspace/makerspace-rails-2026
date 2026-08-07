@@ -441,6 +441,9 @@ RSpec.configure do |config|
           properties: {
             id: { type: :string },
             name: { type: :string },
+            wikiUrl: { type: :string, format: :uri },
+            wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
+            gdriveId: { type: :string, 'x-nullable': true },
             slackChannel: { type: :string, 'x-nullable': true },
             disabled: { type: :boolean },
             colorId: { type: :string, pattern: '^\d+$', 'x-nullable': true },
@@ -448,7 +451,7 @@ RSpec.configure do |config|
             googleResourceId: { type: :string, 'x-nullable': true },
             resourceEmail: { type: :string, 'x-nullable': true }
           },
-          required: [:id, :name, :reservable]
+          required: [:id, :name, :wikiUrl, :reservable]
         }
       ]
     },
@@ -461,12 +464,15 @@ RSpec.configure do |config|
             id: { type: :string },
             shopId: { type: :string },
             name: { type: :string },
+            wikiUrl: { type: :string, format: :uri },
+            wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
+            gdriveId: { type: :string, 'x-nullable': true },
             description: { type: :string, 'x-nullable': true },
             disabled: { type: :boolean },
             allowPending: { type: :boolean, default: false },
             effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } }
           },
-          required: [:id, :shopId, :name, :reservable]
+          required: [:id, :shopId, :name, :wikiUrl, :reservable]
         }
       ]
     },
@@ -498,6 +504,19 @@ RSpec.configure do |config|
         endAt: { type: :string, format: 'date-time' },
         status: { type: :string, enum: %w[pending approved denied cancelled] },
         approvalReasons: { type: :array, items: { type: :string } },
+        approvalDetails: {
+          type: :array,
+          items: {
+            type: :object,
+            properties: {
+              code: { type: :string },
+              message: { type: :string },
+              blackoutId: { type: :string, 'x-nullable': true },
+              blackoutTitle: { type: :string, 'x-nullable': true }
+            },
+            required: [:code, :message]
+          }
+        },
         source: { type: :string, enum: %w[portal slack] },
         calendarEventId: { type: :string, 'x-nullable': true },
         calendarHtmlLink: { type: :string, format: :uri, 'x-nullable': true },
@@ -521,11 +540,84 @@ RSpec.configure do |config|
         },
         requiresApproval: { type: :boolean },
         approvalReasons: { type: :array, items: { type: :string } },
+        approvalDetails: {
+          type: :array,
+          items: {
+            type: :object,
+            properties: {
+              code: { type: :string },
+              message: { type: :string },
+              blackoutId: { type: :string, 'x-nullable': true },
+              blackoutTitle: { type: :string, 'x-nullable': true }
+            },
+            required: [:code, :message]
+          }
+        },
         maximumDurationHours: { type: :number, multipleOf: 0.5, minimum: 0 }
       },
       required: [
         :eligible, :errors, :conflicts, :missingPrerequisites, :requiresApproval,
-        :approvalReasons, :maximumDurationHours
+        :approvalReasons, :approvalDetails, :maximumDurationHours
+      ]
+    },
+    ReservationBlackout: {
+      type: :object,
+      properties: {
+        id: { type: :string },
+        title: { type: :string },
+        shopId: { type: :string },
+        shopName: { type: :string },
+        recurrence: { type: :string, enum: %w[daily weekly] },
+        weekday: { type: :integer, minimum: 0, maximum: 6, 'x-nullable': true },
+        startTime: { type: :string, pattern: '^\d{2}:(?:00|30)$' },
+        endTime: { type: :string, pattern: '^\d{2}:(?:00|30)$' },
+        startDate: { type: :string, format: :date, 'x-nullable': true },
+        endDate: { type: :string, format: :date, 'x-nullable': true }
+      },
+      required: [:id, :title, :shopId, :recurrence, :startTime, :endTime]
+    },
+    ReservationAgenda: {
+      type: :object,
+      properties: {
+        shopName: { type: :string },
+        toolName: { type: :string, 'x-nullable': true },
+        generatedAt: { type: :string, format: 'date-time' },
+        windowStart: { type: :string, format: 'date-time' },
+        windowEnd: { type: :string, format: 'date-time' },
+        upNext: {
+          type: :object,
+          'x-nullable': true,
+          properties: {
+            memberName: { type: :string },
+            slackUsername: { type: :string, 'x-nullable': true },
+            startAt: { type: :string, format: 'date-time' }
+          },
+          required: [:memberName, :startAt]
+        },
+        reservations: {
+          type: :array,
+          items: {
+            type: :object,
+            properties: {
+              title: { type: :string },
+              memberName: { type: :string },
+              slackUsername: { type: :string, 'x-nullable': true },
+              startAt: { type: :string, format: 'date-time' },
+              endAt: { type: :string, format: 'date-time' },
+              status: { type: :string, enum: %w[pending approved] },
+              reservationScope: { type: :string, enum: %w[shop tools] },
+              toolNames: { type: :array, items: { type: :string } },
+              inProgress: { type: :boolean }
+            },
+            required: [
+              :title, :memberName, :startAt, :endAt, :status,
+              :reservationScope, :toolNames, :inProgress
+            ]
+          }
+        }
+      },
+      required: [
+        :shopName, :generatedAt, :windowStart, :windowEnd, :reservations
       ]
     },
     SubscriptionCancellationImpact: {

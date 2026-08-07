@@ -6,6 +6,10 @@ class ReservationSerializer < ActiveModel::Serializer
              :calendar_html_link, :calendar_sync_status, :calendar_synced_at,
              :created_at, :updated_at
 
+  attribute :approval_details do
+    object.effective_approval_details
+  end
+
   attribute :calendar_sync_error, if: :manager_view?
 
   def member_name

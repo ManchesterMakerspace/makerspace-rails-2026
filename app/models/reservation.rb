@@ -15,6 +15,7 @@ class Reservation
   field :end_at, type: Time
   field :status, type: String, default: "approved"
   field :approval_reasons, type: Array, default: []
+  field :approval_details, type: Array, default: []
   field :decision_note, type: String
   field :decided_at, type: Time
   field :source, type: String, default: "portal"
@@ -62,6 +63,27 @@ class Reservation
 
   def denied?
     status == "denied"
+  end
+
+  def effective_approval_details
+    details = Array(approval_details).map { |detail| detail.to_h.stringify_keys }
+    return details if details.present?
+
+    Array(approval_reasons).map do |reason|
+      {
+        "code" => reason,
+        "message" => case reason
+        when "overlapping_member_reservation"
+          "This reservation overlaps another reservation you hold."
+        when "resource_requires_approval"
+          "The selected resource requires manager approval."
+        when "blackout"
+          "This reservation overlaps a shop blackout."
+        else
+          reason.to_s.humanize
+        end
+      }
+    end
   end
 
   private

@@ -112,4 +112,33 @@ RSpec.describe Service::SlackConnector do
 
     expect(described_class.find_channel_id("#woodshop")).to eq("C123")
   end
+
+  it "resolves an ID-shaped hash-prefixed channel as a name" do
+    channel = double(name: "community", id: "C12345678")
+    response = double(
+      channels: [channel],
+      response_metadata: double(next_cursor: "")
+    )
+    allow(Service::SlackChannelCache).to receive(:fetch).and_return(nil)
+    expect(client).not_to receive(:conversations_info)
+    expect(client).to receive(:conversations_list).with(
+      types: "public_channel,private_channel",
+      exclude_archived: true,
+      limit: 200,
+      cursor: nil
+    ).and_return(response)
+
+    expect(described_class.find_channel_id("#COMMUNITY")).to eq("C12345678")
+  end
+
+  it "resolves an uppercase Slack channel ID with conversations.info" do
+    channel = double(id: "C12345678", is_archived: false)
+    allow(Service::SlackChannelCache).to receive(:fetch).and_return(nil)
+    expect(client).to receive(:conversations_info)
+      .with(channel: "C12345678")
+      .and_return(double(channel: channel))
+    expect(client).not_to receive(:conversations_list)
+
+    expect(described_class.find_channel_id("C12345678")).to eq("C12345678")
+  end
 end

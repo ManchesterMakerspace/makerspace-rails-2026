@@ -1,5 +1,6 @@
 class ToolSerializer < ActiveModel::Serializer
-  attributes :id, :name, :description, :disabled, :allow_pending, :announce,
+  attributes :id, :name, :wiki_url, :gdrive_id, :description, :disabled,
+             :allow_pending, :announce,
              :announce_channel, :users_channel, :shop_id, :prerequisite_ids,
              :reservable, :max_concurrent_reservations, :reservation_horizon_days,
              :max_reservation_duration_hours, :reservation_requires_approval,
@@ -7,6 +8,14 @@ class ToolSerializer < ActiveModel::Serializer
 
   attribute :effective_reservation_prerequisite_ids do
     object.effective_reservation_prerequisite_ids
+  end
+
+  attribute :wiki_url_override do
+    object.wiki_url
+  end
+
+  def wiki_url
+    object.effective_wiki_url
   end
 
   attribute :reservation_prerequisite_names do

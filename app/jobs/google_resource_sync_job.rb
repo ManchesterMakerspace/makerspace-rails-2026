@@ -11,6 +11,7 @@ class GoogleResourceSyncJob < ApplicationJob
     Service::GoogleWorkspace.ensure_resource!(record, category)
     Service::GoogleWorkspace.ensure_label!(record)
   rescue StandardError => error
+    Service::GoogleApiErrorReporter.sanitize_error!(error)
     Service::GoogleApiErrorReporter.report_if_permission_denied(
       error,
       operation: "google_resource_sync_job",

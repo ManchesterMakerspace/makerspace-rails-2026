@@ -9,4 +9,3 @@ class MemberProvisioningJob < ApplicationJob
     Service::MemberProvisioning.provision(member)
   end
 end
-

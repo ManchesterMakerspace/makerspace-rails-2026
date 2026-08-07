@@ -130,6 +130,209 @@ RSpec.describe ReservationService do
     expect(second.approval_reasons).to include("overlapping_member_reservation")
   end
 
+  it "requires approval and snapshots titles for overlapping blackouts" do
+    create(:tool_checkout, member: member, tool: tool)
+    blackout = create(
+      :reservation_blackout,
+      shop: shop,
+      recurrence: "daily",
+      weekday: nil,
+      title: "Open House",
+      start_time: start_at.in_time_zone(described_class::ZONE).strftime("%H:%M"),
+      end_time: end_at.in_time_zone(described_class::ZONE).strftime("%H:%M")
+    )
+
+    reservation = described_class.create!(member: member, attributes: attributes)
+
+    expect(reservation.status).to eq("pending")
+    expect(reservation.approval_reasons).to include("blackout")
+    expect(reservation.effective_approval_details).to include(
+      hash_including("blackoutTitle" => "Open House")
+    )
+
+    blackout.destroy
+    expect(reservation.reload.effective_approval_details).to include(
+      hash_including("blackoutTitle" => "Open House")
+    )
+  end
+
+  it "returns one approval detail for every overlapping blackout" do
+    create(:tool_checkout, member: member, tool: tool)
+    %w[Cleanup Orientation].each do |title|
+      create(:reservation_blackout, shop: shop, recurrence: "daily", weekday: nil,
+        title: title,
+        start_time: start_at.in_time_zone(described_class::ZONE).strftime("%H:%M"),
+        end_time: end_at.in_time_zone(described_class::ZONE).strftime("%H:%M"))
+    end
+
+    preview = described_class.preview(member: member, attributes: attributes)
+
+    expect(preview[:approvalDetails].filter_map { |detail|
+      detail[:blackoutTitle]
+    }).to contain_exactly("Cleanup", "Orientation")
+  end
+
+  it "does not expand blackouts for a reservation beyond its maximum duration" do
+    tool.update!(max_reservation_duration_hours: 1)
+    create(:tool_checkout, member: member, tool: tool)
+    expect(ReservationBlackout).not_to receive(:occurrences_overlapping)
+
+    preview = described_class.preview(
+      member: member,
+      attributes: attributes.merge(end_at: start_at + 10.years)
+    )
+
+    expect(preview[:eligible]).to be(false)
+    expect(preview[:errors]).to include("Reservation exceeds the maximum duration")
+  end
+
+  it "applies a blackout on a material edit without changing existing reservations retroactively" do
+    create(:tool_checkout, member: member, tool: tool)
+    reservation = described_class.create!(member: member, attributes: attributes)
+    blackout_start = start_at + 2.hours
+    create(:reservation_blackout, shop: shop, recurrence: "daily", weekday: nil,
+      title: "Open House",
+      start_time: blackout_start.in_time_zone(described_class::ZONE).strftime("%H:%M"),
+      end_time: (blackout_start + 1.hour).in_time_zone(described_class::ZONE).strftime("%H:%M"))
+
+    expect(reservation.reload.status).to eq("approved")
+
+    described_class.update!(
+      reservation: reservation,
+      attributes: {
+        start_at: blackout_start,
+        end_at: blackout_start + 1.hour
+      }
+    )
+
+    expect(reservation.reload.status).to eq("pending")
+    expect(reservation.effective_approval_details).to include(
+      hash_including("blackoutTitle" => "Open House")
+    )
+  end
+
+  it "allows nearby reservations within the same duration session up to the maximum" do
+    tool.update!(max_reservation_duration_hours: 6)
+    create(:tool_checkout, member: member, tool: tool)
+    create(:reservation, member: member, shop: shop, reservation_scope: "tools",
+      tool_ids: [tool.id.to_s], start_at: start_at, end_at: start_at + 3.hours)
+
+    reservation = described_class.create!(
+      member: member,
+      attributes: attributes.merge(
+        start_at: start_at + 3.hours,
+        end_at: start_at + 6.hours
+      )
+    )
+    expect(reservation).to be_persisted
+  end
+
+  it "rejects a nearby duration session whose combined time exceeds the maximum" do
+    tool.update!(max_reservation_duration_hours: 6)
+    create(:tool_checkout, member: member, tool: tool)
+    create(:reservation, member: member, shop: shop, reservation_scope: "tools",
+      tool_ids: [tool.id.to_s], start_at: start_at, end_at: start_at + 3.hours)
+
+    expect {
+      described_class.create!(
+        member: member,
+        attributes: attributes.merge(
+          start_at: start_at + 3.hours,
+          end_at: start_at + 6.5.hours
+        )
+      )
+    }.to raise_error(Error::UnprocessableEntity, /may total at most 6 hours/)
+  end
+
+  it "resets the duration session at exactly the rounded gap" do
+    tool.update!(max_reservation_duration_hours: 6)
+    create(:tool_checkout, member: member, tool: tool)
+    create(:reservation, member: member, shop: shop, reservation_scope: "tools",
+      tool_ids: [tool.id.to_s], start_at: start_at, end_at: start_at + 6.hours)
+
+    reservation = described_class.create!(
+      member: member,
+      attributes: attributes.merge(
+        start_at: start_at + 8.hours,
+        end_at: start_at + 14.hours
+      )
+    )
+    expect(reservation).to be_persisted
+  end
+
+  it "rejects an edit that closes an exact reset gap and exceeds the session maximum" do
+    tool.update!(max_reservation_duration_hours: 6)
+    create(:tool_checkout, member: member, tool: tool)
+    create(:reservation, member: member, shop: shop, reservation_scope: "tools",
+      tool_ids: [tool.id.to_s], start_at: start_at, end_at: start_at + 3.hours)
+    editable = create(:reservation, member: member, shop: shop, reservation_scope: "tools",
+      tool_ids: [tool.id.to_s], start_at: start_at + 5.hours, end_at: start_at + 8.hours)
+
+    expect {
+      described_class.update!(
+        reservation: editable,
+        attributes: {
+          start_at: start_at + 4.5.hours,
+          end_at: start_at + 8.hours
+        }
+      )
+    }.to raise_error(Error::UnprocessableEntity, /may total at most 6 hours/)
+  end
+
+  it "does not count cancelled reservations in duration sessions" do
+    tool.update!(max_reservation_duration_hours: 6)
+    create(:tool_checkout, member: member, tool: tool)
+    create(:reservation, member: member, shop: shop, status: "cancelled",
+      reservation_scope: "tools", tool_ids: [tool.id.to_s],
+      start_at: start_at, end_at: start_at + 6.hours)
+
+    reservation = described_class.create!(
+      member: member,
+      attributes: attributes.merge(
+        start_at: start_at + 6.hours,
+        end_at: start_at + 12.hours
+      )
+    )
+
+    expect(reservation).to be_persisted
+  end
+
+  it "keeps whole-shop and tool duration sessions separate" do
+    shop.update!(reservable: true, max_reservation_duration_hours: 6)
+    tool.update!(max_reservation_duration_hours: 6)
+    create(:tool_checkout, member: member, tool: tool)
+    create(:reservation, member: member, shop: shop, reservation_scope: "shop",
+      start_at: start_at, end_at: start_at + 6.hours)
+
+    reservation = described_class.create!(
+      member: member,
+      attributes: attributes.merge(
+        start_at: start_at + 6.hours,
+        end_at: start_at + 12.hours
+      )
+    )
+
+    expect(reservation).to be_persisted
+  end
+
+  it "exempts admin reservation holders from duration sessions" do
+    admin = create(:member, :admin, :current)
+    tool.update!(max_reservation_duration_hours: 6)
+    create(:tool_checkout, member: admin, tool: tool)
+    create(:reservation, member: admin, shop: shop, reservation_scope: "tools",
+      tool_ids: [tool.id.to_s], start_at: start_at, end_at: start_at + 6.hours)
+
+    reservation = described_class.create!(
+      member: admin,
+      attributes: attributes.merge(
+        start_at: start_at + 6.hours,
+        end_at: start_at + 12.hours
+      )
+    )
+
+    expect(reservation).to be_persisted
+  end
+
   it "counts pending reservations against tool capacity" do
     create(:tool_checkout, member: member, tool: tool)
     create(:reservation, member: create(:member, :current), shop: shop,

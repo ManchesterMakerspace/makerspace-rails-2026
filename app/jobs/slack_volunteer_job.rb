@@ -140,7 +140,7 @@ class SlackVolunteerJob < ApplicationJob
     end
 
     # activeMember guard
-    unless invoker.active_membership_status?
+    unless invoker.status == "activeMember"
       post_response(response_url, :ephemeral, '❌ Only active members can claim tasks.')
       return
     end

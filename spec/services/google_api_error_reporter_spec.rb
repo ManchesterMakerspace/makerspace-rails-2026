@@ -41,4 +41,49 @@ RSpec.describe Service::GoogleApiErrorReporter do
       anything
     )
   end
+
+  it "redacts authorization headers embedded in Faraday response text" do
+    error = StandardError.new(
+      'request=#<Faraday::Response request_headers={' \
+      '"Authorization"=>"Bearer request-secret"} ' \
+      'response_headers={"authorization"=>"Bearer response-secret"}>'
+    )
+
+    message = described_class.full_error_message(error)
+
+    expect(message).to include(
+      '"Authorization"=>"[FILTERED]"',
+      '"authorization"=>"[FILTERED]"'
+    )
+    expect(message).not_to include("request-secret", "response-secret")
+    expect(error.message).not_to include("request-secret", "response-secret")
+    expect(error.inspect).not_to include("request-secret", "response-secret")
+  end
+
+  it "redacts authorization values in returned response-header hashes" do
+    error_class = Class.new(StandardError) do
+      attr_reader :response_header
+
+      def initialize
+        super("Google API failure")
+        @response_header = {
+          "Authorization" => "Bearer response-secret",
+          "x-request-id" => "google-request-123"
+        }
+      end
+    end
+
+    message = described_class.full_error_message(error_class.new)
+
+    expect(message).to include("[FILTERED]", "google-request-123")
+    expect(message).not_to include("response-secret")
+  end
+
+  it "keeps repeated sanitization idempotent" do
+    error = StandardError.new("Authorization: Bearer response-secret")
+
+    3.times { described_class.sanitize_error!(error) }
+
+    expect(error.message).to eq("Authorization: [FILTERED]")
+  end
 end

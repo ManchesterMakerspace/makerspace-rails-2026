@@ -105,7 +105,7 @@ class VolunteerController < AuthenticationController
 
   # POST /api/volunteer/tasks/:id/claim
   def claim_task
-    unless current_member.active_membership_status?
+    unless current_member.status == "activeMember"
       render json: { error: 'Only active members may claim tasks' }, status: :forbidden and return
     end
 

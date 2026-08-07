@@ -3,6 +3,7 @@ class Admin::SystemConfigsController < AdminController
   # Keys that can be toggled as boolean flags
   FLAG_KEYS = [
     SystemConfig::SLACK_SYNC_ENABLED,
+    SystemConfig::SLACK_PROFILE_SYNC_ENABLED,
     'volunteer_bounty_token_enabled',
     'require_totp_admin',
     'require_totp_board',
@@ -25,6 +26,8 @@ class Admin::SystemConfigsController < AdminController
     'volunteer_bounty_token',
     'volunteer_rolling_days',
     'volunteer_leaderboard_top',
+    # Reservation settings
+    'reservation_token',
     # Security settings
     'devise_timeout_minutes',
   ].freeze
@@ -35,6 +38,7 @@ class Admin::SystemConfigsController < AdminController
   def index
     flags = {
       slack_sync_enabled:             SystemConfig.enabled?(SystemConfig::SLACK_SYNC_ENABLED),
+      slack_profile_sync_enabled:     SystemConfig.enabled?(SystemConfig::SLACK_PROFILE_SYNC_ENABLED),
       volunteer_bounty_token_enabled: SystemConfig.enabled?('volunteer_bounty_token_enabled'),
       require_totp_admin:             SystemConfig.enabled?('require_totp_admin'),
       require_totp_board:             SystemConfig.enabled?('require_totp_board'),
@@ -57,6 +61,7 @@ class Admin::SystemConfigsController < AdminController
       slack_channel_admin:              SystemConfig.get('slack_channel_admin')               || 'general',
       slack_channel_logs:               SystemConfig.get('slack_channel_logs')               || 'interface-logs',
       volunteer_pending_slack_channel:  SystemConfig.get('volunteer_pending_slack_channel')  || 'general',
+      channel_cache:                     Service::SlackChannelCache.status,
     }
 
     volunteer = {
@@ -79,6 +84,10 @@ class Admin::SystemConfigsController < AdminController
       devise_timeout_minutes: SystemConfig.get('devise_timeout_minutes') || '30',
     }
 
+    reservation = {
+      reservation_token: SystemConfig.get('reservation_token') || '',
+    }
+
     render json: {
       flags:     flags,
       jobs:      jobs,
@@ -86,6 +95,7 @@ class Admin::SystemConfigsController < AdminController
       volunteer: volunteer,
       totp:      totp,
       security:  security,
+      reservation: reservation,
     }, status: :ok
   end
 
@@ -127,6 +137,14 @@ class Admin::SystemConfigsController < AdminController
       render json: { error: "Unknown setting key: #{key}" }, status: :unprocessable_content and return
     end
 
+    if slack_channel_setting?(key)
+      value = Service::SlackChannelCache.normalize_name(value)
+      Service::SlackChannelCache.lookup(
+        value,
+        refresh_on_miss: !Rails.env.test?
+      ) if value.present?
+    end
+
     old_value = SystemConfig.get(key).to_s
     return unless valid_setting_value?(key, value)
 
@@ -163,6 +181,8 @@ class Admin::SystemConfigsController < AdminController
 
     case job_key
     when 'slack_sync'      then SlackSyncJob.perform_later
+    when 'slack_profile_sync' then SlackProfileSyncJob.perform_later
+    when 'slack_channel_cache' then SlackChannelCacheRefreshJob.perform_later
     when 'member_review'   then MemberReviewJob.perform_later
     when 'invoice_review'  then InvoiceReviewJob.perform_later
     when 'garbage_collect' then GarbageCollectJob.perform_later
@@ -176,6 +196,11 @@ class Admin::SystemConfigsController < AdminController
   end
 
   private
+
+  def slack_channel_setting?(key)
+    key.start_with?("slack_channel_") ||
+      key == "volunteer_pending_slack_channel"
+  end
 
   # Posts to logs and treasurer channels when the volunteer discount setting changes.
   # Fetches discount descriptions from Braintree for a human-readable audit trail.
