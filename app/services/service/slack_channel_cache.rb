@@ -3,7 +3,7 @@ module Service
     CACHE_PREFIX = "slack:public_channel".freeze
     STATUS_KEY = "slack:public_channel_cache:status".freeze
     REBUILD_PREFIX = "slack:public_channel_cache:rebuild".freeze
-    CACHE_TTL_SECONDS = 1000.hours.to_i
+    CACHE_TTL_SECONDS = 3000.hours.to_i
     PAGE_SIZE = 200
 
     class << self
