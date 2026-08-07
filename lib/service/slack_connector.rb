@@ -116,13 +116,13 @@ module Service
     end
 
     def self.find_channel_id(channel_name)
-      requested = channel_name.to_s.delete_prefix('#').strip
+      requested = Service::SlackChannelCache.normalize_name(channel_name)
       return if requested.blank?
 
       cached = Service::SlackChannelCache.fetch(requested)
       return cached[:id] if cached&.dig(:id).present?
 
-      if requested.match?(/\A[CG][A-Z0-9]+\z/i)
+      if Service::SlackChannelCache.channel_id?(requested)
         response = with_rate_limit_retry("conversations.info") do
           client.conversations_info(channel: requested)
         end

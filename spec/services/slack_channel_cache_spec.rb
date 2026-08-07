@@ -43,6 +43,13 @@ RSpec.describe Service::SlackChannelCache do
     allow(REDIS).to receive(:scan_each).and_return([].each)
   end
 
+  it "distinguishes hash-prefixed channel names from Slack channel IDs" do
+    expect(described_class.normalize_name("#COMMUNITY")).to eq("community")
+    expect(described_class.normalize_name("C12345678")).to eq("C12345678")
+    expect(described_class.channel_id?("community")).to be(false)
+    expect(described_class.channel_id?("C12345678")).to be(true)
+  end
+
   it "normalizes names and caches every channel encountered until the target is found" do
     allow(client).to receive(:conversations_list)
       .and_return(first_page, second_page)

@@ -6,6 +6,7 @@ module Service
     REBUILD_PREFIX = "slack:public_channel_cache:rebuild".freeze
     CACHE_TTL_SECONDS = 3000.hours.to_i
     PAGE_SIZE = 200
+    CHANNEL_ID_PATTERN = /\A[CG][A-Z0-9]{8,}\z/.freeze
     PROMOTE_SCRIPT = <<~LUA.freeze
       local staged_count = tonumber(ARGV[1])
       local live_count = tonumber(ARGV[2])
@@ -37,10 +38,14 @@ module Service
 
     class << self
       def normalize_name(value)
-        normalized = value.to_s.strip.sub(/\A#+/, "")
-        return normalized if normalized.match?(/\A[CG][A-Z0-9]{8,}\z/)
+        raw_value = value.to_s.strip
+        return raw_value if channel_id?(raw_value)
 
-        normalized.downcase
+        raw_value.sub(/\A#+/, "").downcase
+      end
+
+      def channel_id?(value)
+        value.to_s.match?(CHANNEL_ID_PATTERN)
       end
 
       def fetch(channel_name)
@@ -277,10 +282,6 @@ module Service
         [CACHE_PREFIX, CACHE_ID_PREFIX].flat_map do |prefix|
           REDIS.scan_each(match: "#{prefix}:*").to_a
         end
-      end
-
-      def channel_id?(value)
-        value.to_s.match?(/\A[CG][A-Z0-9]{8,}\z/)
       end
 
       def cache_key(identifier)
