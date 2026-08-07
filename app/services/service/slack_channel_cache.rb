@@ -6,6 +6,34 @@ module Service
     REBUILD_PREFIX = "slack:public_channel_cache:rebuild".freeze
     CACHE_TTL_SECONDS = 3000.hours.to_i
     PAGE_SIZE = 200
+    PROMOTE_SCRIPT = <<~LUA.freeze
+      local staged_count = tonumber(ARGV[1])
+      local live_count = tonumber(ARGV[2])
+
+      for index = 1, staged_count do
+        if redis.call("EXISTS", KEYS[index]) == 0 then
+          return redis.error_reply("Slack cache staging key missing: " .. KEYS[index])
+        end
+      end
+
+      for index = 1, live_count do
+        redis.call("DEL", KEYS[staged_count + index])
+      end
+
+      for index = 1, staged_count do
+        redis.call("RENAME", KEYS[index], ARGV[index + 2])
+      end
+
+      local status_key = KEYS[staged_count + live_count + 1]
+      redis.call(
+        "SET",
+        status_key,
+        ARGV[staged_count + 3],
+        "EX",
+        ARGV[staged_count + 4]
+      )
+      return staged_count
+    LUA
 
     class << self
       def normalize_name(value)
@@ -56,22 +84,7 @@ module Service
           [key, cache_key(identifier)]
         end
         live_keys = live_cache_keys
-
-        results = REDIS.multi do |transaction|
-          transaction.del(*live_keys) if live_keys.present?
-          staged_entries.each do |staged_key, destination_key|
-            transaction.rename(staged_key, destination_key)
-          end
-          transaction.set(
-            STATUS_KEY,
-            status_payload(count),
-            ex: CACHE_TTL_SECONDS
-          )
-        end
-        transaction_error = Array(results).find do |result|
-          result.is_a?(Redis::BaseError)
-        end
-        raise transaction_error if transaction_error
+        promote_staged_cache!(staged_entries, live_keys, count)
 
         count
       rescue Redis::BaseError => error
@@ -204,6 +217,22 @@ module Service
           STATUS_KEY,
           status_payload(count),
           ex: CACHE_TTL_SECONDS
+        )
+      end
+
+      def promote_staged_cache!(staged_entries, live_keys, count)
+        staged_keys = staged_entries.map(&:first)
+        destination_keys = staged_entries.map(&:last)
+        REDIS.eval(
+          PROMOTE_SCRIPT,
+          keys: staged_keys + live_keys + [STATUS_KEY],
+          argv: [
+            staged_keys.length,
+            live_keys.length,
+            *destination_keys,
+            status_payload(count),
+            CACHE_TTL_SECONDS
+          ]
         )
       end
 

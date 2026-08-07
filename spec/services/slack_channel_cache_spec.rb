@@ -35,6 +35,7 @@ RSpec.describe Service::SlackChannelCache do
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:del).and_return(1)
     allow(REDIS).to receive(:rename).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(true)
     allow(REDIS).to receive(:multi) do |&block|
       block.call(REDIS)
       []
@@ -57,22 +58,22 @@ RSpec.describe Service::SlackChannelCache do
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel:wood-shop",
       include('"id":"C12345678"'),
-      ex: 1000.hours.to_i
+      ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel:metal-shop",
       include('"id":"C45678901"'),
-      ex: 1000.hours.to_i
+      ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel_id:C12345678",
       include('"name":"wood-shop"'),
-      ex: 1000.hours.to_i
+      ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel_id:C45678901",
       include('"name":"metal-shop"'),
-      ex: 1000.hours.to_i
+      ex: described_class::CACHE_TTL_SECONDS
     )
   end
 
@@ -91,7 +92,7 @@ RSpec.describe Service::SlackChannelCache do
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel_id:C45678901",
       include('"name":"metal-shop"'),
-      ex: 1000.hours.to_i
+      ex: described_class::CACHE_TTL_SECONDS
     )
   end
 
@@ -134,6 +135,7 @@ RSpec.describe Service::SlackChannelCache do
 
   it "finishes scanning before replacing stale keys and records cache metadata" do
     events = []
+    promotion = nil
     allow(REDIS).to receive(:scan_each)
       .with(match: "slack:public_channel:*")
       .and_return(%w[slack:public_channel:old].each)
@@ -144,65 +146,79 @@ RSpec.describe Service::SlackChannelCache do
       events << :scan
       events.count(:scan) == 1 ? first_page : second_page
     end
-    allow(REDIS).to receive(:del) do
-      events << :clear
-      1
+    allow(REDIS).to receive(:eval) do |script, keys:, argv:|
+      events << :promote
+      promotion = { script: script, keys: keys, argv: argv }
+      true
     end
 
     expect(described_class.rebuild!).to eq(2)
 
-    expect(events.index(:clear)).to be > events.rindex(:scan)
-    expect(REDIS).to have_received(:del)
-      .with("slack:public_channel:old", "slack:public_channel_id:COLD12345")
+    expect(events.index(:promote)).to be > events.rindex(:scan)
     expect(REDIS).to have_received(:set).with(
       a_string_matching(
         /slack:public_channel_cache:rebuild:[^:]+:wood-shop/
       ),
       include('"id":"C12345678"'),
-      ex: 1000.hours.to_i
+      ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       a_string_matching(
         /slack:public_channel_cache:rebuild:[^:]+:metal-shop/
       ),
       include('"id":"C45678901"'),
-      ex: 1000.hours.to_i
+      ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       a_string_matching(
         /slack:public_channel_cache:rebuild:[^:]+:C12345678/
       ),
       include('"name":"wood-shop"'),
-      ex: 1000.hours.to_i
+      ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       a_string_matching(
         /slack:public_channel_cache:rebuild:[^:]+:C45678901/
       ),
       include('"name":"metal-shop"'),
-      ex: 1000.hours.to_i
+      ex: described_class::CACHE_TTL_SECONDS
     )
-    expect(REDIS).to have_received(:rename).with(
-      a_string_matching(/:wood-shop\z/),
-      "slack:public_channel:wood-shop"
+    expect(promotion[:keys]).to include(
+      "slack:public_channel:old",
+      "slack:public_channel_id:COLD12345",
+      described_class::STATUS_KEY
     )
-    expect(REDIS).to have_received(:rename).with(
-      a_string_matching(/:metal-shop\z/),
-      "slack:public_channel:metal-shop"
+    expect(promotion[:argv].first(2)).to eq([4, 2])
+    expect(promotion[:argv]).to include(
+      "slack:public_channel:wood-shop",
+      "slack:public_channel:metal-shop",
+      "slack:public_channel_id:C12345678",
+      "slack:public_channel_id:C45678901",
+      a_string_including('"totalChannels":2', '"lastUpdatedAt"'),
+      described_class::CACHE_TTL_SECONDS
     )
-    expect(REDIS).to have_received(:rename).with(
-      a_string_matching(/:C12345678\z/),
-      "slack:public_channel_id:C12345678"
-    )
-    expect(REDIS).to have_received(:rename).with(
-      a_string_matching(/:C45678901\z/),
-      "slack:public_channel_id:C45678901"
-    )
-    expect(REDIS).to have_received(:set).with(
-      described_class::STATUS_KEY,
-      include('"totalChannels":2', '"lastUpdatedAt"'),
-      ex: 1000.hours.to_i
-    )
+    expect(promotion[:script].index('redis.call("EXISTS"'))
+      .to be < promotion[:script].index('redis.call("DEL"')
+  end
+
+  it "preserves live keys when a staging key disappears before promotion" do
+    allow(REDIS).to receive(:scan_each)
+      .with(match: "slack:public_channel:*")
+      .and_return(%w[slack:public_channel:old].each)
+    allow(client).to receive(:conversations_list)
+      .and_return(first_page, second_page)
+    allow(REDIS).to receive(:eval)
+      .and_raise(
+        Redis::CommandError,
+        "Slack cache staging key missing: rebuild-key"
+      )
+
+    expect { described_class.rebuild! }
+      .to raise_error(Redis::CommandError, /staging key missing/)
+
+    expect(REDIS).not_to have_received(:del)
+      .with("slack:public_channel:old")
+    expect(REDIS).not_to have_received(:rename)
   end
 
   it "preserves the existing cache when Slack pagination fails" do

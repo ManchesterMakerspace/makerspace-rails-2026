@@ -39,7 +39,7 @@ their Drive folders.
 
 Public Slack channel metadata is cached in Redis under
 `slack:public_channel:<normalized-name>`. Each value contains the channel ID,
-name, topic, and purpose and expires after 1000 hours. Shop/tool and Slack portal
+name, topic, and purpose and expires after 3000 hours. Shop/tool and Slack portal
 setting saves remove leading `#` characters from channel names. A cache miss
 during a channel-name change opportunistically pages through
 `conversations.list`, caching every public channel encountered until the
