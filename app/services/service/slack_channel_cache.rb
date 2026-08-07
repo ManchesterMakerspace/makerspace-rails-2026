@@ -1,6 +1,7 @@
 module Service
   class SlackChannelCache
     CACHE_PREFIX = "slack:public_channel".freeze
+    CACHE_ID_PREFIX = "slack:public_channel_id".freeze
     STATUS_KEY = "slack:public_channel_cache:status".freeze
     REBUILD_PREFIX = "slack:public_channel_cache:rebuild".freeze
     CACHE_TTL_SECONDS = 1000.hours.to_i
@@ -48,17 +49,18 @@ module Service
 
         staging_prefix = "#{REBUILD_PREFIX}:#{SecureRandom.hex(16)}"
         staged_keys = []
-        channels.each do |details|
-          key = "#{staging_prefix}:#{normalize_name(details[:name])}"
+        staged_entries = cache_entries(channels).map do |identifier, details|
+          key = "#{staging_prefix}:#{identifier}"
           staged_keys << key
           write(details, key: key, raise_on_error: true)
+          [key, cache_key(identifier)]
         end
-        live_keys = REDIS.scan_each(match: "#{CACHE_PREFIX}:*").to_a
+        live_keys = live_cache_keys
 
         results = REDIS.multi do |transaction|
           transaction.del(*live_keys) if live_keys.present?
-          channels.zip(staged_keys).each do |details, staged_key|
-            transaction.rename(staged_key, cache_key(details[:name]))
+          staged_entries.each do |staged_key, destination_key|
+            transaction.rename(staged_key, destination_key)
           end
           transaction.set(
             STATUS_KEY,
@@ -83,7 +85,7 @@ module Service
       end
 
       def clear!
-        keys = REDIS.scan_each(match: "#{CACHE_PREFIX}:*").to_a
+        keys = live_cache_keys
         keys.each_slice(500) { |batch| REDIS.del(*batch) } if keys.present?
         REDIS.del(STATUS_KEY)
         keys.length
@@ -113,7 +115,6 @@ module Service
       def refresh_until(channel_name)
         target = normalize_name(channel_name)
         return nil if target.blank?
-        return nil if target.match?(/\A[CG][A-Z0-9]{8,}\z/)
 
         scan_public_channels(target: target) { |details| write(details) }
       end
@@ -143,7 +144,9 @@ module Service
 
             yield(details)
             cached_count += 1
-            found ||= details.with_indifferent_access if target == details[:name]
+            if target == details[:name] || target == details[:id]
+              found ||= details.with_indifferent_access
+            end
           end
 
           break if found.present?
@@ -180,12 +183,14 @@ module Service
         ""
       end
 
-      def write(details, key: cache_key(details[:name]), raise_on_error: false)
-        REDIS.set(
-          key,
-          JSON.generate(details),
-          ex: CACHE_TTL_SECONDS
-        )
+      def write(details, key: nil, raise_on_error: false)
+        keys = key.present? ? [key] : cache_identifiers(details).map do |identifier|
+          cache_key(identifier)
+        end
+        payload = JSON.generate(details)
+        keys.each do |target_key|
+          REDIS.set(target_key, payload, ex: CACHE_TTL_SECONDS)
+        end
       rescue Redis::BaseError => error
         Rails.logger.warn(
           "[SlackChannelCache] cache write failed name=#{details[:name].inspect} " \
@@ -226,8 +231,33 @@ module Service
         JSON.parse(raw)
       end
 
-      def cache_key(name)
-        "#{CACHE_PREFIX}:#{normalize_name(name)}"
+      def cache_entries(channels)
+        channels.flat_map do |details|
+          cache_identifiers(details).map { |identifier| [identifier, details] }
+        end
+      end
+
+      def cache_identifiers(details)
+        [details[:name], details[:id]].filter_map do |identifier|
+          normalized = normalize_name(identifier)
+          normalized unless normalized.blank?
+        end.uniq
+      end
+
+      def live_cache_keys
+        [CACHE_PREFIX, CACHE_ID_PREFIX].flat_map do |prefix|
+          REDIS.scan_each(match: "#{prefix}:*").to_a
+        end
+      end
+
+      def channel_id?(value)
+        value.to_s.match?(/\A[CG][A-Z0-9]{8,}\z/)
+      end
+
+      def cache_key(identifier)
+        normalized = normalize_name(identifier)
+        prefix = channel_id?(normalized) ? CACHE_ID_PREFIX : CACHE_PREFIX
+        "#{prefix}:#{normalized}"
       end
     end
   end

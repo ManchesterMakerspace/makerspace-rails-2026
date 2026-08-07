@@ -6,7 +6,7 @@ RSpec.describe Service::SlackChannelCache do
     double(
       channels: [
         double(
-          id: "C123",
+          id: "C12345678",
           name: "wood-shop",
           topic: double(value: "Woodworking discussion"),
           purpose: double(value: "Coordinate the wood shop")
@@ -19,7 +19,7 @@ RSpec.describe Service::SlackChannelCache do
     double(
       channels: [
         double(
-          id: "C456",
+          id: "C45678901",
           name: "metal-shop",
           topic: double(value: "Metalworking discussion"),
           purpose: double(value: "Coordinate the metal shop")
@@ -49,19 +49,48 @@ RSpec.describe Service::SlackChannelCache do
     result = described_class.lookup("#METAL-SHOP", refresh_on_miss: true)
 
     expect(result).to include(
-      "id" => "C456",
+      "id" => "C45678901",
       "name" => "metal-shop",
       "topic" => "Metalworking discussion",
       "purpose" => "Coordinate the metal shop"
     )
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel:wood-shop",
-      include('"id":"C123"'),
+      include('"id":"C12345678"'),
       ex: 1000.hours.to_i
     )
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel:metal-shop",
-      include('"id":"C456"'),
+      include('"id":"C45678901"'),
+      ex: 1000.hours.to_i
+    )
+    expect(REDIS).to have_received(:set).with(
+      "slack:public_channel_id:C12345678",
+      include('"name":"wood-shop"'),
+      ex: 1000.hours.to_i
+    )
+    expect(REDIS).to have_received(:set).with(
+      "slack:public_channel_id:C45678901",
+      include('"name":"metal-shop"'),
+      ex: 1000.hours.to_i
+    )
+  end
+
+  it "resolves channel IDs during a paginated refresh" do
+    allow(client).to receive(:conversations_list)
+      .and_return(first_page, second_page)
+
+    result = described_class.lookup("C45678901", refresh_on_miss: true)
+
+    expect(result).to include(
+      "id" => "C45678901",
+      "name" => "metal-shop",
+      "topic" => "Metalworking discussion"
+    )
+    expect(client).to have_received(:conversations_list).twice
+    expect(REDIS).to have_received(:set).with(
+      "slack:public_channel_id:C45678901",
+      include('"name":"metal-shop"'),
       ex: 1000.hours.to_i
     )
   end
@@ -69,10 +98,23 @@ RSpec.describe Service::SlackChannelCache do
   it "returns cached channel details without calling Slack" do
     allow(REDIS).to receive(:get).with("slack:public_channel:wood-shop")
       .and_return(JSON.generate(
-        id: "C123", name: "wood-shop", topic: "Topic", purpose: "Purpose"
+        id: "C12345678", name: "wood-shop", topic: "Topic", purpose: "Purpose"
       ))
 
-    expect(described_class.lookup("#wood-shop")).to include("id" => "C123")
+    expect(described_class.lookup("#wood-shop")).to include("id" => "C12345678")
+    expect(client).not_to receive(:conversations_list)
+  end
+
+  it "returns channel details cached by ID without calling Slack" do
+    allow(REDIS).to receive(:get)
+      .with("slack:public_channel_id:C12345678")
+      .and_return(JSON.generate(
+        id: "C12345678", name: "wood-shop", topic: "Topic", purpose: "Purpose"
+      ))
+
+    expect(described_class.lookup("C12345678")).to include(
+      "name" => "wood-shop"
+    )
     expect(client).not_to receive(:conversations_list)
   end
 
@@ -95,6 +137,9 @@ RSpec.describe Service::SlackChannelCache do
     allow(REDIS).to receive(:scan_each)
       .with(match: "slack:public_channel:*")
       .and_return(%w[slack:public_channel:old].each)
+    allow(REDIS).to receive(:scan_each)
+      .with(match: "slack:public_channel_id:*")
+      .and_return(%w[slack:public_channel_id:COLD12345].each)
     allow(client).to receive(:conversations_list) do
       events << :scan
       events.count(:scan) == 1 ? first_page : second_page
@@ -108,19 +153,33 @@ RSpec.describe Service::SlackChannelCache do
 
     expect(events.index(:clear)).to be > events.rindex(:scan)
     expect(REDIS).to have_received(:del)
-      .with("slack:public_channel:old")
+      .with("slack:public_channel:old", "slack:public_channel_id:COLD12345")
     expect(REDIS).to have_received(:set).with(
       a_string_matching(
         /slack:public_channel_cache:rebuild:[^:]+:wood-shop/
       ),
-      include('"id":"C123"'),
+      include('"id":"C12345678"'),
       ex: 1000.hours.to_i
     )
     expect(REDIS).to have_received(:set).with(
       a_string_matching(
         /slack:public_channel_cache:rebuild:[^:]+:metal-shop/
       ),
-      include('"id":"C456"'),
+      include('"id":"C45678901"'),
+      ex: 1000.hours.to_i
+    )
+    expect(REDIS).to have_received(:set).with(
+      a_string_matching(
+        /slack:public_channel_cache:rebuild:[^:]+:C12345678/
+      ),
+      include('"name":"wood-shop"'),
+      ex: 1000.hours.to_i
+    )
+    expect(REDIS).to have_received(:set).with(
+      a_string_matching(
+        /slack:public_channel_cache:rebuild:[^:]+:C45678901/
+      ),
+      include('"name":"metal-shop"'),
       ex: 1000.hours.to_i
     )
     expect(REDIS).to have_received(:rename).with(
@@ -130,6 +189,14 @@ RSpec.describe Service::SlackChannelCache do
     expect(REDIS).to have_received(:rename).with(
       a_string_matching(/:metal-shop\z/),
       "slack:public_channel:metal-shop"
+    )
+    expect(REDIS).to have_received(:rename).with(
+      a_string_matching(/:C12345678\z/),
+      "slack:public_channel_id:C12345678"
+    )
+    expect(REDIS).to have_received(:rename).with(
+      a_string_matching(/:C45678901\z/),
+      "slack:public_channel_id:C45678901"
     )
     expect(REDIS).to have_received(:set).with(
       described_class::STATUS_KEY,
