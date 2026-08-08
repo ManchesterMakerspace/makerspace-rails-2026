@@ -289,6 +289,9 @@ GEM
     orm_adapter (0.5.0)
     os (1.1.4)
     ostruct (0.6.3)
+    parallel (2.1.0)
+    parallel_tests (5.7.0)
+      parallel
     paypal-sdk-rest (1.7.6)
       multi_json (~> 1.0)
       xml-simple
@@ -512,6 +515,7 @@ DEPENDENCIES
   mongoid_search (~> 0.4)
   multi_json (~> 1.15)
   nokogiri (~> 1.19.4)
+  parallel_tests
   paypal-sdk-rest (~> 1.7)
   puma (~> 8.0)
   rack-cors (~> 3.0)
@@ -650,6 +654,8 @@ CHECKSUMS
   orm_adapter (0.5.0) sha256=aa5d0be5d540cbb46d3a93e88061f4ece6a25f6e97d6a47122beb84fe595e9b9
   os (1.1.4) sha256=57816d6a334e7bd6aed048f4b0308226c5fb027433b67d90a9ab435f35108d3f
   ostruct (0.6.3) sha256=95a2ed4a4bd1d190784e666b47b2d3f078e4a9efda2fccf18f84ddc6538ed912
+  parallel (2.1.0) sha256=b35258865c2e31134c5ecb708beaaf6772adf9d5efae28e93e99260877b09356
+  parallel_tests (5.7.0) sha256=3f1762c46ca2c223b8af8ef877217f9d76974e191bfa934f2580b58bcf1d005c
   paypal-sdk-rest (1.7.6) sha256=7af231eed2f4827c60af719026096b1065f2a1a9b84d8b861fff92dd2c787036
   pp (0.6.4) sha256=dfcb0fce700c41456265922884f9fe195d7fbb0674a3578e6c0f69588e82b570
   prettyprint (0.2.0) sha256=2bc9e15581a94742064a3cc8b0fb9d45aae3d03a1baa6ef80922627a0766f193
