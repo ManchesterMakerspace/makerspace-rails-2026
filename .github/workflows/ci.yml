@@ -157,9 +157,6 @@ jobs:
 
       - name: Run RSpec
         run: bundle exec parallel_rspec spec/ -n 2
-        env:
-          MLAB_URI: mongodb://localhost:27017/makerspace_test${TEST_ENV_NUMBER}
-          REDIS_URL: redis://localhost:6379/${TEST_ENV_NUMBER:-0}
 
 
   # -- 4. Production asset compile check ----------------------------------------
