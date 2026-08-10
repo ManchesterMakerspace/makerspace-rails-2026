@@ -1,6 +1,6 @@
 # Public Resources
 
-This document is the source-of-truth inventory for public, deep-linkable Rails
+This document is the source-of-truth inventory for public, renderable, deep-linkable Rails
 resources owned by this repository. Add a row whenever a server-rendered page or
 API endpoint is intentionally usable without a member session, and link a feature
 document that follows the structure below.
@@ -14,10 +14,10 @@ document that follows the structure below.
 
 ## Repository boundary
 
-Rails API and server-rendered routes are inventoried here. Member Portal routes
-resolved by the catch-all `get '*path'` belong to `makerspace-react-2026` and
-must be inventoried in that repository instead. Once the frontend inventory has
-a stable location, link this inventory to it and add a reciprocal link there.
+Rails API and server-rendered routes, intended for human consumption are inventoried here. 
+Member Portal client-handled routes resolved by the catch-all `get '*path'` belong to `makerspace-react-2026` 
+and must be inventoried in that repository instead. Once the frontend inventory has a stable location, 
+link this inventory to it and add a reciprocal link there.
 
 ## Standard feature-document structure
 
