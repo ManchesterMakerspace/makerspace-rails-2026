@@ -523,8 +523,120 @@ reservable tools direct members to use the Member Portal.
 - Each Slack-enabled shop has an exact `slack_channel` mapping.
 - Test members have linked Slack identities and the required checkouts.
 
+## Public reservation agenda
 
+The public reservation agenda is a read-only view of a shop's reservations over
+the next 24 hours. It is intended for wall displays, kiosks, and integrations
+that need the same schedule as structured JSON. It does not require a member
+session, although deployments can protect it with a shared token.
 
+### Route and representations
 
+The canonical route is:
 
+```text
+GET /reservations/agenda
+```
 
+HTML is returned by default. JSON clients can either add the `.json` suffix or
+negotiate the representation with an `Accept` header:
+
+```text
+GET /reservations/agenda.json?shop=Woodshop
+GET /reservations/agenda?shop=Woodshop
+Accept: application/json
+```
+
+### Query parameters
+
+| Parameter | Requirement | Matching and behavior |
+| --- | --- | --- |
+| `shop` | Required | Case-insensitive exact match of the shop name after surrounding whitespace is removed. Disabled shops do not match. |
+| `tool` | Optional | Case-insensitive exact match of a tool name in the selected shop after surrounding whitespace is removed. Disabled tools do not match. |
+| `token` | Optional unless protection is configured | Must match the configured reservation token when token protection is enabled. |
+
+Query values must be URL encoded. Compose a single query string with `&` when a
+filter and token are both present; do not start a second query string with `?`.
+For example, a tool display protected by a token uses:
+
+```text
+/reservations/agenda?shop=Woodshop&tool=Table%20Saw&token=REDACTED
+```
+
+The application first reads the `reservation_token` portal setting and then
+falls back to `RESERVATION_TOKEN`. If either is nonblank, requests must supply
+that exact value in `token`; the portal setting takes precedence. If both are
+blank, the agenda is openly accessible. Do not place a real token in
+screenshots, documentation, analytics, or other public artifacts.
+
+### Agenda behavior
+
+The window begins when the response is generated and ends exactly 24 hours
+later. It includes blocking reservations—pending and approved reservations—that
+overlap that interval, including reservations already in progress. Cancelled,
+denied, and blackout records are not shown.
+
+A shop view includes reservations for the entire shop and its tools. When
+`tool` is supplied, the view includes reservations for that tool **and
+whole-shop reservations**, because a whole-shop reservation also blocks the
+tool.
+
+The HTML tool menu lists enabled, reservable tools in the shop, sorted by name,
+and also offers an **Entire shop** view. A tool does not need to be reservable
+to be addressed directly by `tool`, but only enabled and reservable tools appear
+in that menu. Menu links preserve the selected shop and any supplied token.
+
+JSON returns `shopName`, `toolName`, `generatedAt`, `windowStart`, `windowEnd`,
+`upNext`, and `reservations`. Each reservation row includes `title`,
+`memberName`, `slackUsername`, `startAt`, `endAt`, `status`,
+`reservationScope`, `toolNames`, and `inProgress`.
+
+`upNext` is `null` for an entire-shop view. In a tool view it describes the
+earliest reservation whose start is strictly after generation time, or is
+`null` if there is none. Consequently, an in-progress reservation can appear in
+`reservations` but is never selected as `upNext`. When present, `upNext`
+contains `memberName`, `slackUsername`, and `startAt`.
+
+### Errors
+
+Errors use plain text for HTML requests and an `{"error":"..."}` object for
+JSON requests.
+
+| Status | Condition |
+| ---: | --- |
+| `400 Bad Request` | `shop` is absent or blank. |
+| `403 Forbidden` | Token protection is configured and `token` is absent or incorrect. |
+| `404 Not Found` | The exact enabled shop cannot be found, or the exact enabled tool cannot be found within that shop. |
+
+### Examples
+
+A browser or wall display for an entire shop:
+
+```text
+https://portal.example.org/reservations/agenda?shop=Woodshop
+```
+
+A protected wall display filtered to a tool (replace the placeholder only in
+the display's private configuration):
+
+```text
+https://portal.example.org/reservations/agenda?shop=Woodshop&tool=Table%20Saw&token=REDACTED
+```
+
+A JSON feed using the suffix:
+
+```sh
+curl 'https://portal.example.org/reservations/agenda.json?shop=Woodshop&tool=Table%20Saw&token=REDACTED'
+```
+
+A JSON feed using content negotiation:
+
+```sh
+curl -H 'Accept: application/json' \
+  'https://portal.example.org/reservations/agenda?shop=Woodshop'
+```
+
+Agenda rows expose reservation titles, member names, Slack usernames, times,
+resources, and statuses. Before using a publicly visible screen or feed,
+consider whether this member information is appropriate for its audience and
+physically secure the display and its configuration.
