@@ -29,7 +29,7 @@ gem 'mongoid', '~> 8.0'
 gem 'mongoid_search', '~> 0.4'
 # Payments
 gem 'paypal-sdk-rest', '~> 1.7'
-gem 'braintree', '~> 4.39'
+gem 'braintree', '~> 4.40'
 gem 'slack-ruby-client', '~> 2.0'
 # Google Drive
 gem 'multi_json', '~> 1.15'
