@@ -18,6 +18,7 @@
     "scopes": {
       "bot": [
         "canvases:write",
+        "channels:join",
         "channels:manage",
         "channels:read",
         "channels:write.invites",
