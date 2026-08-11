@@ -16,8 +16,11 @@ class Admin::ShopsController < ApplicationController
   end
 
   def create
-    shop = Shop.new(shop_params)
+    attributes = shop_params
+    resolved_channels = resolve_changed_slack_channels(attributes)
+    shop = Shop.new(attributes)
     shop.save!
+    Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
     GoogleResourceSyncJob.perform_later("Shop", shop.id.to_s)
 
     ::Service::AuditLogger.log(
@@ -33,8 +36,11 @@ class Admin::ShopsController < ApplicationController
   end
 
   def update
+    attributes = shop_params
+    resolved_channels = resolve_changed_slack_channels(attributes, @shop)
     before = @shop.attributes.dup
-    @shop.update_attributes!(shop_params)
+    @shop.update_attributes!(attributes)
+    Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
     shop_sync_needed = @shop.resource_email.blank? ||
       %w[name reservable color_id].any? { |field| @shop.previous_changes.key?(field) }
     if shop_sync_needed
@@ -108,6 +114,15 @@ class Admin::ShopsController < ApplicationController
       :color_id,
       reservation_prerequisite_tool_ids: []
     )
+  end
+
+  def resolve_changed_slack_channels(attributes, shop = nil)
+    return {} unless attributes.key?(:slack_channel)
+
+    normalized = Service::SlackChannelCache.normalize_name(attributes[:slack_channel])
+    return {} if normalized.blank? || normalized == shop&.slack_channel
+
+    Service::SlackChannelAssignment.resolve!(slack_channel: normalized)
   end
 
   def find_shop
