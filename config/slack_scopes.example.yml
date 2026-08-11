@@ -76,3 +76,12 @@ oauth_config:
     # If the legacy users.admin calls are migrated to the documented Enterprise
     # admin.users.invite/admin.users.remove APIs, use this user scope instead:
     #   - admin.users:write
+
+# Replace the host before importing this sample into Slack. Both events use the
+# users:read/users:read.email scopes above.
+settings:
+  event_subscriptions:
+    request_url: https://YOUR_MEMBER_PORTAL_HOST/slack/events
+    bot_events:
+      - team_join
+      - user_change

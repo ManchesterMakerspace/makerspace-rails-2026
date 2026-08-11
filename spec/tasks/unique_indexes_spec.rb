@@ -29,6 +29,29 @@ RSpec.describe 'data:ensure_unique_indexes' do
       index.fetch('key', {}).keys == ['slack_id']
     end
     expect(slack_id_index).to include('unique' => true)
+
+    %w[member_id slack_email].each do |field|
+      index = SlackUser.collection.indexes.to_a.find do |candidate|
+        candidate.fetch('key', {}).keys == [field]
+      end
+      expect(index).to include('unique' => true)
+    end
+  end
+
+  it 'creates non-unique member indexes on member-owned collections' do
+    expect { task.invoke }.not_to raise_error
+
+    %w[
+      permissions earned_memberships invoices notes rentals payments cards
+      mailtrap_messages volunteer_credits tool_checkouts
+    ].each do |collection_name|
+      index = Mongoid.default_client[collection_name].indexes.to_a.find do |candidate|
+        candidate.fetch('key', {}).keys == ['member_id']
+      end
+
+      expect(index).to be_present
+      expect(index['unique']).not_to be(true)
+    end
   end
 
   it 'creates and recognizes a case-insensitive unique tool-name index' do

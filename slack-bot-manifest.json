@@ -36,6 +36,13 @@
     }
   },
   "settings": {
+    "event_subscriptions": {
+      "request_url": "https://YOUR_MEMBER_PORTAL_HOST/slack/events",
+      "bot_events": [
+        "team_join",
+        "user_change"
+      ]
+    },
     "org_deploy_enabled": false,
     "socket_mode_enabled": false,
     "token_rotation_enabled": false

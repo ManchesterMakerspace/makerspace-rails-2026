@@ -10,12 +10,15 @@ class SlackUser
   field :invalidated_at, type: Time
   field :invalidation_reason, type: String
 
-  validates :slack_id, uniqueness: true, allow_nil: true
+  validates :member_id, :slack_email, :slack_id, uniqueness: true, allow_nil: true
 
-  index({ slack_id: 1 }, {
-    unique: true,
-    partial_filter_expression: { slack_id: { '$type' => 'string' } }
-  })
+  index({ member_id: 1 }, { unique: true, sparse: true })
+  %i[slack_email slack_id].each do |field|
+    index({ field => 1 }, {
+      unique: true,
+      partial_filter_expression: { field => { '$type' => 'string' } }
+    })
+  end
 
   attr_readonly *fields.keys
 end
