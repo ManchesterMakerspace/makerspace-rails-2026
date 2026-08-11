@@ -29,7 +29,16 @@ module Service
       name        = slack_user_data['name'].to_s.strip
       real_name   = slack_user_data.dig('profile', 'real_name').to_s.strip
 
-      member = slack_email.present? ? Member.find_by(email: slack_email) : nil
+      existing = SlackUser.unscoped.where(slack_id: slack_id).first
+      return nil if existing && quarantined_identity?(existing)
+
+      member = resolve_member(
+        existing: existing,
+        slack_email: slack_email,
+        slack_id: slack_id,
+        display_name: real_name.presence || name,
+        source: 'single-user sync'
+      )
 
       unless member
         ::Service::SlackConnector.send_slack_message(
@@ -47,12 +56,10 @@ module Service
         real_name: real_name
       )
 
-      existing = SlackUser.unscoped.where(slack_id: slack_id).first
       if existing
-        return nil if quarantined_identity?(existing)
-
+        persistence_attributes = safe_persistence_attributes(existing, slack_user_attributes)
         SlackUser.collection.find(_id: existing.id).update_one(
-          '$set' => slack_user_attributes.merge(member_id: member.id),
+          '$set' => persistence_attributes.merge(member_id: member.id),
           '$unset' => { invalidated_at: '', invalidation_reason: '' }
         )
       else
@@ -128,7 +135,19 @@ module Service
             next
           end
 
-          member = Member.find_by(email: slack_email)
+          existing = SlackUser.unscoped.where(slack_id: slack_id).first
+          if existing && quarantined_identity?(existing)
+            puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — identity quarantined after member email change"
+            skipped_count += 1
+            next
+          end
+          member = resolve_member(
+            existing: existing,
+            slack_email: slack_email,
+            slack_id: slack_id,
+            display_name: real_name.presence || name,
+            source: 'bulk sync'
+          )
 
           unless member
             unmatched << { slack_id: slack_id, name: real_name.presence || name, email: slack_email }
@@ -140,16 +159,10 @@ module Service
             name: name,
             real_name: real_name
           )
-          existing = SlackUser.unscoped.where(slack_id: slack_id).first
-
           if existing
-            if quarantined_identity?(existing)
-              puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — identity quarantined after member email change"
-              skipped_count += 1
-              next
-            end
+            persistence_attributes = safe_persistence_attributes(existing, slack_user_attributes)
             SlackUser.collection.find(_id: existing.id).update_one(
-              '$set' => slack_user_attributes.merge(member_id: member.id),
+              '$set' => persistence_attributes.merge(member_id: member.id),
               '$unset' => { invalidated_at: '', invalidation_reason: '' }
             )
             puts "[Slack Sync] UPDATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
@@ -199,6 +212,50 @@ module Service
         record.invalidation_reason.to_s.start_with?('member_email_changed')
     end
 
-    private_class_method :quarantined_identity?
+    def self.resolve_member(existing:, slack_email:, slack_id:, display_name:, source:)
+      linked_member = existing&.member
+      if linked_member
+        if slack_email.present? && normalize_email(linked_member.email) != slack_email
+          if normalize_email(existing.slack_email) != slack_email
+            report_email_mismatch(linked_member, slack_email, slack_id, display_name, source)
+          end
+        end
+        return linked_member
+      end
+
+      Member.find_by(email: slack_email) if slack_email.present?
+    end
+
+    def self.report_email_mismatch(member, slack_email, slack_id, display_name, source)
+      Service::AuditLogger.log(
+        log_type: 'member',
+        event_type: 'slack_email_mismatch',
+        resource_type: 'Member',
+        resource_id: member.id,
+        subject: member,
+        field_changes: {
+          'slack_email' => [normalize_email(member.email), slack_email]
+        },
+        message_details: "Slack #{source} found that #{display_name} (#{slack_id}) now uses #{slack_email}, " \
+          "which does not match the linked Member email. The established Member link was preserved; " \
+          "an admin must reconcile the mismatch.",
+        slack_channel: Service::SlackConnector.logs_channel
+      )
+    end
+
+    def self.normalize_email(email)
+      email.to_s.strip.downcase
+    end
+
+    def self.safe_persistence_attributes(existing, attributes)
+      email = attributes[:slack_email]
+      return attributes if email.blank?
+
+      email_owner = SlackUser.where(slack_email: email, :id.ne => existing.id).first
+      email_owner ? attributes.except(:slack_email) : attributes
+    end
+
+    private_class_method :quarantined_identity?, :resolve_member, :report_email_mismatch,
+      :normalize_email, :safe_persistence_attributes
   end
 end
