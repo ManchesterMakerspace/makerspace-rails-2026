@@ -29,7 +29,7 @@ namespace :data do
 
     targets.each do |model, field, collation|
       duplicate_pipeline = [
-        ({ '$match' => { 'invalidated_at' => nil } } if model == SlackUser && field == :member_id),
+        ({ '$match' => { 'invalidated_at' => nil } } if model == SlackUser && %i[member_id slack_email].include?(field)),
         {
           '$group' => {
             '_id' => "$#{field}",
@@ -69,10 +69,11 @@ namespace :data do
       end
       existing_unique_index = matching_indexes.find do |index|
         next false unless (index['unique'] || index[:unique]) == true
-        if model == SlackUser && field == :member_id
+        if model == SlackUser && %i[member_id slack_email].include?(field)
           filter = index['partialFilterExpression'] || index[:partialFilterExpression] || {}
+          expected_type = field == :member_id ? 'objectId' : 'string'
           next false unless filter == {
-            'member_id' => { '$type' => 'objectId' },
+            field.to_s => { '$type' => expected_type },
             'invalidated_at' => nil
           }
         end
@@ -96,9 +97,10 @@ namespace :data do
       end
 
       index_options = { unique: true }
-      if field == :member_id
+      if field == :member_id || field == :slack_email
+        field_type = field == :member_id ? 'objectId' : 'string'
         index_options[:partial_filter_expression] = {
-          member_id: { '$type' => 'objectId' },
+          field => { '$type' => field_type },
           invalidated_at: nil
         }
       else

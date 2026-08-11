@@ -43,6 +43,13 @@ RSpec.describe 'data:ensure_unique_indexes' do
       'member_id' => { '$type' => 'objectId' },
       'invalidated_at' => nil
     )
+    slack_email_index = SlackUser.collection.indexes.to_a.find do |index|
+      index.fetch('key', {}).keys == ['slack_email']
+    end
+    expect(slack_email_index.fetch('partialFilterExpression')).to eq(
+      'slack_email' => { '$type' => 'string' },
+      'invalidated_at' => nil
+    )
   end
 
   it 'creates non-unique member indexes on member-owned collections' do

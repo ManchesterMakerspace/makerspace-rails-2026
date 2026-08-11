@@ -9,10 +9,14 @@ class SlackUser
   field :real_name, type: String
   field :invalidated_at, type: Time
   field :invalidation_reason, type: String
+  field :last_slack_event_ts, type: Float
 
   default_scope -> { where(invalidated_at: nil) }
 
-  validates :member_id, :slack_email, :slack_id, uniqueness: true, allow_nil: true
+  validates :member_id, :slack_email, uniqueness: {
+    conditions: -> { where(invalidated_at: nil) }
+  }, allow_nil: true
+  validates :slack_id, uniqueness: true, allow_nil: true
 
   index({ member_id: 1 }, {
     unique: true,
@@ -21,12 +25,17 @@ class SlackUser
       invalidated_at: nil
     }
   })
-  %i[slack_email slack_id].each do |field|
-    index({ field => 1 }, {
-      unique: true,
-      partial_filter_expression: { field => { '$type' => 'string' } }
-    })
-  end
+  index({ slack_email: 1 }, {
+    unique: true,
+    partial_filter_expression: {
+      slack_email: { '$type' => 'string' },
+      invalidated_at: nil
+    }
+  })
+  index({ slack_id: 1 }, {
+    unique: true,
+    partial_filter_expression: { slack_id: { '$type' => 'string' } }
+  })
 
   attr_readonly *fields.keys
 

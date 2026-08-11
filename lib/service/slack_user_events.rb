@@ -8,13 +8,14 @@ module Service
       return unless EVENT_TYPES.include?(event['type'])
 
       user = event['user'].to_h.stringify_keys
+      event_ts = slack_event_timestamp(event)
       if user['deleted'] == true
-        invalidate_deleted_user(user, event_id)
+        invalidate_deleted_user(user, event_id, event_ts)
         return
       end
       return if non_member?(user)
 
-      persist(user, event_id: event_id)
+      persist(user, event_id: event_id, event_ts: event_ts)
       welcome(user) if event['type'] == 'team_join'
     rescue => error
       Rails.logger.error("[SlackUserEvent] #{error.class}: #{error.message}")
@@ -30,22 +31,28 @@ module Service
       user['is_bot'] == true || user['is_app_user'] == true
     end
 
-    def self.invalidate_deleted_user(user, event_id)
+    def self.invalidate_deleted_user(user, event_id, event_ts)
       slack_id = user['id'].to_s
       return if slack_id.blank?
 
       record = SlackUser.unscoped.where(slack_id: slack_id).first
       return unless record
 
-      SlackUser.collection.find(_id: record.id).update_one(
+      criteria = { _id: record.id }
+      criteria['$or'] = event_order_filters(event_ts, inclusive: true) if event_ts
+      attributes = {
+        invalidated_at: Time.current,
+        invalidation_reason: "slack_user_deleted; event_id=#{event_id}"
+      }
+      attributes[:last_slack_event_ts] = event_ts if event_ts
+      SlackUser.collection.find(criteria).update_one(
         '$set' => {
-          invalidated_at: Time.current,
-          invalidation_reason: "slack_user_deleted; event_id=#{event_id}"
+          **attributes
         }
       )
     end
 
-    def self.persist(user, event_id:)
+    def self.persist(user, event_id:, event_ts:)
       slack_id = user['id'].to_s
       return if slack_id.blank?
 
@@ -74,13 +81,35 @@ module Service
       if record
         # SlackUser marks imported identity fields readonly, so event-driven
         # synchronization deliberately writes through the collection.
-        SlackUser.collection.find(_id: record.id).update_one(
-          '$set' => attributes.merge(slack_id: slack_id),
-          '$unset' => { invalidated_at: '', invalidation_reason: '' }
-        )
+        # A deletion at the same timestamp wins, and events without an
+        # ordering timestamp can never revive an invalidated identity.
+        return if record.invalidated_at && event_ts.nil?
+
+        criteria = { _id: record.id }
+        criteria['$or'] = event_order_filters(event_ts, inclusive: false) if event_ts
+        updated_attributes = attributes.merge(slack_id: slack_id)
+        updated_attributes[:last_slack_event_ts] = event_ts if event_ts
+        update = { '$set' => updated_attributes }
+        update['$unset'] = { invalidated_at: '', invalidation_reason: '' } if event_ts
+        SlackUser.collection.find(criteria).update_one(update)
       else
+        attributes[:last_slack_event_ts] = event_ts if event_ts
         SlackUser.create!(attributes.merge(slack_id: slack_id))
       end
+    end
+
+    def self.slack_event_timestamp(event)
+      Float(event['event_ts'])
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    def self.event_order_filters(event_ts, inclusive:)
+      comparison = inclusive ? '$lte' : '$lt'
+      [
+        { last_slack_event_ts: nil },
+        { last_slack_event_ts: { comparison => event_ts } }
+      ]
     end
 
     def self.report_email_mismatch(member, slack_email, slack_id, event_id)
@@ -111,7 +140,7 @@ module Service
       Service::SlackConnector.send_slack_message(message, channel)
     end
 
-    private_class_method :non_member?, :invalidate_deleted_user, :persist, :report_email_mismatch,
-      :normalize_email, :welcome
+    private_class_method :non_member?, :invalidate_deleted_user, :persist, :slack_event_timestamp,
+      :event_order_filters, :report_email_mismatch, :normalize_email, :welcome
   end
 end

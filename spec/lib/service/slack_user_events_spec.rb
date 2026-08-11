@@ -90,7 +90,7 @@ RSpec.describe Service::SlackUserEvents do
     )
 
     described_class.process(
-      { 'type' => 'user_change', 'user' => user.merge('deleted' => true) },
+      { 'type' => 'user_change', 'event_ts' => '200.0', 'user' => user.merge('deleted' => true) },
       event_id: 'Ev-deleted'
     )
 
@@ -104,6 +104,66 @@ RSpec.describe Service::SlackUserEvents do
     )
     expect(SlackUser.unscoped.find(existing.id).invalidated_at).to be_present
     expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+  end
+
+  it 'does not let an older user_change reactivate a deleted identity' do
+    existing = SlackUser.create!(member: member, slack_id: 'UNEWMEMBER', slack_email: member.email)
+    described_class.process(
+      { 'type' => 'user_change', 'event_ts' => '200.0', 'user' => user.merge('deleted' => true) },
+      event_id: 'Ev-deleted'
+    )
+
+    described_class.process(
+      { 'type' => 'user_change', 'event_ts' => '100.0', 'user' => user },
+      event_id: 'Ev-stale-profile'
+    )
+
+    expect(SlackUser.find_by(slack_id: 'UNEWMEMBER')).to be_nil
+    expect(SlackUser.unscoped.find(existing.id)).to have_attributes(
+      invalidation_reason: 'slack_user_deleted; event_id=Ev-deleted',
+      last_slack_event_ts: 200.0
+    )
+  end
+
+  it 'reactivates an identity only for a newer user_change' do
+    existing = SlackUser.create!(member: member, slack_id: 'UNEWMEMBER', slack_email: member.email)
+    described_class.process(
+      { 'type' => 'user_change', 'event_ts' => '200.0', 'user' => user.merge('deleted' => true) },
+      event_id: 'Ev-deleted'
+    )
+
+    described_class.process(
+      { 'type' => 'user_change', 'event_ts' => '300.0', 'user' => user },
+      event_id: 'Ev-new-profile'
+    )
+
+    expect(SlackUser.find(existing.id)).to have_attributes(
+      invalidated_at: nil,
+      invalidation_reason: nil,
+      last_slack_event_ts: 300.0
+    )
+  end
+
+  it 'links a replacement account that reuses an invalidated identity email' do
+    old_identity = SlackUser.create!(
+      member: member,
+      slack_id: 'UOLD',
+      slack_email: member.email
+    )
+    SlackUser.collection.find(_id: old_identity.id).update_one(
+      '$set' => { invalidated_at: Time.current, invalidation_reason: 'slack_user_deleted' }
+    )
+
+    described_class.process(
+      { 'type' => 'team_join', 'event_ts' => '300.0', 'user' => user },
+      event_id: 'Ev-replacement'
+    )
+
+    expect(SlackUser.find_by(slack_id: 'UNEWMEMBER')).to have_attributes(
+      member_id: member.id,
+      slack_email: member.email
+    )
+    expect(SlackUser.unscoped.find(old_identity.id).slack_id).to eq('UOLD')
   end
 
   %w[is_bot is_app_user].each do |flag|
