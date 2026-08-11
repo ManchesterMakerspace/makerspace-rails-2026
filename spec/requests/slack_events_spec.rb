@@ -8,6 +8,7 @@ RSpec.describe 'Slack Events API', type: :request do
     allow(ENV).to receive(:[]).with('SLACK_SIGNING_SECRET').and_return(secret)
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:del)
+    allow(Service::SlackUserEvents).to receive(:process)
   end
 
   def signed_headers(body, timestamp: Time.now.to_i)
@@ -28,25 +29,25 @@ RSpec.describe 'Slack Events API', type: :request do
     expect(response.parsed_body).to eq('challenge' => 'challenge-token')
   end
 
-  it 'queues supported member events' do
+  it 'processes supported member events before acknowledging them' do
     event = { type: 'team_join', user: { id: 'U123' } }
     body = { type: 'event_callback', event_id: 'Ev123', event: event }.to_json
 
-    expect do
-      post '/slack/events', params: body, headers: signed_headers(body)
-    end.to have_enqueued_job(SlackUserEventJob).with('Ev123', event.deep_stringify_keys)
+    post '/slack/events', params: body, headers: signed_headers(body)
 
     expect(response).to have_http_status(:ok)
+    expect(Service::SlackUserEvents).to have_received(:process)
+      .with(event.deep_stringify_keys, event_id: 'Ev123')
   end
 
-  it 'does not enqueue a redelivered event twice' do
+  it 'does not process a redelivered event twice' do
     event = { type: 'team_join', user: { id: 'U123' } }
     body = { type: 'event_callback', event_id: 'Ev-duplicate', event: event }.to_json
     allow(REDIS).to receive(:set).and_return(true, false)
 
-    expect do
-      2.times { post '/slack/events', params: body, headers: signed_headers(body) }
-    end.to have_enqueued_job(SlackUserEventJob).exactly(:once)
+    2.times { post '/slack/events', params: body, headers: signed_headers(body) }
+
+    expect(Service::SlackUserEvents).to have_received(:process).once
 
     expect(REDIS).to have_received(:set).with(
       "slack_event/#{Digest::SHA256.hexdigest('Ev-duplicate')}",
@@ -62,7 +63,7 @@ RSpec.describe 'Slack Events API', type: :request do
     post '/slack/events', params: body, headers: signed_headers(body)
 
     expect(response).to have_http_status(:bad_request)
-    expect(SlackUserEventJob).not_to have_been_enqueued
+    expect(Service::SlackUserEvents).not_to have_received(:process)
   end
 
   it 'rejects invalid signatures' do

@@ -36,25 +36,37 @@ RSpec.describe Service::SlackChannelAssignment do
     before do
       allow(Service::SlackConnector).to receive(:client).and_return(client)
       allow(client).to receive(:auth_test).and_return(double(user_id: 'UBOT'))
+      allow(Service::SlackConnector).to receive(:admin_client).and_return(nil)
       allow(Service::SlackConnector).to receive(:send_slack_message)
     end
 
-    it 'invites the bot user with conversations.invite' do
-      expect(client).to receive(:conversations_invite)
-        .with(channel: 'C12345678', users: 'UBOT')
+    it 'first attempts to join the channel as the bot' do
+      expect(client).to receive(:conversations_join).with(channel: 'C12345678')
 
       expect { described_class.invite_bot_or_notify(channels, actor) }.not_to raise_error
       expect(Service::SlackConnector).not_to have_received(:send_slack_message)
     end
 
     it 'DMs the actor rather than failing when the bot cannot be invited' do
-      allow(client).to receive(:conversations_invite).and_raise(StandardError, 'not allowed')
+      allow(client).to receive(:conversations_join).and_raise(StandardError, 'not allowed')
 
       expect { described_class.invite_bot_or_notify(channels, actor) }.not_to raise_error
       expect(Service::SlackConnector).to have_received(:send_slack_message).with(
         /could not join <#C12345678>.*manually invite <@UBOT>/i,
         'UACTOR'
       )
+    end
+
+    it 'uses an available admin token to invite the bot after join fails' do
+      admin_client = double('Slack admin client')
+      allow(client).to receive(:conversations_join).and_raise(StandardError, 'not in channel')
+      allow(Service::SlackConnector).to receive(:admin_client)
+        .with('conversations.invite').and_return(admin_client)
+      expect(admin_client).to receive(:conversations_invite)
+        .with(channel: 'C12345678', users: 'UBOT')
+
+      expect { described_class.invite_bot_or_notify(channels, actor) }.not_to raise_error
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
     end
   end
 end

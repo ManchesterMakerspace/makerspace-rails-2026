@@ -114,7 +114,7 @@ RSpec.describe Service::SlackUserEvents do
     )
 
     described_class.process(
-      { 'type' => 'user_change', 'event_ts' => '100.0', 'user' => user },
+      { 'type' => 'team_join', 'event_ts' => '100.0', 'user' => user },
       event_id: 'Ev-stale-profile'
     )
 
@@ -123,6 +123,7 @@ RSpec.describe Service::SlackUserEvents do
       invalidation_reason: 'slack_user_deleted; event_id=Ev-deleted',
       last_slack_event_ts: 200.0
     )
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
   end
 
   it 'reactivates an identity only for a newer user_change' do
@@ -164,6 +165,38 @@ RSpec.describe Service::SlackUserEvents do
       slack_email: member.email
     )
     expect(SlackUser.unscoped.find(old_identity.id).slack_id).to eq('UOLD')
+  end
+
+  it 'does not audit an email mismatch from an older event' do
+    existing = SlackUser.create!(member: member, slack_id: 'UNEWMEMBER', slack_email: member.email)
+    SlackUser.collection.find(_id: existing.id).update_one('$set' => { last_slack_event_ts: 200.0 })
+    stale_user = user.merge('profile' => user['profile'].merge('email' => 'stale@example.com'))
+
+    described_class.process(
+      { 'type' => 'user_change', 'event_ts' => '100.0', 'user' => stale_user },
+      event_id: 'Ev-stale-email'
+    )
+
+    expect(Service::AuditLogger).not_to have_received(:log)
+    expect(SlackUser.find(existing.id).slack_email).to eq(member.email)
+  end
+
+  it 'keeps identities invalidated after a member email change quarantined' do
+    old_identity = SlackUser.create!(slack_id: 'UNEWMEMBER', slack_email: member.email)
+    SlackUser.collection.find(_id: old_identity.id).update_one(
+      '$set' => {
+        invalidated_at: Time.current,
+        invalidation_reason: 'member_email_changed; revocation unavailable'
+      }
+    )
+
+    described_class.process(
+      { 'type' => 'user_change', 'event_ts' => '300.0', 'user' => user },
+      event_id: 'Ev-old-identity'
+    )
+
+    expect(SlackUser.find_by(slack_id: 'UNEWMEMBER')).to be_nil
+    expect(SlackUser.unscoped.find(old_identity.id).member_id).to be_nil
   end
 
   %w[is_bot is_app_user].each do |flag|

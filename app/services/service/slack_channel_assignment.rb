@@ -29,28 +29,43 @@ module Service
     def self.invite_bot_or_notify(resolved_channels, actor)
       return if resolved_channels.blank?
 
-      client = Service::SlackConnector.client
-      bot_user_id = client.auth_test.user_id.to_s
-      raise 'Slack did not return the bot user ID' if bot_user_id.blank?
-
+      bot_user_id = nil
       failures = resolved_channels.values.filter_map do |channel|
         begin
-          client.conversations_invite(channel: channel[:id], users: bot_user_id)
-          nil
-        rescue Slack::Web::Api::Errors::AlreadyInChannel
+          Service::SlackConnector.client.conversations_join(channel: channel[:id])
           nil
         rescue => error
           Rails.logger.warn(
-            "[SlackChannelAssignment] bot invite failed channel_id=#{channel[:id]} " \
+            "[SlackChannelAssignment] bot join failed channel_id=#{channel[:id]} " \
             "error=#{error.class}"
           )
-          channel
+          invite_bot_with_admin(channel) ? nil : channel
         end
       end
+      bot_user_id = Service::SlackConnector.client.auth_test.user_id.to_s if failures.any?
       notify_actor(failures, actor, bot_user_id) if failures.any?
     rescue => error
       Rails.logger.warn("[SlackChannelAssignment] bot invitation unavailable error=#{error.class}")
       notify_actor(resolved_channels.values, actor, bot_user_id)
+    end
+
+    def self.invite_bot_with_admin(channel)
+      admin_client = Service::SlackConnector.admin_client('conversations.invite')
+      return false unless admin_client
+
+      bot_user_id = Service::SlackConnector.client.auth_test.user_id.to_s
+      return false if bot_user_id.blank?
+
+      admin_client.conversations_invite(channel: channel[:id], users: bot_user_id)
+      true
+    rescue Slack::Web::Api::Errors::AlreadyInChannel
+      true
+    rescue => error
+      Rails.logger.warn(
+        "[SlackChannelAssignment] admin bot invite failed channel=#{channel[:name].inspect} " \
+        "channel_id=#{channel[:id]} error=#{error.class}"
+      )
+      false
     end
 
     def self.notify_actor(channels, actor, bot_user_id)
@@ -81,6 +96,6 @@ module Service
       Service::SlackChannelCache.channel_id?(name) ? name : "##{name}"
     end
 
-    private_class_method :notify_actor, :display_name
+    private_class_method :invite_bot_with_admin, :notify_actor, :display_name
   end
 end

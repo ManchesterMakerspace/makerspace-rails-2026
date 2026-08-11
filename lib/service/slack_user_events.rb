@@ -15,8 +15,8 @@ module Service
       end
       return if non_member?(user)
 
-      persist(user, event_id: event_id, event_ts: event_ts)
-      welcome(user) if event['type'] == 'team_join'
+      applied = persist(user, event_id: event_id, event_ts: event_ts)
+      welcome(user) if applied && event['type'] == 'team_join'
     rescue => error
       Rails.logger.error("[SlackUserEvent] #{error.class}: #{error.message}")
       Honeybadger.notify(error, context: {
@@ -60,10 +60,11 @@ module Service
       email = profile['email'].to_s.strip.downcase.presence
       member = Member.find_by(email: email) if email
       by_slack = SlackUser.unscoped.where(slack_id: slack_id).first
+      return false if quarantined_identity?(by_slack)
+
       linked_member = by_slack&.member
       email_mismatch = linked_member && email && normalize_email(linked_member.email) != email
       if email_mismatch
-        report_email_mismatch(linked_member, email, slack_id, event_id)
         member = linked_member
       end
 
@@ -76,6 +77,8 @@ module Service
 
       by_member = SlackUser.find_by(member_id: member.id) if member
       record = email_mismatch ? by_slack : (by_member || by_slack)
+      return false unless event_can_apply?(record, event_ts)
+
       by_slack.destroy! if by_slack && by_member && by_slack.id != by_member.id
 
       if record
@@ -83,19 +86,34 @@ module Service
         # synchronization deliberately writes through the collection.
         # A deletion at the same timestamp wins, and events without an
         # ordering timestamp can never revive an invalidated identity.
-        return if record.invalidated_at && event_ts.nil?
-
         criteria = { _id: record.id }
         criteria['$or'] = event_order_filters(event_ts, inclusive: false) if event_ts
         updated_attributes = attributes.merge(slack_id: slack_id)
         updated_attributes[:last_slack_event_ts] = event_ts if event_ts
         update = { '$set' => updated_attributes }
         update['$unset'] = { invalidated_at: '', invalidation_reason: '' } if event_ts
-        SlackUser.collection.find(criteria).update_one(update)
+        result = SlackUser.collection.find(criteria).update_one(update)
+        applied = result.matched_count == 1
+        report_email_mismatch(linked_member, email, slack_id, event_id) if applied && email_mismatch
+        applied
       else
         attributes[:last_slack_event_ts] = event_ts if event_ts
         SlackUser.create!(attributes.merge(slack_id: slack_id))
+        true
       end
+    end
+
+    def self.event_can_apply?(record, event_ts)
+      return true unless record
+      return false if record.invalidated_at && event_ts.nil?
+      return true unless event_ts && record.last_slack_event_ts
+
+      event_ts > record.last_slack_event_ts
+    end
+
+    def self.quarantined_identity?(record)
+      record&.invalidated_at.present? &&
+        record.invalidation_reason.to_s.start_with?('member_email_changed')
     end
 
     def self.slack_event_timestamp(event)
@@ -140,7 +158,8 @@ module Service
       Service::SlackConnector.send_slack_message(message, channel)
     end
 
-    private_class_method :non_member?, :invalidate_deleted_user, :persist, :slack_event_timestamp,
-      :event_order_filters, :report_email_mismatch, :normalize_email, :welcome
+    private_class_method :non_member?, :invalidate_deleted_user, :persist, :event_can_apply?,
+      :quarantined_identity?, :slack_event_timestamp, :event_order_filters,
+      :report_email_mismatch, :normalize_email, :welcome
   end
 end

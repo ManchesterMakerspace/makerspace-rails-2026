@@ -20,7 +20,10 @@ class Slack::EventsController < ApplicationController
     return head :ok unless acquired
 
     begin
-      SlackUserEventJob.perform_later(event_id, event)
+      # No durable Active Job adapter is configured in production. Process
+      # before acknowledging so Slack will redeliver if persistence or a side
+      # effect fails; the deduplication key is released in that case.
+      Service::SlackUserEvents.process(event, event_id: event_id)
     rescue
       REDIS.del(deduplication_key)
       raise

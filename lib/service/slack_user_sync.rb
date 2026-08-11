@@ -47,9 +47,14 @@ module Service
         real_name: real_name
       )
 
-      existing = SlackUser.find_by(slack_id: slack_id)
+      existing = SlackUser.unscoped.where(slack_id: slack_id).first
       if existing
-        existing.set(slack_user_attributes)
+        return nil if quarantined_identity?(existing)
+
+        SlackUser.collection.find(_id: existing.id).update_one(
+          '$set' => slack_user_attributes.merge(member_id: member.id),
+          '$unset' => { invalidated_at: '', invalidation_reason: '' }
+        )
       else
         slack_user = SlackUser.create!(
           slack_user_attributes.merge(
@@ -135,10 +140,18 @@ module Service
             name: name,
             real_name: real_name
           )
-          existing = SlackUser.find_by(slack_id: slack_id)
+          existing = SlackUser.unscoped.where(slack_id: slack_id).first
 
           if existing
-            existing.set(slack_user_attributes)
+            if quarantined_identity?(existing)
+              puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — identity quarantined after member email change"
+              skipped_count += 1
+              next
+            end
+            SlackUser.collection.find(_id: existing.id).update_one(
+              '$set' => slack_user_attributes.merge(member_id: member.id),
+              '$unset' => { invalidated_at: '', invalidation_reason: '' }
+            )
             puts "[Slack Sync] UPDATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
             updated_count += 1
           else
@@ -180,5 +193,12 @@ module Service
 
       { created: created_count, updated: updated_count, skipped: skipped_count, unmatched: unmatched.size }
     end
+
+    def self.quarantined_identity?(record)
+      record.invalidated_at.present? &&
+        record.invalidation_reason.to_s.start_with?('member_email_changed')
+    end
+
+    private_class_method :quarantined_identity?
   end
 end
