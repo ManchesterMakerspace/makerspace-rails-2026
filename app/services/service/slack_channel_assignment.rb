@@ -6,10 +6,11 @@ module Service
         next if name.blank?
 
         channel_id = Service::SlackConnector.find_channel_id(name)
+        channel_id ||= find_channel_id_with_admin(name)
         unless channel_id.present?
           raise Error::UnprocessableEntity.new(
             "Slack channel #{display_name(name)} could not be resolved. " \
-            "Confirm that the channel exists and that the Member Portal bot can view it."
+            "Confirm that the channel exists and that the Member Portal bot or configured Slack admin can view it."
           )
         end
 
@@ -24,6 +25,44 @@ module Service
           "Please verify the channel and try again."
         )
       end
+    end
+
+    def self.find_channel_id_with_admin(channel_name)
+      client = Service::SlackConnector.admin_client('conversations.list')
+      return nil unless client
+
+      if Service::SlackChannelCache.channel_id?(channel_name)
+        response = Service::SlackConnector.with_rate_limit_retry(
+          'conversations.info admin channel resolution'
+        ) { client.conversations_info(channel: channel_name) }
+        channel = response.channel
+        return channel.id.to_s unless channel.respond_to?(:is_archived) && channel.is_archived
+        return nil
+      end
+
+      cursor = nil
+      loop do
+        response = Service::SlackConnector.with_rate_limit_retry(
+          'conversations.list admin channel resolution'
+        ) do
+          client.conversations_list(
+            types: 'public_channel,private_channel',
+            exclude_archived: true,
+            limit: 200,
+            cursor: cursor
+          )
+        end
+        channel = Array(response.channels).find do |candidate|
+          candidate.name.to_s.casecmp?(channel_name)
+        end
+        return channel.id.to_s if channel
+
+        cursor = response.response_metadata&.next_cursor.to_s
+        break if cursor.blank?
+      end
+      nil
+    rescue Slack::Web::Api::Errors::ChannelNotFound
+      nil
     end
 
     def self.invite_bot_or_notify(resolved_channels, actor)
@@ -96,6 +135,7 @@ module Service
       Service::SlackChannelCache.channel_id?(name) ? name : "##{name}"
     end
 
-    private_class_method :invite_bot_with_admin, :notify_actor, :display_name
+    private_class_method :find_channel_id_with_admin, :invite_bot_with_admin, :notify_actor,
+      :display_name
   end
 end

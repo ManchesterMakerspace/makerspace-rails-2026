@@ -2,6 +2,10 @@ require 'rails_helper'
 
 RSpec.describe Service::SlackChannelAssignment do
   describe '.resolve!' do
+    before do
+      allow(Service::SlackConnector).to receive(:admin_client).and_return(nil)
+    end
+
     it 'resolves normalized channel names through the cache-aware connector' do
       allow(Service::SlackConnector).to receive(:find_channel_id)
         .with('wood-shop').and_return('C12345678')
@@ -18,7 +22,30 @@ RSpec.describe Service::SlackChannelAssignment do
         described_class.resolve!(announce_channel: 'missing-channel')
       end.to raise_error(
         Error::UnprocessableEntity,
-        /#missing-channel could not be resolved.*bot can view it/i
+        /#missing-channel could not be resolved.*bot or configured Slack admin can view it/i
+      )
+    end
+
+    it 'uses an admin token to resolve a private channel invisible to the bot' do
+      admin_client = double('Slack admin client')
+      private_channel = double(id: 'G12345678', name: 'officers-private')
+      response = double(
+        channels: [private_channel],
+        response_metadata: double(next_cursor: '')
+      )
+      allow(Service::SlackConnector).to receive(:find_channel_id)
+        .with('officers-private').and_return(nil)
+      allow(Service::SlackConnector).to receive(:admin_client)
+        .with('conversations.list').and_return(admin_client)
+      expect(admin_client).to receive(:conversations_list).with(
+        types: 'public_channel,private_channel',
+        exclude_archived: true,
+        limit: 200,
+        cursor: nil
+      ).and_return(response)
+
+      expect(described_class.resolve!(announce_channel: '#officers-private')).to eq(
+        'announce_channel' => { id: 'G12345678', name: 'officers-private' }
       )
     end
   end
