@@ -8,6 +8,10 @@ module Service
       return unless EVENT_TYPES.include?(event['type'])
 
       user = event['user'].to_h.stringify_keys
+      if user['deleted'] == true
+        invalidate_deleted_user(user, event_id)
+        return
+      end
       return if non_member?(user)
 
       persist(user, event_id: event_id)
@@ -23,7 +27,22 @@ module Service
     end
 
     def self.non_member?(user)
-      user['is_bot'] == true || user['deleted'] == true || user['is_app_user'] == true
+      user['is_bot'] == true || user['is_app_user'] == true
+    end
+
+    def self.invalidate_deleted_user(user, event_id)
+      slack_id = user['id'].to_s
+      return if slack_id.blank?
+
+      record = SlackUser.unscoped.where(slack_id: slack_id).first
+      return unless record
+
+      SlackUser.collection.find(_id: record.id).update_one(
+        '$set' => {
+          invalidated_at: Time.current,
+          invalidation_reason: "slack_user_deleted; event_id=#{event_id}"
+        }
+      )
     end
 
     def self.persist(user, event_id:)
@@ -33,7 +52,7 @@ module Service
       profile = user['profile'].to_h.stringify_keys
       email = profile['email'].to_s.strip.downcase.presence
       member = Member.find_by(email: email) if email
-      by_slack = SlackUser.find_by(slack_id: slack_id)
+      by_slack = SlackUser.unscoped.where(slack_id: slack_id).first
       linked_member = by_slack&.member
       email_mismatch = linked_member && email && normalize_email(linked_member.email) != email
       if email_mismatch
@@ -56,7 +75,8 @@ module Service
         # SlackUser marks imported identity fields readonly, so event-driven
         # synchronization deliberately writes through the collection.
         SlackUser.collection.find(_id: record.id).update_one(
-          '$set' => attributes.merge(slack_id: slack_id)
+          '$set' => attributes.merge(slack_id: slack_id),
+          '$unset' => { invalidated_at: '', invalidation_reason: '' }
         )
       else
         SlackUser.create!(attributes.merge(slack_id: slack_id))
@@ -91,6 +111,7 @@ module Service
       Service::SlackConnector.send_slack_message(message, channel)
     end
 
-    private_class_method :non_member?, :persist, :report_email_mismatch, :normalize_email, :welcome
+    private_class_method :non_member?, :invalidate_deleted_user, :persist, :report_email_mismatch,
+      :normalize_email, :welcome
   end
 end

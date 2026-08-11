@@ -29,6 +29,7 @@ namespace :data do
 
     targets.each do |model, field, collation|
       duplicate_pipeline = [
+        ({ '$match' => { 'invalidated_at' => nil } } if model == SlackUser && field == :member_id),
         {
           '$group' => {
             '_id' => "$#{field}",
@@ -36,7 +37,7 @@ namespace :data do
           }
         },
         { '$match' => { 'count' => { '$gt' => 1 } } }
-      ]
+      ].compact
       aggregate_options = collation ? { collation: collation } : {}
       duplicates = model.collection.aggregate(duplicate_pipeline, aggregate_options).to_a
 
@@ -68,6 +69,13 @@ namespace :data do
       end
       existing_unique_index = matching_indexes.find do |index|
         next false unless (index['unique'] || index[:unique]) == true
+        if model == SlackUser && field == :member_id
+          filter = index['partialFilterExpression'] || index[:partialFilterExpression] || {}
+          next false unless filter == {
+            'member_id' => { '$type' => 'objectId' },
+            'invalidated_at' => nil
+          }
+        end
         next true if collation.nil?
 
         index_collation = index['collation'] || index[:collation] || {}
@@ -89,7 +97,10 @@ namespace :data do
 
       index_options = { unique: true }
       if field == :member_id
-        index_options[:sparse] = true
+        index_options[:partial_filter_expression] = {
+          member_id: { '$type' => 'objectId' },
+          invalidated_at: nil
+        }
       else
         index_options[:partial_filter_expression] = { field => { '$type' => 'string' } }
       end

@@ -82,7 +82,31 @@ RSpec.describe Service::SlackUserEvents do
     )
   end
 
-  %w[is_bot deleted is_app_user].each do |flag|
+  it 'invalidates a deleted Slack user in place and hides the inactive link' do
+    existing = SlackUser.create!(
+      member: member,
+      slack_id: 'UNEWMEMBER',
+      slack_email: 'new.member@example.com'
+    )
+
+    described_class.process(
+      { 'type' => 'user_change', 'user' => user.merge('deleted' => true) },
+      event_id: 'Ev-deleted'
+    )
+
+    expect(SlackUser.find_by(slack_id: 'UNEWMEMBER')).to be_nil
+    expect(member.reload.slack_user).to be_nil
+    expect(SlackUser.unscoped.find(existing.id)).to have_attributes(
+      member_id: member.id,
+      slack_id: 'UNEWMEMBER',
+      slack_email: 'new.member@example.com',
+      invalidation_reason: 'slack_user_deleted; event_id=Ev-deleted'
+    )
+    expect(SlackUser.unscoped.find(existing.id).invalidated_at).to be_present
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+  end
+
+  %w[is_bot is_app_user].each do |flag|
     it "ignores team_join when #{flag} is true" do
       described_class.process('type' => 'team_join', 'user' => user.merge(flag => true))
 
