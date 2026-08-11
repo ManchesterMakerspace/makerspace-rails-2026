@@ -1,13 +1,30 @@
 class Slack::EventsController < ApplicationController
+  EVENT_DEDUPLICATION_TTL = 7.days.to_i
+
   skip_before_action :verify_authenticity_token
   before_action :verify_slack_signature
 
   def create
     payload = JSON.parse(request.raw_post)
     return render json: { challenge: payload['challenge'] } if payload['type'] == 'url_verification'
+    return head :ok unless payload['type'] == 'event_callback'
 
     event = payload['event'] || {}
-    SlackUserEventJob.perform_later(event) if %w[team_join user_change].include?(event['type'])
+    return head :ok unless %w[team_join user_change].include?(event['type'])
+
+    event_id = payload['event_id'].to_s
+    return render json: { error: 'Missing event_id' }, status: :bad_request if event_id.blank?
+
+    deduplication_key = "slack_event/#{Digest::SHA256.hexdigest(event_id)}"
+    acquired = REDIS.set(deduplication_key, 1, nx: true, ex: EVENT_DEDUPLICATION_TTL)
+    return head :ok unless acquired
+
+    begin
+      SlackUserEventJob.perform_later(event_id, event)
+    rescue
+      REDIS.del(deduplication_key)
+      raise
+    end
     head :ok
   rescue JSON::ParserError
     render json: { error: 'Invalid JSON' }, status: :bad_request

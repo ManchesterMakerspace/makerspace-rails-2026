@@ -6,6 +6,8 @@ RSpec.describe 'Slack Events API', type: :request do
   before do
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with('SLACK_SIGNING_SECRET').and_return(secret)
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:del)
   end
 
   def signed_headers(body, timestamp: Time.now.to_i)
@@ -28,13 +30,39 @@ RSpec.describe 'Slack Events API', type: :request do
 
   it 'queues supported member events' do
     event = { type: 'team_join', user: { id: 'U123' } }
-    body = { type: 'event_callback', event: event }.to_json
+    body = { type: 'event_callback', event_id: 'Ev123', event: event }.to_json
 
     expect do
       post '/slack/events', params: body, headers: signed_headers(body)
-    end.to have_enqueued_job(SlackUserEventJob).with(event.deep_stringify_keys)
+    end.to have_enqueued_job(SlackUserEventJob).with('Ev123', event.deep_stringify_keys)
 
     expect(response).to have_http_status(:ok)
+  end
+
+  it 'does not enqueue a redelivered event twice' do
+    event = { type: 'team_join', user: { id: 'U123' } }
+    body = { type: 'event_callback', event_id: 'Ev-duplicate', event: event }.to_json
+    allow(REDIS).to receive(:set).and_return(true, false)
+
+    expect do
+      2.times { post '/slack/events', params: body, headers: signed_headers(body) }
+    end.to have_enqueued_job(SlackUserEventJob).exactly(:once)
+
+    expect(REDIS).to have_received(:set).with(
+      "slack_event/#{Digest::SHA256.hexdigest('Ev-duplicate')}",
+      1,
+      nx: true,
+      ex: Slack::EventsController::EVENT_DEDUPLICATION_TTL
+    ).twice
+  end
+
+  it 'rejects callbacks without an event ID' do
+    body = { type: 'event_callback', event: { type: 'team_join', user: { id: 'U123' } } }.to_json
+
+    post '/slack/events', params: body, headers: signed_headers(body)
+
+    expect(response).to have_http_status(:bad_request)
+    expect(SlackUserEventJob).not_to have_been_enqueued
   end
 
   it 'rejects invalid signatures' do

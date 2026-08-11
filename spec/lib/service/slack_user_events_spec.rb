@@ -16,6 +16,7 @@ RSpec.describe Service::SlackUserEvents do
 
   before do
     allow(Service::SlackConnector).to receive(:send_slack_message)
+    allow(Service::AuditLogger).to receive(:log)
     allow(ENV).to receive(:fetch).and_call_original
   end
 
@@ -44,6 +45,41 @@ RSpec.describe Service::SlackUserEvents do
       name: 'new-name'
     )
     expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+  end
+
+  it 'audits a changed Slack email without relinking or changing the Member email' do
+    allow(Service::AuditLogger).to receive(:log).and_call_original
+    other_member = create(:member, email: 'changed@example.com')
+    SlackUser.create!(member: member, slack_id: 'UNEWMEMBER', slack_email: member.email)
+    changed_user = user.merge('profile' => user['profile'].merge('email' => other_member.email))
+
+    described_class.process(
+      { 'type' => 'user_change', 'user' => changed_user },
+      event_id: 'Ev-email-change'
+    )
+
+    expect(member.reload.email).to eq('new.member@example.com')
+    expect(SlackUser.find_by(slack_id: 'UNEWMEMBER')).to have_attributes(
+      member_id: member.id,
+      slack_email: 'changed@example.com'
+    )
+    expect(Service::AuditLogger).to have_received(:log).with(
+      hash_including(
+        event_type: 'slack_email_mismatch',
+        resource_id: member.id,
+        subject: member,
+        field_changes: {
+          'slack_email' => ['new.member@example.com', 'changed@example.com']
+        },
+        slack_channel: Service::SlackConnector.logs_channel,
+        message_details: /admin must reconcile.*Ev-email-change/i
+      )
+    )
+    expect(AuditLog.where(event_type: 'slack_email_mismatch', resource_id: member.id).count).to eq(1)
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+      /admin must reconcile.*Member email and Slack email/i,
+      Service::SlackConnector.logs_channel
+    )
   end
 
   %w[is_bot deleted is_app_user].each do |flag|
