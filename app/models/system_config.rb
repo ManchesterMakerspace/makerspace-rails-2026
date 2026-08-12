@@ -13,6 +13,7 @@ class SystemConfig
 
   SLACK_SYNC_ENABLED = "slack_sync_enabled"
   SLACK_PROFILE_SYNC_ENABLED = "slack_profile_sync_enabled"
+  SIGNUP_LOCKOUT_ENABLED = "signup_lockout_enabled"
 
   JOB_KEYS = {
     "slack_sync"      => "slack:sync_users",

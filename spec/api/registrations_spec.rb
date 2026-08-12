@@ -179,6 +179,29 @@ describe 'Registrations API', type: :request do
         end
         run_test!
       end
+
+      response '403', 'Signups locked for maintenance' do
+        before { SystemConfig.set(SystemConfig::SIGNUP_LOCKOUT_ENABLED, 'true') }
+        after { SystemConfig.set(SystemConfig::SIGNUP_LOCKOUT_ENABLED, 'false') }
+        schema '$ref' => '#/components/schemas/error'
+        let(:registerMemberDetails) do
+          { firstname: 'First', lastname: 'Last', email: 'first@last.com', password: 'password' }
+        end
+        run_test!
+      end
+    end
+  end
+
+  path '/signup_status' do
+    get 'Checks whether new signups are locked for maintenance' do
+      tags 'Authentication'
+      operationId 'getSignupStatus'
+      produces 'application/json'
+
+      response '200', 'Signup status returned' do
+        schema type: :object, properties: { locked: { type: :boolean } }, required: [:locked]
+        run_test!
+      end
     end
   end
 

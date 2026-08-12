@@ -119,6 +119,21 @@ namespace :db do
         } }
     end
   end
+
+  # Toggles the signup maintenance lockout flag directly, without going
+  # through the (currently flaky) Portal Settings UI.
+  # Usage: rake "db:set_signup_lockout[true]"  /  rake "db:set_signup_lockout[false]"
+  task :set_signup_lockout, [:enabled] => :environment do |t, args|
+    enabled = args[:enabled].to_s.strip.downcase
+
+    unless %w[true false].include?(enabled)
+      puts 'Usage: rake "db:set_signup_lockout[true]" or rake "db:set_signup_lockout[false]"'
+      exit 1
+    end
+
+    SystemConfig.set(SystemConfig::SIGNUP_LOCKOUT_ENABLED, enabled)
+    puts "signup_lockout_enabled set to #{enabled}"
+  end
 end
 
 def cancel_subscriptions(gateway)

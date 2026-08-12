@@ -35,6 +35,26 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
     end
   end
 
+  describe "signup_lockout_enabled" do
+    before { sign_in admin }
+    after { SystemConfig.set(SystemConfig::SIGNUP_LOCKOUT_ENABLED, "false") }
+
+    it "defaults to false and can be toggled via update_flag" do
+      get :index, format: :json
+      expect(JSON.parse(response.body).dig("flags", "signup_lockout_enabled")).to eq(false)
+
+      put :update_flag,
+          params: { key: SystemConfig::SIGNUP_LOCKOUT_ENABLED, value: "true" },
+          format: :json
+
+      expect(response).to have_http_status(200)
+      expect(SystemConfig.enabled?(SystemConfig::SIGNUP_LOCKOUT_ENABLED)).to be(true)
+
+      get :index, format: :json
+      expect(JSON.parse(response.body).dig("flags", "signup_lockout_enabled")).to eq(true)
+    end
+  end
+
   describe "reservation_token" do
     before { sign_in admin }
 

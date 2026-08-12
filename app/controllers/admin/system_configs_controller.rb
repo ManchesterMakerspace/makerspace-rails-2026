@@ -8,6 +8,7 @@ class Admin::SystemConfigsController < AdminController
     'require_totp_admin',
     'require_totp_board',
     'require_totp_rm',
+    SystemConfig::SIGNUP_LOCKOUT_ENABLED,
   ].freeze
 
   # Keys that can be updated as plain string values
@@ -43,6 +44,7 @@ class Admin::SystemConfigsController < AdminController
       require_totp_admin:             SystemConfig.enabled?('require_totp_admin'),
       require_totp_board:             SystemConfig.enabled?('require_totp_board'),
       require_totp_rm:                SystemConfig.enabled?('require_totp_rm'),
+      signup_lockout_enabled:         SystemConfig.enabled?(SystemConfig::SIGNUP_LOCKOUT_ENABLED),
     }
 
     jobs = SystemConfig::JOB_KEYS.map do |job_key, task_name|
