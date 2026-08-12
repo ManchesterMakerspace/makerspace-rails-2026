@@ -1,5 +1,9 @@
 class Slack::EventsController < ApplicationController
   EVENT_DEDUPLICATION_TTL = 7.days.to_i
+  ACTIVE_ATTEMPT_WAIT = 2.seconds
+  ACTIVE_ATTEMPT_POLL_INTERVAL = 50.milliseconds
+  PROCESSING_STATE = 'processing'
+  COMPLETED_STATE = 'completed'
 
   skip_before_action :verify_authenticity_token
   before_action :verify_slack_signature
@@ -16,14 +20,16 @@ class Slack::EventsController < ApplicationController
     return render json: { error: 'Missing event_id' }, status: :bad_request if event_id.blank?
 
     deduplication_key = "slack_event/#{Digest::SHA256.hexdigest(event_id)}"
-    acquired = REDIS.set(deduplication_key, 1, nx: true, ex: EVENT_DEDUPLICATION_TTL)
-    return head :ok unless acquired
+    acquisition = acquire_event(deduplication_key)
+    return head :ok if acquisition == :completed
+    return head :service_unavailable unless acquisition == :acquired
 
     begin
       # No durable Active Job adapter is configured in production. Process
       # before acknowledging so Slack will redeliver if persistence or a side
       # effect fails; the deduplication key is released in that case.
       Service::SlackUserEvents.process(event, event_id: event_id)
+      REDIS.set(deduplication_key, COMPLETED_STATE, xx: true, ex: EVENT_DEDUPLICATION_TTL)
     rescue
       REDIS.del(deduplication_key)
       raise
@@ -34,6 +40,21 @@ class Slack::EventsController < ApplicationController
   end
 
   private
+
+  # A callback that arrives while the first attempt is still running must not
+  # receive a successful acknowledgement until that attempt succeeds. Wait
+  # briefly for completion; returning 503 after the wait asks Slack to retry.
+  def acquire_event(key)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + ACTIVE_ATTEMPT_WAIT
+
+    loop do
+      return :acquired if REDIS.set(key, PROCESSING_STATE, nx: true, ex: EVENT_DEDUPLICATION_TTL)
+      return :completed if REDIS.get(key) == COMPLETED_STATE
+      return :in_progress if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+      sleep ACTIVE_ATTEMPT_POLL_INTERVAL
+    end
+  end
 
   def verify_slack_signature
     secret = ENV['SLACK_SIGNING_SECRET']

@@ -7,6 +7,7 @@ RSpec.describe 'Slack Events API', type: :request do
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with('SLACK_SIGNING_SECRET').and_return(secret)
     allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:get)
     allow(REDIS).to receive(:del)
     allow(Service::SlackUserEvents).to receive(:process)
   end
@@ -38,12 +39,19 @@ RSpec.describe 'Slack Events API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(Service::SlackUserEvents).to have_received(:process)
       .with(event.deep_stringify_keys, event_id: 'Ev123')
+    expect(REDIS).to have_received(:set).with(
+      "slack_event/#{Digest::SHA256.hexdigest('Ev123')}",
+      Slack::EventsController::COMPLETED_STATE,
+      xx: true,
+      ex: Slack::EventsController::EVENT_DEDUPLICATION_TTL
+    )
   end
 
-  it 'does not process a redelivered event twice' do
+  it 'acknowledges a redelivered event after the active attempt completes' do
     event = { type: 'team_join', user: { id: 'U123' } }
     body = { type: 'event_callback', event_id: 'Ev-duplicate', event: event }.to_json
-    allow(REDIS).to receive(:set).and_return(true, false)
+    allow(REDIS).to receive(:set).and_return(true, true, false)
+    allow(REDIS).to receive(:get).and_return(Slack::EventsController::COMPLETED_STATE)
 
     2.times { post '/slack/events', params: body, headers: signed_headers(body) }
 
@@ -51,10 +59,23 @@ RSpec.describe 'Slack Events API', type: :request do
 
     expect(REDIS).to have_received(:set).with(
       "slack_event/#{Digest::SHA256.hexdigest('Ev-duplicate')}",
-      1,
+      Slack::EventsController::PROCESSING_STATE,
       nx: true,
       ex: Slack::EventsController::EVENT_DEDUPLICATION_TTL
     ).twice
+  end
+
+  it 'does not acknowledge a redelivery while the active attempt is unresolved' do
+    event = { type: 'user_change', user: { id: 'U123' } }
+    body = { type: 'event_callback', event_id: 'Ev-in-progress', event: event }.to_json
+    allow(REDIS).to receive(:set).and_return(false)
+    allow(REDIS).to receive(:get).and_return(Slack::EventsController::PROCESSING_STATE)
+    allow_any_instance_of(Slack::EventsController).to receive(:acquire_event).and_return(:in_progress)
+
+    post '/slack/events', params: body, headers: signed_headers(body)
+
+    expect(response).to have_http_status(:service_unavailable)
+    expect(Service::SlackUserEvents).not_to have_received(:process)
   end
 
   it 'rejects callbacks without an event ID' do
