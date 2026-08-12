@@ -1,0 +1,16 @@
+# CLI options override environment variables, which override this file.
+mongo:
+  uri: mongodb://localhost:27017/makerspace
+  # database: makerspace  # Only needed when the URI has no database path.
+mqtt:
+  host: localhost
+  port: 1883
+  username:
+  password:
+  client_id: res2mqtt
+  tls: false
+  topic_prefix: reservations
+refresh_minutes: 30
+window_hours: 8
+timezone_name: America/New_York
+log_level: INFO
