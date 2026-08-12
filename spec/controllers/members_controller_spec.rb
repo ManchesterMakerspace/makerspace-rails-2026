@@ -279,6 +279,8 @@ RSpec.describe MembersController, type: :controller do
       put :update, params: { id: current_user.id, signature: signature }, format: :json
 
       expect(response).to have_http_status(200)
+    end
+
     it "raises forbidden when a resource manager updates another member" do
       resource_manager = create(:member, :resource_manager)
       member = create(:member)
