@@ -14,6 +14,10 @@ class ToolCheckoutSerializer < ActiveModel::Serializer
     object.tool.try(:shop_id)
   end
 
+  attribute :shop_wiki_url do
+    object.tool.try(:shop).try(:effective_wiki_url)
+  end
+
   attribute :member_name do
     object.member.try(:fullname)
   end

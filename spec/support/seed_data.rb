@@ -225,6 +225,19 @@ class SeedData
   def create_shops_and_tools
     return if Shop.count > 0
     shop_data = [
+      {
+        name: "Facilities",
+        slack_channel: "facilities",
+        tools: [{
+          name: "Orientation",
+          description: "Orientation is your first step towards active membership, and is available during scheduled Open House hours or by special arrangement",
+          reservable: true,
+          max_concurrent_reservations: 6,
+          reservation_horizon_days: 15,
+          max_reservation_duration_hours: 0.5,
+          allow_pending: true
+        }]
+      },
       { name: "3D Printers",  slack_channel: "shop-3dprinting",  tools: ["Prusa MK4", "Bambu X1C"] },
       { name: "Woodshop",     slack_channel: "shop-woodworking",  tools: ["Table Saw", "Band Saw", "Planer", "Jointer", "Drill Press"] },
       { name: "Metal Shop",   slack_channel: "shop-metalwork",    tools: ["MIG Welder", "TIG Welder", "Angle Grinder", "Metal Lathe"] },
@@ -236,9 +249,17 @@ class SeedData
     ]
     shop_data.each do |s|
       shop = Shop.create!(name: s[:name], slack_channel: s[:slack_channel])
-      s[:tools].each do |t|
-        Tool.create!(name: t, description: "#{t} in #{s[:name]}", shop: shop)
+      s[:tools].each do |tool_data|
+        attributes = tool_data.is_a?(Hash) ? tool_data : {
+          name: tool_data,
+          description: "#{tool_data} in #{s[:name]}"
+        }
+        Tool.create!(attributes.merge(shop: shop))
       end
+    end
+    shop_ids = Shop.all.pluck(:id).map(&:to_s)
+    Member.where(role: "resource_manager").each do |member|
+      member.set(resource_manager_shop_ids: shop_ids)
     end
     puts "  [seed] Created #{Shop.count} shops with #{Tool.count} tools."
   end
@@ -363,12 +384,17 @@ class SeedData
         puts "  [seed] Reused subscription for #{member.fullname}: #{active_sub.id}"
         return
       end
-      token = existing_customer.payment_methods.first&.token
-      if token
-        member.update!(customer_id: existing_customer.id)
-        create_braintree_subscription(member, invoice_option, token, gateway)
-        return
-      end
+      # NOTE: previously this fell through to creating a new subscription on
+      # the SAME existing customer/payment method when no active subscription
+      # was found. Braintree subscriptions cannot be deleted or reactivated
+      # once cancelled, so every seed run that found a cancelled subscription
+      # here left it behind permanently and created another — across months
+      # of CI/local runs this accumulated 130+ cancelled subscriptions on a
+      # single sandbox customer, which appears to interfere with Braintree's
+      # subscription search results for that customer (e.g. via
+      # Admin::Billing::SubscriptionsController's search-scoped query).
+      # Creating a fresh customer instead avoids growing that history further.
+      puts "  [seed] No active subscription for #{member.fullname} — creating fresh Braintree customer instead of reusing #{existing_customer.id}"
     end
     result = gateway.customer.create(
       first_name: member.firstname, last_name: member.lastname,

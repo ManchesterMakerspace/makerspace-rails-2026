@@ -7,6 +7,7 @@ class Admin::AnalyticsController < AdminController
       total_members:      Service::Analytics::Members.query_total_members.count,
       new_members:        Service::Analytics::Members.query_new_members.count,
       subscribed_members: Service::Analytics::Members.query_braintree_members.count,
+      members_with_expiring_payment_methods: Service::CardExpirationCheck.expiring_member_count,
       past_due_invoices:  Service::Analytics::Invoices.query_past_due.count,
       refunds_pending:    Service::Analytics::Invoices.query_refunds_pending.count,
     }
@@ -75,7 +76,7 @@ class Admin::AnalyticsController < AdminController
   #
   # For each month in the range, counts members where:
   #   startDate <= end_of_month  AND  expirationTime >= end_of_month_ms
-  #   AND status == 'activeMember'
+  #   AND status is activeMember or pending
   #
   # Params:
   #   year (integer, optional) — filter to a calendar year
@@ -106,7 +107,7 @@ class Admin::AnalyticsController < AdminController
       count = Member.where(
         :startDate.lte      => month_end.to_time,
         :expirationTime.gte => month_end_ms,
-        status:               'activeMember'
+        :status.in          => Member::ACTIVE_MEMBERSHIP_STATUSES
       ).count
 
       data << { date: cursor.strftime('%Y-%m'), count: count }

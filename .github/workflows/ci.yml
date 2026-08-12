@@ -6,13 +6,18 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      react_branch:
+        description: 'React branch to test against (leave blank for master)'
+        required: false
+        default: 'master'
 
 # Which React repo/branch to pull for UI build and E2E.
 # REACT_REPO points at ManchesterMakerspace/makerspace-react-2026.
 # upstream PR is merged.
 env:
   REACT_REPO:   ManchesterMakerspace/makerspace-react-2026
-  REACT_BRANCH: master
+  REACT_BRANCH: ${{ github.event.inputs.react_branch || 'master' }}
 
 jobs:
   # -- 1. Build the React/TS UI ------------------------------------------------
@@ -20,10 +25,10 @@ jobs:
     name: Build UI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Checkout react repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.REACT_REPO }}
           ref: ${{ env.REACT_BRANCH }}
@@ -57,10 +62,10 @@ jobs:
     name: Jest (UI unit tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Checkout react repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.REACT_REPO }}
           ref: ${{ env.REACT_BRANCH }}
@@ -110,11 +115,12 @@ jobs:
 
     env:
       RAILS_ENV: test
+      ITEMS_PER_PAGE: 50
       SKIP_EMAILVALIDATION: "true"
       MLAB_URI: mongodb://localhost:27017/makerspace_test
       REDIS_URL: redis://localhost:6379/0
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
-      OTP_SECRET_KEY: ci_dummy_otp_secret
+      OTP_SECRET_KEY: fZ4zRjsUzonEkqfj1zEB1NuxGcLR1VviOY5Oit5CtqI=
       APP_DOMAIN: http://localhost:3035
       SLACK_ADMIN_TOKEN: dummy
       SLACK_SIGNING_SECRET: dummy
@@ -132,13 +138,16 @@ jobs:
       BT_PRIVATE_KEY: dummy
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - name: Set up Ruby 3.2.9
+      - name: Set up Ruby 3.4
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2.9'
+          ruby-version: '3.4'
           bundler-cache: true
+
+      - name: Report available CPU cores
+        run: nproc
 
       - name: Create stub UI assets for RSpec
         run: |
@@ -147,7 +156,7 @@ jobs:
           touch app/assets/builds/makerspace-react.css
 
       - name: Run RSpec
-        run: bundle exec rspec
+        run: bundle exec parallel_rspec spec/ -n 4
 
 
   # -- 4. Production asset compile check ----------------------------------------
@@ -158,9 +167,10 @@ jobs:
 
     env:
       RAILS_ENV: production
+      ITEMS_PER_PAGE: 50
       SECRET_KEY_BASE: ci_dummy_secret_key_base
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
-      OTP_SECRET_KEY: ci_dummy_otp_secret
+      OTP_SECRET_KEY: fZ4zRjsUzonEkqfj1zEB1NuxGcLR1VviOY5Oit5CtqI=
       MLAB_URI: mongodb://localhost:27017/makerspace_production
       APP_DOMAIN: http://localhost:3035
       SLACK_ADMIN_TOKEN: dummy
@@ -179,12 +189,12 @@ jobs:
       BT_PRIVATE_KEY: dummy
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - name: Set up Ruby 3.2.9
+      - name: Set up Ruby 3.4
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2.9'
+          ruby-version: '3.4'
           bundler-cache: true
 
       - name: Download built UI assets
@@ -226,12 +236,13 @@ jobs:
 
     env:
       RAILS_ENV: test
+      ITEMS_PER_PAGE: 50
       SKIP_EMAILVALIDATION: "true"
       PORT: 3035
       MLAB_URI: mongodb://localhost:27017/makerspace_test
       REDIS_URL: redis://localhost:6379/0
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
-      OTP_SECRET_KEY: ci_dummy_otp_secret
+      OTP_SECRET_KEY: fZ4zRjsUzonEkqfj1zEB1NuxGcLR1VviOY5Oit5CtqI=
       APP_DOMAIN: http://localhost:3035
       RAILS_SERVE_STATIC_FILES: 'true'
       SLACK_ADMIN_TOKEN: dummy
@@ -252,19 +263,19 @@ jobs:
       APP_URL: http://localhost:3035
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Checkout react repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.REACT_REPO }}
           ref: ${{ env.REACT_BRANCH }}
           path: ui
 
-      - name: Set up Ruby 3.2.9
+      - name: Set up Ruby 3.4
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2.9'
+          ruby-version: '3.4'
           bundler-cache: true
 
       - name: Set up Node 22
@@ -288,7 +299,9 @@ jobs:
         run: bundle exec rake db:db_reset
 
       - name: Start Rails server
-        run: bundle exec rails s -b 0.0.0.0 -p 3035 -d
+        run: |
+          mkdir -p log
+          bundle exec rails s -b 0.0.0.0 -p 3035 > log/e2e_rails_server.log 2>&1 &
         env:
           RAILS_LOG_TO_STDOUT: 'true'
 
@@ -317,4 +330,12 @@ jobs:
           path: |
             ui/tmp/playwright-results/
             ui/tmp/playwright-report/
+          retention-days: 7
+
+      - name: Upload Rails server log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rails-server-log
+          path: log/e2e_rails_server.log
           retention-days: 7

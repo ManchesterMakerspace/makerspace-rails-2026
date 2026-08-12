@@ -150,22 +150,39 @@ No automated actions have been taken at this time.")
   def self.process_subscription_charge_failure(invoice, last_transaction)
     slack_member = SlackUser.find_by(member_id: invoice.member.id)
     member_notified = slack_member ? "The member has been notified via Slack and email as well." : "Unable to notify member via Slack. Reach out to member to resolve."
-    enque_message("Your recurring payment for #{invoice.name} was unsuccessful. Error status: #{last_transaction.status}. Please <#{Rails.configuration.action_mailer.default_url_options[:host]}/#{invoice.member.id}/settings|review your payment settings> or contact an administrator for assistance.", slack_member.slack_id) unless slack_member.nil?
-    enque_message("Recurring payment from #{get_member_profile(invoice.member)} failed with status: #{last_transaction.status}. #{member_notified}")
+    unless slack_member.nil?
+      enque_message(
+        "Your recurring payment for #{invoice.name} was unsuccessful. Error status: #{last_transaction.status}. Please <#{Rails.configuration.x.app_base_url}/#{invoice.member.id}/settings|review your payment settings> or contact an administrator for assistance.",
+        slack_member.slack_id,
+        ::Service::SlackConnector.request_caller_id("notification.process_subscription_charge_failure.member.#{invoice.id}")
+      )
+    end
+    enque_message(
+      "Recurring payment from #{get_member_profile(invoice.member)} failed with status: #{last_transaction.status}. #{member_notified}",
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("notification.process_subscription_charge_failure.management.#{invoice.id}")
+    )
     BillingMailer.failed_payment(invoice.member.email, invoice.id.to_s, last_transaction.status).deliver_later
   end
 
   def self.process_subscription_past_due(invoice)
     slack_member = SlackUser.find_by(member_id: invoice.member.id)
-    settings_url = "#{Rails.configuration.action_mailer.default_url_options[:host]}/#{invoice.member.id}/settings"
+    settings_url = "#{Rails.configuration.x.app_base_url}/#{invoice.member.id}/settings"
     member_notified = slack_member ? "The member has been notified via Slack and email." : "Unable to notify member via Slack. Reach out to member to resolve."
 
-    enque_message(
-      "Your recurring payment for #{invoice.name} is past due. Please <#{settings_url}|review your payment settings> or contact an administrator for assistance.",
-      slack_member.slack_id
-    ) unless slack_member.nil?
+    unless slack_member.nil?
+      enque_message(
+        "Your recurring payment for #{invoice.name} is past due. Please <#{settings_url}|review your payment settings> or contact an administrator for assistance.",
+        slack_member.slack_id,
+        ::Service::SlackConnector.request_caller_id("notification.process_subscription_past_due.member.#{invoice.id}")
+      )
+    end
 
-    enque_message("Subscription for #{get_member_profile(invoice.member)} went past due for #{invoice.name}. #{member_notified}")
+    enque_message(
+      "Subscription for #{get_member_profile(invoice.member)} went past due for #{invoice.name}. #{member_notified}",
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("notification.process_subscription_past_due.management.#{invoice.id}")
+    )
 
     BillingMailer.failed_payment(invoice.member.email, invoice.id.to_s, "past_due").deliver_later
   end
@@ -191,7 +208,7 @@ No automated actions have been taken at this time.")
     end
 
     enque_message("Received dispute from #{get_member_profile(associated_invoice.member)} for #{associated_invoice.name} which was paid #{associated_invoice.settled_at}.
-    Braintree transaction ID #{disputed_transaction.id} |  <#{Rails.configuration.action_mailer.default_url_options[:host]}/billing/transactions/#{associated_invoice.transaction_id}|Disputed Invoice>")
+    Braintree transaction ID #{disputed_transaction.id} |  <#{Rails.configuration.x.app_base_url}/billing/transactions/#{associated_invoice.transaction_id}|Disputed Invoice>")
     if notification.kind === ::Braintree::WebhookNotification::Kind::DisputeOpened
       associated_invoice.set_dispute_requested
       BillingMailer.dispute_requested(associated_invoice.member.email, associated_invoice.id.to_s).deliver_later
@@ -225,8 +242,18 @@ No automated actions have been taken at this time.")
     elsif notification.kind === Braintree::WebhookNotification::Kind::TransactionSettlementDeclined
       processed_invoice.reverse_settlement
       member_notified = slack_member ? "The member has been notified via Slack and email as well." : "Unable to notify member via Slack. Reach out to member to resolve."
-      enque_message("Your payment for #{processed_invoice.name} was unsuccessful. Error status: #{last_transaction.status}. Please <#{Rails.configuration.action_mailer.default_url_options[:host]}/#{processed_invoice.member.id}/settings|review your payment settings> or contact an administrator for assistance.", slack_member.slack_id) unless slack_member.nil?
-      enque_message("Recent transaction from #{get_member_profile(processed_invoice.member)} for #{processed_invoice.name} failed with status: #{last_transaction.status}. #{member_notified}")
+      unless slack_member.nil?
+        enque_message(
+          "Your payment for #{processed_invoice.name} was unsuccessful. Error status: #{last_transaction.status}. Please <#{Rails.configuration.x.app_base_url}/#{processed_invoice.member.id}/settings|review your payment settings> or contact an administrator for assistance.",
+          slack_member.slack_id,
+          ::Service::SlackConnector.request_caller_id("notification.process_transaction.member.#{processed_invoice.id}")
+        )
+      end
+      enque_message(
+        "Recent transaction from #{get_member_profile(processed_invoice.member)} for #{processed_invoice.name} failed with status: #{last_transaction.status}. #{member_notified}",
+        ::Service::SlackConnector.members_relations_channel,
+        ::Service::SlackConnector.request_caller_id("notification.process_transaction.management.#{processed_invoice.id}")
+      )
       BillingMailer.failed_payment(processed_invoice.member.email, processed_invoice.id.to_s, last_transaction.status).deliver_later
     end
   end
@@ -279,7 +306,7 @@ No automated actions have been taken at this time.")
   end
 
   def self.get_member_profile(member)
-    base_url = ActionMailer::Base.default_url_options[:host]
+    base_url = Rails.configuration.x.app_base_url
     "<#{base_url}/members/#{member.id}|#{member.fullname}>"
   end
 end

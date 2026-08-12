@@ -1,7 +1,7 @@
 class Admin::CheckinsController < AuthenticationController
   def index
     checkins = checkins_collection.find(checkins_query).to_a
-    render json: { checkins: checkins } and return
+    render json: { checkins: serialized_checkins(checkins) } and return
   end
 
   private
@@ -19,14 +19,53 @@ class Admin::CheckinsController < AuthenticationController
     if query_start_time || query_end_time
       # Use $and to safely combine uid filter with $or time field conditions
       query['$and'] = [
-        { 'uid' => { '$in' => query_uids } },
+        { 'uid' => { '$in' => permitted_query_uids } },
         { '$or' => CheckinTimeHelper.dual_unit_or_query(query_start_time, query_end_time) }
       ]
     else
-      query['uid'] = { '$in' => query_uids }
+      query['uid'] = { '$in' => permitted_query_uids }
     end
 
     query
+  end
+
+  def serialized_checkins(checkins)
+    return checkins if privileged_access?
+    checkins.map { |checkin| redact_uid(checkin) }
+  end
+
+  def redact_uid(record)
+    attributes = record.respond_to?(:attributes) ? record.attributes : record
+    attributes = attributes.as_json if attributes.respond_to?(:as_json)
+    attributes = attributes.to_h if attributes.respond_to?(:to_h)
+    attributes = attributes.dup
+    uid_key = attributes.key?('uid') ? 'uid' : :uid
+    attributes[uid_key] = redacted_uid_digest(attributes[uid_key]) if attributes.key?(uid_key)
+    attributes
+  end
+
+  # Deterministic, keyed digest — stable across requests, workers, and
+  # restarts (unlike String#hash, which uses a per-process random seed and
+  # would render the same UID as a different value every time, breaking
+  # any correlation of a member's own checkins over time or with the
+  # matching rejections endpoint). Truncated to 12 hex chars: short enough
+  # to be a clean display value, long enough that collisions among the
+  # small set of real card UIDs in use are not a practical concern.
+  def redacted_uid_digest(uid)
+    require 'openssl'
+    OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base, uid.to_s)[0, 12]
+  end
+
+  def permitted_query_uids
+    @permitted_query_uids ||= begin
+      return query_uids if privileged_access?
+      member_card_uids = current_member.access_cards.map { |card| card.uid.to_s }
+      query_uids & member_card_uids
+    end
+  end
+
+  def privileged_access?
+    is_privileged?
   end
 
   def query_uids

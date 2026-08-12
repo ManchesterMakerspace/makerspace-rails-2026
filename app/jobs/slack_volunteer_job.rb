@@ -41,11 +41,11 @@ class SlackVolunteerJob < ApplicationJob
 
     case command
     when 'status'    then handle_status(response_url, invoker, parts[1])
-    when 'tasks'     then handle_tasks(response_url)
+    when 'tasks'     then handle_tasks(response_url, invoker)
     when 'claim'     then handle_claim(response_url, invoker, parts[1])
     when 'done'      then handle_done(response_url, invoker, parts[1])
     when 'myclaims'  then handle_myclaims(response_url, invoker)
-    when 'events'    then handle_events(response_url)
+    when 'events'    then handle_events(response_url, invoker)
     when 'checkin'   then handle_checkin(response_url, invoker, parts[1])
     when 'award'     then handle_award(response_url, invoker, parts)
     when 'verify'    then handle_verify(response_url, invoker, parts[1])
@@ -103,8 +103,13 @@ class SlackVolunteerJob < ApplicationJob
 
   # List all claimable tasks — includes reusable, repeatable, and recurring
   # (excluding recurring tasks still in their cooldown window).
-  def handle_tasks(response_url)
-    tasks = VolunteerTask.claimable.where(parent_task_id: nil).order_by(task_number: :asc).limit(15)
+  def handle_tasks(response_url, invoker)
+    tasks = VolunteerTask.claimable
+      .where(parent_task_id: nil)
+      .order_by(task_number: :asc)
+      .to_a
+    tasks.select! { |task| task.eligible_for?(invoker) } unless privileged?(invoker)
+    tasks = tasks.first(15)
 
     if tasks.empty?
       post_response(response_url, :ephemeral, '📋 No bounty tasks are currently available.')
@@ -121,6 +126,7 @@ class SlackVolunteerJob < ApplicationJob
         else ''
       end
       lines << "• *#{t.title}* (#{credit_label}#{type_hint}) — `#{t.display_number}`\n  #{t.description}"
+      lines << "  Shop: #{t.shop.name}" if t.shop_id.present? && t.shop
     end
     lines << "\nUse `/volunteer claim <task#>` to claim one."
 
@@ -134,7 +140,7 @@ class SlackVolunteerJob < ApplicationJob
     end
 
     # activeMember guard
-    unless invoker.status == 'activeMember'
+    unless invoker.status == "activeMember"
       post_response(response_url, :ephemeral, '❌ Only active members can claim tasks.')
       return
     end
@@ -142,6 +148,16 @@ class SlackVolunteerJob < ApplicationJob
     task = find_task_by_ref(task_ref)
     unless task
       post_response(response_url, :ephemeral, "❌ Task not found: #{task_ref}. Use `/volunteer tasks` to see available tasks.")
+      return
+    end
+
+    unless task.eligible_for?(invoker)
+      names = task.missing_prerequisite_tool_names(invoker)
+      post_response(
+        response_url,
+        :ephemeral,
+        "❌ You need active checkouts for: #{names.join(', ')}"
+      )
       return
     end
 
@@ -239,8 +255,10 @@ class SlackVolunteerJob < ApplicationJob
     post_response(response_url, :ephemeral, lines.join("\n"))
   end
 
-  def handle_events(response_url)
-    events = VolunteerEvent.active_events.order_by(event_number: :asc).limit(10)
+  def handle_events(response_url, invoker)
+    events = VolunteerEvent.active_events.order_by(event_number: :asc).to_a
+    events.select! { |event| event.eligible_for?(invoker) } unless privileged?(invoker)
+    events = events.first(10)
 
     if events.empty?
       post_response(response_url, :ephemeral, '📅 No volunteer events are currently open.')
@@ -252,6 +270,7 @@ class SlackVolunteerJob < ApplicationJob
       credit_label = e.credit_value == 1.0 ? '1 credit' : "#{e.credit_value} credits"
       date_str     = e.event_date ? " — #{e.event_date.strftime('%b %d')}" : ''
       lines << "• *#{e.title}* (#{credit_label}#{date_str}) — `#{e.display_number}` — #{e.attendee_count} checked in\n  #{e.description}"
+      lines << "  Shop: #{e.shop.name}" if e.shop_id.present? && e.shop
     end
     lines << "\nUse `/volunteer checkin <E#>` to check in."
 
@@ -267,6 +286,16 @@ class SlackVolunteerJob < ApplicationJob
     event = find_event_by_ref(event_ref)
     unless event
       post_response(response_url, :ephemeral, "❌ Event not found: #{event_ref}. Use `/volunteer events` to see open events.")
+      return
+    end
+
+    unless event.eligible_for?(invoker)
+      names = event.missing_prerequisite_tool_names(invoker)
+      post_response(
+        response_url,
+        :ephemeral,
+        "❌ You need active checkouts for: #{names.join(', ')}"
+      )
       return
     end
 
@@ -299,7 +328,7 @@ class SlackVolunteerJob < ApplicationJob
       return
     end
 
-    unless member.status == 'activeMember'
+    unless member.active_membership_status?
       post_response(response_url, :ephemeral, "❌ Cannot award a credit to #{member.fullname} — they are not an active member.")
       return
     end
@@ -355,8 +384,13 @@ class SlackVolunteerJob < ApplicationJob
 
     # activeMember check on claimant
     claimant = Member.find(task.claimed_by_id) rescue nil
-    if claimant && claimant.status != 'activeMember'
+    if claimant && !claimant.active_membership_status?
       post_response(response_url, :ephemeral, "❌ Cannot verify — #{claimant.fullname} is no longer an active member.")
+      return
+    end
+
+    unless authorized_to_administer?(invoker, task)
+      post_response(response_url, :ephemeral, '❌ You are not authorized to administer volunteer tasks for this shop.')
       return
     end
 
@@ -393,6 +427,11 @@ class SlackVolunteerJob < ApplicationJob
 
     unless task.status == 'claimed'
       post_response(response_url, :ephemeral, "❌ Task *#{task.title}* is not currently claimed.")
+      return
+    end
+
+    unless authorized_to_administer?(invoker, task)
+      post_response(response_url, :ephemeral, '❌ You are not authorized to administer volunteer tasks for this shop.')
       return
     end
 
@@ -433,6 +472,11 @@ class SlackVolunteerJob < ApplicationJob
       return
     end
 
+    unless authorized_to_administer?(invoker, task)
+      post_response(response_url, :ephemeral, '❌ You are not authorized to administer volunteer tasks for this shop.')
+      return
+    end
+
     task.reject_pending!(invoker, reason)
     post_response(response_url, :in_channel,
       "❌ Task *#{task.title}* (#{task.display_number}) rejected. Reason: #{reason}.")
@@ -463,6 +507,11 @@ class SlackVolunteerJob < ApplicationJob
     end
 
     attendee_count = event.attendee_count
+    unless authorized_to_administer?(invoker, event)
+      post_response(response_url, :ephemeral, '❌ You are not authorized to administer volunteer events for this shop.')
+      return
+    end
+
     event.close!(invoker)
 
     post_response(response_url, :in_channel,
@@ -513,6 +562,10 @@ class SlackVolunteerJob < ApplicationJob
   # blocked from all Slack volunteer commands. Now consistent with AdminOrRmController.
   def privileged?(member)
     member.role.in?(%w[admin board_member resource_manager])
+  end
+
+  def authorized_to_administer?(member, record)
+    VolunteerAdministrationAuthorization.allowed?(member, record.shop_id)
   end
 
   def find_member_by_slack_id(slack_id)

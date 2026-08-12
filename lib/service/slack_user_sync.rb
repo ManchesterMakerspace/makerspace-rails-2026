@@ -2,15 +2,15 @@ module Service
   module SlackUserSync
 
     def self.sync_single(slack_id)
-      unless ENV['SLACK_ADMIN_TOKEN'].present?
+      unless ::Service::SlackConnector.api_token_present?
         ::Service::SlackConnector.send_slack_message(
-          "⚠ Slack single-user sync failed: SLACK_ADMIN_TOKEN not set.",
+          "⚠ Slack single-user sync failed: neither SLACK_BOT_TOKEN nor SLACK_ADMIN_TOKEN is set.",
           ::Service::SlackConnector.logs_channel
         )
         return nil
       end
 
-      client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
+      client = ::Service::SlackConnector.client
 
       begin
         response = client.users_info(user: slack_id)
@@ -41,21 +41,34 @@ module Service
         return nil
       end
 
+      slack_user_attributes = sanitized_slack_user_attributes(
+        slack_email: slack_email,
+        name: name,
+        real_name: real_name
+      )
+
       existing = SlackUser.find_by(slack_id: slack_id)
       if existing
-        existing.set(slack_email: slack_email, name: name, real_name: real_name)
+        existing.set(slack_user_attributes)
       else
         slack_user = SlackUser.create!(
-          slack_id:    slack_id,
-          slack_email: slack_email,
-          name:        name,
-          real_name:   real_name,
-          member:      member
+          slack_user_attributes.merge(
+            slack_id: slack_id,
+            member: member
+          )
         )
         ::Service::SlackProfileSync.sync_one(member)
       end
 
       member
+    end
+
+    def self.sanitized_slack_user_attributes(slack_email:, name:, real_name:)
+      {
+        slack_email: SlackUser.scrub_user_input(slack_email),
+        name: SlackUser.scrub_user_input(name),
+        real_name: SlackUser.scrub_user_input(real_name)
+      }
     end
 
     def self.sync_all
@@ -64,14 +77,14 @@ module Service
         return { skipped: true }
       end
 
-      unless ENV['SLACK_ADMIN_TOKEN'].present?
-        msg = '[Slack Sync] ERROR: SLACK_ADMIN_TOKEN is not set'
+      unless ::Service::SlackConnector.api_token_present?
+        msg = '[Slack Sync] ERROR: neither SLACK_BOT_TOKEN nor SLACK_ADMIN_TOKEN is set'
         puts msg
-        Honeybadger.notify('Slack user sync failed', context: { reason: 'SLACK_ADMIN_TOKEN not set' }) if defined?(Honeybadger)
+        Honeybadger.notify('Slack user sync failed', context: { reason: 'no Slack API token configured' }) if defined?(Honeybadger)
         raise msg
       end
 
-      client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
+      client = ::Service::SlackConnector.client
 
       created_count = 0
       updated_count = 0
@@ -117,19 +130,23 @@ module Service
             next
           end
 
+          slack_user_attributes = sanitized_slack_user_attributes(
+            slack_email: slack_email,
+            name: name,
+            real_name: real_name
+          )
           existing = SlackUser.find_by(slack_id: slack_id)
 
           if existing
-            existing.set(slack_email: slack_email, name: name, real_name: real_name)
+            existing.set(slack_user_attributes)
             puts "[Slack Sync] UPDATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
             updated_count += 1
           else
             slack_user = SlackUser.create!(
-              slack_id:    slack_id,
-              slack_email: slack_email,
-              name:        name,
-              real_name:   real_name,
-              member:      member
+              slack_user_attributes.merge(
+                slack_id: slack_id,
+                member: member
+              )
             )
             ::Service::SlackProfileSync.sync_one(member)
             puts "[Slack Sync] CREATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"

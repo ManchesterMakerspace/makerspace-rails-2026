@@ -4,12 +4,19 @@
     "title": "Makerspace Server V2",
     "version": "v2"
   },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "API base path"
+    }
+  ],
   "components": {
     "schemas": {
       "MemberStatus": {
         "type": "string",
         "enum": [
           "activeMember",
+          "pending",
           "inactive",
           "nonMember",
           "revoked"
@@ -95,6 +102,7 @@
             "type": "string",
             "enum": [
               "activeMember",
+              "pending",
               "expired",
               "inactive",
               "lost",
@@ -519,6 +527,120 @@
           }
         ]
       },
+      "SlackProvisioning": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "blocked",
+              "not_invited",
+              "invite_confirmed",
+              "invite_pending",
+              "guest",
+              "manual_invite_required",
+              "manual_promotion_required",
+              "full_member"
+            ]
+          },
+          "inviteConfirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          },
+          "inviteSource": {
+            "type": "string",
+            "enum": [
+              "api",
+              "slack_user_record"
+            ],
+            "x-nullable": true
+          },
+          "inviteMode": {
+            "type": "string",
+            "enum": [
+              "full_member",
+              "single_channel_guest"
+            ],
+            "x-nullable": true
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          },
+          "fullMemberAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          },
+          "manualActionRequired": {
+            "type": "string",
+            "enum": [
+              "invite",
+              "promotion"
+            ],
+            "x-nullable": true
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "GoogleDriveProvisioning": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "blocked",
+              "pending_activation",
+              "not_provisioned",
+              "partial",
+              "failed",
+              "complete"
+            ]
+          },
+          "resourcesAccessConfirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          },
+          "transferAccessConfirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "MemberProvisioning": {
+        "type": "object",
+        "properties": {
+          "activationEligible": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": "string"
+          },
+          "slack": {
+            "$ref": "#/components/schemas/SlackProvisioning"
+          },
+          "googleDrive": {
+            "$ref": "#/components/schemas/GoogleDriveProvisioning"
+          }
+        },
+        "required": [
+          "activationEligible",
+          "email",
+          "slack",
+          "googleDrive"
+        ]
+      },
       "BaseMember": {
         "type": "object",
         "properties": {
@@ -554,6 +676,36 @@
           },
           "notes": {
             "type": "string",
+            "x-nullable": true
+          },
+          "resourceManagerShopIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "checkoutApproverShopIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "checkoutApproverToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "slackManualDeactivationRequired": {
+            "type": "boolean",
+            "description": "True for revoked members when Slack must be deactivated manually because SLACK_ADMIN_TOKEN is not configured."
+          },
+          "provisioning": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemberProvisioning"
+              }
+            ],
             "x-nullable": true
           }
         },
@@ -681,6 +833,12 @@
           "silenceEmails": {
             "type": "boolean"
           },
+          "resourceManagerShopIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "phone": {
             "type": "string"
           },
@@ -722,6 +880,383 @@
               "id"
             ]
           }
+        ]
+      },
+      "ReservationResourceConfig": {
+        "type": "object",
+        "properties": {
+          "reservable": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxConcurrentReservations": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "reservationHorizonDays": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 7
+          },
+          "maxReservationDurationHours": {
+            "type": "number",
+            "minimum": 0.5,
+            "multipleOf": 0.5,
+            "default": 8
+          },
+          "reservationRequiresApproval": {
+            "type": "boolean",
+            "default": false
+          },
+          "reservationPrerequisiteToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Shop": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ReservationResourceConfig"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "slackChannel": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "colorId": {
+                "type": "string",
+                "pattern": "^\\d+$",
+                "x-nullable": true
+              },
+              "reservationPrerequisiteNames": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "googleResourceId": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "resourceEmail": {
+                "type": "string",
+                "x-nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "reservable"
+            ]
+          }
+        ]
+      },
+      "Tool": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ReservationResourceConfig"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "shopId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "allowPending": {
+                "type": "boolean",
+                "default": false
+              },
+              "effectiveReservationPrerequisiteIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "shopId",
+              "name",
+              "reservable"
+            ]
+          }
+        ]
+      },
+      "CheckoutApprover": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "shopIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "shopNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "memberId",
+          "shopIds",
+          "toolIds"
+        ]
+      },
+      "Reservation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "shopId": {
+            "type": "string"
+          },
+          "shopName": {
+            "type": "string"
+          },
+          "reservationScope": {
+            "type": "string",
+            "enum": [
+              "shop",
+              "tools"
+            ]
+          },
+          "toolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "denied",
+              "cancelled"
+            ]
+          },
+          "approvalReasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "portal",
+              "slack"
+            ]
+          },
+          "calendarEventId": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "calendarHtmlLink": {
+            "type": "string",
+            "format": "uri",
+            "x-nullable": true
+          },
+          "calendarSyncStatus": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "calendarSyncError": {
+            "type": "string",
+            "x-nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "memberId",
+          "shopId",
+          "reservationScope",
+          "toolIds",
+          "startAt",
+          "endAt",
+          "status"
+        ]
+      },
+      "ReservationPreview": {
+        "type": "object",
+        "properties": {
+          "eligible": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missingPrerequisites": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "requiresApproval": {
+            "type": "boolean"
+          },
+          "approvalReasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "maximumDurationHours": {
+            "type": "number",
+            "multipleOf": 0.5,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "eligible",
+          "errors",
+          "conflicts",
+          "missingPrerequisites",
+          "requiresApproval",
+          "approvalReasons",
+          "maximumDurationHours"
+        ]
+      },
+      "SubscriptionCancellationImpact": {
+        "type": "object",
+        "properties": {
+          "reservationCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "membershipExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
+          },
+          "reservations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "calendarHtmlLink": {
+                  "type": "string",
+                  "format": "uri",
+                  "x-nullable": true
+                },
+                "startAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "endAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "startAt",
+                "endAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "reservationCount",
+          "reservations"
         ]
       },
       "PayPalAccount": {
@@ -1248,10 +1783,310 @@
           "memberId",
           "paymentMethodDetails"
         ]
+      },
+      "ReservationResourceConfig": {
+        "type": "object",
+        "properties": {
+          "reservable": { "type": "boolean", "default": false },
+          "maxConcurrentReservations": { "type": "integer", "minimum": 1, "default": 1 },
+          "reservationHorizonDays": { "type": "integer", "minimum": 0, "default": 7 },
+          "maxReservationDurationHours": { "type": "number", "minimum": 0.5, "multipleOf": 0.5, "default": 8 },
+          "reservationRequiresApproval": { "type": "boolean", "default": false },
+          "reservationPrerequisiteToolIds": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "Shop": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ReservationResourceConfig" },
+          {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "wikiUrl": { "type": "string", "format": "uri" },
+              "wikiUrlOverride": { "type": "string", "format": "uri", "nullable": true },
+              "gdriveId": { "type": "string", "nullable": true },
+              "slackChannel": { "type": "string", "nullable": true },
+              "disabled": { "type": "boolean" }
+            },
+            "required": ["id", "name", "wikiUrl", "reservable"]
+          }
+        ]
+      },
+      "Tool": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ReservationResourceConfig" },
+          {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "shopId": { "type": "string" },
+              "name": { "type": "string" },
+              "wikiUrl": { "type": "string", "format": "uri" },
+              "wikiUrlOverride": { "type": "string", "format": "uri", "nullable": true },
+              "gdriveId": { "type": "string", "nullable": true },
+              "description": { "type": "string", "nullable": true },
+              "disabled": { "type": "boolean" },
+              "effectiveReservationPrerequisiteIds": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["id", "shopId", "name", "wikiUrl", "reservable"]
+          }
+        ]
+      },
+      "CheckoutApprover": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "memberId": { "type": "string" },
+          "shopIds": { "type": "array", "items": { "type": "string" } },
+          "toolIds": { "type": "array", "items": { "type": "string" } },
+          "shopNames": { "type": "array", "items": { "type": "string" } },
+          "toolNames": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "memberId", "shopIds", "toolIds"]
+      },
+      "Reservation": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "memberId": { "type": "string" },
+          "memberName": { "type": "string" },
+          "shopId": { "type": "string" },
+          "shopName": { "type": "string" },
+          "reservationScope": { "type": "string", "enum": ["shop", "tools"] },
+          "toolIds": { "type": "array", "items": { "type": "string" } },
+          "toolNames": { "type": "array", "items": { "type": "string" } },
+          "startAt": { "type": "string", "format": "date-time" },
+          "endAt": { "type": "string", "format": "date-time" },
+          "status": { "type": "string", "enum": ["pending", "approved", "denied", "cancelled"] },
+          "approvalReasons": { "type": "array", "items": { "type": "string" } },
+          "approvalDetails": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "blackoutId": { "type": "string", "nullable": true },
+                "blackoutTitle": { "type": "string", "nullable": true }
+              },
+              "required": ["code", "message"]
+            }
+          },
+          "source": { "type": "string", "enum": ["portal", "slack"] },
+          "calendarEventId": { "type": "string", "nullable": true },
+          "calendarHtmlLink": { "type": "string", "format": "uri", "nullable": true },
+          "calendarSyncStatus": { "type": "string", "nullable": true },
+          "calendarSyncError": { "type": "string", "nullable": true }
+        },
+        "required": ["id", "title", "memberId", "shopId", "reservationScope", "toolIds", "startAt", "endAt", "status"]
+      },
+      "ReservationPreview": {
+        "type": "object",
+        "properties": {
+          "eligible": { "type": "boolean" },
+          "errors": { "type": "array", "items": { "type": "string" } },
+          "conflicts": { "type": "array", "items": { "type": "string" } },
+          "missingPrerequisites": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" }
+              }
+            }
+          },
+          "requiresApproval": { "type": "boolean" },
+          "approvalReasons": { "type": "array", "items": { "type": "string" } },
+          "approvalDetails": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "blackoutId": { "type": "string", "nullable": true },
+                "blackoutTitle": { "type": "string", "nullable": true }
+              },
+              "required": ["code", "message"]
+            }
+          },
+          "maximumDurationHours": { "type": "number", "multipleOf": 0.5, "minimum": 0 }
+        },
+        "required": ["eligible", "errors", "conflicts", "missingPrerequisites", "requiresApproval", "approvalReasons", "approvalDetails", "maximumDurationHours"]
+      },
+      "ReservationBlackout": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "shopId": { "type": "string" },
+          "shopName": { "type": "string" },
+          "recurrence": { "type": "string", "enum": ["daily", "weekly"] },
+          "weekday": { "type": "integer", "minimum": 0, "maximum": 6, "nullable": true },
+          "startTime": { "type": "string", "pattern": "^\\d{2}:(?:00|30)$" },
+          "endTime": { "type": "string", "pattern": "^\\d{2}:(?:00|30)$" },
+          "startDate": { "type": "string", "format": "date", "nullable": true },
+          "endDate": { "type": "string", "format": "date", "nullable": true }
+        },
+        "required": ["id", "title", "shopId", "recurrence", "startTime", "endTime"]
+      },
+      "ReservationAgenda": {
+        "type": "object",
+        "properties": {
+          "shopName": { "type": "string" },
+          "toolName": { "type": "string", "nullable": true },
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "windowStart": { "type": "string", "format": "date-time" },
+          "windowEnd": { "type": "string", "format": "date-time" },
+          "upNext": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "memberName": { "type": "string" },
+              "slackUsername": { "type": "string", "nullable": true },
+              "startAt": { "type": "string", "format": "date-time" }
+            },
+            "required": ["memberName", "startAt"]
+          },
+          "reservations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": { "type": "string" },
+                "memberName": { "type": "string" },
+                "slackUsername": { "type": "string", "nullable": true },
+                "startAt": { "type": "string", "format": "date-time" },
+                "endAt": { "type": "string", "format": "date-time" },
+                "status": { "type": "string", "enum": ["pending", "approved"] },
+                "reservationScope": { "type": "string", "enum": ["shop", "tools"] },
+                "toolNames": { "type": "array", "items": { "type": "string" } },
+                "inProgress": { "type": "boolean" }
+              },
+              "required": [
+                "title", "memberName", "startAt", "endAt", "status",
+                "reservationScope", "toolNames", "inProgress"
+              ]
+            }
+          }
+        },
+        "required": [
+          "shopName", "generatedAt", "windowStart", "windowEnd", "reservations"
+        ]
+      },
+      "SubscriptionCancellationImpact": {
+        "type": "object",
+        "properties": {
+          "reservationCount": { "type": "integer", "minimum": 0 },
+          "membershipExpiresAt": { "type": "string", "format": "date-time", "nullable": true },
+          "reservations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "calendarHtmlLink": { "type": "string", "format": "uri", "nullable": true },
+                "startAt": { "type": "string", "format": "date-time" },
+                "endAt": { "type": "string", "format": "date-time" }
+              },
+              "required": ["id", "title", "startAt", "endAt"]
+            }
+          }
+        },
+        "required": ["reservationCount", "reservations"]
       }
     }
   },
   "paths": {
+    "/reservations/agenda": {
+      "get": {
+        "summary": "Public 24-hour reservation agenda",
+        "tags": ["Reservations"],
+        "parameters": [
+          { "name": "shop", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "tool", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "token", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML or JSON agenda for the next 24 hours",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReservationAgenda" },
+                "example": {
+                  "shopName": "Woodshop",
+                  "toolName": "Planer",
+                  "generatedAt": "2026-07-28T14:00:00Z",
+                  "windowStart": "2026-07-28T14:00:00Z",
+                  "windowEnd": "2026-07-29T14:00:00Z",
+                  "upNext": {
+                    "memberName": "Ada Lovelace",
+                    "slackUsername": "ada",
+                    "startAt": "2026-07-28T15:00:00Z"
+                  },
+                  "reservations": [
+                    {
+                      "title": "Cabinet doors",
+                      "memberName": "Ada Lovelace",
+                      "slackUsername": "ada",
+                      "startAt": "2026-07-28T15:00:00Z",
+                      "endAt": "2026-07-28T17:00:00Z",
+                      "status": "approved",
+                      "reservationScope": "tools",
+                      "toolNames": ["Planer"],
+                      "inProgress": false
+                    }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": {
+            "description": "Shop parameter missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } },
+                  "required": ["error"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Configured token missing or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } },
+                  "required": ["error"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Shop or tool not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } },
+                  "required": ["error"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/analytics": {
       "get": {
         "summary": "Lists analytic counts",
@@ -1622,6 +2457,29 @@
           "404": {
             "description": "member not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createAccessCardDetails",
+                "type": "object",
+                "properties": {
+                  "memberId": {
+                    "type": "string"
+                  },
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "memberId",
+                  "uid"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -1655,6 +2513,25 @@
           "404": {
             "description": "Invoice not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateAccessCardDetails",
+                "type": "object",
+                "properties": {
+                  "cardLocation": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cardLocation"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -1777,6 +2654,17 @@
           "401": {
             "description": "User unauthenticated"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createEarnedMembershipDetails",
+                "$ref": "#/components/schemas/NewEarnedMembership"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -1841,6 +2729,17 @@
           "404": {
             "description": "EarnedMembership not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateEarnedMembershipDetails",
+                "$ref": "#/components/schemas/EarnedMembership"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -1862,6 +2761,17 @@
           "401": {
             "description": "User unauthenticated"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createInvoiceOptionDetails",
+                "$ref": "#/components/schemas/NewInvoiceOption"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -1895,6 +2805,17 @@
           "404": {
             "description": "Invoice option not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateInvoiceOptionDetails",
+                "$ref": "#/components/schemas/InvoiceOption"
+              }
+            }
+          },
+          "required": true
         }
       },
       "delete": {
@@ -2081,6 +3002,36 @@
           "404": {
             "description": "invoice option not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createInvoiceDetails",
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "memberId": {
+                    "type": "string"
+                  },
+                  "resourceId": {
+                    "type": "string"
+                  },
+                  "discountId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "memberId",
+                  "resourceId"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2114,6 +3065,22 @@
           "404": {
             "description": "Invoice not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateInvoiceDetails",
+                "type": "object",
+                "properties": {
+                  "settled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       },
       "delete": {
@@ -2166,6 +3133,17 @@
           "401": {
             "description": "User unauthenticated"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createMemberDetails",
+                "$ref": "#/components/schemas/NewMember"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2188,7 +3166,10 @@
         ],
         "responses": {
           "200": {
-            "description": "member updated"
+            "description": "revocation skips email deliverability validation without an email change"
+          },
+          "422": {
+            "description": "invalid email rejected"
           },
           "403": {
             "description": "User unauthorized"
@@ -2199,6 +3180,17 @@
           "404": {
             "description": "Member not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateMemberDetails",
+                "$ref": "#/components/schemas/AdminUpdateMemberDetails"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2280,6 +3272,17 @@
           "401": {
             "description": "User unauthenticated"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createRentalDetails",
+                "$ref": "#/components/schemas/NewRental"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2313,6 +3316,17 @@
           "404": {
             "description": "Rental not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateRentalDetails",
+                "$ref": "#/components/schemas/Rental"
+              }
+            }
+          },
+          "required": true
         }
       },
       "delete": {
@@ -2456,6 +3470,28 @@
           "422": {
             "description": "parameter missing"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createPaymentMethodDetails",
+                "type": "object",
+                "properties": {
+                  "paymentMethodNonce": {
+                    "type": "string"
+                  },
+                  "makeDefault": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "paymentMethodNonce"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2593,7 +3629,7 @@
             "description": "User not authenticated"
           },
           "403": {
-            "description": "User not authorized"
+            "description": "Billing permission disabled"
           },
           "404": {
             "description": "Transaction not found"
@@ -2629,7 +3665,7 @@
             "description": "User not authorized"
           },
           "404": {
-            "description": "Subscription not for user"
+            "description": "secondary household member cannot access household subscription"
           }
         }
       },
@@ -2662,6 +3698,25 @@
           "404": {
             "description": "Subscription not for user"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateSubscriptionDetails",
+                "type": "object",
+                "properties": {
+                  "paymentMethodToken": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "paymentMethodToken"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       },
       "delete": {
@@ -2691,7 +3746,7 @@
             "description": "User not authorized"
           },
           "404": {
-            "description": "Subscription not for user"
+            "description": "secondary household member cannot cancel household subscription"
           }
         }
       }
@@ -2794,6 +3849,34 @@
           "404": {
             "description": "invoice option not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createTransactionDetails",
+                "type": "object",
+                "properties": {
+                  "invoiceId": {
+                    "type": "string"
+                  },
+                  "invoiceOptionId": {
+                    "type": "string"
+                  },
+                  "discountId": {
+                    "type": "string"
+                  },
+                  "paymentMethodId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "paymentMethodId"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2842,6 +3925,24 @@
           "204": {
             "description": "Message sent"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "messageDetails",
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "message"
+                ]
+              }
+            }
+          }
         }
       }
     },
@@ -2876,17 +3977,28 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Document found"
+            "description": "Saved rental agreement returned for the rental owner"
           },
           "302": {
             "description": "User not authenticated"
           },
           "404": {
             "description": "Document not found"
+          },
+          "403": {
+            "description": "Forbidden — saved rental agreement belongs to another member"
           }
         }
       }
@@ -2967,6 +4079,17 @@
           "403": {
             "description": "unauthorized"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createEarnedMembershipReportDetails",
+                "$ref": "#/components/schemas/NewReport"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -2999,6 +4122,30 @@
           },
           "401": {
             "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/invoice_options/signup": {
+      "get": {
+        "summary": "Gets invoice options eligible for signup",
+        "tags": [
+          "InvoiceOptions"
+        ],
+        "operationId": "listSignupInvoiceOptions",
+        "responses": {
+          "200": {
+            "description": "signup invoice options found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InvoiceOption"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -3224,6 +4371,28 @@
           "404": {
             "description": "invoice option not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "createInvoiceDetails",
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "discountId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3327,11 +4496,83 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Member registered"
+            "description": "Member registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
           },
           "422": {
-            "description": "Email already exists"
+            "description": "Email already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "registerMemberDetails",
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "firstname": {
+                    "type": "string"
+                  },
+                  "lastname": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "cf-turnstile-response": {
+                    "type": "string",
+                    "description": "Cloudflare Turnstile token; enforced when TURNSTILE_SECRET is configured"
+                  },
+                  "address": {
+                    "type": "object",
+                    "properties": {
+                      "street": {
+                        "type": "string"
+                      },
+                      "unit": {
+                        "type": "string"
+                      },
+                      "city": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string"
+                      },
+                      "postalCode": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "email",
+                  "password",
+                  "firstname",
+                  "lastname"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3393,6 +4634,60 @@
           "404": {
             "description": "member not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateMemberDetails",
+                "type": "object",
+                "properties": {
+                  "firstname": {
+                    "type": "string"
+                  },
+                  "lastname": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "memberContractOnFile": {
+                    "type": "boolean"
+                  },
+                  "silenceEmails": {
+                    "type": "boolean"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "object",
+                    "properties": {
+                      "street": {
+                        "type": "string"
+                      },
+                      "unit": {
+                        "type": "string"
+                      },
+                      "city": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string"
+                      },
+                      "postalCode": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "signature": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3406,11 +4701,49 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "User signed in"
+            "description": "User signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
           },
           "401": {
-            "description": "User unauthenticated"
+            "description": "User unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "signInDetails",
+                "type": "object",
+                "properties": {
+                  "member": {
+                    "type": "object",
+                    "properties": {
+                      "email": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3441,8 +4774,36 @@
             "description": "Instructions sent"
           },
           "422": {
-            "description": "Email not found"
+            "description": "Email not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/passwordError"
+                }
+              }
+            }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "passwordResetDetails",
+                "type": "object",
+                "properties": {
+                  "member": {
+                    "type": "object",
+                    "properties": {
+                      "email": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       },
       "put": {
@@ -3457,8 +4818,39 @@
             "description": "Password reset"
           },
           "422": {
-            "description": "Invalid token"
+            "description": "Invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/passwordResetError"
+                }
+              }
+            }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "passwordResetDetails",
+                "type": "object",
+                "properties": {
+                  "member": {
+                    "type": "object",
+                    "properties": {
+                      "resetPasswordToken": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3475,8 +4867,34 @@
             "description": "Registration email sent"
           },
           "409": {
-            "description": "Email already exists"
+            "description": "Email already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "registrationEmailDetails",
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -3578,6 +4996,25 @@
           "404": {
             "description": "Rental not found"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "updateRentalDetails",
+                "type": "object",
+                "properties": {
+                  "signature": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "signature"
+                ]
+              }
+            }
+          },
+          "required": true
         }
       }
     }

@@ -5,6 +5,8 @@ class VolunteerEventSerializer < ActiveModel::Serializer
              :description,
              :credit_value,
              :event_date,
+             :shop_id,
+             :prerequisite_tool_ids,
              :status,
              :created_by_id,
              :closed_by_id,
@@ -13,6 +15,18 @@ class VolunteerEventSerializer < ActiveModel::Serializer
              :attendee_removals,
              :created_at,
              :updated_at
+
+  attribute :shop_name do
+    object.shop&.name
+  rescue
+    nil
+  end
+
+  attribute :prerequisite_tool_names do
+    object.prerequisite_tools.map(&:name)
+  rescue
+    []
+  end
 
   attribute :attendee_count do
     object.attendee_count

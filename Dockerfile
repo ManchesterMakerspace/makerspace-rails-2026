@@ -13,7 +13,7 @@ RUN git clone --branch ${REACT_BRANCH} ${REACT_REPO_URL} .
 RUN yarn install --ignore-engines && PORT=3000 yarn build
 
 # Build backend
-FROM ruby:3.2-bullseye
+FROM ruby:3.4-bullseye
 
 WORKDIR /app
 
@@ -33,11 +33,19 @@ COPY Gemfile Gemfile.lock ./
 RUN bundle install
 
 ARG ENVIRONMENT="production"
+ARG APP_DOMAIN="members.manchestermakerspace.org"
 ENV RAILS_ENV=$ENVIRONMENT
+ENV RACK_ENV=$ENVIRONMENT
+ENV RAILS_SERVE_STATIC_FILES=true
 
 COPY . .
 
 RUN mkdir -p /app/app/assets/builds
-COPY --from=ui /react/dist/makerspace-react.js /react/dist/makerspace-react.css /app/app/assets/builds/
+COPY --from=ui /react/dist/ /app/app/assets/builds/
+RUN rm -f /app/app/assets/builds/manifest.js
+COPY --from=ui /react/dist/manifest.js /app/app/assets/config/manifest.js
 
-CMD ["bundle", "exec", "rails", "server", "-b", "0.0.0.0"]
+RUN SECRET_KEY_BASE_DUMMY=1 APP_DOMAIN=${APP_DOMAIN} bundle exec rails assets:precompile
+RUN cp -r /app/app/assets/builds/. /app/public/assets/ && rm -f /app/public/assets/manifest.js
+
+CMD ["sh", "-c", "bundle exec rake reservations:backfill_resource_manager_shops && exec bundle exec rails server -b 0.0.0.0"]

@@ -6,7 +6,7 @@ module Service
       results = {}
       results[:gdrive_resources]      = revoke_gdrive_folder(member.email, ENV['RESOURCES_FOLDER'],      'Resources (reader)')
       results[:gdrive_transfer_share] = revoke_gdrive_folder(member.email, ENV['GOOGLE_TRANSFER_SHARE'], 'Transfer Share (writer)')
-      results[:slack]                 = revoke_slack_access(member.email)
+      results[:slack]                 = revoke_slack_access(member)
       results
     end
 
@@ -34,19 +34,55 @@ module Service
 
     # ── Slack ─────────────────────────────────────────────────────────────────
 
-    def self.revoke_slack_access(email)
-      return { status: :skipped, reason: 'SLACK_ADMIN_TOKEN not configured' } unless ENV['SLACK_ADMIN_TOKEN'].present?
+    def self.revoke_slack_access(member)
+      slack_id = member.slack_user&.slack_id
+
+      admin_client = ::Service::SlackConnector.admin_client(
+        "users.admin.setInactive"
+      )
+      unless admin_client
+        reason = 'SLACK_ADMIN_TOKEN not configured'
+        alert_manual_slack_revocation_required(member, slack_id, reason)
+        return { status: :skipped, reason: reason }
+      end
 
       begin
-        client = Slack::Web::Client.new(token: ENV['SLACK_ADMIN_TOKEN'])
-        user   = client.users_lookupByEmail(email: email)
-        client.users_admin_setInactive(user: user.user.id)
-        { status: :ok, message: "Deactivated Slack user for #{email}" }
+        lookup_client = ::Service::SlackConnector.client
+        user = lookup_client.users_lookupByEmail(email: member.email)
+        slack_id = user.user.id
+        admin_client.users_admin_setInactive(user: slack_id)
+        { status: :ok, message: "Deactivated Slack user for #{member.email}" }
       rescue Slack::Web::Api::Errors::UsersNotFound
-        { status: :not_found, message: "No Slack user found for #{email}" }
+        revoke_stored_slack_id(admin_client, member, slack_id)
       rescue => e
+        alert_manual_slack_revocation_required(member, slack_id, e.message)
         { status: :error, message: e.message }
       end
+    end
+
+
+    def self.revoke_stored_slack_id(client, member, slack_id)
+      unless slack_id.present?
+        return { status: :not_found, message: "No Slack user found for #{member.email}" }
+      end
+
+      client.users_admin_setInactive(user: slack_id)
+      { status: :ok, message: "Deactivated stored Slack user #{slack_id} for #{member.email}" }
+    rescue => e
+      alert_manual_slack_revocation_required(member, slack_id, e.message)
+      { status: :error, message: e.message }
+    end
+
+    def self.alert_manual_slack_revocation_required(member, slack_id, reason)
+      message = "<!channel> :rotating_light: Automatic Slack revocation failed for revoked member #{member.fullname} " \
+                "(Slack ID: #{slack_id.presence || 'unknown'}). This revoked member must be manually disabled by an admin. " \
+                "Reason: #{reason}"
+
+      response = ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.admin_channel)
+      ts = response.respond_to?(:ts) ? response.ts : response.try(:[], 'ts') || response.try(:[], :ts)
+      ::Service::SlackConnector.pin_slack_message(::Service::SlackConnector.admin_channel, ts)
+    rescue => e
+      Rails.logger.error("Failed to send/pin manual Slack revocation alert for #{member.fullname}: #{e.message}")
     end
   end
 end

@@ -63,6 +63,7 @@ class VolunteerController < AuthenticationController
     tasks = VolunteerTask.claimable
                          .where(parent_task_id: nil)
                          .order_by(task_number: :asc)
+    tasks = tasks.to_a.select { |task| task.eligible_for?(current_member) } unless privileged_volunteer_member?
     render json: tasks, each_serializer: VolunteerTaskSerializer, adapter: :attributes
   end
 
@@ -98,17 +99,25 @@ class VolunteerController < AuthenticationController
   # GET /api/volunteer/events
   def events
     events = VolunteerEvent.active_events.order_by(created_at: :desc)
+    events = events.to_a.select { |event| event.eligible_for?(current_member) } unless privileged_volunteer_member?
     render json: events, each_serializer: VolunteerEventSerializer, adapter: :attributes
   end
 
   # POST /api/volunteer/tasks/:id/claim
   def claim_task
-    unless current_member.status == 'activeMember'
+    unless current_member.status == "activeMember"
       render json: { error: 'Only active members may claim tasks' }, status: :forbidden and return
     end
 
     task = VolunteerTask.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerTask, { id: params[:id] }) if task.nil?
+
+    unless task.eligible_for?(current_member)
+      names = task.missing_prerequisite_tool_names(current_member)
+      render json: {
+        error: "You need active checkouts for: #{names.join(', ')}"
+      }, status: :forbidden and return
+    end
 
     result = task.claim!(current_member)
 
@@ -117,11 +126,11 @@ class VolunteerController < AuthenticationController
     render_target = result.is_a?(VolunteerTask) ? result : task
     render json: render_target, serializer: VolunteerTaskSerializer, adapter: :attributes
   rescue Error::AlreadyClaimed
-    render json: { error: 'You have already claimed this task' }, status: :unprocessable_entity
+    render json: { error: 'You have already claimed this task' }, status: :unprocessable_content
   rescue Error::CoolingDown
-    render json: { error: 'This task is not yet available to claim again' }, status: :unprocessable_entity
+    render json: { error: 'This task is not yet available to claim again' }, status: :unprocessable_content
   rescue Error::Forbidden
-    render json: { error: 'Task is no longer available' }, status: :unprocessable_entity
+    render json: { error: 'Task is no longer available' }, status: :unprocessable_content
   end
 
   # POST /api/volunteer/tasks/:id/complete
@@ -138,7 +147,7 @@ class VolunteerController < AuthenticationController
 
     render json: task, serializer: VolunteerTaskSerializer, adapter: :attributes
   rescue Error::Forbidden
-    render json: { error: 'You cannot mark this task as complete' }, status: :unprocessable_entity
+    render json: { error: 'You cannot mark this task as complete' }, status: :unprocessable_content
   end
 
   # POST /api/volunteer/events/:id/checkin
@@ -146,26 +155,33 @@ class VolunteerController < AuthenticationController
     event = VolunteerEvent.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerEvent, { id: params[:id] }) if event.nil?
 
-    unless current_member.status == 'activeMember'
+    unless current_member.active_membership_status?
       render json: { error: 'Only active members may check in to events' }, status: :forbidden and return
     end
 
     if event.status != 'open'
-      render json: { error: 'Event is not open for check-in' }, status: :unprocessable_entity and return
+      render json: { error: 'Event is not open for check-in' }, status: :unprocessable_content and return
     end
 
     if event.event_date.present? && event.event_date < Date.today
-      render json: { error: 'Check-in is no longer available after the event date.' }, status: :unprocessable_entity and return
+      render json: { error: 'Check-in is no longer available after the event date.' }, status: :unprocessable_content and return
     end
 
     if event.attendee_ids.include?(current_member.id)
-      render json: { error: 'You are already checked in to this event' }, status: :unprocessable_entity and return
+      render json: { error: 'You are already checked in to this event' }, status: :unprocessable_content and return
+    end
+
+    unless event.eligible_for?(current_member)
+      names = event.missing_prerequisite_tool_names(current_member)
+      render json: {
+        error: "You need active checkouts for: #{names.join(', ')}"
+      }, status: :forbidden and return
     end
 
     event.checkin!(current_member)
     render json: event, serializer: VolunteerEventSerializer, adapter: :attributes
   rescue Error::Forbidden
-    render json: { error: 'Unable to check in to this event' }, status: :unprocessable_entity
+    render json: { error: 'Unable to check in to this event' }, status: :unprocessable_content
   end
 
   # DELETE /api/volunteer/events/:id/checkin
@@ -174,16 +190,22 @@ class VolunteerController < AuthenticationController
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerEvent, { id: params[:id] }) if event.nil?
 
     unless event.attendee_ids.include?(current_member.id)
-      render json: { error: 'You are not checked in to this event' }, status: :unprocessable_entity and return
+      render json: { error: 'You are not checked in to this event' }, status: :unprocessable_content and return
     end
 
     if event.event_date.present? && event.event_date < Date.today
-      render json: { error: 'Check-in removal is no longer available after the event date.' }, status: :unprocessable_entity and return
+      render json: { error: 'Check-in removal is no longer available after the event date.' }, status: :unprocessable_content and return
     end
 
     event.remove_attendee!(current_member, current_member)
     render json: event, serializer: VolunteerEventSerializer, adapter: :attributes
   rescue Error::Forbidden
-    render json: { error: 'Unable to remove check-in. The event may already be closed.' }, status: :unprocessable_entity
+    render json: { error: 'Unable to remove check-in. The event may already be closed.' }, status: :unprocessable_content
+  end
+
+  private
+
+  def privileged_volunteer_member?
+    %w[admin board_member resource_manager].include?(current_member.role)
   end
 end

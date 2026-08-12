@@ -1,9 +1,9 @@
-FROM ruby:2.6.9-bullseye
+FROM ruby:3.4-bullseye
 
 WORKDIR /app
 
-RUN curl -fsSL https://deb.nodesource.com/setup_16.x | bash - &&\
-  apt-get install -y nodejs
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - &&\
+    apt-get install -y nodejs
 
 EXPOSE 3000
 

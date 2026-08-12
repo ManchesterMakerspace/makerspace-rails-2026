@@ -1,8 +1,13 @@
 class Billing::PaymentMethodsController < BillingController
   # Allow unauthenticated access to new — needed for self-registration payment step
-  # The client token is generated without a customer_id for unauthenticated requests
+  # The client token is generated without a customer_id for unauthenticated requests.
+  # Also skip verify_billing_permission (added to BillingController via BillingGate):
+  # current_member is nil for this anonymous request, and BillingGate#verify_billing_permission
+  # calls current_member.is_allowed? with no nil-guard, which would raise NoMethodError
+  # instead of returning the anonymous client token — breaking self-registration entirely.
   skip_before_action :authenticate_member!, only: [:new]
   skip_before_action :authenticated?, only: [:new]
+  skip_before_action :verify_billing_permission, only: [:new]
 
   before_action :payment_method_params, only: [:create]
 

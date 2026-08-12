@@ -63,7 +63,8 @@ class Admin::InvoiceOptionsController < AdminOrRmController
     # For create: check incoming resource_class param
     # For update/destroy: check the existing record's resource_class
     target_class = @invoice_option ? @invoice_option.resource_class : params[:resource_class]
-    unless target_class == "fee"
+    requested_class = params[:resource_class]
+    unless target_class == "fee" && (requested_class.blank? || requested_class == "fee")
       render json: { error: "Resource managers may only manage shop fee catalog items" }, status: 403
     end
   end

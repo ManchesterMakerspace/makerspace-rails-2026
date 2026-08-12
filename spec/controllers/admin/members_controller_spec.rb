@@ -75,6 +75,57 @@ RSpec.describe Admin::MembersController, type: :controller do
       end
     end
 
+    describe "POST #invite_slack" do
+      let!(:member) { create(:member) }
+
+      it "returns no content when the invite succeeds" do
+        allow(::Service::SlackConnector).to receive(:invite_to_slack)
+
+        post :invite_slack, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(204)
+        expect(::Service::SlackConnector).to have_received(:invite_to_slack).with(
+          member.email,
+          member.lastname,
+          member.firstname
+        )
+      end
+
+      it "returns the Slack failure message to the admin" do
+        allow(::Service::SlackConnector).to receive(:invite_to_slack)
+          .and_raise(StandardError.new("not_authed"))
+        allow(Honeybadger).to receive(:notify)
+
+        post :invite_slack, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+        expect(JSON.parse(response.body)).to eq("message" => "not_authed")
+      end
+
+      it "rejects invitations for revoked members before calling Slack" do
+        member.set(status: "revoked")
+        expect(::Service::SlackConnector).not_to receive(:invite_to_slack)
+
+        post :invite_slack, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+        expect(JSON.parse(response.body)["message"]).to match(/revoked or inactive/i)
+      end
+    end
+
+    describe "POST #invite_google_drive" do
+      let!(:member) { create(:member, expirationTime: 1.month.from_now.to_i * 1000) }
+
+      it "strictly rejects Drive provisioning until the member has a usable fob" do
+        expect(Service::GoogleDrive).not_to receive(:load_gdrive)
+
+        post :invite_google_drive, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+        expect(JSON.parse(response.body)["message"]).to match(/usable fob/i)
+      end
+    end
+
     describe "PUT #update" do
       context "with valid params" do
         let(:new_attributes) {
@@ -112,6 +163,80 @@ RSpec.describe Admin::MembersController, type: :controller do
           expect(response).to have_http_status(200)
           expect(response.media_type).to eq "application/json"
           expect(parsed_response['id']).to eq(member.id.as_json)
+        end
+
+        it "returns the manual Slack deactivation warning flag after revocation without an admin token" do
+          allow(ENV).to receive(:[]).and_call_original
+          allow(ENV).to receive(:[]).with("SLACK_ADMIN_TOKEN").and_return(nil)
+          allow(Service::MemberAccess).to receive(:revoke)
+          member = Member.create valid_attributes.merge(status: "activeMember")
+
+          put :update, params: { id: member.to_param, status: "revoked" }, format: :json
+
+          parsed_response = JSON.parse(response.body)
+          expect(response).to have_http_status(200)
+          expect(parsed_response["status"]).to eq("revoked")
+          expect(parsed_response["slackManualDeactivationRequired"]).to be true
+        end
+
+        it "queues canvas owner access when assigning a Resource Manager to a shop" do
+          shop = create(:shop)
+          member = Member.create valid_attributes.merge(role: "member")
+
+          expect {
+            put :update, params: {
+              id: member.to_param,
+              role: "resource_manager",
+              resourceManagerShopIds: [shop.id.to_s]
+            }, format: :json
+          }.to have_enqueued_job(ReservationSlackCanvasMemberAccessJob)
+            .with(member.id.to_s, [shop.id.to_s])
+        end
+
+        it "queues canvas read access when removing a Resource Manager from a shop" do
+          shop = create(:shop)
+          member = Member.create valid_attributes.merge(
+            role: "resource_manager",
+            resource_manager_shop_ids: [shop.id.to_s]
+          )
+
+          expect {
+            put :update, params: {
+              id: member.to_param,
+              role: "member"
+            }, format: :json
+          }.to have_enqueued_job(ReservationSlackCanvasMemberAccessJob)
+            .with(member.id.to_s, [shop.id.to_s])
+        end
+
+        it "allows admins to set and clear marketing email silence for non-revoked members" do
+          member = Member.create valid_attributes.merge(silence_emails: false)
+
+          put :update, params: { id: member.to_param, silenceEmails: true }, format: :json
+          expect(response).to have_http_status(200)
+          expect(member.reload.silence_emails).to be true
+
+          put :update, params: { id: member.to_param, silenceEmails: false }, format: :json
+          expect(response).to have_http_status(200)
+          expect(member.reload.silence_emails).to be false
+        end
+
+        it "does not allow admins to change marketing email silence for revoked members" do
+          member = Member.create valid_attributes.merge(status: 'revoked', silence_emails: true)
+
+          put :update, params: { id: member.to_param, silenceEmails: false }, format: :json
+
+          expect(response).to have_http_status(403)
+          expect(member.reload.silence_emails).to be true
+        end
+
+        it "skips silence email authorization when admins leave revoked members unchanged" do
+          member = Member.create valid_attributes.merge(status: 'revoked', silence_emails: true)
+
+          put :update, params: { id: member.to_param, silenceEmails: true }, format: :json
+
+          expect(response).to have_http_status(200)
+          expect(member.reload.silence_emails).to be true
         end
 
         it "Sends a slack notification" do
@@ -154,6 +279,35 @@ RSpec.describe Admin::MembersController, type: :controller do
               slack_profile_status => { value: "suspended" }
             }
           )
+        end
+
+        it "invalidates active sessions when suspending a member" do
+          member = Member.create valid_attributes.merge(status: "activeMember", session_token: "current-token")
+          put :update, params: { id: member.to_param, status: "suspended" }, format: :json
+          expect(response).to have_http_status(200)
+          expect(member.reload.session_token).not_to eq("current-token")
+        end
+
+        it "logs the status transition in field_changes, not the session_token rotation" do
+          member = Member.create valid_attributes.merge(status: "activeMember", session_token: "current-token")
+
+          put :update, params: { id: member.to_param, status: "suspended" }, format: :json
+          expect(response).to have_http_status(200)
+
+          entry = AuditLog.where(resource_id: member.id, event_type: "member_updated").last
+          expect(entry.field_changes).to have_key("status")
+          expect(entry.field_changes["status"]).to eq(["activeMember", "suspended"])
+          expect(entry.field_changes).not_to have_key("session_token")
+        end
+
+        it "does not persist session_token in the audit log entry even if a caller fails to exclude it" do
+          member = Member.create valid_attributes.merge(status: "activeMember", session_token: "current-token")
+          put :update, params: { id: member.to_param, status: "suspended" }, format: :json
+
+          entry = AuditLog.where(resource_id: member.id, event_type: "member_updated").last
+          expect(entry).to be_present
+          expect(entry.field_changes).not_to have_key("session_token")
+          expect(entry.slack_message).not_to include("current-token")
         end
 
         it "updates the Slack profile fullname when names change" do
@@ -212,6 +366,80 @@ RSpec.describe Admin::MembersController, type: :controller do
           parsed_response = JSON.parse(response.body)
           expect(response).to have_http_status(404)
         end
+      end
+    end
+  end
+
+  describe "Authenticated board member" do
+    before(:each) do
+      @request.env["devise.mapping"] = Devise.mappings[:member]
+      sign_in create(:member, :board_member)
+    end
+
+    describe "POST #create" do
+      it "allows board members to create members when silence_emails is explicitly false" do
+        expect do
+          post :create, params: valid_attributes.merge(silenceEmails: false), format: :json
+        end.to change(Member, :count).by(1)
+
+        expect(response).to have_http_status(200)
+        expect(Member.last.silence_emails).to be false
+      end
+    end
+
+    describe "PUT #update" do
+      it "allows board members to set another member's marketing email silence flag" do
+        member = Member.create valid_attributes.merge(silence_emails: false)
+
+        put :update, params: { id: member.to_param, silenceEmails: true }, format: :json
+
+        expect(response).to have_http_status(200)
+        expect(member.reload.silence_emails).to be true
+      end
+
+      it "does not allow board members to clear another member's marketing email silence flag" do
+        member = Member.create valid_attributes.merge(silence_emails: true)
+
+        put :update, params: { id: member.to_param, silenceEmails: false }, format: :json
+
+        expect(response).to have_http_status(403)
+        expect(member.reload.silence_emails).to be true
+      end
+
+      it "skips silence email authorization when board members leave another member's flag unchanged" do
+        member = Member.create valid_attributes.merge(silence_emails: false)
+
+        put :update, params: { id: member.to_param, silenceEmails: false }, format: :json
+
+        expect(response).to have_http_status(200)
+        expect(member.reload.silence_emails).to be false
+      end
+
+      it "allows board members to set and clear their own marketing email silence flag" do
+        board_member = subject.current_member
+        board_member.set(silence_emails: false)
+
+        put :update, params: { id: board_member.to_param, silenceEmails: true }, format: :json
+        expect(response).to have_http_status(200)
+        expect(board_member.reload.silence_emails).to be true
+
+        put :update, params: { id: board_member.to_param, silenceEmails: false }, format: :json
+        expect(response).to have_http_status(200)
+        expect(board_member.reload.silence_emails).to be false
+      end
+    end
+
+    describe "POST #invite_slack" do
+      it "returns the Slack failure message to the board member" do
+        member = create(:member)
+        allow(::Service::SlackConnector).to receive(:invite_to_slack)
+          .and_raise(StandardError.new("account_inactive"))
+        allow(Honeybadger).to receive(:notify)
+
+        post :invite_slack, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+        expect(JSON.parse(response.body)).to eq("message" => "account_inactive")
       end
     end
   end

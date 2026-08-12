@@ -47,6 +47,8 @@ module Service
     #   before_snapshot: (optional) Hash — full document before the change.
     #   after_snapshot:  (optional) Hash — full document after the change.
     #
+    #   message_details: (optional) Human-readable context appended to the
+    #                    generated Slack message.
     #   slack_channel:   (optional) Channel to post to. Omit to skip Slack entirely.
     #
     # Returns the persisted AuditLog document, or nil if the write failed
@@ -62,6 +64,7 @@ module Service
       field_changes: nil,
       before_snapshot: nil,
       after_snapshot: nil,
+      message_details: nil,
       slack_channel: nil
     )
       validate_required!(log_type: log_type, event_type: event_type,
@@ -76,9 +79,10 @@ module Service
       subject_id   = subject&.id
       subject_name = subject&.fullname
 
-      # Scrub snapshots before storage
+      # Scrub snapshots and field_changes before storage
       clean_before = scrub(before_snapshot)
       clean_after  = scrub(after_snapshot)
+      clean_field_changes = scrub_field_changes(field_changes)
 
       # Always generate the Slack message — stored even when not posted
       message = generate_message(
@@ -86,7 +90,8 @@ module Service
         actor_name:    actor_name,
         subject_name:  subject_name,
         resource_type: resource_type,
-        field_changes: field_changes
+        field_changes: clean_field_changes,
+        message_details: message_details
       )
 
       # Attempt Slack post if a channel was provided
@@ -102,7 +107,7 @@ module Service
         subject_name:    subject_name,
         resource_type:   resource_type,
         resource_id:     to_object_id(resource_id),
-        field_changes:   field_changes,
+        field_changes:   clean_field_changes,
         before_snapshot: clean_before,
         after_snapshot:  clean_after,
         slack_channel:   slack_channel,
@@ -153,9 +158,29 @@ module Service
       snapshot.reject { |k, _| SCRUBBED_FIELDS.include?(k.to_s) }
     end
 
+    # Removes sensitive fields from a field_changes hash. Shape differs from
+    # snapshot()'s input — { "field" => [before, after] } rather than a flat
+    # { "field" => value } — so this needs its own filter rather than reusing
+    # scrub(). This is a defense-in-depth safeguard: callers should already
+    # avoid feeding sensitive-field diffs into field_changes (e.g. by
+    # capturing previous_changes before any save that rotates a credential
+    # like session_token), but this ensures a leak can't occur here even if
+    # a caller gets that ordering wrong in the future.
+    def self.scrub_field_changes(field_changes)
+      return nil if field_changes.nil?
+      field_changes.reject { |k, _| SCRUBBED_FIELDS.include?(k.to_s) }
+    end
+
     # Generates a human-readable Slack message from structured data.
     # Always produced; only posted when slack_channel is present.
-    def self.generate_message(event_type:, actor_name:, subject_name:, resource_type:, field_changes:)
+    def self.generate_message(
+      event_type:,
+      actor_name:,
+      subject_name:,
+      resource_type:,
+      field_changes:,
+      message_details:
+    )
       parts = []
 
       # Lead with event label
@@ -177,6 +202,7 @@ module Service
         parts << "— #{diff}" if diff.present?
       end
 
+      parts << "— #{message_details}" if message_details.present?
       parts.join(' ')
     end
 

@@ -1,10 +1,13 @@
 class Group
   include Mongoid::Document
   include InvoiceableResource
+  include Service::SlackConnector
 
   field :groupRep            # primary member's fullname (display only)
   field :groupName, type: String  # primary member's MongoDB ID (unique key)
   field :expiry, type: Integer    # expiration in ms, propagated to all household members
+  field :subscription_id, type: String
+  field :subscription, type: Boolean, default: false
 
   belongs_to :member, primary_key: 'fullname', foreign_key: "groupRep"
   has_many :active_members, class_name: "Member", inverse_of: :group, primary_key: 'groupName', foreign_key: "groupName"
@@ -18,8 +21,13 @@ class Group
   validates :groupRep, presence: true
   validate :primary_on_household_plan, on: :create
 
-  after_update :update_active_members
+  after_update :update_active_members, :handle_reservation_subscription_change
   after_create :update_active_members
+
+  index({ groupName: 1 }, {
+    unique: true,
+    partial_filter_expression: { groupName: { '$type' => 'string' } }
+  })
 
   def group_display_name
     "#{groupRep}'s Household"
@@ -56,11 +64,81 @@ class Group
   end
 
   def update_expiration(new_expiration)
-    self.update_attributes!(expiry: new_expiration)
-    self.member.update_attributes!(expirationTime: new_expiration) if self.member
-    self.active_members.where(:id.ne => self.groupName).each do |m|
-      m.update_attributes!(expirationTime: new_expiration)
+    household_key = groupName.to_s
+    member_ids = (Member.where(groupName: household_key).pluck(:id) + [member&.id]).compact.uniq
+
+    Group.collection.find(_id: id).update_one("$set" => { expiry: new_expiration })
+    self.expiry = new_expiration
+    Member.collection.find(_id: { "$in" => member_ids }).update_many(
+      "$set" => { expirationTime: new_expiration, groupName: household_key }
+    )
+    Card.where(:member_id.in => member_ids).update_all(expiry: new_expiration)
+
+    true
+  end
+
+  # Emit to Member & Management channels on renewal. Matches the pattern
+  # used by Member/Rental — queued via enque_message with distinct
+  # uniquifiers per recipient, not the synchronous send_slack_message this
+  # codebase has been moving away from (see #91).
+  def send_renewal_slack_message(current_user = nil)
+    slack_user = SlackUser.find_by(member_id: member.id) if member
+    unless slack_user.nil?
+      enque_message(
+        get_renewal_slack_message,
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("send_renewal_slack_message.member.#{id}")
+      )
     end
+    enque_message(
+      get_renewal_slack_message(current_user),
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("send_renewal_slack_message.management.#{id}")
+    )
+  end
+
+  def send_renewal_reversal_slack_message
+    slack_user = SlackUser.find_by(member_id: member.id) if member
+    unless slack_user.nil?
+      enque_message(
+        get_renewal_reversal_slack_message,
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("send_renewal_reversal_slack_message.member.#{id}")
+      )
+    end
+    enque_message(
+      get_renewal_reversal_slack_message,
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("send_renewal_reversal_slack_message.management.#{id}")
+    )
+  end
+
+  def remove_subscription
+    update_attributes!({ subscription_id: nil, subscription: false })
+  end
+
+  def handle_reservation_subscription_change
+    subscription_change = previous_changes["subscription"]
+    subscription_id_change = previous_changes["subscription_id"]
+    ended = (subscription_change&.first == true && subscription != true) ||
+      (subscription_id_change&.first.present? && subscription_id.blank?)
+    return unless ended
+
+    ReservationLifecycleService.cancel_beyond_membership!(
+      self,
+      reason: "Household recurring membership was cancelled"
+    )
+  rescue => error
+    Rails.logger.error(
+      "[ReservationCleanup] group_id=#{id} type=subscription_ended " \
+      "error=#{error.class}: #{error.message}"
+    )
+    Honeybadger.notify(error) if defined?(Honeybadger)
+    ReservationMembershipCleanupJob.perform_later(
+      id.to_s,
+      "group_subscription_ended",
+      "Group"
+    )
   end
 
   private

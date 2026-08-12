@@ -6,6 +6,9 @@ namespace :db do
       exit 1
     end
 
+    require Rails.root.join('lib/service/database_safety')
+    ::Service::DatabaseSafety.ensure_safe_mlab_uri!(operation: 'db:db_reset')
+
     require 'factory_bot'
     require "database_cleaner/mongoid"
 
@@ -30,6 +33,9 @@ namespace :db do
 
     puts "DB cleaned, seeding..."
     SeedData.new.call
+    puts "Creating verified unique indexes..."
+    Rake::Task["data:ensure_unique_indexes"].reenable
+    Rake::Task["data:ensure_unique_indexes"].invoke
     puts "Seeding complete, done."
   end
 
@@ -112,6 +118,21 @@ namespace :db do
         "txn_type": "subscr_cancel"
         } }
     end
+  end
+
+  # Toggles the signup maintenance lockout flag directly, without going
+  # through the (currently flaky) Portal Settings UI.
+  # Usage: rake "db:set_signup_lockout[true]"  /  rake "db:set_signup_lockout[false]"
+  task :set_signup_lockout, [:enabled] => :environment do |t, args|
+    enabled = args[:enabled].to_s.strip.downcase
+
+    unless %w[true false].include?(enabled)
+      puts 'Usage: rake "db:set_signup_lockout[true]" or rake "db:set_signup_lockout[false]"'
+      exit 1
+    end
+
+    SystemConfig.set(SystemConfig::SIGNUP_LOCKOUT_ENABLED, enabled)
+    puts "signup_lockout_enabled set to #{enabled}"
   end
 end
 

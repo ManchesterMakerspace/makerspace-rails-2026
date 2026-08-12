@@ -1,8 +1,12 @@
 Rails.application.configure do
 
   # Settings specified here will take precedence over those in config/application.rb.
+  config.x.app_base_url = AppDomainUrl.base_url(
+    ENV.fetch("APP_DOMAIN"),
+    environment: Rails.env
+  )
   config.action_mailer.default_url_options = {
-    host: ENV.fetch('APP_DOMAIN'),
+    host: AppDomainUrl.host(ENV.fetch("APP_DOMAIN")),
     protocol: "https"
   }
   config.action_mailer.delivery_method = :smtp
@@ -37,7 +41,7 @@ Rails.application.configure do
     }
   else
     config.action_mailer.perform_deliveries = false
-    Rails.logger.warn '[Mailer] WARNING: No mail provider configured — email delivery disabled'
+    $stderr.puts '[Mailer] WARNING: No mail provider configured — email delivery disabled'
   end
 
   # Code is not reloaded between requests.
@@ -58,7 +62,12 @@ Rails.application.configure do
   # Disable serving static files from the `/public` folder by default since
   # Apache or NGINX already handles this.
   config.public_file_server.enabled = ENV['RAILS_SERVE_STATIC_FILES'].present?
-
+  if config.public_file_server.enabled
+    $stderr.puts '[config] RAILS_SERVE_STATIC_FILES=true'
+  else
+    $stderr.puts '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, do you have apache or nginx to do it for you?!'
+  end
+  
   # Compress JavaScripts and CSS.
   #config.assets.js_compressor = :uglifier
   #config.assets.css_compressor = :sass
@@ -70,7 +79,7 @@ Rails.application.configure do
 
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.action_controller.asset_host = config.action_mailer.default_url_options[:host]
-  config.action_mailer.asset_host = config.action_mailer.default_url_options[:host]
+  config.action_mailer.asset_host = config.x.app_base_url
   
   # Specifies the header that your server uses for sending files.
   # config.action_dispatch.x_sendfile_header = 'X-Sendfile' # for Apache

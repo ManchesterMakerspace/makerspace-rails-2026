@@ -93,9 +93,17 @@ class BraintreeService::Transaction < Braintree::Transaction
 
     BillingMailer.receipt(invoice.member.email, transaction.id, invoice.id.to_s).deliver_later
     unless subscription.nil?
-      enque_message("New subscription from #{invoice.member.fullname} received for #{invoice.name}")
+      enque_message(
+        "New subscription from #{invoice.member.fullname} received for #{invoice.name}",
+        ::Service::SlackConnector.members_relations_channel,
+        ::Service::SlackConnector.request_caller_id("transaction.submit_invoice_for_settlement.subscription.#{invoice.id}")
+      )
     end
-    enque_message("Payment from #{invoice.member.fullname} of $#{invoice.amount} received for #{invoice.name}")
+    enque_message(
+      "Payment from #{invoice.member.fullname} of $#{invoice.amount} received for #{invoice.name}",
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("transaction.submit_invoice_for_settlement.payment.#{invoice.id}")
+    )
     normalize(gateway, transaction)
   end
 

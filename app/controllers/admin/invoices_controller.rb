@@ -3,14 +3,19 @@ class Admin::InvoicesController < AdminOrRmController
   include BraintreeGateway
   before_action :find_invoice, only: [:update, :destroy, :force_cancel]
 
-  # Allow Resource Managers to create shop fee invoices (resource_class: "fee" only).
-  # Full admin access remains for all invoice types.
-  before_action :authorize_invoice_action, only: [:create]
+  # Allow Resource Managers to manage shop fee invoices (resource_class: "fee") only.
+  # Full admin/board access remains for all invoice types and actions.
+  before_action :authorize_invoice_action, only: [:index, :create, :update, :destroy]
 
   def index
     # Special case: orphaned invoices (subscription cancelled but invoices not cleaned up)
     if invoice_query_params[:orphaned] == 'true'
       orphaned = Invoice.orphaned
+      # Invoice.orphaned uses Array#select internally, so it returns a plain
+      # Array, not a chainable Mongoid::Criteria — fee_invoices_only's
+      # .where call would raise NoMethodError on an Array. Filter with
+      # Array#select here instead for this one path.
+      orphaned = orphaned.select { |invoice| invoice.resource_class == "fee" } unless invoice_admin?
       return render json: orphaned, each_serializer: InvoiceSerializer, adapter: :attributes
     end
 
@@ -53,6 +58,7 @@ class Admin::InvoicesController < AdminOrRmController
     end
 
     invoices = @queries.length > 0 ? Invoice.where(@queries.reduce(&:merge)) : Invoice.all
+    invoices = fee_invoices_only(invoices) unless invoice_admin?
     invoices = query_resource(invoices) # Query with the usual sorting, paging and searching
 
     return render_with_total_items(invoices, { each_serializer: InvoiceSerializer, adapter: :attributes })
@@ -129,7 +135,7 @@ class Admin::InvoicesController < AdminOrRmController
     end
 
     unless @invoice.subscription_id.present?
-      render json: { error: 'Invoice has no subscription_id — nothing to clean up' }, status: :unprocessable_entity and return
+      render json: { error: 'Invoice has no subscription_id — nothing to clean up' }, status: :unprocessable_content and return
     end
 
     before = @invoice.attributes.dup
@@ -147,19 +153,44 @@ class Admin::InvoicesController < AdminOrRmController
     render json: {}, status: 204 and return
   rescue => e
     Honeybadger.notify(e) if defined?(Honeybadger)
-    render json: { error: e.message }, status: :unprocessable_entity and return
+    render json: { error: e.message }, status: :unprocessable_content and return
   end
 
   private
 
-  # Admins can create any invoice type.
-  # Resource Managers can only create fee invoices (shop charges).
+  # Admins/board can manage any invoice type and action.
+  # Resource Managers can only create/view/update/delete fee invoices
+  # (shop charges) — and cannot change an existing invoice's resource_class
+  # away from "fee" to escape the restriction.
   def authorize_invoice_action
-    return if is_admin? || is_board_member?
-    resource_class = params[:resource_class]
-    unless resource_class == "fee"
-      render json: { error: "Resource managers may only create shop fee invoices" }, status: 403
+    return if invoice_admin?
+    case action_name
+    when "index"
+      return
+    when "create"
+      resource_class = requested_invoice_resource_class
+      requested_class = params[:resource_class]
+      error_message = "Resource managers may only create shop fee invoices"
+    else
+      resource_class = @invoice&.resource_class
+      requested_class = params[:resource_class]
+      error_message = "Resource managers may only manage shop fee invoices"
     end
+    unless resource_class == "fee" && (requested_class.blank? || requested_class == "fee")
+      render json: { error: error_message }, status: 403
+    end
+  end
+
+  def invoice_admin?
+    is_admin? || is_board_member?
+  end
+
+  def fee_invoices_only(invoices)
+    invoices.where(resource_class: "fee")
+  end
+
+  def requested_invoice_resource_class
+    params[:resource_class]
   end
 
   def update_invoice_params

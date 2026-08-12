@@ -62,6 +62,28 @@ class FirebaseAuthController < ApplicationController
     end
 
     sign_in(:member, member)
+
+    # Check if TOTP is enrolled — require code entry before granting full
+    # app access. A real Devise session already exists at this point (set
+    # by sign_in above), matching SessionsController's password-login order
+    # — this mirrors that flow exactly so /api/members/totp_sessions (which
+    # requires an authenticated member to reach) is reachable to complete
+    # the challenge.
+    if member.otp_required_for_login? && member.otp_secret_encrypted.present?
+      session[:totp_pending_member_id]      = member.id.to_s
+      session[:totp_pending_expires_at]     = 10.minutes.from_now.to_i
+      return render json: { totp_required: true }, status: :accepted
+    end
+
+    if totp_enrollment_required?(member) && !member.otp_required_for_login?
+      member_json = ActiveModelSerializers::SerializableResource.new(
+        member,
+        serializer: MemberSerializer,
+        adapter: :attributes
+      ).as_json
+      return render json: member_json.merge(totp_enrollment_required: true)
+    end
+
     render json: member, adapter: :attributes
   rescue => e
     Rails.logger.error "[FirebaseAuth] Login error: #{e.message}"
@@ -90,6 +112,15 @@ class FirebaseAuthController < ApplicationController
   end
 
   private
+
+  def totp_enrollment_required?(member)
+    case member.role
+    when 'admin'            then SystemConfig.enabled?('require_totp_admin')
+    when 'board_member'     then SystemConfig.enabled?('require_totp_board')
+    when 'resource_manager' then SystemConfig.enabled?('require_totp_rm')
+    else false
+    end
+  end
 
   def verify_firebase_token(id_token)
     require 'base64'

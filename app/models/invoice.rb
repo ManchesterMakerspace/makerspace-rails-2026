@@ -20,7 +20,7 @@ class Invoice
   field :name, type: String
   # Any details about the invoice. Also shown on receipt
   field :description, type: String
-  field :created_at, type: Time, default: Time.now
+  field :created_at, type: Time, default: -> { Time.now }
   # When payment submitted.
   field :settled_at, type: Time
   field :due_date # Intentionally don't define type. Mongoid is coercing string so TZ not being applied
@@ -55,13 +55,14 @@ class Invoice
   validates_numericality_of :quantity, greater_than: 0
   validates :resource_id, presence: true
   validates :due_date, presence: true
-  validate :clean_up_unused_invoice, on: :create, if: Proc.new { (resource_class == "member") }
+  validate :one_active_invoice_per_resource, on: :create, if: Proc.new { (resource_class == "member") }
   validate :resource_exists, on: :create
 
   belongs_to :member
 
   before_save :set_due_date
   after_create :send_rental_email, if: Proc.new { (resource_class == "rental" && subscription_id.nil?) || plan_id.nil? }
+  after_create :send_shop_charge_slack_notification, if: Proc.new { resource_class == "fee" }
 
   attr_accessor :found_resource, :payment_method_id
 
@@ -94,7 +95,7 @@ class Invoice
 
   def request_refund
     set_refund_requested
-    base_url = ActionMailer::Base.default_url_options[:host]
+    base_url = Rails.configuration.x.app_base_url
     enque_message("#{member.fullname} has requested a refund of #{amount} for #{name || description} from #{settled_at}. <#{base_url}/billing/transactions/#{transaction_id}|Process refund>")
     BillingMailer.refund_requested(member.email, transaction_id, id.as_json).deliver_later
   end
@@ -174,7 +175,10 @@ class Invoice
     unless invoice.nil?
       # Destroy invoices for this subscription that are still outstanding.
       # Explicitly excludes fee invoices — shop charges survive subscription cancellation.
-      invoice.resource.remove_subscription() unless invoice.resource.nil?
+      unless invoice.resource.nil?
+        invoice.resource.remove_subscription()
+        invoice.resource.reload
+      end
       Invoice.where(subscription_id: invoice.subscription_id, settled_at: nil, transaction_id: nil, :resource_class.ne => 'fee').destroy unless invoice.subscription_id.nil?
       !skip_notification && invoice.send_cancellation_notification
     end
@@ -206,15 +210,18 @@ class Invoice
       :resource_class.ne => 'fee'
     ).destroy
 
-    invoice.resource.remove_subscription() unless invoice.resource.nil?
+    unless invoice.resource.nil?
+      invoice.resource.remove_subscription()
+      invoice.resource.reload
+    end
   end
 
   def self.resource(class_name, id)
     Invoice::OPERATION_RESOURCES[class_name].find(id) unless Invoice::OPERATION_RESOURCES[class_name].nil? || id.nil?
   end
-
+  
   def resource
-    found_resource ||= self.class.resource(self.resource_class, self.resource_id)
+    self.class.resource(self.resource_class, self.resource_id)
   end
 
   def resource_name
@@ -250,6 +257,18 @@ class Invoice
     BillingMailer.new_invoice(self.member.email, self.id.as_json).deliver_later
   end
 
+  def send_shop_charge_slack_notification
+    slack_user = SlackUser.find_by(member_id: member_id)
+    return if slack_user.nil? || member&.direct_notifications_suppressed?
+
+    portal_url = Rails.configuration.x.app_base_url
+    details = description.present? ? "\n#{description}" : ""
+    message = "A shop charge has been added to your member portal account: *#{name}* for *$#{format('%.2f', amount)}*.#{details}\n<#{portal_url}|Open the member portal>"
+    ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
+  rescue => e
+    Rails.logger.warn("send_shop_charge_slack_notification failed: #{e.message}")
+  end
+
   def execute_invoice_operation
     raise ::Error::NotFound.new if resource.nil?
     operation = OPERATION_FUNCTIONS.find{ |f| f == self.operation }
@@ -278,19 +297,18 @@ class Invoice
     self.save!
   end
 
-  # Dont fail if trying to change initial membership selection
-  # Clean up the old invoices and process what customer wants
-  def clean_up_unused_invoice
-    active = Invoice.where(resource_id: resource_id, settled_at: nil, transaction_id: nil)
+  # Prevent duplicate active member invoices without mutating existing
+  # billing records. Scoped to resource_class: "member" — fee invoices
+  # (resource_class: "fee") store resource_id == member_id too (see
+  # ShopFee), so an unscoped query here would treat an unrelated unpaid
+  # shop fee as a "duplicate membership" and block legitimate membership
+  # invoice creation. The :resource_class.ne => 'fee' pattern already used
+  # elsewhere in this file (see active_invoice_for_resource below) is the
+  # established precedent for this exact scoping concern.
+  def one_active_invoice_per_resource
+    active = Invoice.where(resource_id: resource_id, resource_class: "member", settled_at: nil, transaction_id: nil)
 
-    # Cannot clean up invoices that have a subscription
-    active_undeletable = active.where(:subscription_id.ne => nil)
-
-    if active_undeletable.empty?
-      active.destroy
-    else
-      errors.add(:base, "Cannot create duplicate memberships for same user")
-    end
+    errors.add(:base, "Cannot create duplicate memberships for same user") if active.exists?
   end
 
   def resource_exists

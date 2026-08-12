@@ -420,6 +420,58 @@ FactoryBot.define do
     end
   end
 
+  factory :shop do
+    sequence(:name) { |n| "Shop #{n}" }
+    disabled { false }
+    reservable { true }
+    max_concurrent_reservations { 1 }
+    reservation_horizon_days { 7 }
+    max_reservation_duration_hours { 8 }
+  end
+
+  factory :tool do
+    sequence(:name) { |n| "Tool #{n}" }
+    association :shop
+    disabled { false }
+    reservable { true }
+    max_concurrent_reservations { 1 }
+    reservation_horizon_days { 7 }
+    max_reservation_duration_hours { 8 }
+  end
+
+  factory :tool_checkout do
+    association :member
+    association :tool
+    checked_out_at { Time.current }
+  end
+
+  factory :checkout_approver do
+    association :member
+    shop_ids { [] }
+    tool_ids { [] }
+  end
+
+  factory :reservation do
+    association :member
+    association :shop
+    title { "Project time" }
+    reservation_scope { "shop" }
+    tool_ids { [] }
+    start_at { 1.day.from_now.change(min: 0, sec: 0) }
+    end_at { 1.day.from_now.change(min: 0, sec: 0) + 1.hour }
+    status { "approved" }
+  end
+
+  factory :reservation_blackout do
+    association :shop
+    association :created_by, factory: [:member, :current]
+    title { "Open House" }
+    recurrence { "weekly" }
+    weekday { 1 }
+    start_time { "17:00" }
+    end_time { "20:00" }
+  end
+
   factory :dispute_notification, parent: :notification do
     kind { Braintree::WebhookNotification::Kind::DisputeOpened }
     payload { JSON.generate(build(:dispute)) }

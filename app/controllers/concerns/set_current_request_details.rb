@@ -26,8 +26,14 @@ module SetCurrentRequestDetails
   end
 
   def cloudflare_client_ip_address
+    return unless cloudflare_request?
+
     CLOUDFLARE_CLIENT_IP_HEADERS.filter_map do |header|
       request.headers[header].presence
     end.first
+  end
+
+  def cloudflare_request?
+    request.respond_to?(:cloudflare?) && request.cloudflare?
   end
 end

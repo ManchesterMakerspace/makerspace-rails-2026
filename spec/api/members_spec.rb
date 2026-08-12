@@ -27,6 +27,55 @@ describe 'Members API', type: :request do
         let(:id) { create(:member).id }
         run_test!
       end
+
+      context 'pagination' do
+        let(:items_per_page) { FastQuery::ITEMS_PER_PAGE }
+        let(:total_items) { (items_per_page * 2) + 6 }
+
+        before do
+          create_list(:member, total_items - 1)
+          sign_in create(:member, :admin)
+        end
+
+        it 'returns only one page while preserving the total item count' do
+          get '/api/members', params: {
+            pageNum: 0,
+            orderBy: '',
+            order: 'asc',
+            currentMembers: false
+          }
+
+          expect(response).to have_http_status(:ok)
+          expect(JSON.parse(response.body).length).to eq(items_per_page)
+          expect(response.headers['total-items'].to_i).to eq(total_items)
+        end
+
+        it 'returns the next page for pageNum 1' do
+          get '/api/members', params: {
+            pageNum: 1,
+            orderBy: '',
+            order: 'asc',
+            currentMembers: false
+          }
+
+          expect(response).to have_http_status(:ok)
+          expect(JSON.parse(response.body).length).to eq(items_per_page)
+          expect(response.headers['total-items'].to_i).to eq(total_items)
+        end
+
+        it 'returns the final partial page for pageNum 2' do
+          get '/api/members', params: {
+            pageNum: 2,
+            orderBy: '',
+            order: 'asc',
+            currentMembers: false
+          }
+
+          expect(response).to have_http_status(:ok)
+          expect(JSON.parse(response.body).length).to eq(6)
+          expect(response.headers['total-items'].to_i).to eq(total_items)
+        end
+      end
     end
   end
 
@@ -184,7 +233,7 @@ describe 'Members API', type: :request do
 
         put "/api/members/#{id}", params: { email: undeliverable_email }, as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(current_member.reload.email).to eq(previous_email)
       end
     end

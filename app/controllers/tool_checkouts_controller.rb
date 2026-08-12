@@ -15,6 +15,11 @@ class ToolCheckoutsController < ApplicationController
       checkouts = checkouts.where(:tool_id.in => tool_ids)
     end
 
+    unless ActiveModel::Type::Boolean.new.cast(params[:include_hidden])
+      visible_tool_ids = Tool.where(:disabled.ne => true).pluck(:id)
+      checkouts = checkouts.where(:tool_id.in => visible_tool_ids)
+    end
+
     checkouts = checkouts.order_by(checked_out_at: :desc)
     render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes
   end
