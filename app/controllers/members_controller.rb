@@ -66,6 +66,7 @@ class MembersController < AuthenticationController
 
       if signature_params[:signature]
          encoded_signature = signature_params[:signature].split(",")[1]
+         encoded_signature = ::Service::GoogleDrive.sanitize_base64_signature(encoded_signature)
          DocumentUploadJob.perform_later(encoded_signature, "member_contract", @member.id.as_json)
          @member.update_attributes!(member_contract_signed_date: Date.today)
 

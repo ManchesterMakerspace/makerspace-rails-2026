@@ -1,8 +1,11 @@
 require_relative '../error/google/share'
 require_relative '../error/google/upload'
+require 'base64'
 
 module Service
   module GoogleDrive
+    BASE64_SIGNATURE_PATTERN = /\A[A-Za-z0-9+\/]*={0,2}\z/.freeze
+
     def self.build_template_location(document)
       Rails.root.join("app/views/documents/#{document}.html.erb")
     end
@@ -59,6 +62,19 @@ module Service
       end
     end
 
+    def invite_gdrive_writer(email_address)
+      unless ENV['GDRIVE_INVITES_ENABLED'] == 'true'
+        raise Error::NotAllowed.new('Google Drive invites are not enabled in this environment')
+      end
+      permission = Google::Apis::DriveV3::Permission.new(type: :user,
+          email_address: email_address,
+          role: :writer)
+      load_gdrive.create_permission(ENV['GOOGLE_TRANSFER_SHARE'], permission) do |result, err|
+        report_google_error(err, "drive.permissions.create_writer") if err
+        raise Error::Google::Share.new(err) unless err.nil?
+      end
+    end
+
     def self.upload_document(document_name, member, locals, base64_signature)
       sym_name = document_name.to_sym
       raise Error::NotFound.new unless (::Service::GoogleDrive.get_templates().keys.any? { |key| key.to_sym === sym_name })
@@ -99,7 +115,8 @@ module Service
 
       full_locals = {}.merge(locals)
       if base64_signature
-        signature = "<h3>Signature:</h3><img width='100%' src='data:image/png;base64, #{base64_signature}' style='border: 1px solid black' />".html_safe
+        safe_signature = ::Service::GoogleDrive.sanitize_base64_signature(base64_signature)
+        signature = "<h3>Signature:</h3><img width='100%' src='data:image/png;base64,#{safe_signature}' style='border: 1px solid black' />".html_safe
         full_locals[:signature] = signature
       end
 
@@ -111,6 +128,18 @@ module Service
       )
 
       WickedPdf.new.pdf_from_string(document, page_size: "Letter", dpi: "300")
+    end
+
+    def self.sanitize_base64_signature(base64_signature)
+      normalized_signature = base64_signature.to_s.delete("\r\n\t ")
+      unless normalized_signature.match?(BASE64_SIGNATURE_PATTERN)
+        raise Error::UnprocessableEntity.new('Invalid signature')
+      end
+
+      Base64.strict_decode64(normalized_signature)
+      normalized_signature
+    rescue ArgumentError
+      raise Error::UnprocessableEntity.new('Invalid signature')
     end
 
     def upload_document(base64_signature, member, locals, document_name)

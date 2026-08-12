@@ -257,6 +257,30 @@ RSpec.describe MembersController, type: :controller do
       expect(response).to have_http_status(403)
     end
 
+    it "rejects a signature containing injected HTML" do
+      injected_signature = "data:image/png;base64,' /><iframe src='http://169.254.169.254/latest/meta-data/'></iframe>"
+
+      expect(DocumentUploadJob).not_to receive(:perform_later)
+
+      put :update, params: { id: current_user.id, signature: injected_signature }, format: :json
+
+      expect(response).to have_http_status(422)
+    end
+
+    it "queues a member contract upload for a valid base64 signature" do
+      signature = "data:image/png;base64,#{Base64.strict_encode64('signature-bytes')}"
+
+      expect(DocumentUploadJob).to receive(:perform_later).with(
+        Base64.strict_encode64('signature-bytes'),
+        "member_contract",
+        current_user.id.as_json
+      )
+
+      put :update, params: { id: current_user.id, signature: signature }, format: :json
+
+      expect(response).to have_http_status(200)
+    end
+
     it "raises forbidden when a resource manager updates another member" do
       resource_manager = create(:member, :resource_manager)
       member = create(:member)
