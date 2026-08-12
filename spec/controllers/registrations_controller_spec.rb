@@ -45,6 +45,47 @@ RSpec.describe RegistrationsController, type: :controller do
     end
   end
 
+  describe "GET #status" do
+    after { SystemConfig.set(SystemConfig::SIGNUP_LOCKOUT_ENABLED, "false") }
+
+    it "reports locked: false by default" do
+      get :status, format: :json
+      expect(response).to have_http_status(200)
+      expect(JSON.parse(response.body)).to eq("locked" => false)
+    end
+
+    it "reports locked: true when the signup lockout flag is enabled" do
+      SystemConfig.set(SystemConfig::SIGNUP_LOCKOUT_ENABLED, "true")
+      get :status, format: :json
+      expect(JSON.parse(response.body)).to eq("locked" => true)
+    end
+  end
+
+  describe "signup lockout" do
+    after { SystemConfig.set(SystemConfig::SIGNUP_LOCKOUT_ENABLED, "false") }
+
+    before { SystemConfig.set(SystemConfig::SIGNUP_LOCKOUT_ENABLED, "true") }
+
+    it "blocks POST #create without creating a member" do
+      expect {
+        post :create, params: valid_attributes, format: :json
+      }.not_to change(Member, :count)
+
+      expect(response).to have_http_status(:forbidden)
+      expect(JSON.parse(response.body)).to eq(
+        'status' => 403,
+        'error' => 'forbidden',
+        'message' => 'Signups are currently disabled for maintenance.'
+      )
+    end
+
+    it "blocks GET #new without sending a welcome email" do
+      expect(MemberMailer).not_to receive(:welcome_email)
+      get :new, params: { email: "foo@foo.com" }, format: :json
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
   describe "POST #create" do
     context "when Turnstile is configured" do
       let(:verifier) { instance_double(Service::TurnstileVerifier) }
