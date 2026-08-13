@@ -15,7 +15,7 @@ gem 'active_model_serializers', '~> 0.10.15'
 gem 'dotenv-rails'
 gem 'concurrent-ruby', '~> 1.3'
 # Redis
-gem 'redis', '~> 5.0'
+gem 'redis', '~> 6.0'
 gem 'connection_pool', '~> 2.4'
 gem 'redis-actionpack'
 # Authentication
