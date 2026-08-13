@@ -92,6 +92,7 @@ An OpenSwagger spec of the JSON API can be generated or updated with `rake rswag
 
 - [Public resources inventory](docs/public-resources.MD)
 - [Member statuses](docs/member-statuses.md)
+- [MongoDB member-permissions reference](docs/member-permissions.md)
 - [Shop and tool reservations](docs/reservations.MD) — includes the public
   `GET /reservations/agenda` display and JSON feed contract.
 - [Public rental-spot API](docs/rental-spots.MD) — unauthenticated JSON for QR
