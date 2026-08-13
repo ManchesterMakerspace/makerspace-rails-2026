@@ -1,7 +1,7 @@
 class Slack::EventsController < ApplicationController
   EVENT_DEDUPLICATION_TTL = 7.days.to_i
   ACTIVE_ATTEMPT_WAIT = 2.seconds
-  ACTIVE_ATTEMPT_POLL_INTERVAL = 50.milliseconds
+  ACTIVE_ATTEMPT_POLL_INTERVAL = 0.05.seconds
   PROCESSING_STATE = 'processing'
   COMPLETED_STATE = 'completed'
 
