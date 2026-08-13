@@ -181,6 +181,34 @@ RSpec.describe Service::SlackUserEvents do
     expect(SlackUser.find(existing.id).slack_email).to eq(member.email)
   end
 
+  it 'does not destroy a newer tombstone for a different identity when merging a stale event' do
+    active_identity = SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email)
+    tombstoned_identity = SlackUser.create!(slack_id: 'UOLD_DELETED', slack_email: 'someone-else@example.com')
+    SlackUser.collection.find(_id: tombstoned_identity.id).update_one(
+      '$set' => {
+        invalidated_at: Time.current,
+        invalidation_reason: 'slack_user_deleted; event_id=Ev-newer-deletion',
+        last_slack_event_ts: 200.0
+      }
+    )
+    stale_user = user.merge('id' => 'UOLD_DELETED')
+
+    described_class.process(
+      { 'type' => 'user_change', 'event_ts' => '100.0', 'user' => stale_user },
+      event_id: 'Ev-stale-merge'
+    )
+
+    expect(SlackUser.unscoped.find(tombstoned_identity.id)).to have_attributes(
+      invalidated_at: be_present,
+      last_slack_event_ts: 200.0
+    )
+    expect(SlackUser.find(active_identity.id)).to have_attributes(
+      slack_id: 'UACTIVE',
+      last_slack_event_ts: nil
+    )
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+  end
+
   it 'keeps identities invalidated after a member email change quarantined' do
     old_identity = SlackUser.create!(slack_id: 'UNEWMEMBER', slack_email: member.email)
     SlackUser.collection.find(_id: old_identity.id).update_one(

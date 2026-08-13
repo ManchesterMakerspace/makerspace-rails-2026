@@ -79,7 +79,14 @@ module Service
       record = email_mismatch ? by_slack : (by_member || by_slack)
       return false unless event_can_apply?(record, event_ts)
 
-      by_slack.destroy! if by_slack && by_member && by_slack.id != by_member.id
+      merging_identity = by_slack && by_member && by_slack.id != by_member.id
+      # The ordering check above only covers `record` (by_member here), but
+      # destroying by_slack discards its own state (e.g. a newer deletion
+      # tombstone). Require the event to also be current for by_slack itself
+      # before merging its identity away.
+      return false if merging_identity && !event_can_apply?(by_slack, event_ts)
+
+      by_slack.destroy! if merging_identity
 
       if record
         # SlackUser marks imported identity fields readonly, so event-driven
