@@ -50,6 +50,28 @@ RSpec.describe Service::SlackChannelCache do
     expect(described_class.channel_id?("C12345678")).to be(true)
   end
 
+  it "stores a resolved channel under both its name and id" do
+    described_class.store(id: "G12345678", name: "#Officers-Private")
+
+    expect(REDIS).to have_received(:set).with(
+      "slack:public_channel:officers-private",
+      JSON.generate(id: "G12345678", name: "officers-private"),
+      ex: described_class::CACHE_TTL_SECONDS
+    )
+    expect(REDIS).to have_received(:set).with(
+      "slack:public_channel_id:G12345678",
+      JSON.generate(id: "G12345678", name: "officers-private"),
+      ex: described_class::CACHE_TTL_SECONDS
+    )
+  end
+
+  it "does not store a channel with a blank id or name" do
+    described_class.store(id: "", name: "officers-private")
+    described_class.store(id: "G12345678", name: "")
+
+    expect(REDIS).not_to have_received(:set)
+  end
+
   it "normalizes names and caches every channel encountered until the target is found" do
     allow(client).to receive(:conversations_list)
       .and_return(first_page, second_page)

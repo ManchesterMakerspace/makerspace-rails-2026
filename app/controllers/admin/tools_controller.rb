@@ -30,7 +30,7 @@ class Admin::ToolsController < ApplicationController
 
   def create
     attributes = tool_params
-    resolved_channels = resolve_changed_slack_channels(attributes)
+    resolved_channels = resolve_changed_slack_channels(attributes, nil, current_member)
     tool = Tool.new(attributes)
     tool.save!
     Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
@@ -50,7 +50,7 @@ class Admin::ToolsController < ApplicationController
 
   def update
     attributes = tool_params
-    resolved_channels = resolve_changed_slack_channels(attributes, @tool)
+    resolved_channels = resolve_changed_slack_channels(attributes, @tool, current_member)
     before = @tool.attributes.dup
     @tool.update_attributes!(attributes)
     Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
@@ -110,7 +110,7 @@ class Admin::ToolsController < ApplicationController
       prerequisite_ids: [], reservation_prerequisite_tool_ids: [])
   end
 
-  def resolve_changed_slack_channels(attributes, tool = nil)
+  def resolve_changed_slack_channels(attributes, tool = nil, actor = nil)
     channels = %i[announce_channel users_channel].each_with_object({}) do |field, changed|
       next unless attributes.key?(field)
 
@@ -119,7 +119,7 @@ class Admin::ToolsController < ApplicationController
 
       changed[field] = normalized
     end
-    Service::SlackChannelAssignment.resolve!(channels)
+    Service::SlackChannelAssignment.resolve!(channels, actor)
   end
 
   def find_tool

@@ -15,18 +15,43 @@ RSpec.describe Service::SlackChannelAssignment do
       )
     end
 
-    it 'returns a descriptive validation error when Slack cannot resolve a channel' do
+    it 'fails open instead of raising when Slack cannot resolve a channel, and does not save it' do
       allow(Service::SlackConnector).to receive(:find_channel_id).and_return(nil)
+      allow(Service::SlackConnector).to receive(:send_slack_message)
 
-      expect do
-        described_class.resolve!(announce_channel: 'missing-channel')
-      end.to raise_error(
-        Error::UnprocessableEntity,
-        /#missing-channel could not be resolved.*bot or configured Slack admin can view it/i
+      expect(described_class.resolve!(announce_channel: 'missing-channel')).to eq({})
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+    end
+
+    it 'notifies the actor about channels that could not be resolved, without raising' do
+      allow(Service::SlackConnector).to receive(:find_channel_id).and_return(nil)
+      allow(Service::SlackConnector).to receive(:send_slack_message)
+      slack_user = double(slack_id: 'UACTOR')
+      actor = double(id: BSON::ObjectId.new, slack_user: slack_user)
+
+      expect(described_class.resolve!({ announce_channel: 'missing-channel' }, actor)).to eq({})
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+        /couldn't verify this Slack channel: #missing-channel.*change was saved/i,
+        'UACTOR'
       )
     end
 
-    it 'uses an admin token to resolve a private channel invisible to the bot' do
+    it 'resolves the channels it can and skips the ones it cannot, in a single call' do
+      allow(Service::SlackConnector).to receive(:find_channel_id)
+        .with('wood-shop').and_return('C12345678')
+      allow(Service::SlackConnector).to receive(:find_channel_id)
+        .with('missing-channel').and_return(nil)
+      allow(Service::SlackConnector).to receive(:send_slack_message)
+
+      result = described_class.resolve!(
+        users_channel: '#wood-shop',
+        announce_channel: 'missing-channel'
+      )
+
+      expect(result).to eq('users_channel' => { id: 'C12345678', name: 'wood-shop' })
+    end
+
+    it 'uses an admin token to resolve a private channel invisible to the bot, and caches it' do
       admin_client = double('Slack admin client')
       private_channel = double(id: 'G12345678', name: 'officers-private')
       response = double(
@@ -43,6 +68,8 @@ RSpec.describe Service::SlackChannelAssignment do
         limit: 200,
         cursor: nil
       ).and_return(response)
+      expect(Service::SlackChannelCache).to receive(:store)
+        .with(id: 'G12345678', name: 'officers-private')
 
       expect(described_class.resolve!(announce_channel: '#officers-private')).to eq(
         'announce_channel' => { id: 'G12345678', name: 'officers-private' }

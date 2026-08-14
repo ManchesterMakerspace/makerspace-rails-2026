@@ -1,17 +1,20 @@
 module Service
   module SlackChannelAssignment
-    def self.resolve!(channels)
-      channels.each_with_object({}) do |(field, value), resolved|
+    def self.resolve!(channels, actor = nil)
+      failures = []
+
+      resolved_channels = channels.each_with_object({}) do |(field, value), resolved|
         name = Service::SlackChannelCache.normalize_name(value)
         next if name.blank?
 
         channel_id = Service::SlackConnector.find_channel_id(name)
         channel_id ||= find_channel_id_with_admin(name)
         unless channel_id.present?
-          raise Error::UnprocessableEntity.new(
-            "Slack channel #{display_name(name)} could not be resolved. " \
-            "Confirm that the channel exists and that the Member Portal bot or configured Slack admin can view it."
+          Rails.logger.warn(
+            "[SlackChannelAssignment] resolution failed field=#{field} channel=#{name.inspect}"
           )
+          failures << name
+          next
         end
 
         resolved[field.to_s] = { id: channel_id, name: name }
@@ -20,11 +23,11 @@ module Service
           "[SlackChannelAssignment] resolution failed field=#{field} " \
           "channel=#{name.inspect} error=#{error.class}"
         )
-        raise Error::UnprocessableEntity.new(
-          "Slack channel #{display_name(name)} could not be resolved because Slack was unavailable. " \
-          "Please verify the channel and try again."
-        )
+        failures << name
       end
+
+      report_unresolved_channels(failures, actor) if failures.any?
+      resolved_channels
     end
 
     def self.find_channel_id_with_admin(channel_name)
@@ -36,8 +39,11 @@ module Service
           'conversations.info admin channel resolution'
         ) { client.conversations_info(channel: channel_name) }
         channel = response.channel
-        return channel.id.to_s unless channel.respond_to?(:is_archived) && channel.is_archived
-        return nil
+        if channel.respond_to?(:is_archived) && channel.is_archived
+          return nil
+        end
+        Service::SlackChannelCache.store(id: channel.id.to_s, name: channel.name.to_s)
+        return channel.id.to_s
       end
 
       cursor = nil
@@ -55,7 +61,10 @@ module Service
         channel = Array(response.channels).find do |candidate|
           candidate.name.to_s.casecmp?(channel_name)
         end
-        return channel.id.to_s if channel
+        if channel
+          Service::SlackChannelCache.store(id: channel.id.to_s, name: channel.name.to_s)
+          return channel.id.to_s
+        end
 
         cursor = response.response_metadata&.next_cursor.to_s
         break if cursor.blank?
@@ -131,11 +140,36 @@ module Service
       )
     end
 
+    def self.report_unresolved_channels(names, actor)
+      Rails.logger.warn(
+        "[SlackChannelAssignment] unresolved channels=#{names.inspect} actor_id=#{actor&.id}"
+      )
+      Honeybadger.notify(
+        "Slack channel(s) could not be resolved",
+        context: { channels: names, actor_id: actor&.id.to_s }
+      ) if defined?(Honeybadger)
+
+      slack_id = actor&.slack_user&.slack_id
+      return if slack_id.blank?
+
+      mentions = names.map { |name| display_name(name) }.uniq.join(', ')
+      Service::SlackConnector.send_slack_message(
+        "I couldn't verify #{names.one? ? 'this Slack channel' : 'these Slack channels'}: #{mentions}. " \
+        "The change was saved, but Slack notifications for #{names.one? ? 'it' : 'them'} may not work until this is fixed.",
+        slack_id
+      )
+    rescue => error
+      Rails.logger.warn(
+        "[SlackChannelAssignment] unresolved-channel notice failed " \
+        "actor_id=#{actor&.id} error=#{error.class}"
+      )
+    end
+
     def self.display_name(name)
       Service::SlackChannelCache.channel_id?(name) ? name : "##{name}"
     end
 
     private_class_method :find_channel_id_with_admin, :invite_bot_with_admin, :notify_actor,
-      :display_name
+      :report_unresolved_channels, :display_name
   end
 end

@@ -48,6 +48,13 @@ module Service
         value.to_s.match?(CHANNEL_ID_PATTERN)
       end
 
+      def store(id:, name:)
+        normalized = normalize_name(name)
+        return if id.blank? || normalized.blank?
+
+        write({ id: id, name: normalized })
+      end
+
       def fetch(channel_name)
         name = normalize_name(channel_name)
         return nil if name.blank?

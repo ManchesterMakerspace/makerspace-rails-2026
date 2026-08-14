@@ -17,7 +17,7 @@ class Admin::ShopsController < ApplicationController
 
   def create
     attributes = shop_params
-    resolved_channels = resolve_changed_slack_channels(attributes)
+    resolved_channels = resolve_changed_slack_channels(attributes, nil, current_member)
     shop = Shop.new(attributes)
     shop.save!
     Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
@@ -37,7 +37,7 @@ class Admin::ShopsController < ApplicationController
 
   def update
     attributes = shop_params
-    resolved_channels = resolve_changed_slack_channels(attributes, @shop)
+    resolved_channels = resolve_changed_slack_channels(attributes, @shop, current_member)
     before = @shop.attributes.dup
     @shop.update_attributes!(attributes)
     Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
@@ -116,13 +116,13 @@ class Admin::ShopsController < ApplicationController
     )
   end
 
-  def resolve_changed_slack_channels(attributes, shop = nil)
+  def resolve_changed_slack_channels(attributes, shop = nil, actor = nil)
     return {} unless attributes.key?(:slack_channel)
 
     normalized = Service::SlackChannelCache.normalize_name(attributes[:slack_channel])
     return {} if normalized.blank? || normalized == shop&.slack_channel
 
-    Service::SlackChannelAssignment.resolve!(slack_channel: normalized)
+    Service::SlackChannelAssignment.resolve!({ slack_channel: normalized }, actor)
   end
 
   def find_shop
