@@ -1,7 +1,5 @@
 class Slack::EventsController < ApplicationController
   EVENT_DEDUPLICATION_TTL = 7.days.to_i
-  ACTIVE_ATTEMPT_WAIT = 2.seconds
-  ACTIVE_ATTEMPT_POLL_INTERVAL = 0.05.seconds
   PROCESSING_STATE = 'processing'
   COMPLETED_STATE = 'completed'
 
@@ -25,9 +23,9 @@ class Slack::EventsController < ApplicationController
     return head :service_unavailable unless acquisition == :acquired
 
     begin
-      # No durable Active Job adapter is configured in production. Process
-      # before acknowledging so Slack will redeliver if persistence or a side
-      # effect fails; the deduplication key is released in that case.
+      # No durable job queue is configured, so processing happens before
+      # acknowledging: if it fails, the dedup key is released and Slack's
+      # own webhook redelivery (with backoff) is what retries the event.
       Service::SlackUserEvents.process(event, event_id: event_id)
       REDIS.set(deduplication_key, COMPLETED_STATE, xx: true, ex: EVENT_DEDUPLICATION_TTL)
     rescue
@@ -41,19 +39,15 @@ class Slack::EventsController < ApplicationController
 
   private
 
-  # A callback that arrives while the first attempt is still running must not
-  # receive a successful acknowledgement until that attempt succeeds. Wait
-  # briefly for completion; returning 503 after the wait asks Slack to retry.
+  # A single, immediate check -- not a blocking wait. If another request is
+  # already processing this event_id, respond 503 right away and let Slack's
+  # retry-with-backoff come back later, rather than holding a Puma worker
+  # thread hostage on a sleep loop hoping the first attempt finishes in time.
   def acquire_event(key)
-    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + ACTIVE_ATTEMPT_WAIT
+    return :acquired if REDIS.set(key, PROCESSING_STATE, nx: true, ex: EVENT_DEDUPLICATION_TTL)
+    return :completed if REDIS.get(key) == COMPLETED_STATE
 
-    loop do
-      return :acquired if REDIS.set(key, PROCESSING_STATE, nx: true, ex: EVENT_DEDUPLICATION_TTL)
-      return :completed if REDIS.get(key) == COMPLETED_STATE
-      return :in_progress if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-
-      sleep ACTIVE_ATTEMPT_POLL_INTERVAL
-    end
+    :in_progress
   end
 
   def verify_slack_signature

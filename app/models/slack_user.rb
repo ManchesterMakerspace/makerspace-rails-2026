@@ -10,6 +10,7 @@ class SlackUser
   field :invalidated_at, type: Time
   field :invalidation_reason, type: String
   field :last_slack_event_ts, type: Float
+  field :welcomed_at, type: Time
 
   default_scope -> { where(invalidated_at: nil) }
 

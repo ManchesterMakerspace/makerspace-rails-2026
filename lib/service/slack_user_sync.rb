@@ -57,6 +57,12 @@ module Service
       )
 
       if existing
+        conflict = active_identity_conflict(member, excluding: existing)
+        if conflict
+          report_identity_conflict(member, existing, conflict, 'single-user sync')
+          return nil
+        end
+
         persistence_attributes = safe_persistence_attributes(existing, slack_user_attributes)
         SlackUser.collection.find(_id: existing.id).update_one(
           '$set' => persistence_attributes.merge(member_id: member.id),
@@ -160,6 +166,14 @@ module Service
             real_name: real_name
           )
           if existing
+            conflict = active_identity_conflict(member, excluding: existing)
+            if conflict
+              puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — Member #{member.fullname} already has an active Slack identity"
+              report_identity_conflict(member, existing, conflict, 'bulk sync')
+              skipped_count += 1
+              next
+            end
+
             persistence_attributes = safe_persistence_attributes(existing, slack_user_attributes)
             SlackUser.collection.find(_id: existing.id).update_one(
               '$set' => persistence_attributes.merge(member_id: member.id),
@@ -243,6 +257,25 @@ module Service
       )
     end
 
+    def self.active_identity_conflict(member, excluding:)
+      SlackUser.where(member_id: member.id, :id.ne => excluding.id).first
+    end
+
+    def self.report_identity_conflict(member, existing, conflict, source)
+      Service::AuditLogger.log(
+        log_type: 'member',
+        event_type: 'slack_identity_conflict',
+        resource_type: 'Member',
+        resource_id: member.id,
+        subject: member,
+        message_details: "Slack #{source} could not reconcile identity #{existing.slack_id} to Member " \
+          "#{member.fullname}: that member already has a different active Slack identity " \
+          "(#{conflict.slack_id}). An admin must reconcile the duplicate before this identity " \
+          "can be reactivated.",
+        slack_channel: Service::SlackConnector.logs_channel
+      )
+    end
+
     def self.normalize_email(email)
       email.to_s.strip.downcase
     end
@@ -256,6 +289,6 @@ module Service
     end
 
     private_class_method :quarantined_identity?, :resolve_member, :report_email_mismatch,
-      :normalize_email, :safe_persistence_attributes
+      :active_identity_conflict, :report_identity_conflict, :normalize_email, :safe_persistence_attributes
   end
 end

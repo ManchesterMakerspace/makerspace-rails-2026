@@ -1,4 +1,5 @@
 require 'rails_helper'
+require 'benchmark'
 
 RSpec.describe 'Slack Events API', type: :request do
   let(:secret) { 'signing-secret' }
@@ -47,35 +48,46 @@ RSpec.describe 'Slack Events API', type: :request do
     )
   end
 
-  it 'acknowledges a redelivered event after the active attempt completes' do
+  it 'acknowledges a redelivered event once the first attempt has completed' do
     event = { type: 'team_join', user: { id: 'U123' } }
     body = { type: 'event_callback', event_id: 'Ev-duplicate', event: event }.to_json
-    allow(REDIS).to receive(:set).and_return(true, true, false)
+    allow(REDIS).to receive(:set).and_return(true, false)
     allow(REDIS).to receive(:get).and_return(Slack::EventsController::COMPLETED_STATE)
 
     2.times { post '/slack/events', params: body, headers: signed_headers(body) }
 
+    expect(response).to have_http_status(:ok)
     expect(Service::SlackUserEvents).to have_received(:process).once
-
-    expect(REDIS).to have_received(:set).with(
-      "slack_event/#{Digest::SHA256.hexdigest('Ev-duplicate')}",
-      Slack::EventsController::PROCESSING_STATE,
-      nx: true,
-      ex: Slack::EventsController::EVENT_DEDUPLICATION_TTL
-    ).twice
   end
 
-  it 'does not acknowledge a redelivery while the active attempt is unresolved' do
+  it 'immediately responds 503 for a redelivery while the first attempt is still running, without blocking' do
     event = { type: 'user_change', user: { id: 'U123' } }
     body = { type: 'event_callback', event_id: 'Ev-in-progress', event: event }.to_json
     allow(REDIS).to receive(:set).and_return(false)
     allow(REDIS).to receive(:get).and_return(Slack::EventsController::PROCESSING_STATE)
-    allow_any_instance_of(Slack::EventsController).to receive(:acquire_event).and_return(:in_progress)
 
-    post '/slack/events', params: body, headers: signed_headers(body)
+    elapsed = Benchmark.realtime do
+      post '/slack/events', params: body, headers: signed_headers(body)
+    end
 
     expect(response).to have_http_status(:service_unavailable)
     expect(Service::SlackUserEvents).not_to have_received(:process)
+    expect(elapsed).to be < 0.5
+  end
+
+  it 'releases the dedup key and does not acknowledge when processing fails, so Slack redelivery can retry' do
+    event = { type: 'team_join', user: { id: 'U123' } }
+    body = { type: 'event_callback', event_id: 'Ev-fails', event: event }.to_json
+    allow(Service::SlackUserEvents).to receive(:process).and_raise(StandardError, 'boom')
+
+    begin
+      post '/slack/events', params: body, headers: signed_headers(body)
+    rescue StandardError
+      nil # Rails' request-spec middleware stack may or may not re-raise; either way is fine here.
+    end
+
+    expect(response).not_to have_http_status(:ok)
+    expect(REDIS).to have_received(:del).with("slack_event/#{Digest::SHA256.hexdigest('Ev-fails')}")
   end
 
   it 'rejects callbacks without an event ID' do

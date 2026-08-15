@@ -227,6 +227,50 @@ RSpec.describe Service::SlackUserEvents do
     expect(SlackUser.unscoped.find(old_identity.id).member_id).to be_nil
   end
 
+  it 'retries a failed welcome even when the retried event can no longer update the identity' do
+    call_count = 0
+    allow(Service::SlackConnector).to receive(:send_slack_message) do
+      call_count += 1
+      raise StandardError, 'network blip' if call_count == 1
+    end
+    event = { 'type' => 'team_join', 'event_ts' => '100.0', 'user' => user }
+
+    expect do
+      described_class.process(event, event_id: 'Ev-welcome-retry')
+    end.to raise_error(StandardError, 'network blip')
+
+    created = SlackUser.find_by(slack_id: 'UNEWMEMBER')
+    expect(created.welcomed_at).to be_nil
+    expect(created.last_slack_event_ts).to eq(100.0)
+
+    described_class.process(event, event_id: 'Ev-welcome-retry')
+
+    expect(SlackUser.find(created.id).welcomed_at).to be_present
+    expect(Service::SlackConnector).to have_received(:send_slack_message).twice
+  end
+
+  it 'creates a tombstone for a deletion event with no prior identity, blocking a later out-of-order join' do
+    described_class.process(
+      { 'type' => 'user_change', 'event_ts' => '200.0', 'user' => user.merge('deleted' => true) },
+      event_id: 'Ev-unknown-deletion'
+    )
+
+    tombstone = SlackUser.unscoped.find_by(slack_id: 'UNEWMEMBER')
+    expect(tombstone).to have_attributes(
+      invalidation_reason: 'slack_user_deleted; event_id=Ev-unknown-deletion',
+      last_slack_event_ts: 200.0
+    )
+    expect(tombstone.invalidated_at).to be_present
+
+    described_class.process(
+      { 'type' => 'team_join', 'event_ts' => '100.0', 'user' => user },
+      event_id: 'Ev-stale-join-after-unknown-deletion'
+    )
+
+    expect(SlackUser.find_by(slack_id: 'UNEWMEMBER')).to be_nil
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+  end
+
   %w[is_bot is_app_user].each do |flag|
     it "ignores team_join when #{flag} is true" do
       described_class.process('type' => 'team_join', 'user' => user.merge(flag => true))

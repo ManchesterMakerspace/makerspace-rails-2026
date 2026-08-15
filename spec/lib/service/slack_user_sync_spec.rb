@@ -68,6 +68,28 @@ RSpec.describe Service::SlackUserSync do
       )
     end
 
+    it 'does not reactivate a tombstone when the member already has a different active identity' do
+      active_identity = SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email)
+      tombstone = SlackUser.create!(slack_id: 'U123', slack_email: 'stale-u123@example.com')
+      SlackUser.collection.find(_id: tombstone.id).update_one(
+        '$set' => { invalidated_at: Time.current, invalidation_reason: 'slack_user_deleted' }
+      )
+
+      result = nil
+      expect { result = described_class.sync_single('U123') }.not_to raise_error
+
+      expect(result).to be_nil
+      expect(SlackUser.unscoped.find(tombstone.id).invalidated_at).to be_present
+      expect(SlackUser.find(active_identity.id).slack_id).to eq('UACTIVE')
+      expect(Service::AuditLogger).to have_received(:log).with(
+        hash_including(
+          event_type: 'slack_identity_conflict',
+          resource_id: member.id,
+          message_details: /already has a different active Slack identity/i
+        )
+      )
+    end
+
     it 'does not abort or transfer either link when the changed email already has a Slack identity' do
       other_member = create(:member, email: 'other@example.com')
       identity = SlackUser.create!(member: member, slack_id: 'U123', slack_email: member.email)

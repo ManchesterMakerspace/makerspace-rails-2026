@@ -15,8 +15,8 @@ module Service
       end
       return if non_member?(user)
 
-      applied = persist(user, event_id: event_id, event_ts: event_ts)
-      welcome(user) if applied && event['type'] == 'team_join'
+      persist(user, event_id: event_id, event_ts: event_ts)
+      welcome_if_needed(user) if event['type'] == 'team_join'
     rescue => error
       Rails.logger.error("[SlackUserEvent] #{error.class}: #{error.message}")
       Honeybadger.notify(error, context: {
@@ -35,21 +35,25 @@ module Service
       slack_id = user['id'].to_s
       return if slack_id.blank?
 
-      record = SlackUser.unscoped.where(slack_id: slack_id).first
-      return unless record
-
-      criteria = { _id: record.id }
-      criteria['$or'] = event_order_filters(event_ts, inclusive: true) if event_ts
       attributes = {
         invalidated_at: Time.current,
         invalidation_reason: "slack_user_deleted; event_id=#{event_id}"
       }
       attributes[:last_slack_event_ts] = event_ts if event_ts
-      SlackUser.collection.find(criteria).update_one(
-        '$set' => {
-          **attributes
-        }
-      )
+
+      record = SlackUser.unscoped.where(slack_id: slack_id).first
+      unless record
+        # Persist a tombstone even without a prior identity, so a later,
+        # out-of-order event for this slack_id has something to check
+        # ordering against instead of creating a fresh active identity for
+        # an account Slack already reported deleted.
+        SlackUser.create!(attributes.merge(slack_id: slack_id))
+        return
+      end
+
+      criteria = { _id: record.id }
+      criteria['$or'] = event_order_filters(event_ts, inclusive: true) if event_ts
+      SlackUser.collection.find(criteria).update_one('$set' => attributes)
     end
 
     def self.persist(user, event_id:, event_ts:)
@@ -157,6 +161,21 @@ module Service
       email.to_s.strip.downcase
     end
 
+    def self.welcome_if_needed(user)
+      slack_id = user['id'].to_s
+      return if slack_id.blank?
+
+      record = SlackUser.find_by(slack_id: slack_id)
+      return unless record
+      return if record.welcomed_at.present?
+
+      # Welcoming is tracked independently of persist's event-ordering check:
+      # a failed Slack call must be retryable even when the identity update
+      # itself was a no-op (e.g. a retry of an already-applied event).
+      welcome(user)
+      SlackUser.collection.find(_id: record.id).update_one('$set' => { welcomed_at: Time.current })
+    end
+
     def self.welcome(user)
       name = user['real_name'].presence || user.dig('profile', 'real_name').presence || user['name']
       message = "Welcome to the makerspace #{name}! (<@#{user['id']}>)\n" \
@@ -167,6 +186,6 @@ module Service
 
     private_class_method :non_member?, :invalidate_deleted_user, :persist, :event_can_apply?,
       :quarantined_identity?, :slack_event_timestamp, :event_order_filters,
-      :report_email_mismatch, :normalize_email, :welcome
+      :report_email_mismatch, :normalize_email, :welcome_if_needed, :welcome
   end
 end
