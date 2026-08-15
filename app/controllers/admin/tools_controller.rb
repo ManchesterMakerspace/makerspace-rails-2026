@@ -29,8 +29,11 @@ class Admin::ToolsController < ApplicationController
   end
 
   def create
-    tool = Tool.new(tool_params)
+    attributes = tool_params
+    resolved_channels = resolve_changed_slack_channels(attributes, nil, current_member)
+    tool = Tool.new(attributes)
     tool.save!
+    Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
     GoogleResourceSyncJob.perform_later("Tool", tool.id.to_s)
 
     ::Service::AuditLogger.log(
@@ -46,8 +49,11 @@ class Admin::ToolsController < ApplicationController
   end
 
   def update
+    attributes = tool_params
+    resolved_channels = resolve_changed_slack_channels(attributes, @tool, current_member)
     before = @tool.attributes.dup
-    @tool.update_attributes!(tool_params)
+    @tool.update_attributes!(attributes)
+    Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
     if @tool.resource_email.blank? || @tool.previous_changes.key?("name") || @tool.previous_changes.key?("reservable")
       GoogleResourceSyncJob.perform_later("Tool", @tool.id.to_s)
     end
@@ -102,6 +108,18 @@ class Admin::ToolsController < ApplicationController
       :max_concurrent_reservations, :reservation_horizon_days,
       :max_reservation_duration_hours, :reservation_requires_approval,
       prerequisite_ids: [], reservation_prerequisite_tool_ids: [])
+  end
+
+  def resolve_changed_slack_channels(attributes, tool = nil, actor = nil)
+    channels = %i[announce_channel users_channel].each_with_object({}) do |field, changed|
+      next unless attributes.key?(field)
+
+      normalized = Service::SlackChannelCache.normalize_name(attributes[field])
+      next if normalized.blank? || normalized == tool&.public_send(field)
+
+      changed[field] = normalized
+    end
+    Service::SlackChannelAssignment.resolve!(channels, actor)
   end
 
   def find_tool

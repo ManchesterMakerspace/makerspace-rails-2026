@@ -18,6 +18,12 @@ RSpec.describe 'Tools API', type: :request do
 
   before do
     allow(REDIS).to receive(:set).and_return(true)
+    allow(Service::SlackChannelAssignment).to receive(:resolve!) do |channels|
+      channels.to_h.transform_keys(&:to_s).transform_values do |name|
+        { id: "C#{name.hash.abs.to_s.first(8).ljust(8, '0')}", name: name }
+      end
+    end
+    allow(Service::SlackChannelAssignment).to receive(:invite_bot_or_notify)
   end
 
   describe 'GET /api/tools' do
@@ -94,6 +100,8 @@ RSpec.describe 'Tools API', type: :request do
       }
 
       expect(response).to have_http_status(:ok)
+      expect(Service::SlackChannelAssignment).to have_received(:resolve!)
+        .with({ slack_channel: 'shop-docs' }, kind_of(Member))
       expect(JSON.parse(response.body)).to include(
         'slackChannel' => 'shop-docs',
         'wikiUrl' => 'https://wiki.example.test/docs',
@@ -143,6 +151,9 @@ RSpec.describe 'Tools API', type: :request do
       }
 
       expect(response).to have_http_status(:ok)
+      expect(Service::SlackChannelAssignment).to have_received(:resolve!).with(
+        { announce_channel: 'shop-announcements' }, kind_of(Member)
+      )
       expect(JSON.parse(response.body)).to include(
         'announceChannel' => 'shop-announcements',
         'usersChannel' => 'bandsaw-users',

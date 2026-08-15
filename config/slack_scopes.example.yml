@@ -19,6 +19,9 @@ oauth_config:
       # conversations.info and conversations.list for public shop channels
       - channels:read
 
+      # conversations.join when a shop/tool is assigned a public channel
+      - channels:join
+
       # conversations.invite and conversations.kick for public tool channels
       - channels:manage
       - channels:write.invites
@@ -76,3 +79,12 @@ oauth_config:
     # If the legacy users.admin calls are migrated to the documented Enterprise
     # admin.users.invite/admin.users.remove APIs, use this user scope instead:
     #   - admin.users:write
+
+# Replace the host before importing this sample into Slack. Both events use the
+# users:read/users:read.email scopes above.
+settings:
+  event_subscriptions:
+    request_url: https://YOUR_MEMBER_PORTAL_HOST/slack/events
+    bot_events:
+      - team_join
+      - user_change

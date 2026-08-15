@@ -15,6 +15,7 @@ Rails.application.routes.draw do
 
   # Slack inbound slash commands (outside :api scope — Slack posts form-encoded)
   namespace :slack do
+    post '/events',             to: 'events#create'
     post '/commands/checkout',  to: 'commands#checkout'
     post '/commands/reserve',   to: 'commands#reserve'
     post '/commands/volunteer', to: 'commands#volunteer'

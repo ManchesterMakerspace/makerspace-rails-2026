@@ -29,6 +29,43 @@ RSpec.describe 'data:ensure_unique_indexes' do
       index.fetch('key', {}).keys == ['slack_id']
     end
     expect(slack_id_index).to include('unique' => true)
+
+    %w[member_id slack_email].each do |field|
+      index = SlackUser.collection.indexes.to_a.find do |candidate|
+        candidate.fetch('key', {}).keys == [field]
+      end
+      expect(index).to include('unique' => true)
+    end
+    member_id_index = SlackUser.collection.indexes.to_a.find do |index|
+      index.fetch('key', {}).keys == ['member_id']
+    end
+    expect(member_id_index.fetch('partialFilterExpression')).to eq(
+      'member_id' => { '$type' => 'objectId' },
+      'invalidated_at' => nil
+    )
+    slack_email_index = SlackUser.collection.indexes.to_a.find do |index|
+      index.fetch('key', {}).keys == ['slack_email']
+    end
+    expect(slack_email_index.fetch('partialFilterExpression')).to eq(
+      'slack_email' => { '$type' => 'string' },
+      'invalidated_at' => nil
+    )
+  end
+
+  it 'creates non-unique member indexes on member-owned collections' do
+    expect { task.invoke }.not_to raise_error
+
+    %w[
+      permissions earned_memberships invoices notes rentals payments cards
+      mailtrap_messages volunteer_credits tool_checkouts
+    ].each do |collection_name|
+      index = Mongoid.default_client[collection_name].indexes.to_a.find do |candidate|
+        candidate.fetch('key', {}).keys == ['member_id']
+      end
+
+      expect(index).to be_present
+      expect(index['unique']).not_to be(true)
+    end
   end
 
   it 'creates and recognizes a case-insensitive unique tool-name index' do
