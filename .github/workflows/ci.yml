@@ -119,6 +119,7 @@ jobs:
       SKIP_EMAILVALIDATION: "true"
       MLAB_URI: mongodb://localhost:27017/makerspace_test
       REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY_BASE: ci_dummy_secret_key_base
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
       OTP_SECRET_KEY: fZ4zRjsUzonEkqfj1zEB1NuxGcLR1VviOY5Oit5CtqI=
       APP_DOMAIN: http://localhost:3035
