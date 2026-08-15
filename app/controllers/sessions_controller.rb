@@ -1,4 +1,13 @@
 class SessionsController < Devise::SessionsController
+  # Devise controllers don't inherit from ApplicationController, so without
+  # this, Current.ip_address is never set here — and the naive fix
+  # (reading request.ip/request.remote_ip directly) would be actively
+  # wrong: this app has no Rails trusted_proxies configured, it relies on
+  # this concern reading the CF-Connecting-IP/True-Client-IP headers
+  # directly, so request.ip alone would log Cloudflare's edge IP instead
+  # of the real caller on every request.
+  include SetCurrentRequestDetails
+
   # POST /api/members/sign_in
   def create
     resource = warden.authenticate!(:scope => resource_name, :recall => "#{controller_path}#new")
@@ -10,16 +19,28 @@ class SessionsController < Devise::SessionsController
     unless resource&.send(:active_for_authentication?)
       if resource
         message = I18n.t("devise.failure.#{resource.send(:inactive_message)}")
+        block_reason = resource.status
         # Security audit — log and notify on blocked login attempts
-        Rails.logger.warn("[Security] Blocked login attempt for #{resource.status} member: #{resource.email}")
-        AuditLog.create!(
-          event_type:  'blocked_login_attempt',
-          actor_id:    resource.id,
-          actor_name:  resource.fullname,
-          description: "Login blocked — member status: #{resource.status}"
-        ) rescue nil
+        Rails.logger.warn("[Security] Blocked login attempt for #{block_reason} member: #{resource.email}")
+        # NOTE: previously AuditLog.create! with a bare `description:` field
+        # that doesn't exist on AuditLog, plus missing required fields
+        # (log_type/resource_type/resource_id/slack_message) — the `rescue
+        # nil` was silently swallowing a validation failure on every call,
+        # so this entry was never actually being persisted. Replaced with
+        # Service::AuditLogger.log, which fills in the required fields and
+        # doesn't raise on failure (it notifies Honeybadger internally).
+        Service::AuditLogger.log(
+          log_type:        'member',
+          event_type:      'blocked_login_attempt',
+          resource_type:   'Member',
+          resource_id:     resource.id,
+          actor:           resource,
+          subject:         resource,
+          message_details: "Login blocked — member status: #{block_reason}",
+          slack_channel:   ::Service::SlackConnector.logs_channel
+        )
         ::Service::SlackConnector.send_slack_message(
-          "🚫 #{resource.status.capitalize} member #{resource.fullname} (#{resource.email}) attempted portal login",
+          "🚫 #{block_reason.capitalize} member #{resource.fullname} (#{resource.email}) attempted portal login",
           ::Service::SlackConnector.logs_channel
         ) rescue nil
       else
