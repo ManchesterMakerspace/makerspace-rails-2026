@@ -42,7 +42,7 @@ gem 'mini_magick', '~> 5.3'
 gem 'sprockets-rails'
 gem 'mime-types', '~> 3.5'
 gem 'rest-client', '~> 2.1'
-gem 'git', '~> 5.0'
+gem 'git', '~> 5.1'
 gem 'rswag-api', '~> 2.14'
 gem 'rswag-ui', '~> 2.14'
 # PDF generation
@@ -52,7 +52,7 @@ group :test do
   gem 'rspec-rails', '~> 7.1'
   gem 'mongoid-rspec', '~> 4.1'
   gem 'database_cleaner-mongoid'
-  gem 'simplecov', '~> 1.0'
+  gem 'simplecov', '~> 1.1'
   gem 'rswag-specs', '~> 2.14'
   gem 'parallel_tests'
 end
