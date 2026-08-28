@@ -95,24 +95,10 @@ class Admin::AnalyticsController < AdminController
       end_date   = Date.today
     end
 
-    # Walk month by month and count active members at end of each month
-    data      = []
-    cursor    = start_date.beginning_of_month
-    end_month = end_date.beginning_of_month
-
-    while cursor <= end_month
-      month_end    = cursor.end_of_month
-      month_end_ms = month_end.to_time.to_i * 1000
-
-      count = Member.where(
-        :startDate.lte      => month_end.to_time,
-        :expirationTime.gte => month_end_ms,
-        :status.in          => Member::ACTIVE_MEMBERSHIP_STATUSES
-      ).count
-
-      data << { date: cursor.strftime('%Y-%m'), count: count }
-      cursor = cursor >> 1  # advance one month
-    end
+    data = Service::Analytics::Members.active_members_by_month(
+      start_date: start_date,
+      end_date: end_date
+    )
 
     render json: data
   end
