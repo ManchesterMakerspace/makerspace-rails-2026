@@ -96,15 +96,15 @@ module Service
       # Counts memberships at each month-end boundary with one database round-trip.
       # Member#startDate is a BSON datetime, while expirationTime is Unix time in
       # milliseconds; keep both representations explicit throughout the pipeline.
-      def self.active_members_by_month(start_date:, end_date:, base: Mongoid::Criteria.new(Member))
+      def self.active_members_by_month(start_date:, end_date:, base: Mongoid::Criteria.new(Member), statuses: nil)
         months = month_boundaries(start_date, end_date)
         return [] if months.empty?
 
         overall_match = {
-          "status" => { "$in" => Member::ACTIVE_MEMBERSHIP_STATUSES },
           "startDate" => { "$lte" => months.last[:time] },
           "expirationTime" => { "$gte" => months.first[:milliseconds] }
         }
+        overall_match["status"] = { "$in" => statuses } if statuses.present?
         selector = base.selector
         overall_match = { "$and" => [selector, overall_match] } if selector.present?
 
@@ -248,22 +248,30 @@ module Service
           { "$match" => base.selector },
           { "$set" => { "analytics_category" => { "$switch" => { "branches" => branches, "default" => nil } } } },
           { "$match" => { "analytics_category" => { "$ne" => nil } } },
-          { "$group" => { "_id" => "$analytics_category", "count" => { "$sum" => 1 }, "total_amount" => { "$sum" => { "$ifNull" => ["$amount", 0] } } } }
+          { "$group" => {
+            "_id" => "$analytics_category",
+            "count" => { "$sum" => 1 },
+            "total_amount" => { "$sum" => { "$ifNull" => ["$amount", 0] } },
+            "dates" => { "$push" => "$settled_at" }
+          } }
         ]).to_a
 
         normalize(rows, categories.keys)
       end
 
       def self.normalize(rows, category_names)
-        values = category_names.to_h { |name| [name, { count: 0, total_amount: 0.0 }] }
-        rows.each { |row| values[row["_id"]] = { count: row["count"], total_amount: row["total_amount"].to_f } }
+        values = category_names.to_h { |name| [name, { count: 0, total_amount: 0.0, dates: [] }] }
+        rows.each do |row|
+          values[row["_id"]] = { count: row["count"], total_amount: row["total_amount"].to_f, dates: row["dates"] }
+        end
         values
       end
       private_class_method :aggregate_categories, :normalize
 
       def self.csv_by_date(query, csv_path)
         data = query.map do |name, q|
-          [name, *q.pluck(:settled_at).map { |d| d.strftime("%m/%d/%Y") }]
+          dates = q.is_a?(Hash) ? q.fetch(:dates) : q.pluck(:settled_at)
+          [name, *dates.compact.map { |d| d.strftime("%m/%d/%Y") }]
         end
         query_to_csv(data, csv_path)
       end
@@ -346,12 +354,17 @@ module Service
         rows = Payment.collection.aggregate([
           { "$match" => base.selector }, category_stage,
           { "$match" => { "analytics_category" => /^#{Regexp.escape(type)}:/ } },
-          { "$group" => { "_id" => "$analytics_category", "count" => { "$sum" => 1 }, "total_amount" => { "$sum" => { "$ifNull" => ["$amount", 0] } } } }
+          { "$group" => {
+            "_id" => "$analytics_category",
+            "count" => { "$sum" => 1 },
+            "total_amount" => { "$sum" => { "$ifNull" => ["$amount", 0] } },
+            "dates" => { "$push" => "$payment_date" }
+          } }
         ]).to_a
-        values = names.to_h { |name| [name, { count: 0, total_amount: 0.0 }] }
+        values = names.to_h { |name| [name, { count: 0, total_amount: 0.0, dates: [] }] }
         rows.each do |row|
           name = row["_id"].delete_prefix("#{type}:")
-          values[name] = { count: row["count"], total_amount: row["total_amount"].to_f }
+          values[name] = { count: row["count"], total_amount: row["total_amount"].to_f, dates: row["dates"] }
         end
         values
       end
@@ -378,7 +391,8 @@ module Service
 
       def self.csv_by_date(query, csv_path)
         data = query.map do |name, q|
-          [name, *q.pluck(:payment_date).map { |d| (d.kind_of?(Time) ? d : Time.parse(d.sub(/(\d+:)+\d+\s/, ""))).strftime("%m/%d/%Y") }]
+          dates = q.is_a?(Hash) ? q.fetch(:dates) : q.pluck(:payment_date)
+          [name, *dates.compact.map { |d| (d.kind_of?(Time) ? d : Time.parse(d.sub(/(\d+:)+\d+\s/, ""))).strftime("%m/%d/%Y") }]
         end
         query_to_csv(data, csv_path)
       end

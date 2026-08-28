@@ -16,17 +16,18 @@ RSpec.describe Service::Analytics do
 
     it "includes members starting or expiring exactly at month end and zero-fills empty months" do
       expect(described_class.active_members_by_month(
-        start_date: Date.new(2024, 1, 1), end_date: Date.new(2024, 2, 29)
+        start_date: Date.new(2024, 1, 1), end_date: Date.new(2024, 2, 29),
+        statuses: Member::ACTIVE_MEMBERSHIP_STATUSES
       )).to eq([
         { date: "2024-01", count: 2 },
         { date: "2024-02", count: 0 }
       ])
     end
 
-    it "preserves the legacy date-and-count pair return shape" do
+    it "preserves the legacy shape and includes historically active members regardless of current status" do
       expect(described_class.get_membership_per_month(
         Mongoid::Criteria.new(Member), Date.new(2024, 1, 1)
-      ).first).to eq([Date.new(2024, 1, 1), 2])
+      ).first).to eq([Date.new(2024, 1, 1), 3])
     end
   end
 
@@ -54,12 +55,21 @@ RSpec.describe Service::Analytics do
       expect(described_class.get_rental_count).to eq("Shelf" => 0, "Locker" => 1, "Plot" => 0)
       expect(described_class.get_rental_dollars).to eq("Shelf" => 0.0, "Locker" => 0.0, "Plot" => 0.0)
     end
+
+    it "retains settlement dates for CSV exports" do
+      path = Rails.root.join("tmp", "invoice-analytics-#{SecureRandom.hex}.csv")
+      described_class.csv_by_date(described_class.get_membership_subscriptions, path)
+
+      expect(File.read(path)).to include(Time.current.strftime("%m/%d/%Y"))
+    ensure
+      File.delete(path) if path && File.exist?(path)
+    end
   end
 
   describe Service::Analytics::Payments do
     before do
       Payment.collection.insert_many([
-        { product: "1-MONTH SUBSCRIPTION", amount: 20.0, status: "Completed" },
+        { product: "1-MONTH SUBSCRIPTION", amount: 20.0, status: "Completed", payment_date: Time.utc(2024, 1, 31) },
         { product: "Plot 1-month Subscription", amount: 30.0, status: "Completed" },
         { product: "locker monthly", amount: nil, status: "Completed" },
         { product: "Tip jar", amount: 4.0, status: "Completed" },
@@ -80,6 +90,14 @@ RSpec.describe Service::Analytics do
 
     it "finds uncategorized completed products without collecting ids" do
       expect(described_class.not_categorized).to contain_exactly("Tip jar", nil)
+    end
+    it "retains payment dates for CSV exports" do
+      path = Rails.root.join("tmp", "payment-analytics-#{SecureRandom.hex}.csv")
+      described_class.csv_by_date(described_class.get_membership_subscriptions, path)
+
+      expect(File.read(path)).to include("01/31/2024")
+    ensure
+      File.delete(path) if path && File.exist?(path)
     end
   end
 end

@@ -97,7 +97,8 @@ class Admin::AnalyticsController < AdminController
 
     data = Service::Analytics::Members.active_members_by_month(
       start_date: start_date,
-      end_date: end_date
+      end_date: end_date,
+      statuses: Member::ACTIVE_MEMBERSHIP_STATUSES
     )
 
     render json: data

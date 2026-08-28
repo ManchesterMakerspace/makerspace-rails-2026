@@ -24,7 +24,8 @@ RSpec.describe Admin::AnalyticsController, type: :controller do
     rows = [{ date: '2024-01', count: 3 }, { date: '2024-02', count: 0 }]
     expect(Service::Analytics::Members).to receive(:active_members_by_month).with(
       start_date: Date.new(2024, 1, 1),
-      end_date: Date.new(2024, 12, 31)
+      end_date: Date.new(2024, 12, 31),
+      statuses: Member::ACTIVE_MEMBERSHIP_STATUSES
     ).and_return(rows)
 
     get :active_members, params: { year: 2024 }, format: :json
