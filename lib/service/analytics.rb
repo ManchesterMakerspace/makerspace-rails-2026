@@ -88,7 +88,7 @@ module Service
       end
 
       def self.get_membership_per_month(base = query_not_landlord, start_date = Date.parse("08/01/2016"))
-        active_members_by_month(start_date: start_date, end_date: Date.today, base: base).map do |row|
+        active_members_by_month(start_date: start_date, end_date: Date.today, base: base, boundary: :start).map do |row|
           [Date.strptime(row[:date], "%Y-%m"), row[:count]]
         end
       end
@@ -96,8 +96,8 @@ module Service
       # Counts memberships at each month-end boundary with one database round-trip.
       # Member#startDate is a BSON datetime, while expirationTime is Unix time in
       # milliseconds; keep both representations explicit throughout the pipeline.
-      def self.active_members_by_month(start_date:, end_date:, base: Mongoid::Criteria.new(Member), statuses: nil)
-        months = month_boundaries(start_date, end_date)
+      def self.active_members_by_month(start_date:, end_date:, base: Mongoid::Criteria.new(Member), statuses: nil, boundary: :end)
+        months = month_boundaries(start_date, end_date, boundary)
         return [] if months.empty?
 
         overall_match = {
@@ -128,12 +128,14 @@ module Service
         end
       end
 
-      def self.month_boundaries(start_date, end_date)
+      def self.month_boundaries(start_date, end_date, boundary)
+        raise ArgumentError, "boundary must be :start or :end" unless %i[start end].include?(boundary)
+
         cursor = start_date.to_date.beginning_of_month
         last_month = end_date.to_date.beginning_of_month
         boundaries = []
         while cursor <= last_month
-          boundary_time = cursor.end_of_month.to_time
+          boundary_time = (boundary == :start ? cursor : cursor.end_of_month).to_time
           boundaries << {
             key: "month_#{cursor.strftime('%Y_%m')}",
             date: cursor.strftime("%Y-%m"),

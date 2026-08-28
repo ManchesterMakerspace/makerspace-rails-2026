@@ -10,7 +10,9 @@ RSpec.describe Service::Analytics do
         { status: "pending", firstname: "Exact", lastname: "Expiry", startDate: january_end - 1.month, expirationTime: january_end.to_i * 1000 },
         { status: "activeMember", firstname: "Too", lastname: "Early", startDate: january_end - 1.month, expirationTime: (january_end.to_i * 1000) - 1 },
         { status: "activeMember", firstname: "Too", lastname: "Late", startDate: january_end + 1.second, expirationTime: january_end.to_i * 1000 },
-        { status: "inactive", firstname: "Wrong", lastname: "Status", startDate: january_end - 1.month, expirationTime: january_end.to_i * 1000 }
+        { status: "inactive", firstname: "Wrong", lastname: "Status", startDate: january_end - 1.month, expirationTime: january_end.to_i * 1000 },
+        { status: "inactive", firstname: "Midmonth", lastname: "Start", startDate: Time.utc(2024, 1, 15), expirationTime: Time.utc(2024, 2, 15).to_i * 1000 },
+        { status: "inactive", firstname: "Midmonth", lastname: "Expiry", startDate: Time.utc(2023, 12, 15), expirationTime: Time.utc(2024, 1, 15).to_i * 1000 }
       ])
     end
 
@@ -24,10 +26,10 @@ RSpec.describe Service::Analytics do
       ])
     end
 
-    it "preserves the legacy shape and includes historically active members regardless of current status" do
+    it "preserves the legacy start-of-month boundary, shape, and historical statuses" do
       expect(described_class.get_membership_per_month(
         Mongoid::Criteria.new(Member), Date.new(2024, 1, 1)
-      ).first).to eq([Date.new(2024, 1, 1), 3])
+      ).first).to eq([Date.new(2024, 1, 1), 4])
     end
   end
 
