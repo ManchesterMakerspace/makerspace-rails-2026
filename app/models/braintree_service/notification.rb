@@ -95,15 +95,17 @@ class BraintreeService::Notification
       ::Braintree::WebhookNotification::Kind::SubscriptionChargedSuccessfully,
       ::Braintree::WebhookNotification::Kind::SubscriptionChargedUnsuccessfully
     ].include?(notification.kind)
+    failed_payment_notification = notification.kind === ::Braintree::WebhookNotification::Kind::SubscriptionChargedUnsuccessfully
     invoice = if payment_notification && last_transaction
-      Invoice.oldest_active_invoice_matching_amount(resource_id, last_transaction.amount)
+      matching_invoice = Invoice.oldest_active_invoice_matching_amount(resource_id, last_transaction.amount)
+      matching_invoice || (Invoice.active_invoice_for_resource(resource_id) if failed_payment_notification)
     else
       Invoice.active_invoice_for_resource(resource_id)
     end
     related_resource = Invoice.resource(resource_class, resource_id)
 
     if invoice.nil?
-      if payment_notification && last_transaction
+      if payment_notification && !failed_payment_notification && last_transaction
         log_unmatched_payment(last_transaction, notification, related_resource, resource_class, resource_id)
         return
       end

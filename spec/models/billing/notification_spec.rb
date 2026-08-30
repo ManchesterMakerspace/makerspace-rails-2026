@@ -57,6 +57,21 @@ RSpec.describe BraintreeService::Notification, type: :model do
       BraintreeService::Notification.process(failure)
     end
 
+    it "processes a failed subscription payment without an exact amount match" do
+      failure = double(
+        kind: ::Braintree::WebhookNotification::Kind::SubscriptionChargedUnsuccessfully,
+        subscription: subscription,
+        timestamp: Time.now
+      )
+      allow(failure).to receive_message_chain(:subscription, :id).and_return(subscription.id)
+      allow(failure).to receive_message_chain(:subscription, :transactions, :first).and_return(transaction)
+      allow(Invoice).to receive(:oldest_active_invoice_matching_amount).and_return(nil)
+
+      expect(BraintreeService::Notification).to receive(:process_subscription_charge_failure).with(invoice, transaction)
+
+      BraintreeService::Notification.process(failure)
+    end
+
     it "processes subscription cancellation" do
       cancellation = double(kind: ::Braintree::WebhookNotification::Kind::SubscriptionCanceled, subscription: subscription, timestamp: Time.now)
       expect(BraintreeService::Notification).to receive(:process_subscription_cancellation).with(invoice)
