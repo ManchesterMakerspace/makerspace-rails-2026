@@ -65,7 +65,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
       )
       allow(failure).to receive_message_chain(:subscription, :id).and_return(subscription.id)
       allow(failure).to receive_message_chain(:subscription, :transactions, :first).and_return(transaction)
-      allow(Invoice).to receive(:oldest_active_invoice_matching_amount).and_return(nil)
+      allow(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).and_return(nil)
 
       expect(BraintreeService::Notification).to receive(:process_subscription_charge_failure).with(invoice, transaction)
 
@@ -167,7 +167,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
     end
 
     it "reports error if no invoice is found" do
-      allow(Invoice).to receive(:oldest_active_invoice_matching_amount).and_return(nil)
+      allow(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).and_return(nil)
       expect(BraintreeService::Notification).to receive(:enque_message).with(/<!channel>.*no open invoice matched/i, "interface-logs")
 
       BraintreeService::Notification.process_subscription(successful_charge_notification)
@@ -179,7 +179,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
     end
 
     it "reports error if no resource is found" do
-      allow(Invoice).to receive(:oldest_active_invoice_matching_amount).and_return(invoice)
+      allow(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).and_return(invoice)
       allow(invoice).to receive(:submit_for_settlement).and_raise(Error::NotFound)
       allow(successful_charge_notification).to receive_message_chain(:subscription, :transactions, :first).and_return(transaction)
       allow(BraintreeService::Notification).to receive(:enque_message).with(/processing invoice/i)
@@ -188,7 +188,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
     end
 
     it "reports error if unable to renew resource" do
-      allow(Invoice).to receive(:oldest_active_invoice_matching_amount).and_return(invoice)
+      allow(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).and_return(invoice)
       allow(invoice).to receive(:submit_for_settlement).and_raise(Error::UnprocessableEntity, "Some error")
       allow(successful_charge_notification).to receive_message_chain(:subscription, :transactions, :first).and_return(transaction)
       allow(BraintreeService::Notification).to receive(:enque_message).with(/processing invoice/i)
@@ -314,6 +314,59 @@ RSpec.describe BraintreeService::Notification, type: :model do
 
       expect(older_invoice.reload.transaction_id).to eq(transaction.id)
       expect(newer_invoice.reload.transaction_id).to be_nil
+    end
+
+    it "matches a non-subscription settlement by Braintree order ID before amount fallback" do
+      new_member = create(:member, customer_id: "bt-customer-order")
+      create(:card, member: new_member)
+      target_invoice = create(:invoice, member: new_member, amount: 65.0, created_at: 1.day.ago)
+      allow(transaction).to receive(:customer_details).and_return(
+        double(id: "bt-customer-order", first_name: new_member.firstname, last_name: new_member.lastname)
+      )
+      allow(transaction).to receive(:order_id).and_return(target_invoice.id.to_s)
+      allow(transaction).to receive(:amount).and_return(BigDecimal("65.00"))
+      allow(transaction).to receive(:line_items).and_return([])
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      expect(target_invoice.reload.transaction_id).to eq(transaction.id)
+    end
+
+    it "matches a subscription settlement by subscription ID before older equal-amount invoices" do
+      new_member = create(:member, customer_id: "bt-customer-subscription")
+      create(:card, member: new_member)
+      rental = create(:rental, member: new_member)
+      rental_invoice = create(
+        :invoice,
+        member: new_member,
+        resource_class: "rental",
+        resource_id: rental.id,
+        amount: 65.0,
+        created_at: 2.days.ago
+      )
+      subscription_id = "member_#{new_member.id}_subscription"
+      membership_invoice = create(
+        :invoice,
+        member: new_member,
+        resource_class: "member",
+        resource_id: new_member.id,
+        subscription_id: subscription_id,
+        amount: 65.0,
+        created_at: 1.day.ago
+      )
+      allow(transaction).to receive(:customer_details).and_return(
+        double(id: "bt-customer-subscription", first_name: new_member.firstname, last_name: new_member.lastname)
+      )
+      allow(transaction).to receive(:subscription_id).and_return(subscription_id)
+      allow(transaction).to receive(:amount).and_return(BigDecimal("65.00"))
+      allow(transaction).to receive(:line_items).and_return([])
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      expect(membership_invoice.reload.transaction_id).to eq(transaction.id)
+      expect(rental_invoice.reload.transaction_id).to be_nil
     end
   end
 end

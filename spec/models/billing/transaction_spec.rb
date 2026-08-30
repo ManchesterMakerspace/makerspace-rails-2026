@@ -127,7 +127,9 @@ RSpec.describe BraintreeService::Transaction, type: :model do
           allow(gateway).to receive_message_chain(:transaction, sale: success_result) # Setup method calls to gateway
           allow(BraintreeService::Transaction).to receive(:normalize).with(gateway, fake_transaction).and_return(fake_transaction)
 
-          expect(gateway.transaction).to receive(:sale).and_return(success_result)
+          expect(gateway.transaction).to receive(:sale).with(
+            hash_including(order_id: invoice.id.to_s)
+          ).and_return(success_result)
           result_transaction = BraintreeService::Transaction.submit_invoice_for_settlement(gateway, invoice)
 
           expect(result_transaction).to eq(fake_transaction)

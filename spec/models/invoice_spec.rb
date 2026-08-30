@@ -346,6 +346,36 @@ RSpec.describe Invoice, type: :model do
 
       expect(Invoice.oldest_active_invoice_for_member_matching_amount(member.id, "65.00")).to eq(rental_invoice)
     end
+
+    it "prioritizes subscription ID over plan and resource matches" do
+      resource_invoice = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental",
+        amount: 65.0,
+        created_at: 3.days.ago
+      )
+      subscription_invoice = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental",
+        subscription_id: "subscription-1",
+        amount: 65.0,
+        created_at: 1.day.ago
+      )
+
+      result = Invoice.oldest_active_subscription_invoice_matching_amount(
+        subscription_id: "subscription-1",
+        plan_id: nil,
+        resource_id: rental.id,
+        amount: "65.00"
+      )
+
+      expect(result).to eq(subscription_invoice)
+      expect(result).not_to eq(resource_invoice)
+    end
   end
 
 

@@ -262,6 +262,23 @@ class Invoice
     nil
   end
 
+  def self.oldest_active_subscription_invoice_matching_amount(subscription_id:, plan_id:, resource_id:, amount:)
+    scopes = []
+    scopes << where(subscription_id: subscription_id, settled_at: nil, transaction_id: nil) if subscription_id.present?
+    scopes << where(plan_id: plan_id, settled_at: nil, transaction_id: nil) if plan_id.present?
+    scopes << where(resource_id: resource_id, settled_at: nil, transaction_id: nil) if resource_id.present?
+
+    target_amount = BigDecimal(amount.to_s)
+    scopes.each do |scope|
+      invoice = scope.asc(:created_at).detect { |candidate| BigDecimal(candidate.amount.to_s) == target_amount }
+      return invoice if invoice
+    end
+
+    nil
+  rescue ArgumentError
+    nil
+  end
+
   def self.search(searchTerms, criteria = Mongoid::Criteria.new(Invoice))
     criteria.full_text_search(searchTerms)
   end

@@ -97,7 +97,12 @@ class BraintreeService::Notification
     ].include?(notification.kind)
     failed_payment_notification = notification.kind === ::Braintree::WebhookNotification::Kind::SubscriptionChargedUnsuccessfully
     invoice = if payment_notification && last_transaction
-      matching_invoice = Invoice.oldest_active_invoice_matching_amount(resource_id, last_transaction.amount)
+      matching_invoice = Invoice.oldest_active_subscription_invoice_matching_amount(
+        subscription_id: last_transaction.try(:subscription_id).presence || subscription_id,
+        plan_id: last_transaction.try(:plan_id).presence || notification.subscription.try(:plan_id),
+        resource_id: resource_id,
+        amount: last_transaction.amount
+      )
       matching_invoice || (Invoice.active_invoice_for_resource(resource_id) if failed_payment_notification)
     else
       Invoice.active_invoice_for_resource(resource_id)
@@ -255,7 +260,23 @@ No automated actions have been taken at this time.")
 
     if processed_invoice.nil? && notification.kind === Braintree::WebhookNotification::Kind::TransactionSettled
       member = member_for_transaction(last_transaction)
-      processed_invoice = Invoice.oldest_active_invoice_for_member_matching_amount(member.id, last_transaction.amount) if member
+      subscription_id = last_transaction.try(:subscription_id)
+
+      if subscription_id.present?
+        _, resource_id = ::BraintreeService::Subscription.read_id(subscription_id)
+        processed_invoice = Invoice.oldest_active_subscription_invoice_matching_amount(
+          subscription_id: subscription_id,
+          plan_id: last_transaction.try(:plan_id),
+          resource_id: resource_id,
+          amount: last_transaction.amount
+        )
+      else
+        order_id = last_transaction.try(:order_id).to_s
+        if order_id.match?(/\A[0-9a-f]{24}\z/i)
+          processed_invoice = Invoice.find_by(id: order_id, settled_at: nil, transaction_id: nil)
+        end
+        processed_invoice ||= Invoice.oldest_active_invoice_for_member_matching_amount(member.id, last_transaction.amount) if member
+      end
 
       if processed_invoice.nil?
         resource_id = member&.id || BSON::ObjectId.new
