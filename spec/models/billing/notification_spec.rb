@@ -35,8 +35,13 @@ RSpec.describe BraintreeService::Notification, type: :model do
 
     it "reads notification and stores in db" do
       expect {
-        BraintreeService::Notification.process(successful_charge_notification).to change(BraintreeService::Notification, :count).by(1)
-      }
+        BraintreeService::Notification.process(successful_charge_notification)
+      }.to change(BraintreeService::Notification, :count).by(1)
+
+      payload = JSON.parse(BraintreeService::Notification.desc(:id).first.payload)
+      expect(payload.fetch("incomingPayment").keys).to contain_exactly(
+        "status", "planId", "subscriptionId", "amount", "memberId", "customerDetails"
+      )
     end
 
     it "processes subscription payment" do
@@ -57,7 +62,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
       expect(BraintreeService::Notification).to receive(:process_subscription_cancellation).with(invoice)
       BraintreeService::Notification.process(cancellation)
     end
-    
+
     it "processes dispute" do
       expect(BraintreeService::Notification).to receive(:process_dispute).with(incoming_dispute_notification)
       BraintreeService::Notification.process(incoming_dispute_notification)
@@ -73,6 +78,9 @@ RSpec.describe BraintreeService::Notification, type: :model do
       create(:card, member: member)
       init_member_expiration = member.pretty_time
       allow(transaction).to receive(:line_items).and_return([])
+      allow(transaction).to receive(:customer_details).and_return(
+        double(first_name: "Paid", last_name: "Member")
+      )
       expect(BraintreeService::Notification).to receive(:enque_message).with(/recurring payment/i)
 
       BraintreeService::Notification.process_subscription(successful_charge_notification)
@@ -81,6 +89,46 @@ RSpec.describe BraintreeService::Notification, type: :model do
       expect(invoice.settled).to be_truthy
       expect(member.pretty_time.to_i).to be > (init_member_expiration.to_i)
       expect(invoice.transaction_id).to eq(transaction.id)
+
+      audit_log = AuditLog.find_by(event_type: "invoice_settled", resource_id: invoice.id)
+      expect(audit_log).to be_present
+      expect(audit_log.after_snapshot.dig("incomingPayment", "status")).to eq(transaction.status)
+      expect(audit_log.after_snapshot.dig("incomingPayment", "amount")).to eq(transaction.amount.to_f)
+      expect(audit_log.after_snapshot.dig("incomingPayment", "memberId")).to eq(member.id.to_s)
+      expect(audit_log.after_snapshot.dig("incomingPayment", "customerDetails", "id")).to eq(transaction.id)
+      expect(audit_log.after_snapshot.dig("incomingPayment", "customerDetails", "first_name")).to eq("Paid")
+      expect(audit_log.after_snapshot.dig("incomingPayment", "customerDetails", "last_name")).to eq("Member")
+      expect(audit_log.after_snapshot.fetch("incomingPayment").keys).to contain_exactly(
+        "status", "planId", "subscriptionId", "amount", "memberId", "customerDetails"
+      )
+      expect(audit_log.after_snapshot.dig("invoice", "id")).to eq(invoice.id.to_s)
+      expect(audit_log.after_snapshot.dig("invoice", "description")).to eq(invoice.description)
+      expect(audit_log.after_snapshot.fetch("invoice").keys).to contain_exactly(
+        "description", "id", "resourceClass", "subscriptionId", "dueDate", "planId"
+      )
+    end
+
+
+    it "applies a payment to the oldest open invoice with an equal numeric amount" do
+      older_invoice = invoice
+      older_invoice.update!(created_at: 2.days.ago, amount: 65.0)
+      newer_invoice = build(
+        :invoice,
+        member: member,
+        resource_id: member.id,
+        resource_class: "member",
+        amount: 65.0,
+        created_at: 1.day.ago
+      )
+      newer_invoice.save!(validate: false)
+      allow(transaction).to receive(:amount).and_return(BigDecimal("65.00"))
+      allow(transaction).to receive(:line_items).and_return([])
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      BraintreeService::Notification.process_subscription(successful_charge_notification)
+
+      expect(older_invoice.reload.transaction_id).to eq(transaction.id)
+      expect(newer_invoice.reload.transaction_id).to be_nil
     end
 
     it "Skips settlement if invoice is already in progress" do 
@@ -104,14 +152,19 @@ RSpec.describe BraintreeService::Notification, type: :model do
     end
 
     it "reports error if no invoice is found" do
-      allow(successful_charge_notification).to receive_message_chain(:subscription, :transactions, :first).and_return(transaction)
-      allow(Invoice).to receive(:active_invoice_for_resource).and_return(nil)
-      expect(BraintreeService::Notification).to receive(:enque_message).with(/no active invoice/i, "treasurer")
+      allow(Invoice).to receive(:oldest_active_invoice_matching_amount).and_return(nil)
+      expect(BraintreeService::Notification).to receive(:enque_message).with(/<!channel>.*no open invoice matched/i, "interface-logs")
+
       BraintreeService::Notification.process_subscription(successful_charge_notification)
+
+      audit_log = AuditLog.find_by(event_type: "braintree_payment_unmatched")
+      expect(audit_log).to be_present
+      expect(audit_log.after_snapshot.dig("incomingPayment", "status")).to eq(transaction.status)
+      expect(audit_log.after_snapshot.dig("incomingPayment", "amount")).to eq(transaction.amount.to_f)
     end
 
-    it "reports error if no resoruce is found" do
-      allow(Invoice).to receive(:active_invoice_for_resource).and_return(invoice)
+    it "reports error if no resource is found" do
+      allow(Invoice).to receive(:oldest_active_invoice_matching_amount).and_return(invoice)
       allow(invoice).to receive(:submit_for_settlement).and_raise(Error::NotFound)
       allow(successful_charge_notification).to receive_message_chain(:subscription, :transactions, :first).and_return(transaction)
       allow(BraintreeService::Notification).to receive(:enque_message).with(/processing invoice/i)
@@ -120,7 +173,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
     end
 
     it "reports error if unable to renew resource" do
-      allow(Invoice).to receive(:active_invoice_for_resource).and_return(invoice)
+      allow(Invoice).to receive(:oldest_active_invoice_matching_amount).and_return(invoice)
       allow(invoice).to receive(:submit_for_settlement).and_raise(Error::UnprocessableEntity, "Some error")
       allow(successful_charge_notification).to receive_message_chain(:subscription, :transactions, :first).and_return(transaction)
       allow(BraintreeService::Notification).to receive(:enque_message).with(/processing invoice/i)
@@ -201,6 +254,25 @@ RSpec.describe BraintreeService::Notification, type: :model do
       settled_invoice.reload
       expect(settled_invoice.settled).to be_truthy
       expect(new_member.pretty_time.to_i).to be > (init_member_expiration.to_i)
+    end
+
+
+    it "matches an unassigned settled transaction to the member's oldest equal-amount invoice" do
+      new_member = create(:member, customer_id: "bt-customer-1")
+      older_invoice = create(:invoice, member: new_member, amount: 65.0, created_at: 2.days.ago)
+      newer_invoice = build(:invoice, member: new_member, amount: 65.0, created_at: 1.day.ago)
+      newer_invoice.save!(validate: false)
+      allow(transaction).to receive(:customer_details).and_return(
+        double(id: "bt-customer-1", first_name: new_member.firstname, last_name: new_member.lastname)
+      )
+      allow(transaction).to receive(:amount).and_return(BigDecimal("65.00"))
+      allow(transaction).to receive(:line_items).and_return([])
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      expect(older_invoice.reload.transaction_id).to eq(transaction.id)
+      expect(newer_invoice.reload.transaction_id).to be_nil
     end
   end
 end

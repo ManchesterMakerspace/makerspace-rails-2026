@@ -242,6 +242,16 @@ class Invoice
     active = self.find_by(resource_id: resource_id, settled_at: nil, transaction_id: nil)
   end
 
+  def self.oldest_active_invoice_matching_amount(resource_id, amount)
+    target_amount = BigDecimal(amount.to_s)
+
+    where(resource_id: resource_id, settled_at: nil, transaction_id: nil)
+      .asc(:created_at)
+      .detect { |invoice| BigDecimal(invoice.amount.to_s) == target_amount }
+  rescue ArgumentError
+    nil
+  end
+
   def self.search(searchTerms, criteria = Mongoid::Criteria.new(Invoice))
     criteria.full_text_search(searchTerms)
   end
@@ -307,8 +317,16 @@ class Invoice
   # established precedent for this exact scoping concern.
   def one_active_invoice_per_resource
     active = Invoice.where(resource_id: resource_id, resource_class: "member", settled_at: nil, transaction_id: nil)
+    outstanding_invoice = active.first
 
-    errors.add(:base, "Cannot create duplicate memberships for same user") if active.exists?
+    return unless outstanding_invoice
+
+    errors.add(
+      :base,
+      "Please pay outstanding #{outstanding_invoice.description} invoice for " \
+        "$#{format('%.2f', outstanding_invoice.amount)} dated " \
+        "#{outstanding_invoice.created_at.strftime('%m/%d/%Y')}"
+    )
   end
 
   def resource_exists

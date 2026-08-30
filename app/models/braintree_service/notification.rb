@@ -39,12 +39,18 @@ class BraintreeService::Notification
       end
 
       resource_class, resource_id = ::BraintreeService::Subscription.read_id(notification.subscription.id)
+      transaction = notification.subscription.transactions.first
 
       {
         subscription_id: notification.subscription.id,
-        transaction_id: notification.subscription.transactions.first ? notification.subscription.transactions.first.id : nil,
+        transaction_id: transaction&.id,
         resource_class: resource_class,
-        resource_id: resource_id
+        resource_id: resource_id,
+        incomingPayment: payment_log_details(
+          transaction,
+          nil,
+          resource_class == "member" ? resource_id : nil
+        )[:incomingPayment]
       }
     elsif dispute_notifications.include?(notification.kind)
       if notification.dispute.nil?
@@ -64,9 +70,15 @@ class BraintreeService::Notification
         return
       end
 
+      member = member_for_transaction(notification.transaction)
       {
         transaction_id: notification.transaction.id,
-        status: notification.transaction.status
+        status: notification.transaction.status,
+        incomingPayment: payment_log_details(
+          notification.transaction,
+          nil,
+          member&.id
+        )[:incomingPayment]
       }
     else
       enque_message("Received unknown notification #{notification.kind}")
@@ -79,10 +91,23 @@ class BraintreeService::Notification
     resource_class, resource_id = ::BraintreeService::Subscription.read_id(subscription_id)
     last_transaction = notification.subscription.transactions.first
 
-    invoice = Invoice.active_invoice_for_resource(resource_id)
+    payment_notification = [
+      ::Braintree::WebhookNotification::Kind::SubscriptionChargedSuccessfully,
+      ::Braintree::WebhookNotification::Kind::SubscriptionChargedUnsuccessfully
+    ].include?(notification.kind)
+    invoice = if payment_notification && last_transaction
+      Invoice.oldest_active_invoice_matching_amount(resource_id, last_transaction.amount)
+    else
+      Invoice.active_invoice_for_resource(resource_id)
+    end
     related_resource = Invoice.resource(resource_class, resource_id)
 
     if invoice.nil?
+      if payment_notification && last_transaction
+        log_unmatched_payment(last_transaction, notification, related_resource, resource_class, resource_id)
+        return
+      end
+
       identifier = "#{resource_class} ID #{resource_id}"
 
       unless related_resource.nil?
@@ -226,6 +251,17 @@ No automated actions have been taken at this time.")
     last_transaction = notification.transaction
     processed_invoice = Invoice.find_by(transaction_id: last_transaction.id)
 
+    if processed_invoice.nil? && notification.kind === Braintree::WebhookNotification::Kind::TransactionSettled
+      member = member_for_transaction(last_transaction)
+      processed_invoice = Invoice.oldest_active_invoice_matching_amount(member.id, last_transaction.amount) if member
+
+      if processed_invoice.nil?
+        resource_id = member&.id || BSON::ObjectId.new
+        log_unmatched_payment(last_transaction, notification, member, "member", resource_id)
+        return
+      end
+    end
+
     if processed_invoice.nil?
       enque_message("Unable to process transaction notification. No invoice found matching transaction ID #{last_transaction.id}.")
       return
@@ -298,7 +334,74 @@ No automated actions have been taken at this time.")
       return
     end
 
+    log_invoice_settled(invoice, transaction)
     BillingMailer.receipt(invoice.member.email, transaction.id.as_json, invoice.id.as_json).deliver_later
+  end
+
+  def self.log_invoice_settled(invoice, transaction)
+    ::Service::AuditLogger.log(
+      log_type: "member",
+      event_type: "invoice_settled",
+      resource_type: "Invoice",
+      resource_id: invoice.id,
+      subject: invoice.member,
+      after_snapshot: payment_log_details(transaction, invoice)
+    )
+  end
+
+  def self.log_unmatched_payment(transaction, notification, related_resource, resource_class, resource_id)
+    member = related_resource.is_a?(Member) ? related_resource : related_resource&.try(:member)
+    details = payment_log_details(transaction, nil, member&.id)
+    message = "No open invoice matched Braintree payment #{transaction.id} for " \
+      "#{resource_class} #{resource_id} with amount $#{format('%.2f', transaction.amount.to_d)}."
+
+    ::Service::AuditLogger.log(
+      log_type: "member",
+      event_type: "braintree_payment_unmatched",
+      resource_type: related_resource&.class&.name || resource_class.to_s.classify,
+      resource_id: related_resource&.id || resource_id,
+      subject: member,
+      after_snapshot: details,
+      message_details: message
+    )
+    Rails.logger.warn("[BraintreeTransaction] #{message} payload=#{details.to_json} kind=#{notification.kind}")
+    enque_message(
+      "<!channel> ⚠️ #{message}",
+      ::Service::SlackConnector.logs_channel
+    )
+  end
+
+  def self.payment_log_details(transaction, invoice = nil, member_id = nil)
+    customer_details = transaction.try(:customer_details)
+    member = invoice&.member
+
+    {
+      incomingPayment: {
+        status: transaction.try(:status),
+        planId: transaction.try(:plan_id),
+        subscriptionId: transaction.try(:subscription_id),
+        amount: transaction.try(:amount)&.to_d&.to_f,
+        memberId: (member&.id || member_id)&.to_s,
+        customerDetails: {
+          id: transaction.try(:id),
+          first_name: customer_details.try(:first_name),
+          last_name: customer_details.try(:last_name)
+        }
+      },
+      invoice: invoice && {
+        description: invoice.description,
+        id: invoice.id.to_s,
+        resourceClass: invoice.resource_class,
+        subscriptionId: invoice.subscription_id,
+        dueDate: invoice.due_date,
+        planId: invoice.plan_id
+      }
+    }
+  end
+
+  def self.member_for_transaction(transaction)
+    customer_id = transaction.try(:customer_details).try(:id)
+    Member.find_by(customer_id: customer_id) if customer_id.present?
   end
 
   def self.prior_sub_notification_for_resource(resource)

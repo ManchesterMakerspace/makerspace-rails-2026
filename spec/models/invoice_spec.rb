@@ -304,6 +304,36 @@ RSpec.describe Invoice, type: :model do
       active_invoice = create(:invoice, member: member, resource_id: rental.id, resource_class: "rental")
       expect(Invoice.active_invoice_for_resource(rental.id)).to eq(active_invoice)
     end
+
+    it "finds the oldest open invoice whose numeric amount matches" do
+      newer_match = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental",
+        amount: 65.0,
+        created_at: 1.day.ago
+      )
+      oldest_match = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental",
+        amount: 65.0,
+        created_at: 2.days.ago
+      )
+      create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental",
+        amount: 75.0,
+        created_at: 3.days.ago
+      )
+
+      expect(Invoice.oldest_active_invoice_matching_amount(rental.id, BigDecimal("65.00"))).to eq(oldest_match)
+      expect(Invoice.oldest_active_invoice_matching_amount(rental.id, 65)).not_to eq(newer_match)
+    end
   end
 
 
@@ -377,11 +407,21 @@ RSpec.describe Invoice, type: :model do
     let(:member) { create(:member) }
 
     it "rejects a second active member invoice for the same resource without deleting the first" do
-      first = create(:invoice, member: member, resource_class: "member", resource_id: member.id)
+      first = create(
+        :invoice,
+        member: member,
+        resource_class: "member",
+        resource_id: member.id,
+        description: "annual membership",
+        amount: 65.5,
+        created_at: Time.zone.local(2026, 1, 2)
+      )
 
       second = build(:invoice, member: member, resource_class: "member", resource_id: member.id)
       expect(second).not_to be_valid
-      expect(second.errors[:base]).to include("Cannot create duplicate memberships for same user")
+      expect(second.errors[:base]).to include(
+        "Please pay outstanding annual membership invoice for $65.50 dated 01/02/2026"
+      )
 
       # Non-destructive — the original invoice must still exist
       expect(Invoice.find(first.id)).to be_present
