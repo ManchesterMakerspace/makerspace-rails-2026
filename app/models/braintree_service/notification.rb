@@ -336,7 +336,8 @@ No automated actions have been taken at this time.")
       return
     end
 
-    log_invoice_settled(invoice, transaction)
+    invoice.reload
+    log_invoice_settled(invoice, transaction) if invoice.settled
     BillingMailer.receipt(invoice.member.email, transaction.id.as_json, invoice.id.as_json).deliver_later
   end
 

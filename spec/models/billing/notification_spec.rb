@@ -195,6 +195,18 @@ RSpec.describe BraintreeService::Notification, type: :model do
       expect(BraintreeService::Notification).to receive(:enque_message).with(/some error/i)
       BraintreeService::Notification.process_subscription(successful_charge_notification)
     end
+
+    it "does not audit settlement when invoice processing is delayed" do
+      allow(BraintreeService::Notification).to receive(:enque_message)
+      allow(invoice).to receive(:submit_for_settlement)
+      allow(invoice).to receive(:reload).and_return(invoice)
+      allow(invoice).to receive(:settled).and_return(false)
+      allow(BillingMailer).to receive_message_chain(:receipt, :deliver_later)
+
+      expect(BraintreeService::Notification).not_to receive(:log_invoice_settled)
+
+      BraintreeService::Notification.send(:process_success, invoice, transaction)
+    end
   end
 
   describe "#process_dispute" do
