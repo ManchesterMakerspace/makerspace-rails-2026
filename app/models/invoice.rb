@@ -252,6 +252,16 @@ class Invoice
     nil
   end
 
+  def self.oldest_active_invoice_for_member_matching_amount(member_id, amount)
+    target_amount = BigDecimal(amount.to_s)
+
+    where(member_id: member_id, settled_at: nil, transaction_id: nil)
+      .asc(:created_at)
+      .detect { |invoice| BigDecimal(invoice.amount.to_s) == target_amount }
+  rescue ArgumentError
+    nil
+  end
+
   def self.search(searchTerms, criteria = Mongoid::Criteria.new(Invoice))
     criteria.full_text_search(searchTerms)
   end

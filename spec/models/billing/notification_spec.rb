@@ -79,7 +79,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
       init_member_expiration = member.pretty_time
       allow(transaction).to receive(:line_items).and_return([])
       allow(transaction).to receive(:customer_details).and_return(
-        double(first_name: "Paid", last_name: "Member")
+        double(id: "bt-customer-1", first_name: "Paid", last_name: "Member")
       )
       expect(BraintreeService::Notification).to receive(:enque_message).with(/recurring payment/i)
 
@@ -95,7 +95,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
       expect(audit_log.after_snapshot.dig("incomingPayment", "status")).to eq(transaction.status)
       expect(audit_log.after_snapshot.dig("incomingPayment", "amount")).to eq(transaction.amount.to_f)
       expect(audit_log.after_snapshot.dig("incomingPayment", "memberId")).to eq(member.id.to_s)
-      expect(audit_log.after_snapshot.dig("incomingPayment", "customerDetails", "id")).to eq(transaction.id)
+      expect(audit_log.after_snapshot.dig("incomingPayment", "customerDetails", "id")).to eq("bt-customer-1")
       expect(audit_log.after_snapshot.dig("incomingPayment", "customerDetails", "first_name")).to eq("Paid")
       expect(audit_log.after_snapshot.dig("incomingPayment", "customerDetails", "last_name")).to eq("Member")
       expect(audit_log.after_snapshot.fetch("incomingPayment").keys).to contain_exactly(
@@ -257,11 +257,25 @@ RSpec.describe BraintreeService::Notification, type: :model do
     end
 
 
-    it "matches an unassigned settled transaction to the member's oldest equal-amount invoice" do
+    it "matches an unassigned settled transaction to the member's oldest equal-amount rental invoice" do
       new_member = create(:member, customer_id: "bt-customer-1")
-      older_invoice = create(:invoice, member: new_member, amount: 65.0, created_at: 2.days.ago)
-      newer_invoice = build(:invoice, member: new_member, amount: 65.0, created_at: 1.day.ago)
-      newer_invoice.save!(validate: false)
+      rental = create(:rental, member: new_member)
+      older_invoice = create(
+        :invoice,
+        member: new_member,
+        resource_class: "rental",
+        resource_id: rental.id,
+        amount: 65.0,
+        created_at: 2.days.ago
+      )
+      newer_invoice = create(
+        :invoice,
+        member: new_member,
+        resource_class: "rental",
+        resource_id: rental.id,
+        amount: 65.0,
+        created_at: 1.day.ago
+      )
       allow(transaction).to receive(:customer_details).and_return(
         double(id: "bt-customer-1", first_name: new_member.firstname, last_name: new_member.lastname)
       )

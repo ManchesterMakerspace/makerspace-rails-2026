@@ -334,6 +334,18 @@ RSpec.describe Invoice, type: :model do
       expect(Invoice.oldest_active_invoice_matching_amount(rental.id, BigDecimal("65.00"))).to eq(oldest_match)
       expect(Invoice.oldest_active_invoice_matching_amount(rental.id, 65)).not_to eq(newer_match)
     end
+
+    it "finds matching invoices by member ownership regardless of resource" do
+      rental_invoice = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental",
+        amount: 65.0
+      )
+
+      expect(Invoice.oldest_active_invoice_for_member_matching_amount(member.id, "65.00")).to eq(rental_invoice)
+    end
   end
 
 

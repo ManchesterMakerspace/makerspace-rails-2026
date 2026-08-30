@@ -253,7 +253,7 @@ No automated actions have been taken at this time.")
 
     if processed_invoice.nil? && notification.kind === Braintree::WebhookNotification::Kind::TransactionSettled
       member = member_for_transaction(last_transaction)
-      processed_invoice = Invoice.oldest_active_invoice_matching_amount(member.id, last_transaction.amount) if member
+      processed_invoice = Invoice.oldest_active_invoice_for_member_matching_amount(member.id, last_transaction.amount) if member
 
       if processed_invoice.nil?
         resource_id = member&.id || BSON::ObjectId.new
@@ -383,7 +383,7 @@ No automated actions have been taken at this time.")
         amount: transaction.try(:amount)&.to_d&.to_f,
         memberId: (member&.id || member_id)&.to_s,
         customerDetails: {
-          id: transaction.try(:id),
+          id: customer_details.try(:id),
           first_name: customer_details.try(:first_name),
           last_name: customer_details.try(:last_name)
         }
