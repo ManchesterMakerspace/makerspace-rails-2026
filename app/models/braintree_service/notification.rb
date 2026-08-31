@@ -279,7 +279,8 @@ No automated actions have been taken at this time.")
       return
     end
 
-    if processed_invoice&.locked
+    if notification.kind === Braintree::WebhookNotification::Kind::TransactionSettled &&
+       processed_invoice&.locked
       reclaimed_invoice = Invoice.claim_for_transaction(processed_invoice.id, last_transaction.id)
       if reclaimed_invoice
         processed_invoice = reclaimed_invoice

@@ -337,13 +337,15 @@ RSpec.describe BraintreeService::Notification, type: :model do
       allow(failed_transaction_notification).to receive(:transaction).and_return(pd_transaction)
     end
 
-    it "Unsettles invoice and un-renews resource on failure" do
+    it "unsettles a processed, locked invoice and un-renews its resource on failure" do
       new_member = create(:member)
       settled_invoice = create(
         :invoice,
         member: new_member,
         transaction_id: pd_transaction.id,
-        settlement_processed_at: 1.minute.ago
+        settlement_processed_at: 1.minute.ago,
+        locked: true,
+        locked_at: Time.current
       )
       create(:card, member: new_member)
       new_member.reload
