@@ -172,13 +172,21 @@ No automated actions have been taken at this time.")
     
     dupe_invoice = Invoice.find_by(transaction_id: last_transaction.id, :id.ne => invoice.id)
     if dupe_invoice.nil?
+      claimed_invoice = Invoice.claim_for_transaction(invoice.id, last_transaction.id)
+      unless claimed_invoice
+        enque_message("Duplicate SubscriptionChargedSuccessfully notification for claimed invoice #{invoice.id}. Skipping processing", ::Service::SlackConnector.treasurer_channel)
+        return
+      end
+
       InvoiceHelper.pay_workflow(
-        invoice.id,
-        Proc.new { process_success(invoice, last_transaction) }
+        claimed_invoice.id,
+        Proc.new { process_success(claimed_invoice, last_transaction) }
       )
     else
       enque_message("Received duplicate notification regarding #{invoice.name} for #{invoice.member.fullname}. TID: #{last_transaction.id}", ::Service::SlackConnector.treasurer_channel)
     end
+  ensure
+    claimed_invoice&.update!(locked: false, locked_at: nil)
   end
 
   def self.process_subscription_charge_failure(invoice, last_transaction)
@@ -262,7 +270,8 @@ No automated actions have been taken at this time.")
     requires_claim = false
     claim_acquired = false
 
-    if processed_invoice&.settlement_processed_at
+    if notification.kind === Braintree::WebhookNotification::Kind::TransactionSettled &&
+       processed_invoice&.settlement_processed_at
       enque_message(
         "Duplicate TransactionSettled notification for processed transaction #{last_transaction.id}. Skipping processing",
         ::Service::SlackConnector.treasurer_channel

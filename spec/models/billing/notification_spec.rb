@@ -239,7 +239,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
 
     it "reports error if no resource is found" do
       allow(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).and_return(invoice)
-      allow(invoice).to receive(:submit_for_settlement).and_raise(Error::NotFound)
+      allow_any_instance_of(Invoice).to receive(:submit_for_settlement).and_raise(Error::NotFound)
       allow(successful_charge_notification).to receive_message_chain(:subscription, :transactions, :first).and_return(transaction)
       allow(BraintreeService::Notification).to receive(:enque_message).with(/processing invoice/i)
       expect(BraintreeService::Notification).to receive(:enque_message).with(/unknown resource/i)
@@ -248,11 +248,42 @@ RSpec.describe BraintreeService::Notification, type: :model do
 
     it "reports error if unable to renew resource" do
       allow(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).and_return(invoice)
-      allow(invoice).to receive(:submit_for_settlement).and_raise(Error::UnprocessableEntity, "Some error")
+      allow_any_instance_of(Invoice).to receive(:submit_for_settlement).and_raise(Error::UnprocessableEntity, "Some error")
       allow(successful_charge_notification).to receive_message_chain(:subscription, :transactions, :first).and_return(transaction)
       allow(BraintreeService::Notification).to receive(:enque_message).with(/processing invoice/i)
       expect(BraintreeService::Notification).to receive(:enque_message).with(/some error/i)
       BraintreeService::Notification.process_subscription(successful_charge_notification)
+    end
+
+    it "claims a subscription invoice before processing a successful charge" do
+      allow(InvoiceHelper).to receive(:get_lifecycle).and_return(nil)
+      allow(InvoiceHelper).to receive(:pay_workflow) { |_invoice_id, workflow| workflow.call }
+      allow(BraintreeService::Notification).to receive(:process_success)
+
+      expect(Invoice).to receive(:claim_for_transaction).with(invoice.id, transaction.id).and_call_original
+
+      BraintreeService::Notification.send(:process_subscription_charge_success, invoice, transaction)
+
+      expect(BraintreeService::Notification).to have_received(:process_success).with(
+        an_object_having_attributes(id: invoice.id, transaction_id: transaction.id),
+        transaction
+      )
+      expect(invoice.reload.locked).to be(false)
+    end
+
+    it "does not process a subscription invoice claimed by another webhook" do
+      allow(InvoiceHelper).to receive(:get_lifecycle).and_return(nil)
+      allow(Invoice).to receive(:claim_for_transaction).with(invoice.id, transaction.id).and_return(nil)
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      expect(BraintreeService::Notification).not_to receive(:process_success)
+
+      BraintreeService::Notification.send(:process_subscription_charge_success, invoice, transaction)
+
+      expect(BraintreeService::Notification).to have_received(:enque_message).with(
+        /duplicate.*claimed invoice/i,
+        "treasurer"
+      )
     end
 
     it "does not audit settlement when invoice processing is delayed" do
@@ -308,7 +339,12 @@ RSpec.describe BraintreeService::Notification, type: :model do
 
     it "Unsettles invoice and un-renews resource on failure" do
       new_member = create(:member)
-      settled_invoice = create(:invoice, member: new_member, transaction_id: pd_transaction.id) 
+      settled_invoice = create(
+        :invoice,
+        member: new_member,
+        transaction_id: pd_transaction.id,
+        settlement_processed_at: 1.minute.ago
+      )
       create(:card, member: new_member)
       new_member.reload
       init_member_expiration = new_member.pretty_time
