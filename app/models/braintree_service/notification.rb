@@ -361,6 +361,17 @@ No automated actions have been taken at this time.")
       return
     end
 
+    if notification.kind === Braintree::WebhookNotification::Kind::TransactionSettlementDeclined
+      claimed_invoice = Invoice.claim_for_settlement_decline(processed_invoice.id, last_transaction.id)
+      unless claimed_invoice
+        raise ::Error::Conflict.new(
+          "Settlement decline for transaction #{last_transaction.id} is waiting for active invoice processing"
+        )
+      end
+      processed_invoice = claimed_invoice
+      decline_claim_acquired = true
+    end
+
     slack_member = SlackUser.find_by(member_id: processed_invoice.member.id)
 
     if notification.kind === Braintree::WebhookNotification::Kind::TransactionSettled
@@ -374,21 +385,25 @@ No automated actions have been taken at this time.")
         end
       end
     elsif notification.kind === Braintree::WebhookNotification::Kind::TransactionSettlementDeclined
-      processed_invoice.reverse_settlement
-      member_notified = slack_member ? "The member has been notified via Slack and email as well." : "Unable to notify member via Slack. Reach out to member to resolve."
-      unless slack_member.nil?
+      begin
+        processed_invoice.reverse_settlement
+        member_notified = slack_member ? "The member has been notified via Slack and email as well." : "Unable to notify member via Slack. Reach out to member to resolve."
+        unless slack_member.nil?
+          enque_message(
+            "Your payment for #{processed_invoice.name} was unsuccessful. Error status: #{last_transaction.status}. Please <#{Rails.configuration.x.app_base_url}/#{processed_invoice.member.id}/settings|review your payment settings> or contact an administrator for assistance.",
+            slack_member.slack_id,
+            ::Service::SlackConnector.request_caller_id("notification.process_transaction.member.#{processed_invoice.id}")
+          )
+        end
         enque_message(
-          "Your payment for #{processed_invoice.name} was unsuccessful. Error status: #{last_transaction.status}. Please <#{Rails.configuration.x.app_base_url}/#{processed_invoice.member.id}/settings|review your payment settings> or contact an administrator for assistance.",
-          slack_member.slack_id,
-          ::Service::SlackConnector.request_caller_id("notification.process_transaction.member.#{processed_invoice.id}")
+          "Recent transaction from #{get_member_profile(processed_invoice.member)} for #{processed_invoice.name} failed with status: #{last_transaction.status}. #{member_notified}",
+          ::Service::SlackConnector.members_relations_channel,
+          ::Service::SlackConnector.request_caller_id("notification.process_transaction.management.#{processed_invoice.id}")
         )
+        BillingMailer.failed_payment(processed_invoice.member.email, processed_invoice.id.to_s, last_transaction.status).deliver_later
+      ensure
+        processed_invoice.update!(locked: false, locked_at: nil) if decline_claim_acquired
       end
-      enque_message(
-        "Recent transaction from #{get_member_profile(processed_invoice.member)} for #{processed_invoice.name} failed with status: #{last_transaction.status}. #{member_notified}",
-        ::Service::SlackConnector.members_relations_channel,
-        ::Service::SlackConnector.request_caller_id("notification.process_transaction.management.#{processed_invoice.id}")
-      )
-      BillingMailer.failed_payment(processed_invoice.member.email, processed_invoice.id.to_s, last_transaction.status).deliver_later
     end
   end
 

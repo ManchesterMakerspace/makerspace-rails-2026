@@ -352,15 +352,13 @@ RSpec.describe BraintreeService::Notification, type: :model do
       allow(failed_transaction_notification).to receive(:transaction).and_return(pd_transaction)
     end
 
-    it "unsettles a processed, locked invoice and un-renews its resource on failure" do
+    it "unsettles a processed invoice and un-renews its resource on failure" do
       new_member = create(:member)
       settled_invoice = create(
         :invoice,
         member: new_member,
         transaction_id: pd_transaction.id,
-        settlement_processed_at: 1.minute.ago,
-        locked: true,
-        locked_at: Time.current
+        settlement_processed_at: 1.minute.ago
       )
       create(:card, member: new_member)
       new_member.reload
@@ -374,6 +372,21 @@ RSpec.describe BraintreeService::Notification, type: :model do
       expect(settled_invoice.settled).to be_falsy
       expect(new_member.pretty_time.to_i).to be < (init_member_expiration.to_i)
       expect(settled_invoice.transaction_id).to eq(pd_transaction.id)
+    end
+
+    it "defers a settlement decline while successful charge processing holds the invoice claim" do
+      claimed_invoice = create(
+        :invoice,
+        transaction_id: pd_transaction.id,
+        locked: true,
+        locked_at: Time.current
+      )
+
+      expect {
+        BraintreeService::Notification.process_transaction(failed_transaction_notification)
+      }.to raise_error(Error::Conflict, /waiting for active invoice processing/i)
+
+      expect(claimed_invoice.reload.locked).to be(true)
     end
 
     it "reports error if no invoice is found" do

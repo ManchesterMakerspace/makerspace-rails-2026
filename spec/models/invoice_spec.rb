@@ -402,12 +402,44 @@ RSpec.describe Invoice, type: :model do
       result = Invoice.oldest_active_subscription_invoice_matching_amount(
         subscription_id: "unknown-subscription",
         plan_id: "shared-plan",
-        resource_id: nil,
+        resource_id: member.id,
         member_id: member.id,
         amount: "65.00"
       )
 
       expect(result).to eq(member_invoice)
+    end
+
+    it "constrains plan fallback matches to the parsed subscription resource" do
+      other_rental = create(:rental, member: member)
+      create(
+        :invoice,
+        member: member,
+        resource_id: other_rental.id,
+        resource_class: "rental",
+        plan_id: "shared-rental-plan",
+        amount: 65.0,
+        created_at: 2.days.ago
+      )
+      rental_invoice = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental",
+        plan_id: "shared-rental-plan",
+        amount: 65.0,
+        created_at: 1.day.ago
+      )
+
+      result = Invoice.oldest_active_subscription_invoice_matching_amount(
+        subscription_id: "unknown-subscription",
+        plan_id: "shared-rental-plan",
+        resource_id: rental.id,
+        member_id: member.id,
+        amount: "65.00"
+      )
+
+      expect(result).to eq(rental_invoice)
     end
 
 
