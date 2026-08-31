@@ -40,6 +40,7 @@ class BraintreeService::Notification
 
       resource_class, resource_id = ::BraintreeService::Subscription.read_id(notification.subscription.id)
       transaction = notification.subscription.transactions.first
+      member = member_for_subscription(resource_class, resource_id, transaction)
 
       {
         subscription_id: notification.subscription.id,
@@ -49,7 +50,7 @@ class BraintreeService::Notification
         incomingPayment: payment_log_details(
           transaction,
           nil,
-          resource_class == "member" ? resource_id : nil
+          member&.id
         )[:incomingPayment]
       }
     elsif dispute_notifications.include?(notification.kind)
@@ -255,9 +256,18 @@ No automated actions have been taken at this time.")
     end
   end
 
-  def self.process_transaction(notification)
+  def self.process_transaction(notification, claim_attempt = 0)
     last_transaction = notification.transaction
     processed_invoice = Invoice.find_by(transaction_id: last_transaction.id)
+    requires_claim = false
+
+    if processed_invoice&.locked
+      enque_message(
+        "Duplicate TransactionSettled notification for claimed transaction #{last_transaction.id}. Skipping processing",
+        ::Service::SlackConnector.treasurer_channel
+      )
+      return
+    end
 
     if processed_invoice.nil? && notification.kind === Braintree::WebhookNotification::Kind::TransactionSettled
       member = member_for_transaction(last_transaction)
@@ -280,11 +290,35 @@ No automated actions have been taken at this time.")
         processed_invoice ||= Invoice.oldest_active_invoice_for_member_matching_amount(member.id, last_transaction.amount) if member
       end
 
+      requires_claim = processed_invoice.present?
+
       if processed_invoice.nil?
         resource_id = member&.id || BSON::ObjectId.new
         log_unmatched_payment(last_transaction, notification, member, "member", resource_id)
         return
       end
+    end
+
+    if requires_claim
+      claimed_invoice = Invoice.claim_for_transaction(processed_invoice.id, last_transaction.id)
+      unless claimed_invoice
+        if Invoice.where(transaction_id: last_transaction.id).exists?
+          enque_message(
+            "Duplicate TransactionSettled notification for claimed transaction #{last_transaction.id}. Skipping processing",
+            ::Service::SlackConnector.treasurer_channel
+          )
+          return
+        end
+
+        if claim_attempt < 2
+          return process_transaction(notification, claim_attempt + 1)
+        end
+
+        resource_id = member&.id || BSON::ObjectId.new
+        log_unmatched_payment(last_transaction, notification, member, "member", resource_id)
+        return
+      end
+      processed_invoice = claimed_invoice
     end
 
     if processed_invoice.nil?
@@ -298,7 +332,11 @@ No automated actions have been taken at this time.")
       if (processed_invoice.settled)
         enque_message("Pending transaction from #{get_member_profile(processed_invoice.member)} successful. No further action needed", ::Service::SlackConnector.treasurer_channel)
       else
-        self.process_success(processed_invoice, last_transaction)
+        begin
+          self.process_success(processed_invoice, last_transaction)
+        ensure
+          processed_invoice.set(locked: false) if requires_claim
+        end
       end
     elsif notification.kind === Braintree::WebhookNotification::Kind::TransactionSettlementDeclined
       processed_invoice.reverse_settlement
@@ -428,6 +466,14 @@ No automated actions have been taken at this time.")
   def self.member_for_transaction(transaction)
     customer_id = transaction.try(:customer_details).try(:id)
     Member.find_by(customer_id: customer_id) if customer_id.present?
+  end
+
+  def self.member_for_subscription(resource_class, resource_id, transaction)
+    member = member_for_transaction(transaction)
+    return member if member
+
+    resource = Invoice.resource(resource_class, resource_id)
+    resource.is_a?(Member) ? resource : resource&.try(:member)
   end
 
   def self.prior_sub_notification_for_resource(resource)

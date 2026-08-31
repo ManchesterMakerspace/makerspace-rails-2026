@@ -409,6 +409,22 @@ RSpec.describe Invoice, type: :model do
 
       expect(result).to eq(member_invoice)
     end
+
+
+    it "atomically claims an open invoice for one transaction" do
+      open_invoice = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental"
+      )
+
+      claimed_invoice = Invoice.claim_for_transaction(open_invoice.id, "transaction-1")
+
+      expect(claimed_invoice.transaction_id).to eq("transaction-1")
+      expect(claimed_invoice.locked).to be(true)
+      expect(Invoice.claim_for_transaction(open_invoice.id, "transaction-2")).to be_nil
+    end
   end
 
 

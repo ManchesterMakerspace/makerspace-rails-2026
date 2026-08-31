@@ -146,6 +146,7 @@ class Invoice
     next_invoice.transaction_id = nil
     next_invoice.dispute_settled = false
     next_invoice.dispute_requested = nil
+    next_invoice.locked = false
     next_invoice.due_date = self.due_date + self.quantity.months
 
     if next_invoice.subscription_id && gateway
@@ -279,6 +280,16 @@ class Invoice
     nil
   rescue ArgumentError
     nil
+  end
+
+  def self.claim_for_transaction(invoice_id, transaction_id)
+    claimed = collection.find_one_and_update(
+      { _id: invoice_id, transaction_id: nil, settled_at: nil, locked: { :$ne => true } },
+      { :$set => { transaction_id: transaction_id, locked: true } },
+      return_document: :after
+    )
+
+    find(claimed["_id"]) if claimed
   end
 
   def self.search(searchTerms, criteria = Mongoid::Criteria.new(Invoice))

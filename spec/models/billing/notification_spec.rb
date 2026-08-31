@@ -97,6 +97,40 @@ RSpec.describe BraintreeService::Notification, type: :model do
     end
   end
 
+  describe "#get_details_for_notification" do
+    it "includes the owning member ID for a rental subscription" do
+      rental = create(:rental, member: member)
+      rental_subscription = double(
+        id: "rental_#{rental.id}_invoice",
+        transactions: [transaction]
+      )
+      notification = double(
+        kind: ::Braintree::WebhookNotification::Kind::SubscriptionChargedSuccessfully,
+        subscription: rental_subscription
+      )
+
+      details = BraintreeService::Notification.get_details_for_notification(notification)
+
+      expect(details.dig(:incomingPayment, :memberId)).to eq(member.id.to_s)
+    end
+
+    it "includes the owning member ID for a household subscription" do
+      household = create(:group, member: member)
+      household_subscription = double(
+        id: "household_#{household.id}_invoice",
+        transactions: [transaction]
+      )
+      notification = double(
+        kind: ::Braintree::WebhookNotification::Kind::SubscriptionChargedSuccessfully,
+        subscription: household_subscription
+      )
+
+      details = BraintreeService::Notification.get_details_for_notification(notification)
+
+      expect(details.dig(:incomingPayment, :memberId)).to eq(member.id.to_s)
+    end
+  end
+
   describe "#process subscription" do
     before(:each) do
       allow(successful_charge_notification).to receive_message_chain(:subscription, :transactions, :first).and_return(transaction)
@@ -380,6 +414,45 @@ RSpec.describe BraintreeService::Notification, type: :model do
 
       expect(membership_invoice.reload.transaction_id).to eq(transaction.id)
       expect(rental_invoice.reload.transaction_id).to be_nil
+    end
+
+
+    it "does not process an invoice when another delivery claims it first" do
+      new_member = create(:member, customer_id: "bt-customer-concurrent")
+      open_invoice = create(:invoice, member: new_member, amount: 65.0)
+      allow(transaction).to receive(:customer_details).and_return(
+        double(id: "bt-customer-concurrent", first_name: new_member.firstname, last_name: new_member.lastname)
+      )
+      allow(transaction).to receive(:amount).and_return(BigDecimal("65.00"))
+      allow(BraintreeService::Notification).to receive(:enque_message)
+      allow(Invoice).to receive(:claim_for_transaction) do
+        open_invoice.set(transaction_id: transaction.id, locked: true)
+        nil
+      end
+
+      expect(BraintreeService::Notification).not_to receive(:process_success)
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      expect(BraintreeService::Notification).to have_received(:enque_message).with(
+        /duplicate.*claimed transaction/i,
+        "treasurer"
+      )
+    end
+
+    it "skips a concurrent delivery after an invoice has been claimed" do
+      claimed_invoice = create(:invoice, transaction_id: transaction.id, locked: true)
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      expect(BraintreeService::Notification).not_to receive(:process_success)
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      expect(BraintreeService::Notification).to have_received(:enque_message).with(
+        /duplicate.*claimed transaction/i,
+        "treasurer"
+      )
+      expect(claimed_invoice.reload.settled).to be(false)
     end
   end
 end
