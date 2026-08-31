@@ -265,6 +265,8 @@ RSpec.describe BraintreeService::Notification, type: :model do
       expect(BraintreeService::Notification).not_to receive(:log_invoice_settled)
 
       BraintreeService::Notification.send(:process_success, invoice, transaction)
+
+      expect(invoice.reload.settlement_processed_at).to be_present
     end
   end
 
@@ -521,6 +523,26 @@ RSpec.describe BraintreeService::Notification, type: :model do
       abandoned_invoice.reload
       expect(abandoned_invoice.locked).to be(false)
       expect(abandoned_invoice.locked_at).to be_nil
+    end
+
+    it "does not reprocess a delayed settlement already handled for the transaction" do
+      delayed_invoice = create(
+        :invoice,
+        transaction_id: transaction.id,
+        settled_at: nil,
+        settlement_processed_at: 1.minute.ago
+      )
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      expect(BraintreeService::Notification).not_to receive(:process_success)
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      expect(BraintreeService::Notification).to have_received(:enque_message).with(
+        /duplicate.*processed transaction/i,
+        "treasurer"
+      )
+      expect(delayed_invoice.reload.settled).to be(false)
     end
   end
 end

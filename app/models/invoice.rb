@@ -32,6 +32,7 @@ class Invoice
   field :dispute_settled, type: Boolean
   field :locked, type: Boolean, default: false # Deprecated. Lock an invoice to prevent braintree notification race condition
   field :locked_at, type: Time
+  field :settlement_processed_at, type: Time
 
   ## Admin/Operation Information
   # How many operations to perform (eg, num of months renewed)
@@ -149,6 +150,7 @@ class Invoice
     next_invoice.dispute_requested = nil
     next_invoice.locked = false
     next_invoice.locked_at = nil
+    next_invoice.settlement_processed_at = nil
     next_invoice.due_date = self.due_date + self.quantity.months
 
     if next_invoice.subscription_id && gateway

@@ -262,6 +262,14 @@ No automated actions have been taken at this time.")
     requires_claim = false
     claim_acquired = false
 
+    if processed_invoice&.settlement_processed_at
+      enque_message(
+        "Duplicate TransactionSettled notification for processed transaction #{last_transaction.id}. Skipping processing",
+        ::Service::SlackConnector.treasurer_channel
+      )
+      return
+    end
+
     if processed_invoice&.locked
       reclaimed_invoice = Invoice.claim_for_transaction(processed_invoice.id, last_transaction.id)
       if reclaimed_invoice
@@ -412,6 +420,7 @@ No automated actions have been taken at this time.")
     end
 
     invoice.reload
+    invoice.update!(settlement_processed_at: Time.current)
     log_invoice_settled(invoice, transaction) if invoice.settled
     BillingMailer.receipt(invoice.member.email, transaction.id.as_json, invoice.id.as_json).deliver_later
   end
