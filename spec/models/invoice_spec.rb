@@ -423,7 +423,26 @@ RSpec.describe Invoice, type: :model do
 
       expect(claimed_invoice.transaction_id).to eq("transaction-1")
       expect(claimed_invoice.locked).to be(true)
+      expect(claimed_invoice.locked_at).to be_present
       expect(Invoice.claim_for_transaction(open_invoice.id, "transaction-2")).to be_nil
+    end
+
+    it "reclaims an abandoned transaction lock after its lease expires" do
+      abandoned_invoice = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental",
+        transaction_id: "transaction-1",
+        locked: true,
+        locked_at: 16.minutes.ago
+      )
+
+      reclaimed_invoice = Invoice.claim_for_transaction(abandoned_invoice.id, "transaction-1")
+
+      expect(reclaimed_invoice).to be_present
+      expect(reclaimed_invoice.locked).to be(true)
+      expect(reclaimed_invoice.locked_at).to be > 1.minute.ago
     end
   end
 

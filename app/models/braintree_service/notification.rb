@@ -260,13 +260,21 @@ No automated actions have been taken at this time.")
     last_transaction = notification.transaction
     processed_invoice = Invoice.find_by(transaction_id: last_transaction.id)
     requires_claim = false
+    claim_acquired = false
 
     if processed_invoice&.locked
-      enque_message(
-        "Duplicate TransactionSettled notification for claimed transaction #{last_transaction.id}. Skipping processing",
-        ::Service::SlackConnector.treasurer_channel
-      )
-      return
+      reclaimed_invoice = Invoice.claim_for_transaction(processed_invoice.id, last_transaction.id)
+      if reclaimed_invoice
+        processed_invoice = reclaimed_invoice
+        requires_claim = true
+        claim_acquired = true
+      else
+        enque_message(
+          "Duplicate TransactionSettled notification for claimed transaction #{last_transaction.id}. Skipping processing",
+          ::Service::SlackConnector.treasurer_channel
+        )
+        return
+      end
     end
 
     if processed_invoice.nil? && notification.kind === Braintree::WebhookNotification::Kind::TransactionSettled
@@ -299,7 +307,7 @@ No automated actions have been taken at this time.")
       end
     end
 
-    if requires_claim
+    if requires_claim && !claim_acquired
       claimed_invoice = Invoice.claim_for_transaction(processed_invoice.id, last_transaction.id)
       unless claimed_invoice
         if Invoice.where(transaction_id: last_transaction.id).exists?
@@ -319,6 +327,7 @@ No automated actions have been taken at this time.")
         return
       end
       processed_invoice = claimed_invoice
+      claim_acquired = true
     end
 
     if processed_invoice.nil?
@@ -335,7 +344,7 @@ No automated actions have been taken at this time.")
         begin
           self.process_success(processed_invoice, last_transaction)
         ensure
-          processed_invoice.set(locked: false) if requires_claim
+          processed_invoice.update!(locked: false, locked_at: nil) if requires_claim
         end
       end
     elsif notification.kind === Braintree::WebhookNotification::Kind::TransactionSettlementDeclined

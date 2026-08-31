@@ -441,7 +441,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
     end
 
     it "skips a concurrent delivery after an invoice has been claimed" do
-      claimed_invoice = create(:invoice, transaction_id: transaction.id, locked: true)
+      claimed_invoice = create(:invoice, transaction_id: transaction.id, locked: true, locked_at: Time.current)
       allow(BraintreeService::Notification).to receive(:enque_message)
 
       expect(BraintreeService::Notification).not_to receive(:process_success)
@@ -453,6 +453,30 @@ RSpec.describe BraintreeService::Notification, type: :model do
         "treasurer"
       )
       expect(claimed_invoice.reload.settled).to be(false)
+    end
+
+    it "reclaims and processes an abandoned invoice claim" do
+      new_member = create(:member)
+      create(:card, member: new_member)
+      new_member.reload
+      abandoned_invoice = create(
+        :invoice,
+        member: new_member,
+        transaction_id: transaction.id,
+        locked: true,
+        locked_at: 16.minutes.ago
+      )
+      allow(BraintreeService::Notification).to receive(:enque_message)
+      expect(BraintreeService::Notification).to receive(:process_success).with(
+        an_object_having_attributes(id: abandoned_invoice.id),
+        transaction
+      )
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      abandoned_invoice.reload
+      expect(abandoned_invoice.locked).to be(false)
+      expect(abandoned_invoice.locked_at).to be_nil
     end
   end
 end

@@ -31,6 +31,7 @@ class Invoice
   field :dispute_requested, type: Time
   field :dispute_settled, type: Boolean
   field :locked, type: Boolean, default: false # Deprecated. Lock an invoice to prevent braintree notification race condition
+  field :locked_at, type: Time
 
   ## Admin/Operation Information
   # How many operations to perform (eg, num of months renewed)
@@ -147,6 +148,7 @@ class Invoice
     next_invoice.dispute_settled = false
     next_invoice.dispute_requested = nil
     next_invoice.locked = false
+    next_invoice.locked_at = nil
     next_invoice.due_date = self.due_date + self.quantity.months
 
     if next_invoice.subscription_id && gateway
@@ -283,9 +285,23 @@ class Invoice
   end
 
   def self.claim_for_transaction(invoice_id, transaction_id)
+    stale_before = 15.minutes.ago
     claimed = collection.find_one_and_update(
-      { _id: invoice_id, transaction_id: nil, settled_at: nil, locked: { :$ne => true } },
-      { :$set => { transaction_id: transaction_id, locked: true } },
+      {
+        _id: invoice_id,
+        settled_at: nil,
+        :$and => [
+          { :$or => [{ transaction_id: nil }, { transaction_id: transaction_id }] },
+          {
+            :$or => [
+              { locked: { :$ne => true } },
+              { locked_at: nil },
+              { locked_at: { :$lt => stale_before } }
+            ]
+          }
+        ]
+      },
+      { :$set => { transaction_id: transaction_id, locked: true, locked_at: Time.current } },
       return_document: :after
     )
 
