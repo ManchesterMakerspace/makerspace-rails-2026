@@ -44,6 +44,31 @@ RSpec.describe BraintreeService::Notification, type: :model do
       )
     end
 
+    it "associates an unmatched customerless transaction audit with its stored notification" do
+      customer_details = double(
+        id: "unknown-braintree-customer",
+        first_name: "Unknown",
+        last_name: "Customer"
+      )
+      allow(transaction).to receive(:customer_details).and_return(customer_details)
+      allow(transaction).to receive(:subscription_id).and_return(nil)
+      allow(transaction).to receive(:order_id).and_return(nil)
+      allow(BraintreeService::Notification).to receive(:member_for_transaction).and_return(nil)
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      BraintreeService::Notification.process(success_transaction_notification)
+
+      notification_record = BraintreeService::Notification.desc(:id).first
+      audit_log = AuditLog.find_by(event_type: "braintree_payment_unmatched")
+      expect(audit_log.resource_type).to eq("BraintreeService::Notification")
+      expect(audit_log.resource_id).to eq(notification_record.id)
+      expect(audit_log.after_snapshot.dig("incomingPayment", "customerDetails")).to eq(
+        "id" => "unknown-braintree-customer",
+        "first_name" => "Unknown",
+        "last_name" => "Customer"
+      )
+    end
+
     it "processes subscription payment" do
       expect(BraintreeService::Notification).to receive(:process_subscription_charge_success).with(invoice, transaction)
       BraintreeService::Notification.process(successful_charge_notification)

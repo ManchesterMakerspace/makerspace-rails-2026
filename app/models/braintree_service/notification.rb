@@ -11,18 +11,18 @@ class BraintreeService::Notification
   field :payload, type: String
 
   def self.process(notification)
-    self.create({
+    notification_record = self.create!({
       kind: notification.kind,
       timestamp: notification.timestamp,
       payload: as_json(notification)
     })
 
     if subscription_notifications.include?(notification.kind)
-      process_subscription(notification)
+      process_subscription(notification, notification_record)
     elsif dispute_notifications.include?(notification.kind)
       process_dispute(notification)
     elsif transaction_notifications.include?(notification.kind)
-      process_transaction(notification)
+      process_transaction(notification, 0, notification_record)
     end
   end
 
@@ -87,7 +87,7 @@ class BraintreeService::Notification
     end
   end
 
-  def self.process_subscription(notification)
+  def self.process_subscription(notification, notification_record = nil)
     subscription_id = notification.subscription.id
     resource_class, resource_id = ::BraintreeService::Subscription.read_id(subscription_id)
     last_transaction = notification.subscription.transactions.first
@@ -115,7 +115,14 @@ class BraintreeService::Notification
     end
     if invoice.nil?
       if payment_notification && !failed_payment_notification && last_transaction
-        log_unmatched_payment(last_transaction, notification, related_resource, resource_class, resource_id)
+        log_unmatched_payment(
+          last_transaction,
+          notification,
+          related_resource,
+          resource_class,
+          resource_id,
+          notification_record
+        )
         return
       end
 
@@ -266,7 +273,7 @@ No automated actions have been taken at this time.")
     end
   end
 
-  def self.process_transaction(notification, claim_attempt = 0)
+  def self.process_transaction(notification, claim_attempt = 0, notification_record = nil)
     last_transaction = notification.transaction
     processed_invoice = Invoice.find_by(transaction_id: last_transaction.id)
     requires_claim = false
@@ -327,8 +334,14 @@ No automated actions have been taken at this time.")
       requires_claim = processed_invoice.present?
 
       if processed_invoice.nil?
-        resource_id = member&.id || BSON::ObjectId.new
-        log_unmatched_payment(last_transaction, notification, member, "member", resource_id)
+        log_unmatched_payment(
+          last_transaction,
+          notification,
+          member,
+          "member",
+          member&.id,
+          notification_record
+        )
         return
       end
     end
@@ -345,11 +358,17 @@ No automated actions have been taken at this time.")
         end
 
         if claim_attempt < 2
-          return process_transaction(notification, claim_attempt + 1)
+          return process_transaction(notification, claim_attempt + 1, notification_record)
         end
 
-        resource_id = member&.id || BSON::ObjectId.new
-        log_unmatched_payment(last_transaction, notification, member, "member", resource_id)
+        log_unmatched_payment(
+          last_transaction,
+          notification,
+          member,
+          "member",
+          member&.id,
+          notification_record
+        )
         return
       end
       processed_invoice = claimed_invoice
@@ -486,17 +505,20 @@ No automated actions have been taken at this time.")
     )
   end
 
-  def self.log_unmatched_payment(transaction, notification, related_resource, resource_class, resource_id)
+  def self.log_unmatched_payment(transaction, notification, related_resource, resource_class, resource_id, notification_record = nil)
     member = related_resource.is_a?(Member) ? related_resource : related_resource&.try(:member)
     details = payment_log_details(transaction, nil, member&.id)
+    audit_resource = related_resource || notification_record
+    audit_resource_type = audit_resource&.class&.name || resource_class.to_s.classify
+    audit_resource_id = audit_resource&.id || resource_id
     message = "No open invoice matched Braintree payment #{transaction.id} for " \
-      "#{resource_class} #{resource_id} with amount $#{format('%.2f', transaction.amount.to_d)}."
+      "#{resource_class} #{resource_id || 'unknown'} with amount $#{format('%.2f', transaction.amount.to_d)}."
 
     ::Service::AuditLogger.log(
       log_type: "member",
       event_type: "braintree_payment_unmatched",
-      resource_type: related_resource&.class&.name || resource_class.to_s.classify,
-      resource_id: related_resource&.id || resource_id,
+      resource_type: audit_resource_type,
+      resource_id: audit_resource_id,
       subject: member,
       after_snapshot: details,
       message_details: message
