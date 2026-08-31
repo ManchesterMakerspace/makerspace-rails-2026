@@ -222,7 +222,10 @@ class Invoice
   end
 
   def self.resource(class_name, id)
-    Invoice::OPERATION_RESOURCES[class_name].find(id) unless Invoice::OPERATION_RESOURCES[class_name].nil? || id.nil?
+    resource_class = Invoice::OPERATION_RESOURCES[class_name]
+    resource_class.find(id) unless resource_class.nil? || id.nil?
+  rescue Mongoid::Errors::DocumentNotFound
+    nil
   end
   
   def resource

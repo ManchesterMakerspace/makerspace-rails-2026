@@ -181,6 +181,33 @@ RSpec.describe BraintreeService::Notification, type: :model do
 
       expect(details.dig(:incomingPayment, :memberId)).to eq(member.id.to_s)
     end
+
+    it "persists a late subscription notification when its resource has been deleted" do
+      rental = create(:rental, member: member)
+      resource_id = rental.id
+      rental.destroy!
+      allow(transaction).to receive(:customer_details).and_return(nil)
+      late_subscription = double(
+        id: "rental_#{resource_id}_invoice",
+        plan_id: "rental-plan",
+        transactions: [transaction]
+      )
+      notification = double(
+        kind: ::Braintree::WebhookNotification::Kind::SubscriptionChargedSuccessfully,
+        subscription: late_subscription,
+        timestamp: Time.current
+      )
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      expect {
+        BraintreeService::Notification.process(notification)
+      }.to change(BraintreeService::Notification, :count).by(1)
+
+      notification_record = BraintreeService::Notification.desc(:id).first
+      payload = JSON.parse(notification_record.payload)
+      expect(payload.dig("incomingPayment", "memberId")).to be_nil
+      expect(AuditLog.find_by(event_type: "braintree_payment_unmatched").resource_id).to eq(notification_record.id)
+    end
   end
 
   describe "#process subscription" do
