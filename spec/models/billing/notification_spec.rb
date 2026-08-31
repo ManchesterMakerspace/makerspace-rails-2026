@@ -49,6 +49,19 @@ RSpec.describe BraintreeService::Notification, type: :model do
       BraintreeService::Notification.process(successful_charge_notification)
     end
 
+    it "scopes subscription plan fallback to the Braintree customer member" do
+      member.update!(customer_id: "bt-customer-plan")
+      allow(transaction).to receive(:customer_details).and_return(
+        double(id: "bt-customer-plan", first_name: nil, last_name: nil)
+      )
+      expect(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).with(
+        hash_including(member_id: member.id)
+      ).and_return(invoice)
+      expect(BraintreeService::Notification).to receive(:process_subscription_charge_success).with(invoice, transaction)
+
+      BraintreeService::Notification.process(successful_charge_notification)
+    end
+
     it "processes subscription payment failure" do
       failure = double(kind: ::Braintree::WebhookNotification::Kind::SubscriptionChargedUnsuccessfully, subscription: subscription, timestamp: Time.now)
       allow(failure).to receive_message_chain(:subscription, :id).and_return(subscription.id)

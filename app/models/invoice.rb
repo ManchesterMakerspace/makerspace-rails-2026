@@ -262,10 +262,12 @@ class Invoice
     nil
   end
 
-  def self.oldest_active_subscription_invoice_matching_amount(subscription_id:, plan_id:, resource_id:, amount:)
+  def self.oldest_active_subscription_invoice_matching_amount(subscription_id:, plan_id:, resource_id:, member_id:, amount:)
     scopes = []
     scopes << where(subscription_id: subscription_id, settled_at: nil, transaction_id: nil) if subscription_id.present?
-    scopes << where(plan_id: plan_id, settled_at: nil, transaction_id: nil) if plan_id.present?
+    if plan_id.present? && member_id.present?
+      scopes << where(plan_id: plan_id, member_id: member_id, settled_at: nil, transaction_id: nil)
+    end
     scopes << where(resource_id: resource_id, settled_at: nil, transaction_id: nil) if resource_id.present?
 
     target_amount = BigDecimal(amount.to_s)

@@ -90,6 +90,8 @@ class BraintreeService::Notification
     subscription_id = notification.subscription.id
     resource_class, resource_id = ::BraintreeService::Subscription.read_id(subscription_id)
     last_transaction = notification.subscription.transactions.first
+    related_resource = Invoice.resource(resource_class, resource_id)
+    transaction_member = member_for_transaction(last_transaction)
 
     payment_notification = [
       ::Braintree::WebhookNotification::Kind::SubscriptionChargedSuccessfully,
@@ -101,14 +103,13 @@ class BraintreeService::Notification
         subscription_id: last_transaction.try(:subscription_id).presence || subscription_id,
         plan_id: last_transaction.try(:plan_id).presence || notification.subscription.try(:plan_id),
         resource_id: resource_id,
+        member_id: transaction_member&.id,
         amount: last_transaction.amount
       )
       matching_invoice || (Invoice.active_invoice_for_resource(resource_id) if failed_payment_notification)
     else
       Invoice.active_invoice_for_resource(resource_id)
     end
-    related_resource = Invoice.resource(resource_class, resource_id)
-
     if invoice.nil?
       if payment_notification && !failed_payment_notification && last_transaction
         log_unmatched_payment(last_transaction, notification, related_resource, resource_class, resource_id)
@@ -268,6 +269,7 @@ No automated actions have been taken at this time.")
           subscription_id: subscription_id,
           plan_id: last_transaction.try(:plan_id),
           resource_id: resource_id,
+          member_id: member&.id,
           amount: last_transaction.amount
         )
       else

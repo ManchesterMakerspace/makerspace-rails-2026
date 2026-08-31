@@ -370,11 +370,44 @@ RSpec.describe Invoice, type: :model do
         subscription_id: "subscription-1",
         plan_id: nil,
         resource_id: rental.id,
+        member_id: member.id,
         amount: "65.00"
       )
 
       expect(result).to eq(subscription_invoice)
       expect(result).not_to eq(resource_invoice)
+    end
+
+    it "constrains plan fallback matches to the Braintree member" do
+      other_member = create(:member)
+      create(
+        :invoice,
+        member: other_member,
+        resource_id: other_member.id,
+        resource_class: "member",
+        plan_id: "shared-plan",
+        amount: 65.0,
+        created_at: 2.days.ago
+      )
+      member_invoice = create(
+        :invoice,
+        member: member,
+        resource_id: member.id,
+        resource_class: "member",
+        plan_id: "shared-plan",
+        amount: 65.0,
+        created_at: 1.day.ago
+      )
+
+      result = Invoice.oldest_active_subscription_invoice_matching_amount(
+        subscription_id: "unknown-subscription",
+        plan_id: "shared-plan",
+        resource_id: nil,
+        member_id: member.id,
+        amount: "65.00"
+      )
+
+      expect(result).to eq(member_invoice)
     end
   end
 
