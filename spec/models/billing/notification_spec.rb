@@ -62,6 +62,18 @@ RSpec.describe BraintreeService::Notification, type: :model do
       BraintreeService::Notification.process(successful_charge_notification)
     end
 
+    it "adds applied discounts back when matching a subscription invoice amount" do
+      discount = double(amount: "3.25", quantity: 2, name: "Member discount")
+      allow(transaction).to receive(:amount).and_return(BigDecimal("58.50"))
+      allow(transaction).to receive(:discounts).and_return([discount])
+      expect(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).with(
+        hash_including(amount: BigDecimal("65.00"))
+      ).and_return(invoice)
+      expect(BraintreeService::Notification).to receive(:process_subscription_charge_success).with(invoice, transaction)
+
+      BraintreeService::Notification.process(successful_charge_notification)
+    end
+
     it "processes subscription payment failure" do
       failure = double(kind: ::Braintree::WebhookNotification::Kind::SubscriptionChargedUnsuccessfully, subscription: subscription, timestamp: Time.now)
       allow(failure).to receive_message_chain(:subscription, :id).and_return(subscription.id)
@@ -378,6 +390,38 @@ RSpec.describe BraintreeService::Notification, type: :model do
       BraintreeService::Notification.process_transaction(success_transaction_notification)
 
       expect(target_invoice.reload.transaction_id).to eq(transaction.id)
+    end
+
+    it "matches a discounted settlement and audits the credited discounts" do
+      new_member = create(:member, customer_id: "bt-customer-discount")
+      create(:card, member: new_member)
+      new_member.reload
+      discounted_invoice = create(:invoice, member: new_member, amount: 65.0, plan_id: "member-plan")
+      discount = double(
+        amount: "3.25",
+        quantity: 2,
+        name: "Monthly membership discount"
+      )
+      allow(transaction).to receive(:customer_details).and_return(
+        double(id: "bt-customer-discount", first_name: new_member.firstname, last_name: new_member.lastname)
+      )
+      allow(transaction).to receive(:amount).and_return(BigDecimal("58.50"))
+      allow(transaction).to receive(:discounts).and_return([discount])
+      allow(transaction).to receive(:line_items).and_return([])
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      audit_log = AuditLog.find_by(event_type: "invoice_settled", resource_id: discounted_invoice.id)
+      expect(discounted_invoice.reload.transaction_id).to eq(transaction.id)
+      expect(audit_log.after_snapshot.dig("discountMatch", "memberId")).to eq(new_member.id.to_s)
+      expect(audit_log.after_snapshot.dig("discountMatch", "planId")).to eq("member-plan")
+      expect(audit_log.after_snapshot.dig("discountMatch", "invoiceId")).to eq(discounted_invoice.id.to_s)
+      expect(audit_log.after_snapshot.dig("discountMatch", "totalDiscountApplied")).to eq(6.5)
+      expect(audit_log.after_snapshot.dig("discountMatch", "discounts")).to eq(
+        ["Monthly membership discount: $6.50"]
+      )
+      expect(audit_log.slack_message).to include("total discount $6.50")
     end
 
     it "matches a subscription settlement by subscription ID before older equal-amount invoices" do

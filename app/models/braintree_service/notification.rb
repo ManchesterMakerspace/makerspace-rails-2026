@@ -105,7 +105,7 @@ class BraintreeService::Notification
         plan_id: last_transaction.try(:plan_id).presence || notification.subscription.try(:plan_id),
         resource_id: resource_id,
         member_id: transaction_member&.id,
-        amount: last_transaction.amount
+        amount: invoice_match_amount(last_transaction)
       )
       matching_invoice || (Invoice.active_invoice_for_resource(resource_id) if failed_payment_notification)
     else
@@ -288,14 +288,19 @@ No automated actions have been taken at this time.")
           plan_id: last_transaction.try(:plan_id),
           resource_id: resource_id,
           member_id: member&.id,
-          amount: last_transaction.amount
+          amount: invoice_match_amount(last_transaction)
         )
       else
         order_id = last_transaction.try(:order_id).to_s
         if order_id.match?(/\A[0-9a-f]{24}\z/i)
           processed_invoice = Invoice.find_by(id: order_id, settled_at: nil, transaction_id: nil)
         end
-        processed_invoice ||= Invoice.oldest_active_invoice_for_member_matching_amount(member.id, last_transaction.amount) if member
+        if member
+          processed_invoice ||= Invoice.oldest_active_invoice_for_member_matching_amount(
+            member.id,
+            invoice_match_amount(last_transaction)
+          )
+        end
       end
 
       requires_claim = processed_invoice.present?
@@ -412,13 +417,35 @@ No automated actions have been taken at this time.")
   end
 
   def self.log_invoice_settled(invoice, transaction)
+    snapshot = payment_log_details(transaction, invoice)
+    message_details = nil
+
+    if discount_confirmed_match?(invoice, transaction)
+      total_discount = transaction_discount_total(transaction)
+      discount_text = transaction_discounts(transaction).map do |discount|
+        quantity = discount.try(:quantity).presence || 1
+        credited = BigDecimal(discount.try(:amount).to_s) * quantity.to_i
+        "#{discount.try(:name)}: $#{format('%.2f', credited)}"
+      end
+      snapshot[:discountMatch] = {
+        memberId: invoice.member_id.to_s,
+        planId: transaction.try(:plan_id).presence || invoice.plan_id,
+        invoiceId: invoice.id.to_s,
+        totalDiscountApplied: total_discount.to_f,
+        discounts: discount_text
+      }
+      message_details = "Discount-confirmed match; total discount $#{format('%.2f', total_discount)} " \
+        "(#{discount_text.join(', ')})"
+    end
+
     ::Service::AuditLogger.log(
       log_type: "member",
       event_type: "invoice_settled",
       resource_type: "Invoice",
       resource_id: invoice.id,
       subject: invoice.member,
-      after_snapshot: payment_log_details(transaction, invoice)
+      after_snapshot: snapshot,
+      message_details: message_details
     )
   end
 
@@ -483,6 +510,37 @@ No automated actions have been taken at this time.")
 
     resource = Invoice.resource(resource_class, resource_id)
     resource.is_a?(Member) ? resource : resource&.try(:member)
+  end
+
+  def self.invoice_match_amount(transaction)
+    BigDecimal(transaction.try(:amount).to_s) + transaction_discount_total(transaction)
+  rescue ArgumentError
+    transaction.try(:amount)
+  end
+
+  def self.transaction_discount_total(transaction)
+    transaction_discounts(transaction).sum(BigDecimal("0")) do |discount|
+      quantity = discount.try(:quantity).presence || 1
+      BigDecimal(discount.try(:amount).to_s) * quantity.to_i
+    end
+  rescue ArgumentError
+    BigDecimal("0")
+  end
+
+  def self.transaction_discounts(transaction)
+    discounts = transaction.try(:discounts)
+    discounts.respond_to?(:to_a) ? discounts.to_a : Array(discounts)
+  end
+
+  def self.discount_confirmed_match?(invoice, transaction)
+    discount_total = transaction_discount_total(transaction)
+    return false unless discount_total.positive?
+
+    invoice_amount = BigDecimal(invoice.amount.to_s)
+    settled_amount = BigDecimal(transaction.amount.to_s)
+    invoice_amount != settled_amount && invoice_amount == settled_amount + discount_total
+  rescue ArgumentError
+    false
   end
 
   def self.prior_sub_notification_for_resource(resource)
