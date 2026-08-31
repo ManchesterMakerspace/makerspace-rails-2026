@@ -62,13 +62,28 @@ RSpec.describe BraintreeService::Notification, type: :model do
       BraintreeService::Notification.process(successful_charge_notification)
     end
 
-    it "adds applied discounts back when matching a subscription invoice amount" do
+    it "falls back to the amount before discounts when the net amount does not match" do
       discount = double(amount: "3.25", quantity: 2, name: "Member discount")
       allow(transaction).to receive(:amount).and_return(BigDecimal("58.50"))
       allow(transaction).to receive(:discounts).and_return([discount])
       expect(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).with(
+        hash_including(amount: BigDecimal("58.50"))
+      ).ordered.and_return(nil)
+      expect(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).with(
         hash_including(amount: BigDecimal("65.00"))
-      ).and_return(invoice)
+      ).ordered.and_return(invoice)
+      expect(BraintreeService::Notification).to receive(:process_subscription_charge_success).with(invoice, transaction)
+
+      BraintreeService::Notification.process(successful_charge_notification)
+    end
+
+    it "matches the net transaction amount before adding applied discounts" do
+      discount = double(amount: "3.25", quantity: 2, name: "Member discount")
+      allow(transaction).to receive(:amount).and_return(BigDecimal("58.50"))
+      allow(transaction).to receive(:discounts).and_return([discount])
+      expect(Invoice).to receive(:oldest_active_subscription_invoice_matching_amount).with(
+        hash_including(amount: BigDecimal("58.50"))
+      ).once.and_return(invoice)
       expect(BraintreeService::Notification).to receive(:process_subscription_charge_success).with(invoice, transaction)
 
       BraintreeService::Notification.process(successful_charge_notification)
