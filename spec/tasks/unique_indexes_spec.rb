@@ -50,6 +50,14 @@ RSpec.describe 'data:ensure_unique_indexes' do
       'slack_email' => { '$type' => 'string' },
       'invalidated_at' => nil
     )
+
+    transaction_id_index = Invoice.collection.indexes.to_a.find do |index|
+      index.fetch('key', {}).keys == ['transaction_id']
+    end
+    expect(transaction_id_index).to include('unique' => true)
+    expect(transaction_id_index.fetch('partialFilterExpression')).to eq(
+      'transaction_id' => { '$type' => 'string' }
+    )
   end
 
   it 'creates non-unique member indexes on member-owned collections' do
