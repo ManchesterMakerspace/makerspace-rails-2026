@@ -31,6 +31,8 @@ class Invoice
   field :dispute_requested, type: Time
   field :dispute_settled, type: Boolean
   field :locked, type: Boolean, default: false # Deprecated. Lock an invoice to prevent braintree notification race condition
+  field :locked_at, type: Time
+  field :settlement_processed_at, type: Time
 
   ## Admin/Operation Information
   # How many operations to perform (eg, num of months renewed)
@@ -46,6 +48,14 @@ class Invoice
   field :plan_id, type: String
   # ID of transaction used to settle invoice
   field :transaction_id, type: String
+
+  index(
+    { transaction_id: 1 },
+    {
+      unique: true,
+      partial_filter_expression: { transaction_id: { '$type' => 'string' } }
+    }
+  )
 
   search_in :name, member: %i[firstname lastname email]
 
@@ -146,6 +156,9 @@ class Invoice
     next_invoice.transaction_id = nil
     next_invoice.dispute_settled = false
     next_invoice.dispute_requested = nil
+    next_invoice.locked = false
+    next_invoice.locked_at = nil
+    next_invoice.settlement_processed_at = nil
     next_invoice.due_date = self.due_date + self.quantity.months
 
     if next_invoice.subscription_id && gateway
@@ -217,7 +230,10 @@ class Invoice
   end
 
   def self.resource(class_name, id)
-    Invoice::OPERATION_RESOURCES[class_name].find(id) unless Invoice::OPERATION_RESOURCES[class_name].nil? || id.nil?
+    resource_class = Invoice::OPERATION_RESOURCES[class_name]
+    resource_class.find(id) unless resource_class.nil? || id.nil?
+  rescue Mongoid::Errors::DocumentNotFound
+    nil
   end
   
   def resource
@@ -240,6 +256,98 @@ class Invoice
 
   def self.active_invoice_for_resource(resource_id)
     active = self.find_by(resource_id: resource_id, settled_at: nil, transaction_id: nil)
+  end
+
+  def self.oldest_active_invoice_matching_amount(resource_id, amount)
+    target_amount = BigDecimal(amount.to_s)
+
+    where(resource_id: resource_id, settled_at: nil, transaction_id: nil)
+      .asc(:created_at)
+      .detect { |invoice| BigDecimal(invoice.amount.to_s) == target_amount }
+  rescue ArgumentError
+    nil
+  end
+
+  def self.oldest_active_invoice_for_member_matching_amount(member_id, amount)
+    target_amount = BigDecimal(amount.to_s)
+
+    where(member_id: member_id, settled_at: nil, transaction_id: nil)
+      .asc(:created_at)
+      .detect { |invoice| BigDecimal(invoice.amount.to_s) == target_amount }
+  rescue ArgumentError
+    nil
+  end
+
+  def self.oldest_active_subscription_invoice_matching_amount(subscription_id:, plan_id:, resource_id:, member_id:, amount:)
+    scopes = []
+    scopes << where(subscription_id: subscription_id, settled_at: nil, transaction_id: nil) if subscription_id.present?
+    if plan_id.present? && member_id.present? && resource_id.present?
+      scopes << where(
+        plan_id: plan_id,
+        member_id: member_id,
+        resource_id: resource_id,
+        settled_at: nil,
+        transaction_id: nil
+      )
+    end
+    scopes << where(resource_id: resource_id, settled_at: nil, transaction_id: nil) if resource_id.present?
+
+    target_amount = BigDecimal(amount.to_s)
+    scopes.each do |scope|
+      invoice = scope.asc(:created_at).detect { |candidate| BigDecimal(candidate.amount.to_s) == target_amount }
+      return invoice if invoice
+    end
+
+    nil
+  rescue ArgumentError
+    nil
+  end
+
+  def self.claim_for_transaction(invoice_id, transaction_id)
+    stale_before = 15.minutes.ago
+    claimed = collection.find_one_and_update(
+      {
+        _id: invoice_id,
+        settled_at: nil,
+        :$and => [
+          { :$or => [{ transaction_id: nil }, { transaction_id: transaction_id }] },
+          {
+            :$or => [
+              { locked: { :$ne => true } },
+              { locked_at: nil },
+              { locked_at: { :$lt => stale_before } }
+            ]
+          }
+        ]
+      },
+      { :$set => { transaction_id: transaction_id, locked: true, locked_at: Time.current } },
+      return_document: :after
+    )
+
+    find(claimed["_id"]) if claimed
+  rescue Mongo::Error::OperationFailure => error
+    raise unless error.code == 11000
+
+    nil
+  end
+
+  def self.claim_for_settlement_decline(invoice_id, transaction_id)
+    stale_before = 15.minutes.ago
+    claimed = collection.find_one_and_update(
+      {
+        _id: invoice_id,
+        transaction_id: transaction_id,
+        :$or => [
+          { locked: { :$ne => true } },
+          { locked_at: nil },
+          { locked_at: { :$lt => stale_before } }
+        ]
+      },
+      { :$set => { locked: true, locked_at: Time.current } },
+      return_document: :after
+    )
+
+    find(claimed["_id"]) if claimed
   end
 
   def self.search(searchTerms, criteria = Mongoid::Criteria.new(Invoice))
@@ -307,8 +415,16 @@ class Invoice
   # established precedent for this exact scoping concern.
   def one_active_invoice_per_resource
     active = Invoice.where(resource_id: resource_id, resource_class: "member", settled_at: nil, transaction_id: nil)
+    outstanding_invoice = active.first
 
-    errors.add(:base, "Cannot create duplicate memberships for same user") if active.exists?
+    return unless outstanding_invoice
+
+    errors.add(
+      :base,
+      "Please pay outstanding #{outstanding_invoice.description} invoice for " \
+        "$#{format('%.2f', outstanding_invoice.amount)} dated " \
+        "#{outstanding_invoice.created_at.strftime('%m/%d/%Y')}"
+    )
   end
 
   def resource_exists

@@ -70,6 +70,7 @@ class BraintreeService::Transaction < Braintree::Transaction
     else
       result = gateway.transaction.sale(
         amount: invoice.amount,
+        order_id: invoice.id.to_s,
         payment_method_token: invoice.payment_method_id,
         line_items: [{
           kind: "debit",

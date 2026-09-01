@@ -19,6 +19,7 @@ namespace :data do
       [Shop, :name, { locale: 'en', strength: 2 }],
       [Card, :uid, nil],
       [Group, :groupName, nil],
+      [Invoice, :transaction_id, nil],
       [Member, :email, nil],
       [Member, :customer_id, nil],
       [RentalType, :display_name, nil],
