@@ -222,7 +222,7 @@ RSpec.describe Invoice, type: :model do
 
         it "Will build another invoice even if the first doesnt settle fully" do
           plan_invoice = create(:invoice, plan_id: "567")
-          existing_invoice = create(:invoice, member: member, transaction_id: first_transaction.id)
+          existing_invoice = create(:invoice, member: member, transaction_id: "different-transaction")
           expect(plan_invoice).to receive(:settle_invoice)
           expect(plan_invoice).to receive(:build_next_invoice)
           result = plan_invoice.submit_for_settlement(gateway, nil, transaction.id)
@@ -457,6 +457,33 @@ RSpec.describe Invoice, type: :model do
       expect(claimed_invoice.locked).to be(true)
       expect(claimed_invoice.locked_at).to be_present
       expect(Invoice.claim_for_transaction(open_invoice.id, "transaction-2")).to be_nil
+    end
+
+    it "does not claim a second invoice for the same transaction" do
+      Invoice.collection.indexes.create_one(
+        { transaction_id: 1 },
+        unique: true,
+        partial_filter_expression: { transaction_id: { '$type' => 'string' } }
+      )
+      first_invoice = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental",
+        created_at: 2.days.ago
+      )
+      second_invoice = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental",
+        created_at: 1.day.ago
+      )
+
+      expect(Invoice.claim_for_transaction(first_invoice.id, "shared-transaction")).to be_present
+      expect(Invoice.claim_for_transaction(second_invoice.id, "shared-transaction")).to be_nil
+      expect(second_invoice.reload.transaction_id).to be_nil
+      expect(second_invoice.locked).to be(false)
     end
 
     it "reclaims an abandoned transaction lock after its lease expires" do

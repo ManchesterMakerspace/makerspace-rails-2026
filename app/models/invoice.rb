@@ -49,6 +49,14 @@ class Invoice
   # ID of transaction used to settle invoice
   field :transaction_id, type: String
 
+  index(
+    { transaction_id: 1 },
+    {
+      unique: true,
+      partial_filter_expression: { transaction_id: { '$type' => 'string' } }
+    }
+  )
+
   search_in :name, member: %i[firstname lastname email]
 
   validates :resource_class, inclusion: { in: OPERATION_RESOURCES.keys }, allow_nil: false
@@ -317,6 +325,10 @@ class Invoice
     )
 
     find(claimed["_id"]) if claimed
+  rescue Mongo::Error::OperationFailure => error
+    raise unless error.code == 11000
+
+    nil
   end
 
   def self.claim_for_settlement_decline(invoice_id, transaction_id)
