@@ -105,6 +105,9 @@ class Member
     unique: true,
     partial_filter_expression: { customer_id: { '$type' => 'string' } }
   })
+  # Supports the leading status equality and membership interval bounds used
+  # by Service::Analytics::Members.active_members_by_month.
+  index({ status: 1, startDate: 1, expirationTime: 1 })
 
   before_validation :normalize_email, :normalize_group_name
   after_initialize :verify_group_expiry
