@@ -52,3 +52,48 @@ based on `expirationTime`.
 Card validity and reservation status are separate state machines. Values such
 as card `lost`/`stolen` and reservation `approved`/`denied` must not be stored
 in `Member#status`.
+
+## Appendix: ways an existing member's status can change
+
+This inventory covers application code that writes the `status` field on an
+already-persisted `Member`. It deliberately excludes spec code and paths that
+only choose the initial status of a new record (public registration, Firebase
+first login, and admin member creation).
+
+### API endpoints
+
+| Entry point | Who/when | Possible transition |
+| --- | --- | --- |
+| `PATCH /api/admin/members/:id` or `PUT /api/admin/members/:id` (`Admin::MembersController#update`) | An authenticated admin or board member can include `status` in the request. The controller passes it to `Member#update!`, so the model's inclusion validation applies. Revocation and suspension also trigger their respective cleanup/session-invalidating behavior. | The current value to any supported value supplied by the caller. |
+| `POST /api/admin/cards` (`Admin::CardsController#create`) | Creating a card runs the `Card#activate_pending_member` `after_create` callback. The callback does nothing unless the associated existing member is pending. | `pending` to `activeMember`. |
+
+The card transition belongs to the model callback, not only to the HTTP
+controller: creating a `Card` by any other application path that runs create
+callbacks produces the same transition. Updating an existing card does not.
+
+The authenticated `PATCH /api/members/:id` and `PUT /api/members/:id`
+member-profile endpoints are **not** status-changing paths: their permitted
+fields do not include `status`.
+
+### Webhook callbacks
+
+There are **no webhook callbacks that update `Member#status`**. In particular,
+the PayPal IPN (`POST /ipnlistener`) and Braintree webhook
+(`POST /billing/braintree_listener`) can update subscription/invoice state,
+but do not change member status. Mailtrap and Slack callbacks likewise do not
+write this field.
+
+### Jobs, tasks, model callbacks, and direct writes
+
+- No scheduled job or Rake task changes an existing member's status. The
+  volunteering snapshot task's description mentions active/inactive status,
+  but the task only records which members currently qualify; it does not
+  update them. Expiration also never causes an automatic status transition.
+- The only status-writing model callback is `Card#activate_pending_member`,
+  described above.
+- As with any persisted model field, maintenance code or a Rails console can
+  change the value directly (for example, `member.update!(status: ...)` or
+  assignment followed by `save!`). These validated writes accept only the
+  supported values. Mongoid atomic/raw-database writes can bypass normal model
+  validation and should be treated as an exceptional data-repair mechanism,
+  not an application workflow.
