@@ -35,8 +35,8 @@ RSpec.describe Admin::Billing::TransactionsController, type: :controller do
     let(:related_invoice) { create(:invoice, transaction_id: transaction.id) }
     it "renders a list of transactions" do
       related_invoice # call to initialize
-      allow(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything).and_return([transaction])
-      expect(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything).and_return([transaction])
+      allow(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything, anything).and_return([transaction])
+      expect(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything, anything).and_return([transaction])
 
       get :index, format: :json
       parsed_response = JSON.parse(response.body)
@@ -47,14 +47,36 @@ RSpec.describe Admin::Billing::TransactionsController, type: :controller do
 
     it "filters transactions by discount IDs" do
       related_invoice # call to initialize
-      allow(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything).and_return([transaction, discounted_transaction])
-      expect(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything).and_return([transaction, discounted_transaction])
+      allow(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything, anything).and_return([transaction, discounted_transaction])
+      expect(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything, anything).and_return([transaction, discounted_transaction])
 
       get :index, params: { discount_id: [discount_id] }, format: :json
       expect(response).to have_http_status(200)
       parsed_response = JSON.parse(response.body)
       expect(parsed_response.first['id']).to eq(discounted_transaction.id)
       expect(parsed_response.length).to eq(1)
+    end
+
+    it "applies amount filters and the requested result limit" do
+      amount_search = double
+      search = double(amount: amount_search)
+
+      expect(amount_search).to receive(:between).with("10.25", "99.50")
+      expect(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, kind_of(Proc), 12) do |_gateway, query, _limit|
+        query.call(search)
+        []
+      end
+
+      get :index, params: { min_amount: "10.25", max_amount: "99.50", limit: "12" }, format: :json
+
+      expect(response).to have_http_status(200)
+    end
+
+    it "rejects a non-positive result limit" do
+      get :index, params: { limit: "0" }, format: :json
+
+      expect(response).to have_http_status(422)
+      expect(JSON.parse(response.body)["message"]).to match(/positive integer/i)
     end
   end
 

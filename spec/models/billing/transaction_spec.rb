@@ -60,6 +60,17 @@ RSpec.describe BraintreeService::Transaction, type: :model do
         result = BraintreeService::Transaction.get_transactions(gateway)
         expect(result).to eq([fake_transaction])
       end
+
+
+      it "stops at the requested limit" do
+        transactions = Array.new(3) { |index| build(:transaction, id: "transaction-#{index}") }
+        allow(gateway).to receive_message_chain(:transaction, search: transactions)
+        allow(BraintreeService::Transaction).to receive(:normalize) { |_gateway, transaction| transaction }
+
+        result = BraintreeService::Transaction.get_transactions(gateway, nil, 2)
+
+        expect(result).to eq(transactions.first(2))
+      end
     end
 
     describe "#get_transaction" do

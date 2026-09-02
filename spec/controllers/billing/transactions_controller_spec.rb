@@ -187,8 +187,8 @@ RSpec.describe Billing::TransactionsController, type: :controller do
     let(:related_invoice) { create(:invoice, transaction_id: transaction.id) }
     it "renders a list of transactions" do 
       related_invoice # call to initialize
-      allow(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything).and_return([transaction])
-      expect(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything).and_return([transaction])
+      allow(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything, anything).and_return([transaction])
+      expect(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything, anything).and_return([transaction])
       
       get :index, format: :json
       parsed_response = JSON.parse(response.body)

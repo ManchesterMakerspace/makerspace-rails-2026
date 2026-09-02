@@ -25,7 +25,7 @@ class BraintreeService::Transaction < Braintree::Transaction
     transaction
   end
 
-  def self.get_transactions(gateway, search_query = nil)
+  def self.get_transactions(gateway, search_query = nil, limit = 50)
     begin
       Timeout::timeout(25) do
         transactions = gateway.transaction.search { |search| search_query && search_query.call(search) }
@@ -36,7 +36,7 @@ class BraintreeService::Transaction < Braintree::Transaction
         results = []
         transactions.each do |transaction|
           results << normalize(gateway, transaction)
-          break if results.length >= 50
+          break if results.length >= limit
         end
         results
       end
