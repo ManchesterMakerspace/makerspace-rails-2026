@@ -81,6 +81,23 @@ RSpec.describe BraintreeService::Transaction, type: :model do
 
         expect(result.length).to eq(500)
       end
+
+      it "applies the limit after filtering results" do
+        unmatched = build(:transaction, id: "unmatched")
+        matched = build(:transaction, id: "matched")
+        transactions = [unmatched, matched]
+        allow(gateway).to receive_message_chain(:transaction, search: transactions)
+        allow(BraintreeService::Transaction).to receive(:normalize) { |_gateway, transaction| transaction }
+
+        result = BraintreeService::Transaction.get_transactions(
+          gateway,
+          nil,
+          1,
+          ->(transaction) { transaction.id == "matched" }
+        )
+
+        expect(result).to eq([matched])
+      end
     end
 
     describe "#get_transaction" do

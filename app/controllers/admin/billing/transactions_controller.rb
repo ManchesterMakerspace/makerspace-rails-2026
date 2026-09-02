@@ -1,12 +1,11 @@
 class Admin::Billing::TransactionsController < Admin::BillingController
   def index
-    transactions = ::BraintreeService::Transaction.get_transactions(@gateway, construct_query, transaction_limit)
-
-    if transaction_query_params[:discount_id]
-      transactions = transactions.filter do |transaction|
-        transaction.discounts.find { |discount| transaction_query_params[:discount_id].include?(discount.id) }
-      end
-    end
+    transactions = ::BraintreeService::Transaction.get_transactions(
+      @gateway,
+      construct_query,
+      transaction_limit,
+      discount_filter
+    )
 
     return render_with_total_items(transactions, { each_serializer: BraintreeService::TransactionSerializer, adapter: :attributes })
   end
@@ -87,5 +86,12 @@ class Admin::Billing::TransactionsController < Admin::BillingController
     end
   rescue ArgumentError, TypeError
     raise ::Error::UnprocessableEntity.new("Limit must be a positive integer")
+  end
+
+  def discount_filter
+    discount_ids = transaction_query_params[:discount_id]
+    return unless discount_ids
+
+    ->(transaction) { transaction.discounts.any? { |discount| discount_ids.include?(discount.id) } }
   end
 end

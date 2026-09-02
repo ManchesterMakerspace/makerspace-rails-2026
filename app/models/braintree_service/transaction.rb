@@ -27,7 +27,7 @@ class BraintreeService::Transaction < Braintree::Transaction
     transaction
   end
 
-  def self.get_transactions(gateway, search_query = nil, limit = 50)
+  def self.get_transactions(gateway, search_query = nil, limit = 50, result_filter = nil)
     begin
       Timeout::timeout(25) do
         limit = [limit, MAX_TRANSACTION_LIMIT].min
@@ -38,7 +38,10 @@ class BraintreeService::Transaction < Braintree::Transaction
         # Use date filters in the UI to narrow results further.
         results = []
         transactions.each do |transaction|
-          results << normalize(gateway, transaction)
+          transaction = normalize(gateway, transaction)
+          next if result_filter && !result_filter.call(transaction)
+
+          results << transaction
           break if results.length >= limit
         end
         results

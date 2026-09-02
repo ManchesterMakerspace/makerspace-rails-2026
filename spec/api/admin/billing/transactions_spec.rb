@@ -37,7 +37,7 @@ describe 'Billing::Transactions API', type: :request do
           [i1, i2, i3]
           transactions = [t1, t2, t3]
           sign_in admin
-          allow(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything, anything).and_return(transactions)
+          allow(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything, anything, nil).and_return(transactions)
         end
 
         schema type: :array,
