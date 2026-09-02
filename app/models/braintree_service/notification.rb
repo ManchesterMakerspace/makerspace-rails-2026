@@ -539,6 +539,38 @@ No automated actions have been taken at this time.")
     )
   end
 
+  def self.log_order_id_ownership_mismatch(transaction, notification, order_id_invoice, member, notification_record = nil)
+    details = payment_log_details(transaction, nil, member&.id)
+    details[:invoice] = {
+      description: order_id_invoice.description,
+      id: order_id_invoice.id.to_s,
+      resourceClass: order_id_invoice.resource_class,
+      subscriptionId: order_id_invoice.subscription_id,
+      dueDate: order_id_invoice.due_date,
+      planId: order_id_invoice.plan_id,
+      memberId: order_id_invoice.member_id.to_s
+    }
+    resolved_member = member ? "member #{member.id}" : "no known member"
+    message = "Braintree transaction #{transaction.id} order_id resolved to invoice #{order_id_invoice.id} " \
+      "owned by member #{order_id_invoice.member_id}, but the transaction's customer resolved to " \
+      "#{resolved_member}. Ignoring the order_id match."
+
+    ::Service::AuditLogger.log(
+      log_type: "member",
+      event_type: "braintree_order_id_ownership_mismatch",
+      resource_type: "Invoice",
+      resource_id: order_id_invoice.id,
+      subject: member || order_id_invoice.member,
+      after_snapshot: details,
+      message_details: message
+    )
+    Rails.logger.warn("[BraintreeTransaction] #{message} payload=#{details.to_json} kind=#{notification.kind}")
+    enque_message(
+      "<!channel> ⚠️ #{message}",
+      ::Service::SlackConnector.logs_channel
+    )
+  end
+
   def self.payment_log_details(transaction, invoice = nil, member_id = nil)
     customer_details = transaction.try(:customer_details)
     member = invoice&.member
