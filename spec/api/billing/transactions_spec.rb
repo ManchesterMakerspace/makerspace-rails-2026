@@ -21,6 +21,9 @@ describe 'Billing::Transactions API', type: :request do
       parameter name: :endDate, in: :query, type: :string, required: false
       parameter name: :refund, in: :query, type: :boolean, required: false
       parameter name: :type, in: :query, type: :string, required: false
+      parameter name: :minAmount, in: :query, type: :number, required: false
+      parameter name: :maxAmount, in: :query, type: :number, required: false
+      parameter name: :limit, in: :query, schema: { type: :integer, minimum: 1, maximum: 500 }, required: false
 
       parameter name: :transactionStatus, in: :query, schema: { type: :array, items: { type: :string } }, required: false
       parameter name: :paymentMethodToken, in: :query, schema: { type: :array, items: { type: :string } }, required: false
@@ -37,7 +40,7 @@ describe 'Billing::Transactions API', type: :request do
           [i1, i2, i3]
           transactions = [t1, t2, t3]
           sign_in customer
-          allow(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything).and_return(transactions)
+          allow(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, anything, anything).and_return(transactions)
         end
 
         schema type: :array,
