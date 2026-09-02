@@ -272,6 +272,32 @@ RSpec.describe BraintreeService::Notification, type: :model do
       expect(newer_invoice.reload.transaction_id).to be_nil
     end
 
+    it "does not fall through to a same-resource-id fee invoice when subscription ID matching misses" do
+      # Forces subscription_id (tier 1) and plan_id (tier 2) to miss so the
+      # resource_id-only fallback (tier 3) is what actually gets exercised.
+      # invoice.subscription_id stays "some_id" from the top-level let, which
+      # never equals the incoming composite subscription id, so this proves
+      # the resource_class scoping fix in the fallback tier itself — not just
+      # a tier-1 subscription_id match that happens to avoid the fallback.
+      fee_invoice = create(
+        :invoice,
+        member: member,
+        resource_class: "fee",
+        resource_id: member.id,
+        amount: 65.0,
+        created_at: 3.days.ago
+      )
+      invoice.update!(created_at: 1.day.ago, amount: 65.0)
+      allow(transaction).to receive(:amount).and_return(BigDecimal("65.00"))
+      allow(transaction).to receive(:line_items).and_return([])
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      BraintreeService::Notification.process_subscription(successful_charge_notification)
+
+      expect(invoice.reload.transaction_id).to eq(transaction.id)
+      expect(fee_invoice.reload.transaction_id).to be_nil
+    end
+
     it "settles the member's subscription invoice instead of a same-resource-id fee invoice" do
       # Reproduces a production incident: a fee invoice (resource_class "fee")
       # shares resource_id with a member's open subscription invoice because
@@ -518,6 +544,31 @@ RSpec.describe BraintreeService::Notification, type: :model do
 
       expect(older_invoice.reload.transaction_id).to eq(transaction.id)
       expect(newer_invoice.reload.transaction_id).to be_nil
+    end
+
+    it "does not settle an order_id-matched invoice owned by a different member" do
+      owner = create(:member, customer_id: "bt-owner")
+      payer = create(:member, customer_id: "bt-other-payer")
+      owners_invoice = create(:invoice, member: owner, amount: 65.0, created_at: 2.days.ago)
+      payers_invoice = create(:invoice, member: payer, amount: 65.0, created_at: 1.day.ago)
+      allow(transaction).to receive(:customer_details).and_return(
+        double(id: "bt-other-payer", first_name: payer.firstname, last_name: payer.lastname)
+      )
+      allow(transaction).to receive(:order_id).and_return(owners_invoice.id.to_s)
+      allow(transaction).to receive(:amount).and_return(BigDecimal("65.00"))
+      allow(transaction).to receive(:line_items).and_return([])
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      expect(owners_invoice.reload.transaction_id).to be_nil
+      expect(payers_invoice.reload.transaction_id).to eq(transaction.id)
+
+      audit_log = AuditLog.find_by(event_type: "braintree_order_id_ownership_mismatch")
+      expect(audit_log).to be_present
+      expect(audit_log.resource_id).to eq(owners_invoice.id)
+      expect(audit_log.after_snapshot.dig("invoice", "memberId")).to eq(owner.id.to_s)
+      expect(audit_log.after_snapshot.dig("incomingPayment", "memberId")).to eq(payer.id.to_s)
     end
 
     it "matches a non-subscription settlement by Braintree order ID before amount fallback" do

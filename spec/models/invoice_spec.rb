@@ -371,6 +371,7 @@ RSpec.describe Invoice, type: :model do
         plan_id: nil,
         resource_id: rental.id,
         member_id: member.id,
+        resource_class: "rental",
         amount: "65.00"
       )
 
@@ -404,6 +405,7 @@ RSpec.describe Invoice, type: :model do
         plan_id: "shared-plan",
         resource_id: member.id,
         member_id: member.id,
+        resource_class: "member",
         amount: "65.00"
       )
 
@@ -436,6 +438,7 @@ RSpec.describe Invoice, type: :model do
         plan_id: "shared-rental-plan",
         resource_id: rental.id,
         member_id: member.id,
+        resource_class: "rental",
         amount: "65.00"
       )
 
