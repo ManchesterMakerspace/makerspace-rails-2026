@@ -675,7 +675,7 @@ class Member
   end
 
   def publish_update
-    publish(:billing_info_changed) if previous_changes.keys.any? { |attr| [:firstname, :lastname].include?(attr.to_sym) }
+    publish(:billing_info_changed) if previous_changes.keys.any? { |attr| [:firstname, :lastname, :email].include?(attr.to_sym) }
   end
 
   def handle_successful_email_change

@@ -95,10 +95,6 @@ module MemberSubscriber
   end
 
   def update_braintree_customer_info(member)
-    if member.customer_id
-      # ID followed by hash of the attributes to update
-      # https://developers.braintreepayments.com/reference/request/customer/update/ruby
-      connect_gateway.customer.update(member.customer_id, first_name: member.firstname, last_name: member.lastname)
-    end
+    BraintreeCustomerSyncJob.perform_later(member.id.to_s)
   end
 end

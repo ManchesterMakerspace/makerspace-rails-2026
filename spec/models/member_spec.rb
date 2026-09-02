@@ -325,6 +325,24 @@ RSpec.describe Member, type: :model do
         member.update!({ firstname: "foo_changed" })
       end
 
+      it "syncs the Braintree customer when firstname or lastname changes" do
+        expect do
+          member.update!({ firstname: "foo_changed" })
+        end.to have_enqueued_job(BraintreeCustomerSyncJob).with(member.id.to_s)
+      end
+
+      it "syncs the Braintree customer when email changes" do
+        expect do
+          member.update!({ email: "foo_changed@test.com" })
+        end.to have_enqueued_job(BraintreeCustomerSyncJob).with(member.id.to_s)
+      end
+
+      it "does not sync the Braintree customer for unrelated changes" do
+        expect do
+          member.update!({ phone: "9995551234" })
+        end.not_to have_enqueued_job(BraintreeCustomerSyncJob)
+      end
+
       it "does not reinvite services if email changes and invalidates external auth/session state" do
         new_email = "foo_changed@test.com"
         previous_email = member.email
@@ -350,27 +368,6 @@ RSpec.describe Member, type: :model do
         expect(member.slack_previous_user_id).to eq(previous_slack_user.id)
       end
 
-      it "Updates billing if a customer" do 
-        allow(Service::MemberProvisioning).to receive(:invite_slack).and_return(nil)
-        customer = create(:member, customer_id: "foo")
-        mock_customer_chain = double
-        # The subscriber's connect_gateway instance method delegates to
-        # ::Service::BraintreeGateway.connect_gateway — stub the class-level method
-        allow(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
-        expect(gateway).to receive(:customer).and_return(mock_customer_chain)
-        expect(mock_customer_chain).to receive(:update).with(
-          "foo", 
-          first_name: "foo_changed", 
-          last_name: customer.lastname
-        )
-        customer.update!({ firstname: "foo_changed" })
-      end
-
-      it "Doesn't update billing if not a customer" do 
-        allow_any_instance_of(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
-        expect(gateway).not_to receive(:customer)
-        member.update!({ firstname: "foo_changed" })
-      end
 
     it "disbands the household when the primary renews with an individual member invoice" do
       primary = create(:member, expirationTime: 1.month.from_now.to_i * 1000)
