@@ -106,6 +106,7 @@ class BraintreeService::Notification
           plan_id: last_transaction.try(:plan_id).presence || notification.subscription.try(:plan_id),
           resource_id: resource_id,
           member_id: transaction_member&.id,
+          resource_class: resource_class,
           amount: amount
         )
       end
@@ -309,20 +310,28 @@ No automated actions have been taken at this time.")
       subscription_id = last_transaction.try(:subscription_id)
 
       if subscription_id.present?
-        _, resource_id = ::BraintreeService::Subscription.read_id(subscription_id)
+        resource_class, resource_id = ::BraintreeService::Subscription.read_id(subscription_id)
         processed_invoice = find_invoice_matching_transaction_amount(last_transaction) do |amount|
           Invoice.oldest_active_subscription_invoice_matching_amount(
             subscription_id: subscription_id,
             plan_id: last_transaction.try(:plan_id),
             resource_id: resource_id,
             member_id: member&.id,
+            resource_class: resource_class,
             amount: amount
           )
         end
       else
         order_id = last_transaction.try(:order_id).to_s
         if order_id.match?(/\A[0-9a-f]{24}\z/i)
-          processed_invoice = Invoice.find_by(id: order_id, settled_at: nil, transaction_id: nil)
+          order_id_invoice = Invoice.find_by(id: order_id, settled_at: nil, transaction_id: nil)
+          if order_id_invoice
+            if order_id_invoice.member_id == member&.id
+              processed_invoice = order_id_invoice
+            else
+              log_order_id_ownership_mismatch(last_transaction, notification, order_id_invoice, member, notification_record)
+            end
+          end
         end
         if member
           processed_invoice ||= find_invoice_matching_transaction_amount(last_transaction) do |amount|
@@ -520,6 +529,38 @@ No automated actions have been taken at this time.")
       resource_type: audit_resource_type,
       resource_id: audit_resource_id,
       subject: member,
+      after_snapshot: details,
+      message_details: message
+    )
+    Rails.logger.warn("[BraintreeTransaction] #{message} payload=#{details.to_json} kind=#{notification.kind}")
+    enque_message(
+      "<!channel> ⚠️ #{message}",
+      ::Service::SlackConnector.logs_channel
+    )
+  end
+
+  def self.log_order_id_ownership_mismatch(transaction, notification, order_id_invoice, member, notification_record = nil)
+    details = payment_log_details(transaction, nil, member&.id)
+    details[:invoice] = {
+      description: order_id_invoice.description,
+      id: order_id_invoice.id.to_s,
+      resourceClass: order_id_invoice.resource_class,
+      subscriptionId: order_id_invoice.subscription_id,
+      dueDate: order_id_invoice.due_date,
+      planId: order_id_invoice.plan_id,
+      memberId: order_id_invoice.member_id.to_s
+    }
+    resolved_member = member ? "member #{member.id}" : "no known member"
+    message = "Braintree transaction #{transaction.id} order_id resolved to invoice #{order_id_invoice.id} " \
+      "owned by member #{order_id_invoice.member_id}, but the transaction's customer resolved to " \
+      "#{resolved_member}. Ignoring the order_id match."
+
+    ::Service::AuditLogger.log(
+      log_type: "member",
+      event_type: "braintree_order_id_ownership_mismatch",
+      resource_type: "Invoice",
+      resource_id: order_id_invoice.id,
+      subject: member || order_id_invoice.member,
       after_snapshot: details,
       message_details: message
     )
