@@ -272,7 +272,32 @@ RSpec.describe BraintreeService::Notification, type: :model do
       expect(newer_invoice.reload.transaction_id).to be_nil
     end
 
-    it "Skips settlement if invoice is already in progress" do 
+    it "settles the member's subscription invoice instead of a same-resource-id fee invoice" do
+      # Reproduces a production incident: a fee invoice (resource_class "fee")
+      # shares resource_id with a member's open subscription invoice because
+      # fee invoices store resource_id == member_id. A resource_id-only match
+      # would settle whichever invoice Mongo returns first; the subscription_id
+      # tier must win regardless.
+      fee_invoice = create(
+        :invoice,
+        member: member,
+        resource_class: "fee",
+        resource_id: member.id,
+        amount: 65.0,
+        created_at: 3.days.ago
+      )
+      invoice.update!(subscription_id: subscription.id, created_at: 1.day.ago, amount: 65.0)
+      allow(transaction).to receive(:amount).and_return(BigDecimal("65.00"))
+      allow(transaction).to receive(:line_items).and_return([])
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      BraintreeService::Notification.process_subscription(successful_charge_notification)
+
+      expect(invoice.reload.transaction_id).to eq(transaction.id)
+      expect(fee_invoice.reload.transaction_id).to be_nil
+    end
+
+    it "Skips settlement if invoice is already in progress" do
       InvoiceHelper.update_lifecycle(invoice.id, InvoiceHelper::LIFECYCLES[:InProgress])
       create(:card, member: member)
       init_member_expiration = member.pretty_time
@@ -641,6 +666,51 @@ RSpec.describe BraintreeService::Notification, type: :model do
       abandoned_invoice.reload
       expect(abandoned_invoice.locked).to be(false)
       expect(abandoned_invoice.locked_at).to be_nil
+    end
+
+    it "stops retrying and logs an unmatched payment after exhausting claim attempts" do
+      new_member = create(:member, customer_id: "bt-customer-retry-exhaustion")
+      create(:invoice, member: new_member, amount: 65.0)
+      allow(transaction).to receive(:customer_details).and_return(
+        double(id: "bt-customer-retry-exhaustion", first_name: new_member.firstname, last_name: new_member.lastname)
+      )
+      allow(transaction).to receive(:amount).and_return(BigDecimal("65.00"))
+      allow(transaction).to receive(:line_items).and_return([])
+      allow(BraintreeService::Notification).to receive(:enque_message)
+      allow(BraintreeService::Notification).to receive(:log_unmatched_payment).and_call_original
+      allow(Invoice).to receive(:claim_for_transaction).and_return(nil)
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      expect(Invoice).to have_received(:claim_for_transaction).exactly(3).times
+      expect(BraintreeService::Notification).to have_received(:log_unmatched_payment).once
+    end
+
+    it "deterministically prefers the net amount when both net and gross amounts match different invoices" do
+      new_member = create(:member, customer_id: "bt-customer-net-vs-gross")
+      rental = create(:rental, member: new_member)
+      net_invoice = create(:invoice, member: new_member, amount: 58.50, created_at: 2.days.ago)
+      gross_invoice = create(
+        :invoice,
+        member: new_member,
+        resource_class: "rental",
+        resource_id: rental.id,
+        amount: 65.00,
+        created_at: 1.day.ago
+      )
+      discount = double(amount: "3.25", quantity: 2, name: "Member discount")
+      allow(transaction).to receive(:customer_details).and_return(
+        double(id: "bt-customer-net-vs-gross", first_name: new_member.firstname, last_name: new_member.lastname)
+      )
+      allow(transaction).to receive(:amount).and_return(BigDecimal("58.50"))
+      allow(transaction).to receive(:discounts).and_return([discount])
+      allow(transaction).to receive(:line_items).and_return([])
+      allow(BraintreeService::Notification).to receive(:enque_message)
+
+      BraintreeService::Notification.process_transaction(success_transaction_notification)
+
+      expect(net_invoice.reload.transaction_id).to eq(transaction.id)
+      expect(gross_invoice.reload.transaction_id).to be_nil
     end
 
     it "does not reprocess a delayed settlement already handled for the transaction" do

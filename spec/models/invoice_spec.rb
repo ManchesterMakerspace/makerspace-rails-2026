@@ -459,6 +459,32 @@ RSpec.describe Invoice, type: :model do
       expect(Invoice.claim_for_transaction(open_invoice.id, "transaction-2")).to be_nil
     end
 
+    it "lets only one of two racing claims win the same invoice and transaction" do
+      open_invoice = create(
+        :invoice,
+        member: member,
+        resource_id: rental.id,
+        resource_class: "rental"
+      )
+
+      results = Queue.new
+      release = Queue.new
+      threads = 2.times.map do
+        Thread.new do
+          release.pop
+          results << Invoice.claim_for_transaction(open_invoice.id, "racing-transaction")
+        end
+      end
+      2.times { release << true }
+      threads.each(&:join)
+
+      outcomes = Array.new(2) { results.pop }
+      expect(outcomes.compact.length).to eq(1)
+      open_invoice.reload
+      expect(open_invoice.transaction_id).to eq("racing-transaction")
+      expect(open_invoice.locked).to be(true)
+    end
+
     it "does not claim a second invoice for the same transaction" do
       Invoice.collection.indexes.create_one(
         { transaction_id: 1 },
