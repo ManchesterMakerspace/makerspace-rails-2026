@@ -258,6 +258,9 @@ class Invoice
     active = self.find_by(resource_id: resource_id, settled_at: nil, transaction_id: nil)
   end
 
+  # Not scoped by resource_class: this method has no current call sites in
+  # app/ (only referenced from specs), so there's no caller context to scope
+  # by. Scope it if a production caller is ever added.
   def self.oldest_active_invoice_matching_amount(resource_id, amount)
     target_amount = BigDecimal(amount.to_s)
 
@@ -278,19 +281,20 @@ class Invoice
     nil
   end
 
-  def self.oldest_active_subscription_invoice_matching_amount(subscription_id:, plan_id:, resource_id:, member_id:, amount:)
+  def self.oldest_active_subscription_invoice_matching_amount(subscription_id:, plan_id:, resource_id:, member_id:, resource_class:, amount:)
     scopes = []
-    scopes << where(subscription_id: subscription_id, settled_at: nil, transaction_id: nil) if subscription_id.present?
+    scopes << where(subscription_id: subscription_id, resource_class: resource_class, settled_at: nil, transaction_id: nil) if subscription_id.present?
     if plan_id.present? && member_id.present? && resource_id.present?
       scopes << where(
         plan_id: plan_id,
         member_id: member_id,
         resource_id: resource_id,
+        resource_class: resource_class,
         settled_at: nil,
         transaction_id: nil
       )
     end
-    scopes << where(resource_id: resource_id, settled_at: nil, transaction_id: nil) if resource_id.present?
+    scopes << where(resource_id: resource_id, resource_class: resource_class, settled_at: nil, transaction_id: nil) if resource_id.present?
 
     target_amount = BigDecimal(amount.to_s)
     scopes.each do |scope|

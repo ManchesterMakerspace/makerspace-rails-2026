@@ -106,6 +106,7 @@ class BraintreeService::Notification
           plan_id: last_transaction.try(:plan_id).presence || notification.subscription.try(:plan_id),
           resource_id: resource_id,
           member_id: transaction_member&.id,
+          resource_class: resource_class,
           amount: amount
         )
       end
@@ -309,20 +310,28 @@ No automated actions have been taken at this time.")
       subscription_id = last_transaction.try(:subscription_id)
 
       if subscription_id.present?
-        _, resource_id = ::BraintreeService::Subscription.read_id(subscription_id)
+        resource_class, resource_id = ::BraintreeService::Subscription.read_id(subscription_id)
         processed_invoice = find_invoice_matching_transaction_amount(last_transaction) do |amount|
           Invoice.oldest_active_subscription_invoice_matching_amount(
             subscription_id: subscription_id,
             plan_id: last_transaction.try(:plan_id),
             resource_id: resource_id,
             member_id: member&.id,
+            resource_class: resource_class,
             amount: amount
           )
         end
       else
         order_id = last_transaction.try(:order_id).to_s
         if order_id.match?(/\A[0-9a-f]{24}\z/i)
-          processed_invoice = Invoice.find_by(id: order_id, settled_at: nil, transaction_id: nil)
+          order_id_invoice = Invoice.find_by(id: order_id, settled_at: nil, transaction_id: nil)
+          if order_id_invoice
+            if order_id_invoice.member_id == member&.id
+              processed_invoice = order_id_invoice
+            else
+              log_order_id_ownership_mismatch(last_transaction, notification, order_id_invoice, member, notification_record)
+            end
+          end
         end
         if member
           processed_invoice ||= find_invoice_matching_transaction_amount(last_transaction) do |amount|
