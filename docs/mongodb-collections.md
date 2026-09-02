@@ -4,6 +4,12 @@ This is the source-of-truth inventory of MongoDB collections owned by the
 Rails application. Collection names are Mongoid's default pluralized model
 name unless the model declares `store_in` explicitly.
 
+### Warning
+This does not yet document indexes installed by the deployment task.  
+
+The table omits the non-unique `{ member_id: 1 }` index that `data:ensure_unique_indexes` creates on `cards`; the same omission affects `earned_memberships`, `invoices`, `payments`, `permissions`, `rentals`, and `tool_checkouts`. Because both the Procfile and Dockerfile run that task before starting the application, these are application-declared expected indexes rather than incidental live-database state, and entries such as `permissions: None` are incorrect. \n \n Include non-model collections in the source-of-truth table\nThis is not a complete inventory of collections used by the Rails application: `Admin::CheckinsController` and `Admin::SpaceUsageController` directly query `Mongoid.default_client[:checkins]`, while `data:ensure_unique_indexes` explicitly creates/indexes the `notes` collection. Neither appears in the table below.
+
+
 Every collection has MongoDB's implicit unique `_id` index. The **Expected
 indexes** column lists additional indexes declared by the application; “None”
 means that only `_id` is expected. Direction `1` means ascending. Partial
