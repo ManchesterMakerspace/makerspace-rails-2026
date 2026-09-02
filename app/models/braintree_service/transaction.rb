@@ -1,4 +1,6 @@
 class BraintreeService::Transaction < Braintree::Transaction
+  MAX_TRANSACTION_LIMIT = 500
+
   include ImportResource
   extend Service::SlackConnector
   include ActiveModel::Serializers::JSON
@@ -28,10 +30,11 @@ class BraintreeService::Transaction < Braintree::Transaction
   def self.get_transactions(gateway, search_query = nil, limit = 50)
     begin
       Timeout::timeout(25) do
+        limit = [limit, MAX_TRANSACTION_LIMIT].min
         transactions = gateway.transaction.search { |search| search_query && search_query.call(search) }
         # Braintree::ResourceCollection#first does not accept an argument (gem 2.94.0).
         # Use each with a break — fetches IDs in one call then the first page of
-        # 50 records and stops, preventing H12 timeout and R14 memory errors.
+        # requested records and stops, preventing H12 timeout and R14 memory errors.
         # Use date filters in the UI to narrow results further.
         results = []
         transactions.each do |transaction|

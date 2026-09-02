@@ -23,7 +23,7 @@ describe 'Billing::Transactions API', type: :request do
       parameter name: :customerId, in: :query, type: :string, required: false
       parameter name: :minAmount, in: :query, type: :number, required: false
       parameter name: :maxAmount, in: :query, type: :number, required: false
-      parameter name: :limit, in: :query, type: :integer, minimum: 1, required: false
+      parameter name: :limit, in: :query, schema: { type: :integer, minimum: 1, maximum: 500 }, required: false
 
       response '200', 'transactions found' do 
         let(:t1) { build(:credit_card_transaction, member_id: basic.id) }

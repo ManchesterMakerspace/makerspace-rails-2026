@@ -71,6 +71,16 @@ RSpec.describe BraintreeService::Transaction, type: :model do
 
         expect(result).to eq(transactions.first(2))
       end
+
+      it "caps the requested limit at 500 transactions" do
+        transactions = Array.new(501, fake_transaction)
+        allow(gateway).to receive_message_chain(:transaction, search: transactions)
+        allow(BraintreeService::Transaction).to receive(:normalize) { |_gateway, transaction| transaction }
+
+        result = BraintreeService::Transaction.get_transactions(gateway, nil, 1_000)
+
+        expect(result.length).to eq(500)
+      end
     end
 
     describe "#get_transaction" do
