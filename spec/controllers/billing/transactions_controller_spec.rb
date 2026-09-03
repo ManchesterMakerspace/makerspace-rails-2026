@@ -197,12 +197,27 @@ RSpec.describe Billing::TransactionsController, type: :controller do
       expect(parsed_response.first['invoice']['id']).to eq(related_invoice.id.to_s)
     end
 
-    it "renders error about no customer" do 
+    it "renders error about no customer" do
       sign_in non_customer
       get :index, format: :json
       parsed_response = JSON.parse(response.body)
       expect(response).to have_http_status(403)
       expect(parsed_response['message']).to match(/customer/i)
+    end
+
+    it "applies amount filters sent as camelCase (React's raw-request escape hatch)" do
+      amount_search = double
+      search = double(amount: amount_search, customer_id: double(is: nil))
+
+      expect(amount_search).to receive(:between).with("10.25", "99.50")
+      expect(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, kind_of(Proc), 50) do |_gateway, query, _limit|
+        query.call(search)
+        []
+      end
+
+      get :index, params: { minAmount: "10.25", maxAmount: "99.50" }, format: :json
+
+      expect(response).to have_http_status(200)
     end
   end
 
