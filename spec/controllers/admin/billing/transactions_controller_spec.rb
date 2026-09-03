@@ -73,6 +73,21 @@ RSpec.describe Admin::Billing::TransactionsController, type: :controller do
       expect(response).to have_http_status(200)
     end
 
+    it "applies amount filters sent as camelCase (React's raw-request escape hatch)" do
+      amount_search = double
+      search = double(amount: amount_search)
+
+      expect(amount_search).to receive(:between).with("10.25", "99.50")
+      expect(BraintreeService::Transaction).to receive(:get_transactions).with(gateway, kind_of(Proc), 12, nil) do |_gateway, query, _limit, _filter|
+        query.call(search)
+        []
+      end
+
+      get :index, params: { minAmount: "10.25", maxAmount: "99.50", limit: "12" }, format: :json
+
+      expect(response).to have_http_status(200)
+    end
+
     it "rejects a non-positive result limit" do
       get :index, params: { limit: "0" }, format: :json
 

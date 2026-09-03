@@ -129,7 +129,13 @@ class Billing::TransactionsController < BillingController
     end
 
     def transaction_query_params
-      params.permit(:start_date, :end_date, :refund, :type, :min_amount, :max_amount, :limit, :transaction_status => [], :payment_method_token => [])
+      # The React client sends camelCase minAmount/maxAmount via a raw request
+      # helper that bypasses the generated API client's snake_case conversion.
+      # Accept both spellings so the filter doesn't silently no-op.
+      query_params = params.permit(:start_date, :end_date, :refund, :type, :min_amount, :max_amount, :minAmount, :maxAmount, :limit, :transaction_status => [], :payment_method_token => [])
+      query_params[:min_amount] ||= query_params.delete(:minAmount)
+      query_params[:max_amount] ||= query_params.delete(:maxAmount)
+      query_params
     end
 
     def transaction_limit
