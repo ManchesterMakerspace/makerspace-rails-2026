@@ -322,10 +322,10 @@ module Service
         "Manual Slack #{action} required for #{member.email}: #{error_message(error)}",
         slack_channel: ::Service::SlackConnector.admin_channel
       )
-      Honeybadger.notify(
+      Service::ErrorReporter.notify(
         error,
         context: { member_id: member.id.to_s, member_email: member.email, manual_action: action }
-      ) if defined?(Honeybadger)
+      )
     rescue => notification_error
       Rails.logger.error(
         "[MemberProvisioning] could not record manual Slack action: #{error_message(notification_error)}"
@@ -547,10 +547,10 @@ module Service
           'slack_previous_identity_detached',
           "Previous Slack identity #{previous_user.slack_id} was detached without deactivation: #{error_message(error)}"
         )
-        Honeybadger.notify(
+        Service::ErrorReporter.notify(
           error,
           context: { member_id: member.id.to_s, slack_id: previous_user.slack_id }
-        ) if defined?(Honeybadger)
+        )
       ensure
         SlackUser.collection.find(_id: previous_user.id).update_one(
           '$unset' => { member_id: '' },

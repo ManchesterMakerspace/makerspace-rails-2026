@@ -32,7 +32,7 @@ module Error
           respond(:unauthorized, 401, "Unauthorized")
         end
         rescue_from ::ActionController::ParameterMissing do |e|
-          slack_alert(:unprocessable_content, 422, e.message)
+          slack_alert(:unprocessable_content, 422, e.message) unless Rails.env.production?
           respond(:unprocessable_content, 422, e.message)
         end
         rescue_from ::Braintree::NotFoundError do |e|
@@ -80,7 +80,7 @@ module Error
     # Jobs, models, and FirebaseAuthController notify Honeybadger independently
     # so this only covers controller-layer errors caught by rescue_from.
     def honeybadger_notify(exception)
-      Honeybadger.notify(
+      Service::ErrorReporter.notify(
         exception,
         context: {
           user:       self.try(:current_member)&.id&.to_s,
@@ -92,8 +92,8 @@ module Error
         }
       )
     rescue => notify_err
-      # Never let Honeybadger itself break the error response
-      Rails.logger.error("[ErrorHandler] Honeybadger.notify failed: #{notify_err.message}")
+      # Never let error reporting itself break the error response
+      Rails.logger.error("[ErrorHandler] error reporting failed: #{notify_err.message}")
     end
 
     def slack_alert(_error, _status, _message)

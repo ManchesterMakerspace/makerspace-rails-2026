@@ -7,10 +7,10 @@ class SlackChannelCacheRefreshJob < ApplicationJob
     count
   rescue => error
     SystemConfig.record_run("slack_channel_cache", success: false)
-    Honeybadger.notify(
+    Service::ErrorReporter.notify(
       "SlackChannelCacheRefreshJob failed",
       context: { error: error.message }
-    ) if defined?(Honeybadger)
+    )
     raise error
   end
 end

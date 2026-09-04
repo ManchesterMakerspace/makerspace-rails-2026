@@ -11,7 +11,7 @@ class ReservationSlackCanvasRebuildJob < ApplicationJob
       SystemConfig.record_run("reservation_canvas_rebuild", success: true)
     rescue => error
       SystemConfig.record_run("reservation_canvas_rebuild", success: false)
-      Honeybadger.notify(
+      Service::ErrorReporter.notify(
         "ReservationSlackCanvasRebuildJob failed",
         context: { error: error.message }
       )

@@ -39,7 +39,7 @@ module Service
         ::Service::SlackConnector.admin_client("users.profile.set")
         msg = '[Slack Profile Sync] ERROR: SLACK_ADMIN_TOKEN is not set'
         puts msg
-        Honeybadger.notify('Slack profile sync failed', context: { reason: 'SLACK_ADMIN_TOKEN not set' }) if defined?(Honeybadger)
+        Service::ErrorReporter.notify('Slack profile sync failed', context: { reason: 'SLACK_ADMIN_TOKEN not set' })
         raise msg
       end
 
@@ -61,7 +61,7 @@ module Service
       { synced: synced_count, last_run_at: now }
     rescue => e
       puts "[Slack Profile Sync] ERROR: #{e.message}"
-      Honeybadger.notify('Slack profile sync failed', context: { error: e.message }) if defined?(Honeybadger)
+      Service::ErrorReporter.notify('Slack profile sync failed', context: { error: e.message })
       raise e
     end
 

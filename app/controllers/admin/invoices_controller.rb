@@ -152,7 +152,7 @@ class Admin::InvoicesController < AdminOrRmController
 
     render json: {}, status: 204 and return
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
     render json: { error: e.message }, status: :unprocessable_content and return
   end
 

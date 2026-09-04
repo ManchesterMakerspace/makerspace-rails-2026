@@ -9,7 +9,7 @@ class InvoiceReviewJob < ApplicationJob
       SystemConfig.record_run("invoice_review", success: true)
     rescue => e
       SystemConfig.record_run("invoice_review", success: false)
-      Honeybadger.notify("InvoiceReviewJob failed", context: { error: e.message })
+      Service::ErrorReporter.notify("InvoiceReviewJob failed", context: { error: e.message })
       raise e
     end
   end

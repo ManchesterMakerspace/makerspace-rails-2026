@@ -36,7 +36,7 @@ class GoogleResourceDeleteJob < ApplicationJob
       resource_type: "GoogleCalendarResource",
       resource_id: resource_id
     )
-    Honeybadger.notify(error) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(error)
     Rails.logger.warn(
       "Google resource deletion failed for #{resource_id}: " \
       "#{Service::GoogleApiErrorReporter.full_error_message(error)}"

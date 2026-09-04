@@ -469,10 +469,9 @@ module Service
         context = { template: template.to_s, error: error.message }
         if error.is_a?(MissingEnvironmentVariable)
           Rails.logger.info("[EmailTemplate] Using compiled fallback: #{error.message}")
-        elsif defined?(Honeybadger)
-          Honeybadger.notify(error, context: context)
         else
           Rails.logger.error("[EmailTemplate] #{error.class}: #{error.message} | #{context.inspect}")
+          Honeybadger.notify(error, context: context) if defined?(Honeybadger)
         end
       end
     end

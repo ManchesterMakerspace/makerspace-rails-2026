@@ -128,7 +128,7 @@ module Service
         ::Service::SlackConnector.send_slack_message(message, record[:slack_id])
         true
       rescue => error
-        Honeybadger.notify(error, context: { member_id: record[:member_id], slack_id: record[:slack_id] }) if defined?(Honeybadger)
+        Service::ErrorReporter.notify(error, context: { member_id: record[:member_id], slack_id: record[:slack_id] })
         false
       end
 

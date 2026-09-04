@@ -127,7 +127,7 @@ class Admin::MembersController < AdminController
   rescue Error::NotAllowed => e
     render json: { message: e.message }, status: :unprocessable_content and return
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
     render json: { message: e.message }, status: :unprocessable_content and return
   end
 
@@ -141,7 +141,7 @@ class Admin::MembersController < AdminController
   rescue Error::NotAllowed => e
     render json: { message: e.message }, status: :unprocessable_content and return
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
     render json: { message: e.message }, status: :unprocessable_content and return
   end
 

@@ -10,6 +10,6 @@ class ReservationDecisionNotificationJob < ApplicationJob
     message += "\nNote: #{reservation.decision_note}" if reservation.decision_note.present?
     Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
   rescue => error
-    Honeybadger.notify(error) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(error)
   end
 end

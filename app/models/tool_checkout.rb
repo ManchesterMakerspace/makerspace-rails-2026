@@ -64,7 +64,7 @@ class ToolCheckout
       request.update_attributes!(message_id: response.ts) if request && response.respond_to?(:ts)
     end
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   def remove_member_from_users_channel
@@ -75,7 +75,7 @@ class ToolCheckout
 
     ::Service::SlackConnector.kick_from_channel(tool.users_channel, slack_user.slack_id)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   private
@@ -93,6 +93,6 @@ class ToolCheckout
 
     ::Service::SlackConnector.invite_to_channel(tool.users_channel, slack_user.slack_id)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 end

@@ -471,7 +471,7 @@ class Member
       ::Service::SlackConnector.members_relations_channel
     )
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   def get_permissions
@@ -648,7 +648,7 @@ class Member
     )
     ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.members_relations_channel)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   def benefits_from_group

@@ -7,7 +7,7 @@ class SlackProfileSyncJob < ApplicationJob
       SystemConfig.record_run("slack_profile_sync", success: true)
     rescue => e
       SystemConfig.record_run("slack_profile_sync", success: false)
-      Honeybadger.notify("SlackProfileSyncJob failed", context: { error: e.message }) if defined?(Honeybadger)
+      Service::ErrorReporter.notify("SlackProfileSyncJob failed", context: { error: e.message })
       raise e
     end
   end

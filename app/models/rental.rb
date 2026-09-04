@@ -87,7 +87,7 @@ class Rental
 
     RentalMailer.rental_vacating(m.id.to_s, id.to_s, expiry_str).deliver_later if m
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   def contract_on_file=(onFile)

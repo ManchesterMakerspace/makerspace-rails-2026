@@ -51,7 +51,7 @@ class BraintreeService::Transaction < Braintree::Transaction
         "⚠️ Braintree transaction search timed out after 25s. Try narrowing the date range. Error: #{e.message}",
         ::Service::SlackConnector.logs_channel
       )
-      Honeybadger.notify(e) if defined?(Honeybadger)
+      Service::ErrorReporter.notify(e)
       raise ::Error::UnprocessableEntity.new("Braintree request timed out. Please narrow your date range and try again.")
     end
   end

@@ -25,7 +25,7 @@ class BraintreeService::Subscription < Braintree::Subscription
         "⚠️ Braintree subscription search timed out after 25s. Error: #{e.message}",
         ::Service::SlackConnector.logs_channel
       )
-      Honeybadger.notify(e) if defined?(Honeybadger)
+      Service::ErrorReporter.notify(e)
       raise ::Error::UnprocessableEntity.new("Braintree request timed out. Please try again.")
     end
   end

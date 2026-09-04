@@ -177,7 +177,7 @@ class VolunteerEvent
       credit.send(:notify_member_credit_awarded)
       credit.send(:check_discount_threshold!)
     rescue => e
-      Honeybadger.notify(e) if defined?(Honeybadger)
+      Service::ErrorReporter.notify(e)
     end
   end
 
@@ -212,7 +212,7 @@ class VolunteerEvent
       slack_user.slack_id
     )
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   def notify_member_checkin_removed(member, removed_by)
@@ -224,6 +224,6 @@ class VolunteerEvent
       slack_user.slack_id
     )
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 end

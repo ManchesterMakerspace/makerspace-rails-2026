@@ -132,7 +132,7 @@ class Billing::PaymentMethodsController < BillingController
     end
     @gateway.client_token.generate(options)
   rescue Braintree::BraintreeError => e
-    Honeybadger.notify(e)
+    Service::ErrorReporter.notify(e)
     raise Error::InternalServerError.new("Failed to initialize payment form")
   end
 end

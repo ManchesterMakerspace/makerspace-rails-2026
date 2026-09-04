@@ -9,7 +9,7 @@ class GarbageCollectJob < ApplicationJob
       SystemConfig.record_run("garbage_collect", success: true)
     rescue => e
       SystemConfig.record_run("garbage_collect", success: false)
-      Honeybadger.notify("GarbageCollectJob failed", context: { error: e.message })
+      Service::ErrorReporter.notify("GarbageCollectJob failed", context: { error: e.message })
       raise e
     end
   end
