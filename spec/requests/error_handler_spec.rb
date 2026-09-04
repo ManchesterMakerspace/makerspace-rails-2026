@@ -22,7 +22,7 @@ RSpec.describe 'Error handling', type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(Service::SlackConnector).to have_received(:enque_message).with(
-        a_string_including('param is missing or the value is empty: message'),
+        a_string_matching(/param is missing.*message/),
         Service::SlackConnector.logs_channel,
         anything
       )
