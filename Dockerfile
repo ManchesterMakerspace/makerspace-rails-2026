@@ -48,4 +48,7 @@ COPY --from=ui /react/dist/manifest.js /app/app/assets/config/manifest.js
 RUN SECRET_KEY_BASE_DUMMY=1 APP_DOMAIN=${APP_DOMAIN} bundle exec rails assets:precompile
 RUN cp -r /app/app/assets/builds/. /app/public/assets/ && rm -f /app/public/assets/manifest.js
 
-CMD ["sh", "-c", "bundle exec rake reservations:backfill_resource_manager_shops data:ensure_unique_indexes && exec bundle exec rails server -b 0.0.0.0"]
+# Keep database maintenance out of web dyno startup. Heroku runs it as the
+# release process declared in heroku.yml, so a transient database failure does
+# not put every web dyno into a crash loop.
+CMD ["bundle", "exec", "puma", "-C", "config/puma.rb"]
