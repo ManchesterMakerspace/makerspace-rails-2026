@@ -79,6 +79,6 @@ class Admin::TemplatesController < AdminController
       slack_channel: ::Service::SlackConnector.logs_channel
     )
   rescue => audit_error
-    Honeybadger.notify(audit_error) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(audit_error)
   end
 end

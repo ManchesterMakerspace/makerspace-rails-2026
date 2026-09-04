@@ -232,7 +232,7 @@ class VolunteerCredit
 
     ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   # DM the member when one of their credits is reversed
@@ -255,7 +255,7 @@ class VolunteerCredit
     )
     ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   # Notify the treasurer channel when a reversed credit had triggered a discount,
@@ -273,7 +273,7 @@ class VolunteerCredit
     )
     ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.treasurer_channel)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   # Check if this credit crosses the discount threshold and apply Braintree discount.
@@ -339,7 +339,7 @@ class VolunteerCredit
       notify_discount_applied(m, result)
     end
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
     notify_discount_error(m, e)
   end
 
@@ -377,7 +377,7 @@ class VolunteerCredit
     )
     ::Service::SlackConnector.send_slack_message(admin_message, ::Service::SlackConnector.treasurer_channel)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
     notify_discount_error(m, e) rescue nil
   end
 
@@ -390,7 +390,7 @@ class VolunteerCredit
     )
     ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.logs_channel)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   def notify_discount_error(m, error)
@@ -404,6 +404,6 @@ class VolunteerCredit
     )
     ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.logs_channel)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 end

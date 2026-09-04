@@ -242,13 +242,10 @@ module Service
       nil
     end
 
-    # Notifies Honeybadger if available; logs to Rails.logger as fallback.
+    # Logs every error locally before additionally notifying Honeybadger when available.
     def self.notify_honeybadger(error, context: {})
-      if defined?(Honeybadger)
-        Honeybadger.notify(error, context: context)
-      else
-        Rails.logger.error("[AuditLogger] #{error.class}: #{error.message} | context: #{context.inspect}")
-      end
+      Rails.logger.error("[AuditLogger] #{error.class}: #{error.message} | context: #{context.inspect}")
+      Honeybadger.notify(error, context: context) if defined?(Honeybadger)
     end
   end
 end

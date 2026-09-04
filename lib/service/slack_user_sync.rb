@@ -98,7 +98,7 @@ module Service
       unless ::Service::SlackConnector.api_token_present?
         msg = '[Slack Sync] ERROR: neither SLACK_BOT_TOKEN nor SLACK_ADMIN_TOKEN is set'
         puts msg
-        Honeybadger.notify('Slack user sync failed', context: { reason: 'no Slack API token configured' }) if defined?(Honeybadger)
+        Service::ErrorReporter.notify('Slack user sync failed', context: { reason: 'no Slack API token configured' })
         raise msg
       end
 
@@ -196,11 +196,11 @@ module Service
 
       rescue Slack::Web::Api::Errors::SlackError => e
         puts "[Slack Sync] ERROR: #{e.message}"
-        Honeybadger.notify('Slack user sync failed', context: { error: e.message }) if defined?(Honeybadger)
+        Service::ErrorReporter.notify('Slack user sync failed', context: { error: e.message })
         raise e
       rescue => e
         puts "[Slack Sync] ERROR: #{e.message}"
-        Honeybadger.notify('Slack user sync failed', context: { error: e.message }) if defined?(Honeybadger)
+        Service::ErrorReporter.notify('Slack user sync failed', context: { error: e.message })
         raise e
       end
 

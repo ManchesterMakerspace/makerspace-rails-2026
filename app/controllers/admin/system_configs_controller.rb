@@ -221,7 +221,7 @@ class Admin::SystemConfigsController < AdminController
     ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.logs_channel)
     ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.treasurer_channel)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   def valid_setting_value?(key, value)

@@ -88,7 +88,7 @@ class FirebaseAuthController < ApplicationController
   rescue => e
     Rails.logger.error "[FirebaseAuth] Login error: #{e.message}"
     Rails.logger.error "[FirebaseAuth] Backtrace: #{e.backtrace&.first(5)&.join(' | ')}"
-    Honeybadger.notify(e, context: { controller: 'FirebaseAuthController', action: 'login' })
+    Honeybadger.notify(e, context: { controller: 'FirebaseAuthController', action: 'login' }) if defined?(Honeybadger)
     render json: { message: 'Authentication failed' }, status: :internal_server_error
   end
 
@@ -107,7 +107,7 @@ class FirebaseAuthController < ApplicationController
     render json: { message: 'Member not found' }, status: :not_found
   rescue => e
     Rails.logger.error "[FirebaseAuth] Unlink error: #{e.message}"
-    Honeybadger.notify(e)
+    Honeybadger.notify(e) if defined?(Honeybadger)
     render json: { message: 'Failed to unlink Firebase account' }, status: :internal_server_error
   end
 
@@ -191,7 +191,7 @@ class FirebaseAuthController < ApplicationController
     JSON.parse(response.body)
   rescue => e
     Rails.logger.error "[FirebaseAuth] Failed to fetch Google certs: #{e.message}"
-    Honeybadger.notify(e, context: { controller: 'FirebaseAuthController', action: 'fetch_google_certs' })
+    Honeybadger.notify(e, context: { controller: 'FirebaseAuthController', action: 'fetch_google_certs' }) if defined?(Honeybadger)
     nil
   end
 end

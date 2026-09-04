@@ -22,7 +22,7 @@ class BraintreeCustomerSyncJob < ApplicationJob
       "Failed to sync Braintree customer info for #{member&.fullname} (#{member_id}) after retries: #{error.class}: #{error.message}",
       ::Service::SlackConnector.logs_channel
     )
-    Honeybadger.notify(error) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(error)
     raise
   end
 end

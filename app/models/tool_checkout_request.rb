@@ -70,7 +70,7 @@ class ToolCheckoutRequest
     response = ::Service::SlackConnector.send_slack_message(message, channel)
     update_attributes!(message_id: response.ts) if response.respond_to?(:ts)
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   def remove_announcement
@@ -85,6 +85,6 @@ class ToolCheckoutRequest
       "*#{member.fullname}* cancelled their checkout request for *#{tool.name}*."
     )
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 end

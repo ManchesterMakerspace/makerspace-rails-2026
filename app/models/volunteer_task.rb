@@ -372,7 +372,7 @@ class VolunteerTask
       VolunteerCredit.pending_slack_channel
     )
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   def notify_member_task_released(member_id, reason)
@@ -385,7 +385,7 @@ class VolunteerTask
       slack_user.slack_id
     )
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 
   def notify_member_task_rejected(member_id, reason)
@@ -398,6 +398,6 @@ class VolunteerTask
       slack_user.slack_id
     )
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 end

@@ -596,8 +596,8 @@ class SlackVolunteerJob < ApplicationJob
     req.body = { response_type: response_type, text: text }.to_json
     http.request(req)
   rescue => err
-    Honeybadger.notify('SlackVolunteerJob: failed to post response', context: {
+    Service::ErrorReporter.notify('SlackVolunteerJob: failed to post response', context: {
       error: err.message, response_url: response_url
-    }) if defined?(Honeybadger)
+    })
   end
 end

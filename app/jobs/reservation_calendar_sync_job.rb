@@ -18,7 +18,7 @@ class ReservationCalendarSyncJob < ApplicationJob
       calendar_sync_status: "failed",
       calendar_sync_error: Service::GoogleApiErrorReporter.full_error_message(error).first(2_000)
     )
-    Honeybadger.notify(error) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(error)
     raise
   end
 end

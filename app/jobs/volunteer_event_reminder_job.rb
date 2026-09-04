@@ -6,7 +6,7 @@ class VolunteerEventReminderJob < ApplicationJob
     SystemConfig.record_run('volunteer_event_reminder', success: true)
   rescue => e
     SystemConfig.record_run('volunteer_event_reminder', success: false)
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
     raise
   end
 
@@ -26,6 +26,6 @@ class VolunteerEventReminderJob < ApplicationJob
       VolunteerCredit.pending_slack_channel
     )
   rescue => e
-    Honeybadger.notify(e) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(e)
   end
 end

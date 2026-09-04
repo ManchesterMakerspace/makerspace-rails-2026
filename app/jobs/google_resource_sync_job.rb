@@ -18,7 +18,7 @@ class GoogleResourceSyncJob < ApplicationJob
       resource_type: resource_type,
       resource_id: resource_id
     )
-    Honeybadger.notify(error) if defined?(Honeybadger)
+    Service::ErrorReporter.notify(error)
     Rails.logger.warn(
       "Google resource sync failed for #{resource_type}/#{resource_id}: " \
       "#{Service::GoogleApiErrorReporter.full_error_message(error)}"

@@ -8,7 +8,7 @@ class DatabaseBackupJob < ApplicationJob
       SystemConfig.record_run("db_backup", success: true)
     rescue => e
       SystemConfig.record_run("db_backup", success: false)
-      Honeybadger.notify("DatabaseBackupJob failed", context: { error: e.message })
+      Service::ErrorReporter.notify("DatabaseBackupJob failed", context: { error: e.message })
       raise e
     end
   end

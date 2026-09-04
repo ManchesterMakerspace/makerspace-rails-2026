@@ -33,7 +33,7 @@ class SlackCheckoutJob < ApplicationJob
       end
 
       unless invoker
-        Honeybadger.notify('Slack checkout failed: unauthorized invoker', context: {
+        Service::ErrorReporter.notify('Slack checkout failed: unauthorized invoker', context: {
           reason:           'Invoker Slack ID not linked to an admin, resource_manager, or checkout approver',
           command_text:     text,
           invoker_slack_id: invoker_slack_id,
@@ -46,7 +46,7 @@ class SlackCheckoutJob < ApplicationJob
 
       shop = Shop.find_by(slack_channel: channel_name)
       unless shop
-        Honeybadger.notify('Slack checkout failed: shop not found for channel', context: {
+        Service::ErrorReporter.notify('Slack checkout failed: shop not found for channel', context: {
           reason:           "No Shop record found with slack_channel matching '#{channel_name}'",
           command_text:     text,
           invoker_slack_id: invoker_slack_id,
@@ -61,7 +61,7 @@ class SlackCheckoutJob < ApplicationJob
       tool = Tool.where(shop_id: shop.id).find_by(name: /#{Regexp.escape(tool_name)}/i)
       unless tool
         tool_list = Tool.where(shop_id: shop.id).pluck(:name).join(', ')
-        Honeybadger.notify('Slack checkout failed: tool not found', context: {
+        Service::ErrorReporter.notify('Slack checkout failed: tool not found', context: {
           reason:             "No tool matching '#{tool_name}' found in shop '#{shop.name}'",
           command_text:       text,
           invoker_slack_id:   invoker_slack_id,
@@ -76,7 +76,7 @@ class SlackCheckoutJob < ApplicationJob
       end
 
       unless can_approve_tool?(invoker, tool)
-        Honeybadger.notify('Slack checkout failed: invoker not approved for tool', context: {
+        Service::ErrorReporter.notify('Slack checkout failed: invoker not approved for tool', context: {
           reason:           "Invoker does not have checkout approval rights for tool '#{tool.name}' (id: #{tool.id})",
           command_text:     text,
           invoker_slack_id: invoker_slack_id,
@@ -103,7 +103,7 @@ class SlackCheckoutJob < ApplicationJob
 
       unless member
         if slack_mention?(member_token)
-          Honeybadger.notify('Slack checkout failed: member not found by Slack ID', context: {
+          Service::ErrorReporter.notify('Slack checkout failed: member not found by Slack ID', context: {
             reason:           'Slack mention parsed but no SlackUser/Member record linked to this Slack ID',
             command_text:     text,
             invoker_slack_id: invoker_slack_id,
@@ -112,7 +112,7 @@ class SlackCheckoutJob < ApplicationJob
           })
           post_response(response_url, :ephemeral, "No member found linked to that Slack account. Please resubmit with their email address instead:\n`/checkout member@email.com #{tool_name}`")
         elsif slack_username?(member_token)
-          Honeybadger.notify('Slack checkout failed: member not found by Slack username', context: {
+          Service::ErrorReporter.notify('Slack checkout failed: member not found by Slack username', context: {
             reason:           'Plain @username not matched to any SlackUser name record',
             command_text:     text,
             invoker_slack_id: invoker_slack_id,
@@ -121,7 +121,7 @@ class SlackCheckoutJob < ApplicationJob
           })
           post_response(response_url, :ephemeral, "No member found with Slack username #{member_token}. Try using their email instead:\n`/checkout member@email.com #{tool_name}`")
         else
-          Honeybadger.notify('Slack checkout failed: member not found by email', context: {
+          Service::ErrorReporter.notify('Slack checkout failed: member not found by email', context: {
             reason:           'No Member record found with email matching member token',
             command_text:     text,
             invoker_slack_id: invoker_slack_id,
@@ -150,7 +150,7 @@ class SlackCheckoutJob < ApplicationJob
       begin
         checkout.save!
       rescue => err
-        Honeybadger.notify('Slack checkout failed: could not save ToolCheckout', context: {
+        Service::ErrorReporter.notify('Slack checkout failed: could not save ToolCheckout', context: {
           reason:           "checkout.save! raised: #{err.message}",
           command_text:     text,
           invoker_slack_id: invoker_slack_id,
@@ -168,7 +168,7 @@ class SlackCheckoutJob < ApplicationJob
         checkout.send_checkout_slack_notification
         checkout.announce_checkout_success
       rescue => err
-        Honeybadger.notify('Slack checkout saved but notification failed', context: {
+        Service::ErrorReporter.notify('Slack checkout saved but notification failed', context: {
           reason:           "send_checkout_slack_notification raised: #{err.message}",
           command_text:     text,
           invoker_slack_id: invoker_slack_id,
@@ -201,7 +201,7 @@ class SlackCheckoutJob < ApplicationJob
     req.body = { response_type: response_type, text: text }.to_json
     http.request(req)
   rescue => err
-    Honeybadger.notify('Slack checkout: failed to post response to response_url', context: {
+    Service::ErrorReporter.notify('Slack checkout: failed to post response to response_url', context: {
       error:        err.message,
       response_url: response_url,
       text:         text
