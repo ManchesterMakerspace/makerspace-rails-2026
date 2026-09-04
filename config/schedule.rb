@@ -38,3 +38,7 @@ end
 every '0 8 1 * *' do
   runner 'CardExpirationCheckJob.perform_later'
 end
+
+every :day, at: '8am' do
+  runner "VolunteerEventReminderJob.perform_later"
+end

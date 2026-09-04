@@ -145,6 +145,26 @@ RSpec.describe 'Volunteer endpoints', type: :request do
     end
   end
 
+  # ── GET /api/volunteer/events ────────────────────────────────────────────
+
+  describe 'GET /api/volunteer/events' do
+    before { sign_in active_member }
+
+    it 'excludes open events whose date has passed, but keeps undated and future ones' do
+      past    = VolunteerEvent.create!(title: 'Past', credit_value: 1.0, created_by_id: admin.id, event_date: Date.today - 1)
+      today   = VolunteerEvent.create!(title: 'Today', credit_value: 1.0, created_by_id: admin.id, event_date: Date.today)
+      future  = VolunteerEvent.create!(title: 'Future', credit_value: 1.0, created_by_id: admin.id, event_date: Date.tomorrow)
+      undated = VolunteerEvent.create!(title: 'Undated', credit_value: 1.0, created_by_id: admin.id)
+
+      get '/api/volunteer/events'
+
+      expect(response).to have_http_status(:ok)
+      ids = JSON.parse(response.body).map { |e| e['id'] }
+      expect(ids).to include(today.id.to_s, future.id.to_s, undated.id.to_s)
+      expect(ids).not_to include(past.id.to_s)
+    end
+  end
+
   # ── POST /api/volunteer/events/:id/checkin ───────────────────────────────
 
   describe 'POST /api/volunteer/events/:id/checkin' do

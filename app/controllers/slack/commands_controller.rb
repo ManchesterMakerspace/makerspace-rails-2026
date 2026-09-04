@@ -90,7 +90,12 @@ class Slack::CommandsController < ApplicationController
   # Verify the request actually came from Slack using signing secret
   def verify_slack_signature
     slack_signing_secret = ENV['SLACK_SIGNING_SECRET']
-    return if slack_signing_secret.blank? # Skip in dev if not configured
+    if slack_signing_secret.blank?
+      return if Rails.env.development?
+
+      render json: { error: 'Slack signing secret is not configured' }, status: 403
+      return
+    end
 
     timestamp = request.headers['X-Slack-Request-Timestamp']
     signature = request.headers['X-Slack-Signature']
