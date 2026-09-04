@@ -1,5 +1,3 @@
-require_relative '../error/google/share'
-require_relative '../error/google/upload'
 require 'base64'
 
 module Service

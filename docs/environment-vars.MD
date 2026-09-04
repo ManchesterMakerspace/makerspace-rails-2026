@@ -28,7 +28,7 @@ not imply that the feature will work without the value.
 
 | Variable | Secret? | Development | Test | Production | Purpose | Source |
 | --- | --- | --- | --- | --- | --- | --- |
-| `BACKUPS_FOLDER` | No | No default; required when the backup task uploads its archive. | Same. | Same. | Google Drive destination folder for database backups. This is the consumed spelling; `BACKUP_FOLDER` in `sample.env` is not read. | [Google Drive service](../lib/service/google_drive.rb) |
+| `BACKUPS_FOLDER` | No | No default; required when the backup task uploads its archive. | Same. | Same. | Google Drive destination folder for database backups. This is the consumed spelling; `BACKUP_FOLDER` in `sample.env` is not read. | [Google Drive service](../app/services/service/google_drive.rb) |
 | `BGCOLOR` | No | No default; absent leaves normal page styling. | Same. | Same. | Legacy HTML body background override. | [application layout](../app/views/layouts/application.html.erb) |
 | `BT_ENV` | No | No gateway default; absent also marks the UI as development. | Same. | Same; normally `production` for the live gateway/UI label. | Braintree SDK environment. | — |
 | `BT_MERCHANT_ID` | No | No default; required for Braintree operations. | Same. | Same. | Braintree merchant identifier. | [Braintree gateway](../lib/service/braintree_gateway.rb) |

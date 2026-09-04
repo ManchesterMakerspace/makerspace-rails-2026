@@ -310,11 +310,12 @@ RSpec.describe Service::MemberProvisioning do
 
       described_class.provision_google(member, raise_errors: true)
 
-      expect(drive).to have_received(:create_permission).with('resources', anything)
+      expect(drive).to have_received(:create_permission).with('resources', anything, supports_all_drives: true)
       expect(drive).to have_received(:update_permission).with(
         'transfer',
         'permission-1',
-        anything
+        anything,
+        supports_all_drives: true
       )
       expect(member.reload.google_resources_access_confirmed_at).to be > previous_confirmation
       expect(member.google_transfer_access_confirmed_at).to be > previous_confirmation
@@ -344,7 +345,7 @@ RSpec.describe Service::MemberProvisioning do
       expect(result[:resources][:status]).to eq(:confirmed)
       expect(drive).to have_received(:list_permissions).with(
         'resources',
-        hash_including(page_token: 'page-2')
+        hash_including(page_token: 'page-2', supports_all_drives: true)
       )
     end
 
@@ -371,10 +372,10 @@ RSpec.describe Service::MemberProvisioning do
 
       described_class.provision_google(member, raise_errors: true)
 
-      expect(drive).to have_received(:delete_permission).with('resources', 'old-resources').ordered
-      expect(drive).to have_received(:delete_permission).with('transfer', 'old-transfer').ordered
-      expect(drive).to have_received(:create_permission).with('resources', anything).ordered
-      expect(drive).to have_received(:create_permission).with('transfer', anything).ordered
+      expect(drive).to have_received(:delete_permission).with('resources', 'old-resources', supports_all_drives: true).ordered
+      expect(drive).to have_received(:delete_permission).with('transfer', 'old-transfer', supports_all_drives: true).ordered
+      expect(drive).to have_received(:create_permission).with('resources', anything, supports_all_drives: true).ordered
+      expect(drive).to have_received(:create_permission).with('transfer', anything, supports_all_drives: true).ordered
       member.reload
       expect(member.google_previous_email).to be_nil
       expect(member.google_resources_access_confirmed_at).to be_present

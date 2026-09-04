@@ -353,14 +353,16 @@ module Service
             type: 'user',
             email_address: member.email,
             role: role
-          )
+          ),
+          supports_all_drives: true
         )
         status = :created
       elsif !adequate_roles.include?(permission.role.to_s)
         drive.update_permission(
           folder_id,
           permission.id,
-          Google::Apis::DriveV3::Permission.new(role: role)
+          Google::Apis::DriveV3::Permission.new(role: role),
+          supports_all_drives: true
         )
         status = :updated
       end
@@ -457,7 +459,8 @@ module Service
         response = drive.list_permissions(
           folder_id,
           fields: "nextPageToken,permissions(#{permission_fields})",
-          page_token: page_token
+          page_token: page_token,
+          supports_all_drives: true
         )
         page_permissions = if response.respond_to?(:permissions)
           response.permissions
@@ -502,7 +505,7 @@ module Service
         ).each do |permission|
           next unless normalize_email(permission.email_address) == previous_email
 
-          drive.delete_permission(folder_id, permission.id)
+          drive.delete_permission(folder_id, permission.id, supports_all_drives: true)
         end
       end
       member.set(google_previous_email: nil)
