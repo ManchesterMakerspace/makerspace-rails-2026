@@ -25,7 +25,7 @@ Rails.application.configure do
       authentication: :plain,
       address: 'smtp.gmail.com',
       port: 587,
-      domain: 'makerspace-interface.herokuapp.com',
+      domain: 'makerspace-interface-prod-c06ed374f965.herokuapp.com',
       user_name: ENV['GMAIL_USERNAME'],
       password: ENV['GMAIL_PASSWORD']
     }
@@ -48,7 +48,7 @@ Rails.application.configure do
   config.cache_classes = true
   config.hosts << "members.manchestermakerspace.com"
   config.hosts << "members.manchestermakerspace.org"
-  config.hosts << "makerspace-dev-51ba804d4c30.herokuapp.com"
+  config.hosts << "makerspace-interface-prod-c06ed374f965.herokuapp.com"
   # Eager load code on boot. This eager loads most of Rails and
   # your application in memory, allowing both threaded web servers
   # and those relying on copy on write to perform better.
