@@ -4,3 +4,9 @@ build:
   config:
     REACT_REPO_URL: https://github.com/ManchesterMakerspace/makerspace-react-2026.git
     REACT_BRANCH: master
+release:
+  image: web
+  command:
+    - bundle exec rake reservations:backfill_resource_manager_shops data:ensure_unique_indexes
+run:
+  web: bundle exec puma -C config/puma.rb
