@@ -13,7 +13,7 @@ RUN git clone --branch ${REACT_BRANCH} ${REACT_REPO_URL} .
 RUN yarn install --ignore-engines && PORT=3000 yarn build
 
 # Build backend
-FROM ruby:3.4-bullseye
+FROM ruby:3.4-bookworm
 
 WORKDIR /app
 
@@ -21,9 +21,10 @@ EXPOSE 3000
 
 # Install MongoDB Database Tools (provides mongodump for backups)
 RUN apt-get update -qq && \
-    apt-get install -y -qq wget gnupg && \
-    wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | apt-key add - && \
-    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/debian bullseye/mongodb-org/7.0 main" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list && \
+    apt-get install -y -qq ca-certificates curl gnupg && \
+    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+      gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg && \
+    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" > /etc/apt/sources.list.d/mongodb-org-7.0.list && \
     apt-get update -qq && \
     apt-get install -y -qq mongodb-database-tools && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
