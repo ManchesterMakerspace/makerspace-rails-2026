@@ -10,7 +10,7 @@ RSpec.describe 'Error handling', type: :request do
     it 'does not enqueue a Slack alert in production' do
       allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new('production'))
 
-      post '/client_error_handler', params: {}
+      post '/api/client_error_handler', params: {}
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(Service::SlackConnector).not_to have_received(:enque_message)
@@ -18,7 +18,7 @@ RSpec.describe 'Error handling', type: :request do
     end
 
     it 'retains Slack alerts outside production' do
-      post '/client_error_handler', params: {}
+      post '/api/client_error_handler', params: {}
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(Service::SlackConnector).to have_received(:enque_message).with(
