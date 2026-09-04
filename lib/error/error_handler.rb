@@ -32,7 +32,7 @@ module Error
           respond(:unauthorized, 401, "Unauthorized")
         end
         rescue_from ::ActionController::ParameterMissing do |e|
-          slack_alert(:unprocessable_content, 422, e.message)
+          slack_alert(:unprocessable_content, 422, e.message) unless Rails.env.production?
           respond(:unprocessable_content, 422, e.message)
         end
         rescue_from ::Braintree::NotFoundError do |e|
