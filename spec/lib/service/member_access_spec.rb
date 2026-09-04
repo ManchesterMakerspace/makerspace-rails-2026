@@ -128,4 +128,73 @@ RSpec.describe Service::MemberAccess do
       expect(Service::SlackConnector).to have_received(:pin_slack_message).with(Service::SlackConnector.admin_channel, '234.567')
     end
   end
+
+  describe '.revoke_gdrive_folder' do
+    let(:member) { create(:member, firstname: 'Revoked', lastname: 'Member') }
+    let(:drive) { instance_double(Google::Apis::DriveV3::DriveService) }
+
+    before do
+      allow(Honeybadger).to receive(:notify) if defined?(Honeybadger)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
+      allow(Service::GoogleDrive).to receive(:load_gdrive).and_return(drive)
+    end
+
+    it 'passes supports_all_drives on list_permissions' do
+      allow(drive).to receive(:list_permissions).and_return(
+        OpenStruct.new(permissions: [])
+      )
+
+      described_class.revoke_gdrive_folder(member, 'shared-drive-folder', 'Resources (reader)')
+
+      expect(drive).to have_received(:list_permissions).with(
+        'shared-drive-folder',
+        fields: 'permissions(id,emailAddress,role)',
+        supports_all_drives: true
+      )
+    end
+
+    it 'passes supports_all_drives on delete_permission when a permission is found and removed' do
+      permission = OpenStruct.new(id: 'perm-1', email_address: member.email, role: 'reader')
+      allow(drive).to receive(:list_permissions).and_return(OpenStruct.new(permissions: [permission]))
+      allow(drive).to receive(:delete_permission)
+
+      result = described_class.revoke_gdrive_folder(member, 'shared-drive-folder', 'Resources (reader)')
+
+      expect(drive).to have_received(:delete_permission).with('shared-drive-folder', 'perm-1', supports_all_drives: true)
+      expect(result).to eq(status: :ok, message: 'Removed reader permission from Resources (reader)')
+    end
+
+    it 'alerts and pins instead of failing silently when the Drive API errors' do
+      response = double('SlackResponse', ts: '345.678')
+      allow(drive).to receive(:list_permissions).and_raise(StandardError.new('shared drive lookup failed'))
+      allow(Service::SlackConnector).to receive(:send_slack_message).and_return(response)
+      allow(Service::SlackConnector).to receive(:pin_slack_message)
+
+      result = described_class.revoke_gdrive_folder(member, 'shared-drive-folder', 'Resources (reader)')
+
+      expect(result).to eq(status: :error, message: 'shared drive lookup failed')
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+        /<!channel>.*Revoked Member.*Resources \(reader\).*must be manually removed by an admin.*shared drive lookup failed/,
+        Service::SlackConnector.admin_channel
+      )
+      expect(Service::SlackConnector).to have_received(:pin_slack_message).with(Service::SlackConnector.admin_channel, '345.678')
+      if defined?(Honeybadger)
+        expect(Honeybadger).to have_received(:notify).with(
+          anything,
+          hash_including(context: hash_including(member_id: member.id.to_s, member_email: member.email, label: 'Resources (reader)'))
+        )
+      end
+    end
+
+    it 'does not alert when the folder env var is not configured' do
+      allow(Service::SlackConnector).to receive(:send_slack_message)
+
+      result = described_class.revoke_gdrive_folder(member, nil, 'Resources (reader)')
+
+      expect(result).to eq(status: :skipped, reason: 'Resources (reader) folder env var not configured')
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+      expect(Service::GoogleDrive).not_to have_received(:load_gdrive)
+    end
+  end
 end
