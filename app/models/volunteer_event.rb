@@ -37,6 +37,15 @@ class VolunteerEvent
 
   scope :active_events, -> { where(status: 'open') }
   scope :closed_events, -> { where(status: 'closed') }
+  # Member-facing visibility only: an open event whose date has passed still
+  # needs to be closed by an admin to issue credits (see #close!), so this
+  # does not change status or the admin index (which uses .all). It only
+  # keeps stale open events out of the list members can browse and join —
+  # checkin_event already rejects them; this keeps the list consistent with
+  # that check instead of showing something check-in would then reject.
+  scope :claimable_events, -> {
+    where(status: 'open').any_of({ event_date: nil }, { :event_date.gte => Date.today })
+  }
 
   def self.find_by_number(number)
     find_by(event_number: number.to_i)
