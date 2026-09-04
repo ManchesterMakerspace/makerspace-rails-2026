@@ -74,16 +74,20 @@ class BraintreeService::Transaction < Braintree::Transaction
       invoice.resource.update!(update_hash)
       BillingMailer.new_subscription(invoice.member.email, subscription.id, invoice.id.to_s).deliver_later
     else
+      # Round defensively: Braintree rejects amounts with more than 2 decimal
+      # places, and invoices persisted before the Invoice#amount= normalization
+      # was added may still carry binary-float drift (e.g. 10.350000000000001).
+      sale_amount = invoice.amount.round(2)
       result = gateway.transaction.sale(
-        amount: invoice.amount,
+        amount: sale_amount,
         order_id: invoice.id.to_s,
         payment_method_token: invoice.payment_method_id,
         line_items: [{
           kind: "debit",
           name: invoice.name,
           quantity: 1,
-          total_amount: invoice.amount,
-          unit_amount: invoice.amount
+          total_amount: sale_amount,
+          unit_amount: sale_amount
         }],
         options: {
           submit_for_settlement: true

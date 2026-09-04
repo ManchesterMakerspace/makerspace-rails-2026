@@ -88,6 +88,15 @@ class Invoice
     end
   end
 
+  # Currency arithmetic upstream (discounts, quantity math) can leave amount
+  # a hair off a clean 2-decimal value (e.g. 10.350000000000001) due to
+  # binary float representation. Braintree rejects such values outright
+  # ("Amount is an invalid format"), so normalize on write rather than at
+  # every call site.
+  def amount=(value)
+    super(value.nil? ? value : value.to_f.round(2))
+  end
+
   def set_refund_requested
     self.refund_requested ||= Time.now
     self.save!
