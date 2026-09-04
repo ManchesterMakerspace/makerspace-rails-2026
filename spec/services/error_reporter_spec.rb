@@ -39,5 +39,24 @@ RSpec.describe Service::ErrorReporter do
 
       described_class.notify('Slack response failed', context: context)
     end
+
+    it 'applies the configured request parameter filters to logged context' do
+      context = {
+        params: {
+          email: 'member@example.com',
+          password: 'correct horse battery staple',
+          payment_method_token: 'payment-token'
+        }
+      }
+
+      expect(Rails.logger).to receive(:error) do |message|
+        expect(message).to include('member@example.com')
+        expect(message.scan('[FILTERED]').size).to eq(2)
+        expect(message).not_to include('correct horse battery staple', 'payment-token')
+      end.ordered
+      expect(Honeybadger).to receive(:notify).with('Request failed', context: context).ordered
+
+      described_class.notify('Request failed', context: context)
+    end
   end
 end

@@ -20,11 +20,16 @@ module Service
 
       message = "[ErrorReporter] #{error_details}"
       unless context.empty?
-        filtered_context = ActiveSupport::ParameterFilter.new(SENSITIVE_CONTEXT_KEYS).filter(context)
+        filtered_context = parameter_filter.filter(context)
         message += " | context: #{filtered_context.inspect}"
       end
       message
     end
-    private_class_method :log_message
+
+    def self.parameter_filter
+      configured_filters = Array(Rails.application.config.filter_parameters)
+      ActiveSupport::ParameterFilter.new(configured_filters + SENSITIVE_CONTEXT_KEYS)
+    end
+    private_class_method :log_message, :parameter_filter
   end
 end
