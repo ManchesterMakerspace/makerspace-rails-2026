@@ -50,7 +50,7 @@ if ENV['RUN_OPTIONAL_SLACK_CHECKOUT_SPECS'] == 'true'
 
       expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(
         a_string_including('<@UADA> (Ada Lovelace) has been checked out on *Band Saw*'),
-        'band-saw-users'
+        '#band-saw-users'
       )
     end
 
@@ -60,6 +60,18 @@ if ENV['RUN_OPTIONAL_SLACK_CHECKOUT_SPECS'] == 'true'
       expect(checkout.checkout_success_message).to include(
         'Ada Lovelace is not yet on Slack, so could not add them to #band-saw-users'
       )
+    end
+
+    it 'displays exactly one channel prefix for legacy and normalized channel names' do
+      checkout = described_class.create!(member: member, tool: tool)
+
+      expect(checkout.checkout_success_message).to include('to #band-saw-users')
+      expect(checkout.checkout_success_message).not_to include('to ##band-saw-users')
+
+      tool.set(users_channel: 'band-saw-users')
+
+      expect(checkout.checkout_success_message).to include('to #band-saw-users')
+      expect(checkout.checkout_success_message).not_to include('to ##band-saw-users')
     end
   end
 end

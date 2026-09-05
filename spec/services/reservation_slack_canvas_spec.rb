@@ -17,7 +17,7 @@ RSpec.describe Service::ReservationSlackCanvas do
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:eval).and_return(1)
     allow(Service::SlackConnector).to receive(:find_channel_id)
-      .with("woodshop")
+      .with("#woodshop")
       .and_return("C123")
     allow(Service::SlackConnector).to receive(:create_canvas)
       .with("Today's Woodshop Reservations")
@@ -320,7 +320,7 @@ RSpec.describe Service::ReservationSlackCanvas do
       a_string_including(
         "[ReservationSlackCanvasChannelNotFound]",
         "shop_id=#{shop.id}",
-        'slack_channel="woodshop"'
+        'slack_channel="#woodshop"'
       )
     )
 
@@ -336,7 +336,7 @@ RSpec.describe Service::ReservationSlackCanvas do
       }.to output(
         a_string_including(
           "[ReservationSlackCanvas] create_start",
-          'slack_channel="woodshop"',
+          'slack_channel="#woodshop"',
           "title=\"Today's Woodshop Reservations\"",
           "[ReservationSlackCanvas] create_success",
           "canvas_id=FTODAY",
@@ -364,7 +364,7 @@ RSpec.describe Service::ReservationSlackCanvas do
       }.to output(
         a_string_including(
           "[ReservationSlackCanvas] write_failure",
-          'slack_channel="woodshop"',
+          'slack_channel="#woodshop"',
           "canvas_id=FEXISTING",
           "date=2026-07-24",
           "CanvasEditingFailed: canvas editing failed with details"
@@ -387,7 +387,7 @@ RSpec.describe Service::ReservationSlackCanvas do
       }.to output(
         a_string_including(
           "[ReservationSlackCanvas] create_start",
-          'slack_channel="woodshop"',
+          'slack_channel="#woodshop"',
           "field=canvas_today",
           "[ReservationSlackCanvas] create_failure",
           "CanvasCreationFailed: canvas creation failed with details"

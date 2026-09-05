@@ -94,15 +94,15 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
       )
     end
 
-    it "removes leading hashes and checks the public-channel cache" do
+    it "normalizes leading hashes and checks the public-channel cache" do
       put :update_setting,
           params: { key: "slack_channel_logs", value: "##portal-logs" },
           format: :json
 
       expect(response).to have_http_status(200)
-      expect(SystemConfig.get("slack_channel_logs")).to eq("portal-logs")
+      expect(SystemConfig.get("slack_channel_logs")).to eq("#portal-logs")
       expect(Service::SlackChannelCache).to have_received(:lookup).with(
-        "portal-logs",
+        "#portal-logs",
         refresh_on_miss: false
       )
     end

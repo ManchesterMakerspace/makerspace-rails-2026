@@ -44,7 +44,7 @@ RSpec.describe Service::SlackChannelCache do
   end
 
   it "distinguishes hash-prefixed channel names from Slack channel IDs" do
-    expect(described_class.normalize_name("#COMMUNITY")).to eq("community")
+    expect(described_class.normalize_name("#COMMUNITY")).to eq("#community")
     expect(described_class.normalize_name("C12345678")).to eq("C12345678")
     expect(described_class.channel_id?("community")).to be(false)
     expect(described_class.channel_id?("C12345678")).to be(true)
@@ -54,13 +54,13 @@ RSpec.describe Service::SlackChannelCache do
     described_class.store(id: "G12345678", name: "#Officers-Private")
 
     expect(REDIS).to have_received(:set).with(
-      "slack:public_channel:officers-private",
-      JSON.generate(id: "G12345678", name: "officers-private"),
+      "slack:public_channel:#officers-private",
+      JSON.generate(id: "G12345678", name: "#officers-private"),
       ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel_id:G12345678",
-      JSON.generate(id: "G12345678", name: "officers-private"),
+      JSON.generate(id: "G12345678", name: "#officers-private"),
       ex: described_class::CACHE_TTL_SECONDS
     )
   end
@@ -80,28 +80,28 @@ RSpec.describe Service::SlackChannelCache do
 
     expect(result).to include(
       "id" => "C45678901",
-      "name" => "metal-shop",
+      "name" => "#metal-shop",
       "topic" => "Metalworking discussion",
       "purpose" => "Coordinate the metal shop"
     )
     expect(REDIS).to have_received(:set).with(
-      "slack:public_channel:wood-shop",
+      "slack:public_channel:#wood-shop",
       include('"id":"C12345678"'),
       ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
-      "slack:public_channel:metal-shop",
+      "slack:public_channel:#metal-shop",
       include('"id":"C45678901"'),
       ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel_id:C12345678",
-      include('"name":"wood-shop"'),
+      include('"name":"#wood-shop"'),
       ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel_id:C45678901",
-      include('"name":"metal-shop"'),
+      include('"name":"#metal-shop"'),
       ex: described_class::CACHE_TTL_SECONDS
     )
   end
@@ -114,21 +114,21 @@ RSpec.describe Service::SlackChannelCache do
 
     expect(result).to include(
       "id" => "C45678901",
-      "name" => "metal-shop",
+      "name" => "#metal-shop",
       "topic" => "Metalworking discussion"
     )
     expect(client).to have_received(:conversations_list).twice
     expect(REDIS).to have_received(:set).with(
       "slack:public_channel_id:C45678901",
-      include('"name":"metal-shop"'),
+      include('"name":"#metal-shop"'),
       ex: described_class::CACHE_TTL_SECONDS
     )
   end
 
   it "returns cached channel details without calling Slack" do
-    allow(REDIS).to receive(:get).with("slack:public_channel:wood-shop")
+    allow(REDIS).to receive(:get).with("slack:public_channel:#wood-shop")
       .and_return(JSON.generate(
-        id: "C12345678", name: "wood-shop", topic: "Topic", purpose: "Purpose"
+        id: "C12345678", name: "#wood-shop", topic: "Topic", purpose: "Purpose"
       ))
 
     expect(described_class.lookup("#wood-shop")).to include("id" => "C12345678")
@@ -139,11 +139,11 @@ RSpec.describe Service::SlackChannelCache do
     allow(REDIS).to receive(:get)
       .with("slack:public_channel_id:C12345678")
       .and_return(JSON.generate(
-        id: "C12345678", name: "wood-shop", topic: "Topic", purpose: "Purpose"
+        id: "C12345678", name: "#wood-shop", topic: "Topic", purpose: "Purpose"
       ))
 
     expect(described_class.lookup("C12345678")).to include(
-      "name" => "wood-shop"
+      "name" => "#wood-shop"
     )
     expect(client).not_to receive(:conversations_list)
   end
@@ -186,14 +186,14 @@ RSpec.describe Service::SlackChannelCache do
     expect(events.index(:promote)).to be > events.rindex(:scan)
     expect(REDIS).to have_received(:set).with(
       a_string_matching(
-        /slack:public_channel_cache:rebuild:[^:]+:wood-shop/
+        /slack:public_channel_cache:rebuild:[^:]+:\#wood-shop/
       ),
       include('"id":"C12345678"'),
       ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       a_string_matching(
-        /slack:public_channel_cache:rebuild:[^:]+:metal-shop/
+        /slack:public_channel_cache:rebuild:[^:]+:\#metal-shop/
       ),
       include('"id":"C45678901"'),
       ex: described_class::CACHE_TTL_SECONDS
@@ -202,14 +202,14 @@ RSpec.describe Service::SlackChannelCache do
       a_string_matching(
         /slack:public_channel_cache:rebuild:[^:]+:C12345678/
       ),
-      include('"name":"wood-shop"'),
+      include('"name":"#wood-shop"'),
       ex: described_class::CACHE_TTL_SECONDS
     )
     expect(REDIS).to have_received(:set).with(
       a_string_matching(
         /slack:public_channel_cache:rebuild:[^:]+:C45678901/
       ),
-      include('"name":"metal-shop"'),
+      include('"name":"#metal-shop"'),
       ex: described_class::CACHE_TTL_SECONDS
     )
     expect(promotion[:keys]).to include(
@@ -219,8 +219,8 @@ RSpec.describe Service::SlackChannelCache do
     )
     expect(promotion[:argv].first(2)).to eq([4, 2])
     expect(promotion[:argv]).to include(
-      "slack:public_channel:wood-shop",
-      "slack:public_channel:metal-shop",
+      "slack:public_channel:#wood-shop",
+      "slack:public_channel:#metal-shop",
       "slack:public_channel_id:C12345678",
       "slack:public_channel_id:C45678901",
       a_string_including('"totalChannels":2', '"lastUpdatedAt"'),
@@ -274,7 +274,7 @@ RSpec.describe Service::SlackChannelCache do
     allow(client).to receive(:conversations_list)
       .and_return(first_page, second_page)
     allow(REDIS).to receive(:set) do |key, _value, **_options|
-      if key.match?(/:metal-shop\z/)
+      if key.end_with?("#metal-shop")
         raise Redis::CommandError, "temporary Redis failure"
       end
 

@@ -41,10 +41,12 @@ module Service
         raw_value = value.to_s.strip
         return raw_value if channel_id?(raw_value)
 
-        raw_value.sub(/\A#+/, "").downcase
+        normalized = raw_value.sub(/\A#+/, "").downcase
+        normalized.present? ? "##{normalized}" : ""
       end
 
       def channel_id?(value)
+        # Does the supplied string look like a Slack Channel hex code?
         value.to_s.match?(CHANNEL_ID_PATTERN)
       end
 

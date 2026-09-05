@@ -13,10 +13,10 @@ RSpec.describe "Slack channel model fields" do
       gdrive_id: " shop-folder "
     )
 
-    expect(shop.slack_channel).to eq("wood-shop")
+    expect(shop.slack_channel).to eq("#wood-shop")
     expect(shop.gdrive_id).to eq("shop-folder")
     expect(Service::SlackChannelCache).to have_received(:lookup).with(
-      "wood-shop",
+      "#wood-shop",
       refresh_on_miss: true
     )
   end
@@ -29,15 +29,15 @@ RSpec.describe "Slack channel model fields" do
       gdrive_id: " tool-folder "
     )
 
-    expect(tool.announce_channel).to eq("shop-announce")
-    expect(tool.users_channel).to eq("tool-users")
+    expect(tool.announce_channel).to eq("#shop-announce")
+    expect(tool.users_channel).to eq("#tool-users")
     expect(tool.gdrive_id).to eq("tool-folder")
     expect(Service::SlackChannelCache).to have_received(:lookup).with(
-      "shop-announce",
+      "#shop-announce",
       refresh_on_miss: true
     )
     expect(Service::SlackChannelCache).to have_received(:lookup).with(
-      "tool-users",
+      "#tool-users",
       refresh_on_miss: true
     )
   end

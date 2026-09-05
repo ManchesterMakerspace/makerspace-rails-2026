@@ -43,8 +43,8 @@ class SlackCheckoutJob < ApplicationJob
         post_response(response_url, :ephemeral, 'You are not authorized to check out members on tools.')
         return
       end
-
-      shop = Shop.find_by(slack_channel: channel_name)
+ 
+      shop = Shop.find_by(slack_channel: Service::SlackChannelCache.normalize_name(channel_name) ) || Shop.find_by(slack_channel: channel_name)
       unless shop
         Service::ErrorReporter.notify('Slack checkout failed: shop not found for channel', context: {
           reason:           "No Shop record found with slack_channel matching '#{channel_name}'",

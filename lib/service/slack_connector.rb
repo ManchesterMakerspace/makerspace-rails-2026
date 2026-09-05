@@ -116,6 +116,7 @@ module Service
     end
 
     def self.find_channel_id(channel_name)
+      # The normalize_name function forces channel_name into either C0123456789 form or '#human-readable' form
       requested = Service::SlackChannelCache.normalize_name(channel_name)
       return if requested.blank?
 
@@ -142,7 +143,7 @@ module Service
           )
         end
         channel = Array(response.channels).find do |candidate|
-          candidate.name.to_s.casecmp?(requested)
+          Service::SlackChannelCache.normalize_name(candidate.name) == requested
         end
         return channel.id if channel
 
@@ -248,8 +249,13 @@ module Service
 
     def self.invite_to_channel(channel, slack_id)
       return true if Rails.env.test?
-
-      client.conversations_invite(channel: safe_channel(channel), users: slack_id)
+      channel_id = find_channel_id(safe_channel(channel))
+      if channel_id.present?
+        client.conversations_invite(channel: channel_id, users: slack_id)
+      else
+        # This fallback attempt catches pre-resolved channel names like C0123456789
+        client.conversations_invite(channel: safe_channel(channel), users: slack_id)
+      end
       true
     rescue Slack::Web::Api::Errors::AlreadyInChannel
       true
@@ -432,7 +438,7 @@ module Service
         send_slack_message(message, logs_channel)
       rescue => logging_error
         Rails.logger.error(
-          "[SlackChannelInviteFailed] unable to send failure to Slack logs channel " \
+          "[SlackChannelInviteFailed] unable to send failure to Slack logs channel, " \
           "error=#{format_api_error(logging_error)}"
         )
       end
@@ -442,6 +448,7 @@ module Service
     private
 
     def self.safe_channel(channel)
+      # If we are anything but production, redirect whatever channel to this fixed channel.
       ENV['SLACK_ENV'] == 'production' ? channel : 'test_channel'
     end
 

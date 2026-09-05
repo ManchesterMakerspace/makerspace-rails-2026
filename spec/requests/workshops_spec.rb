@@ -132,7 +132,7 @@ RSpec.describe "Workshops", type: :request do
       created_by_id: member.id
     )
     allow(Service::SlackChannelCache).to receive(:fetch)
-      .with("wood-shop")
+      .with("#wood-shop")
       .and_return(
         id: "C123",
         name: "wood-shop",
@@ -140,7 +140,7 @@ RSpec.describe "Workshops", type: :request do
         purpose: "Coordinate the shop"
       )
     allow(Service::SlackChannelCache).to receive(:fetch)
-      .with("planer-users")
+      .with("#planer-users")
       .and_return(
         id: "C456",
         name: "planer-users",

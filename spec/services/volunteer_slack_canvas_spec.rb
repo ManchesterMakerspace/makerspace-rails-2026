@@ -9,7 +9,7 @@ RSpec.describe Service::VolunteerSlackCanvas do
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:eval).and_return(1)
     allow(Service::SlackConnector).to receive(:find_channel_id)
-      .with("woodshop")
+      .with("#woodshop")
       .and_return("CWOOD")
     allow(Service::SlackConnector).to receive(:create_canvas)
       .with("Volunteer in Woodshop", channel_id: "CWOOD")

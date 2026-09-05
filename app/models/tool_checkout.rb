@@ -90,10 +90,11 @@ class ToolCheckout
     message = "#{member_reference} has been checked out on *#{tool.name}* in *#{tool.shop.try(:name)}*#{approval}."
     return message if tool.users_channel.blank?
 
+    users_channel = Service::SlackChannelCache.normalize_name(tool.users_channel)
     if slack_id.blank?
-      "#{message}, #{member.fullname} is not yet on Slack, so could not add them to ##{tool.users_channel}"
+      "#{message}, #{member.fullname} is not yet on Slack, so could not add them to #{users_channel}"
     elsif users_channel_invitation_failed?
-      "#{message}, please manually invite <@#{slack_id}> to ##{tool.users_channel}"
+      "#{message}, please manually invite <@#{slack_id}> to #{users_channel}"
     else
       message
     end
