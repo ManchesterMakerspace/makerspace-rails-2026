@@ -4,7 +4,7 @@ task :backup => :environment do
   config_file = "/tmp/mongodump_config.yml"
   backup_error = nil
   begin
-    Dir.mkdir(dump_dir) unless File.exists?(dump_dir)
+    Dir.mkdir(dump_dir) unless File.exist?(dump_dir)
     file_name = "makerauthBackup_#{Time.now.strftime('%m-%d-%Y')}.archive"
     File.write(config_file, "uri: \"#{ENV['MLAB_URI']}\"\n")
     sh("/usr/bin/mongodump --config=#{config_file} --archive=#{dump_dir}/#{file_name}")
