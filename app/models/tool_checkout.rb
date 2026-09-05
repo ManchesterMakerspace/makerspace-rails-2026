@@ -91,9 +91,9 @@ class ToolCheckout
     return message if tool.users_channel.blank?
 
     if slack_id.blank?
-      "#{message}, #{member.fullname} is not yet on Slack, so could not add them to ##{tool.users_channel}"
+      "#{message}, #{member.fullname} is not yet on Slack, so could not add them to #{tool.users_channel}"
     elsif users_channel_invitation_failed?
-      "#{message}, please manually invite <@#{slack_id}> to ##{tool.users_channel}"
+      "#{message}, please manually invite <@#{slack_id}> to #{tool.users_channel}"
     else
       message
     end
