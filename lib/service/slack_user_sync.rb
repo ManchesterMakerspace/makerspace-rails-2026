@@ -59,7 +59,7 @@ module Service
       if existing
         conflict = active_identity_conflict(member, excluding: existing)
         if conflict
-          report_identity_conflict(member, existing, conflict, 'single-user sync')
+          report_identity_conflict(member, slack_id, conflict, 'single-user sync')
           return nil
         end
 
@@ -107,6 +107,7 @@ module Service
       created_count = 0
       updated_count = 0
       skipped_count = 0
+      failed_count  = 0
       unmatched     = []
 
       puts '[Slack Sync] Starting Slack user sync...'
@@ -141,56 +142,73 @@ module Service
             next
           end
 
-          existing = SlackUser.unscoped.where(slack_id: slack_id).first
-          if existing && quarantined_identity?(existing)
-            puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — identity quarantined after member email change"
-            skipped_count += 1
-            next
-          end
-          member = resolve_member(
-            existing: existing,
-            slack_email: slack_email,
-            slack_id: slack_id,
-            display_name: real_name.presence || name,
-            source: 'bulk sync'
-          )
-
-          unless member
-            unmatched << { slack_id: slack_id, name: real_name.presence || name, email: slack_email }
-            next
-          end
-
-          slack_user_attributes = sanitized_slack_user_attributes(
-            slack_email: slack_email,
-            name: name,
-            real_name: real_name
-          )
-          if existing
-            conflict = active_identity_conflict(member, excluding: existing)
-            if conflict
-              puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — Member #{member.fullname} already has an active Slack identity"
-              report_identity_conflict(member, existing, conflict, 'bulk sync')
+          # A failure processing one Slack user (e.g. a validation error on
+          # create) must not abort the sync for the remaining users in the
+          # workspace — log/report it and move on instead.
+          begin
+            existing = SlackUser.unscoped.where(slack_id: slack_id).first
+            if existing && quarantined_identity?(existing)
+              puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — identity quarantined after member email change"
               skipped_count += 1
               next
             end
+            member = resolve_member(
+              existing: existing,
+              slack_email: slack_email,
+              slack_id: slack_id,
+              display_name: real_name.presence || name,
+              source: 'bulk sync'
+            )
 
-            persistence_attributes = safe_persistence_attributes(existing, slack_user_attributes)
-            SlackUser.collection.find(_id: existing.id).update_one(
-              '$set' => persistence_attributes.merge(member_id: member.id),
-              '$unset' => { invalidated_at: '', invalidation_reason: '' }
+            unless member
+              unmatched << { slack_id: slack_id, name: real_name.presence || name, email: slack_email }
+              next
+            end
+
+            slack_user_attributes = sanitized_slack_user_attributes(
+              slack_email: slack_email,
+              name: name,
+              real_name: real_name
             )
-            puts "[Slack Sync] UPDATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
-            updated_count += 1
-          else
-            slack_user = SlackUser.create!(
-              slack_user_attributes.merge(
-                slack_id: slack_id,
-                member: member
+            if existing
+              conflict = active_identity_conflict(member, excluding: existing)
+              if conflict
+                puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — Member #{member.fullname} already has an active Slack identity"
+                report_identity_conflict(member, slack_id, conflict, 'bulk sync')
+                skipped_count += 1
+                next
+              end
+
+              persistence_attributes = safe_persistence_attributes(existing, slack_user_attributes)
+              SlackUser.collection.find(_id: existing.id).update_one(
+                '$set' => persistence_attributes.merge(member_id: member.id),
+                '$unset' => { invalidated_at: '', invalidation_reason: '' }
               )
-            )
-            ::Service::SlackProfileSync.sync_one(member)
-            puts "[Slack Sync] CREATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
-            created_count += 1
+              puts "[Slack Sync] UPDATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
+              updated_count += 1
+            else
+              conflict = active_identity_conflict(member)
+              if conflict
+                puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — Member #{member.fullname} already has an active Slack identity"
+                report_identity_conflict(member, slack_id, conflict, 'bulk sync')
+                skipped_count += 1
+                next
+              end
+
+              SlackUser.create!(
+                slack_user_attributes.merge(
+                  slack_id: slack_id,
+                  member: member
+                )
+              )
+              ::Service::SlackProfileSync.sync_one(member)
+              puts "[Slack Sync] CREATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
+              created_count += 1
+            end
+          rescue => e
+            puts "[Slack Sync] FAILED #{real_name} (#{slack_id}) — #{e.message}"
+            Service::ErrorReporter.notify(e, context: { slack_id: slack_id, phase: 'bulk sync per-user' })
+            failed_count += 1
           end
         end
 
@@ -204,7 +222,7 @@ module Service
         raise e
       end
 
-      puts "[Slack Sync] ✅ Complete — Created: #{created_count}, Updated: #{updated_count}, Skipped: #{skipped_count}, Unmatched: #{unmatched.size}"
+      puts "[Slack Sync] ✅ Complete — Created: #{created_count}, Updated: #{updated_count}, Skipped: #{skipped_count}, Failed: #{failed_count}, Unmatched: #{unmatched.size}"
 
       # Fix #4 — Post unmatched users to logs channel
       if unmatched.any?
@@ -218,7 +236,7 @@ module Service
         )
       end
 
-      { created: created_count, updated: updated_count, skipped: skipped_count, unmatched: unmatched.size }
+      { created: created_count, updated: updated_count, skipped: skipped_count, failed: failed_count, unmatched: unmatched.size }
     end
 
     def self.quarantined_identity?(record)
@@ -257,18 +275,22 @@ module Service
       )
     end
 
-    def self.active_identity_conflict(member, excluding:)
-      SlackUser.where(member_id: member.id, :id.ne => excluding.id).first
+    # excluding is omitted when checking ahead of creating a brand new
+    # SlackUser (there's no existing record yet to exclude from the check).
+    def self.active_identity_conflict(member, excluding: nil)
+      scope = SlackUser.where(member_id: member.id)
+      scope = scope.where(:id.ne => excluding.id) if excluding
+      scope.first
     end
 
-    def self.report_identity_conflict(member, existing, conflict, source)
+    def self.report_identity_conflict(member, slack_id, conflict, source)
       Service::AuditLogger.log(
         log_type: 'member',
         event_type: 'slack_identity_conflict',
         resource_type: 'Member',
         resource_id: member.id,
         subject: member,
-        message_details: "Slack #{source} could not reconcile identity #{existing.slack_id} to Member " \
+        message_details: "Slack #{source} could not reconcile identity #{slack_id} to Member " \
           "#{member.fullname}: that member already has a different active Slack identity " \
           "(#{conflict.slack_id}). An admin must reconcile the duplicate before this identity " \
           "can be reactivated.",
