@@ -7,6 +7,7 @@ if ENV['RUN_OPTIONAL_SLACK_CHECKOUT_SPECS'] == 'true'
         allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new('production'))
         client = double('Slack client')
         allow(described_class).to receive(:client).and_return(client)
+        allow(described_class).to receive(:find_channel_id).and_return('CBANDSAW')
         allow(client).to receive(:conversations_invite).and_raise(StandardError, 'missing_scope')
         allow(described_class).to receive(:send_slack_message)
         allow(Rails.logger).to receive(:error)
