@@ -59,9 +59,20 @@ class EarnedMembership
   end
 
   def renew_member
+    before = self.member.attributes.dup
     self.member.update(expirationTime: get_shortest_term_end_time)
     time = self.member.pretty_time.strftime("%m/%d/%Y")
     ::Service::SlackConnector.send_slack_message("#{self.member.fullname} earned membership extended to #{time}")
+    ::Service::AuditLogger.log(
+      log_type:        "member",
+      event_type:      "earned_membership_renewed",
+      resource_type:   "Member",
+      resource_id:     self.member.id,
+      subject:         self.member,
+      field_changes:   self.member.previous_changes,
+      before_snapshot: before,
+      after_snapshot:  self.member.attributes
+    )
   end
 
   def requirements_exist

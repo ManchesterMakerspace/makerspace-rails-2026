@@ -4,7 +4,7 @@ class Card
   field :holder, type: String #Member's name
   field :expiry, type: Integer #Member's expirationTime
   field :validity, type: String #Member's Status
-  attr_accessor :card_location
+  attr_accessor :card_location, :skip_provisioning_enqueue
 
   before_create :set_expiration, :set_holder
   before_update :set_expiration
@@ -79,6 +79,7 @@ class Card
   end
 
   def enqueue_member_provisioning
+    return if skip_provisioning_enqueue
     MemberProvisioningJob.perform_later(member_id.to_s)
   end
 end

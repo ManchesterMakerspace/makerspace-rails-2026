@@ -567,6 +567,13 @@ class Member
   private
   def update_card
     self.access_cards.each do |c|
+      # This save is a side effect of our own after_update chain, which
+      # already enqueues MemberProvisioningJob below (see
+      # enqueue_member_provisioning) whenever expirationTime/email/status
+      # changes. Without this guard, Card's own after_update callback would
+      # enqueue a second, redundant job for the same member for every card
+      # they hold -- confirmed happening on every subscription renewal.
+      c.skip_provisioning_enqueue = true
       c.update(expiry: self.expirationTime)
     end
   end
@@ -579,7 +586,19 @@ class Member
     group = Group.find_by(groupName: groupName)
     return unless group
 
+    before = self.attributes.dup
     group.remove_subordinate(self)
+    ::Service::AuditLogger.log(
+      log_type:        "member",
+      event_type:      "household_exit_auto",
+      resource_type:   "Member",
+      resource_id:     self.id,
+      subject:         self,
+      field_changes:   self.previous_changes,
+      before_snapshot: before,
+      after_snapshot:  self.attributes,
+      message_details: "Member started their own subscription and was automatically removed from the household"
+    )
   end
 
   def sync_expiration_to_group

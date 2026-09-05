@@ -414,7 +414,22 @@ No automated actions have been taken at this time.")
       end
     elsif notification.kind === Braintree::WebhookNotification::Kind::TransactionSettlementDeclined
       begin
+        # reverse_settlement re-fetches the resource internally (Invoice#resource
+        # is not memoized), so we can't rely on previous_changes from a shared
+        # instance here — take manual before/after snapshots instead.
+        resource_before = processed_invoice.resource&.attributes&.dup
         processed_invoice.reverse_settlement
+        resource_after = processed_invoice.resource&.attributes
+        ::Service::AuditLogger.log(
+          log_type:        "member",
+          event_type:      "invoice_settlement_reversed",
+          resource_type:   (processed_invoice.resource&.class&.name || processed_invoice.resource_class),
+          resource_id:     processed_invoice.resource_id,
+          subject:         processed_invoice.member,
+          before_snapshot: resource_before,
+          after_snapshot:  resource_after,
+          message_details: "Settlement declined with status: #{last_transaction.status}"
+        )
         member_notified = slack_member ? "The member has been notified via Slack and email as well." : "Unable to notify member via Slack. Reach out to member to resolve."
         unless slack_member.nil?
           enque_message(
