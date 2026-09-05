@@ -13,7 +13,7 @@ RSpec.describe ReservationSlackCanvasSyncJob do
       a_string_including(
         "[ReservationSlackCanvasError]",
         "shop_id=#{shop.id}",
-        'slack_channel="woodshop"',
+        'slack_channel="#woodshop"',
         "dates=2026-07-24",
         "CanvasEditingFailed: canvas_editing_failed"
       )
