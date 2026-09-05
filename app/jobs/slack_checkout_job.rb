@@ -184,7 +184,8 @@ class SlackCheckoutJob < ApplicationJob
       unmet   = unmet_prerequisites(member, tool)
       warning = unmet.any? ? "\n⚠ Warning: #{member.firstname} has not been checked out on prerequisite(s): #{unmet.map(&:name).join(', ')}" : ''
 
-      post_response(response_url, :in_channel, "✅ #{member.fullname} has been checked out on *#{tool.name}* in *#{shop.name}* by #{invoker.fullname}.#{warning}")
+      checkout_message = checkout.checkout_success_message(approved_by: invoker.fullname)
+      post_response(response_url, :in_channel, "✅ #{checkout_message}#{warning}")
 
     ensure
       REDIS.del(lock_key)
