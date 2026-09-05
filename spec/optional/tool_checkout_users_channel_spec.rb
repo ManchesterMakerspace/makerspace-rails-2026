@@ -50,7 +50,7 @@ if ENV['RUN_OPTIONAL_SLACK_CHECKOUT_SPECS'] == 'true'
 
       expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(
         a_string_including('<@UADA> (Ada Lovelace) has been checked out on *Band Saw*'),
-        'band-saw-users'
+        '#band-saw-users'
       )
     end
 

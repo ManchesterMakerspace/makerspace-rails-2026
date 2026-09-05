@@ -8,10 +8,10 @@ RSpec.describe Service::SlackChannelAssignment do
 
     it 'resolves normalized channel names through the cache-aware connector' do
       allow(Service::SlackConnector).to receive(:find_channel_id)
-        .with('wood-shop').and_return('C12345678')
+        .with('#wood-shop').and_return('C12345678')
 
       expect(described_class.resolve!(users_channel: '  #Wood-Shop ')).to eq(
-        'users_channel' => { id: 'C12345678', name: 'wood-shop' }
+        'users_channel' => { id: 'C12345678', name: '#wood-shop' }
       )
     end
 
@@ -38,9 +38,9 @@ RSpec.describe Service::SlackChannelAssignment do
 
     it 'resolves the channels it can and skips the ones it cannot, in a single call' do
       allow(Service::SlackConnector).to receive(:find_channel_id)
-        .with('wood-shop').and_return('C12345678')
+        .with('#wood-shop').and_return('C12345678')
       allow(Service::SlackConnector).to receive(:find_channel_id)
-        .with('missing-channel').and_return(nil)
+        .with('#missing-channel').and_return(nil)
       allow(Service::SlackConnector).to receive(:send_slack_message)
 
       result = described_class.resolve!(
@@ -48,7 +48,7 @@ RSpec.describe Service::SlackChannelAssignment do
         announce_channel: 'missing-channel'
       )
 
-      expect(result).to eq('users_channel' => { id: 'C12345678', name: 'wood-shop' })
+      expect(result).to eq('users_channel' => { id: 'C12345678', name: '#wood-shop' })
     end
 
     it 'uses an admin token to resolve a private channel invisible to the bot, and caches it' do
@@ -59,7 +59,7 @@ RSpec.describe Service::SlackChannelAssignment do
         response_metadata: double(next_cursor: '')
       )
       allow(Service::SlackConnector).to receive(:find_channel_id)
-        .with('officers-private').and_return(nil)
+        .with('#officers-private').and_return(nil)
       allow(Service::SlackConnector).to receive(:admin_client)
         .with('conversations.list').and_return(admin_client)
       expect(admin_client).to receive(:conversations_list).with(
@@ -72,7 +72,7 @@ RSpec.describe Service::SlackChannelAssignment do
         .with(id: 'G12345678', name: 'officers-private')
 
       expect(described_class.resolve!(announce_channel: '#officers-private')).to eq(
-        'announce_channel' => { id: 'G12345678', name: 'officers-private' }
+        'announce_channel' => { id: 'G12345678', name: '#officers-private' }
       )
     end
   end

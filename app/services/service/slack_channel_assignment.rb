@@ -59,7 +59,7 @@ module Service
           )
         end
         channel = Array(response.channels).find do |candidate|
-          candidate.name.to_s.casecmp?(channel_name)
+          Service::SlackChannelCache.normalize_name(candidate.name) == channel_name
         end
         if channel
           Service::SlackChannelCache.store(id: channel.id.to_s, name: channel.name.to_s)
@@ -166,7 +166,7 @@ module Service
     end
 
     def self.display_name(name)
-      Service::SlackChannelCache.channel_id?(name) ? name : "##{name}"
+      name
     end
 
     private_class_method :find_channel_id_with_admin, :invite_bot_with_admin, :notify_actor,
