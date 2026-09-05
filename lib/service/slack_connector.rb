@@ -249,7 +249,8 @@ module Service
 
     def self.invite_to_channel(channel, slack_id)
       return true if Rails.env.test?
-      channel_id = find_channel_id(safe_channel(channel))
+      #channel_id = find_channel_id(safe_channel(channel))
+      channel_id = Service::SlackChannelCache.normalize_name( safe_channel(channel) )
       if channel_id.present?
         client.conversations_invite(channel: channel_id, users: slack_id)
       else
