@@ -48,11 +48,13 @@ class Slack::CommandsController < ApplicationController
   end
 
   def reserve
-    shop = Shop.find_by(slack_channel: params[:channel_name])
+    channel_name=Service::SlackChannelCache.normalize_name( params[:channel_name] )
+    #shop = Shop.find_by(slack_channel: params[:channel_name])
+    shop = Shop.find_by(slack_channel: channel_name )
     unless shop
       render json: {
         response_type: "ephemeral",
-        text: "No shop is configured for ##{params[:channel_name]}."
+        text: "No shop is configured for #{channel_name}."
       } and return
     end
 
