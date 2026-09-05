@@ -18,8 +18,8 @@ RSpec.describe 'Admin checkins', type: :request do
     checkins_collection.delete_many({})
   end
 
-  def request_checkins(uids)
-    get '/api/admin/checkins', params: { uids: uids.to_json }
+  def request_checkins(uids, time_range: {})
+    get '/api/admin/checkins', params: { uids: uids.to_json }.merge(time_range)
   end
 
   context 'as a regular member' do
@@ -62,4 +62,33 @@ RSpec.describe 'Admin checkins', type: :request do
   include_examples 'privileged checkin access', :resource_manager
   include_examples 'privileged checkin access', :admin
   include_examples 'privileged checkin access', :board_member
+
+  describe 'time range filtering' do
+    let(:admin) { create(:member, :admin) }
+
+    before do
+      checkins_collection.delete_many({})
+      sign_in admin
+    end
+
+    it 'excludes checkins outside the requested startTime/endTime window' do
+      now = Time.now
+      in_range_uid = 'in-range-card'
+      out_of_range_uid = 'out-of-range-card'
+      checkins_collection.insert_many([
+        { uid: in_range_uid, timeOf: now - 1.hour, time: ((now - 1.hour).to_f * 1000) },
+        { uid: out_of_range_uid, timeOf: now - 30.days, time: ((now - 30.days).to_f * 1000) }
+      ])
+
+      # camelCase, exactly as the frontend sends via URLSearchParams
+      request_checkins([in_range_uid, out_of_range_uid], time_range: {
+        startTime: ((now - 7.days).to_i * 1000).to_s,
+        endTime: (now.to_i * 1000).to_s
+      })
+
+      expect(response).to have_http_status(:ok)
+      uids = JSON.parse(response.body).fetch('checkins').map { |checkin| checkin.fetch('uid') }
+      expect(uids).to contain_exactly(in_range_uid)
+    end
+  end
 end

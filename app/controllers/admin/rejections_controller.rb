@@ -71,13 +71,19 @@ class Admin::RejectionsController < AuthenticationController
     end
   end
 
+  # The frontend sends camelCase startTime/endTime, but the app-wide
+  # ActionController::ParamsNormalizer (config/initializers/wrap_parameters.rb)
+  # underscores every incoming param key before any controller code runs, so
+  # by the time we get here they're already start_time/end_time. Reading the
+  # camelCase keys here always returned nil, silently disabling the time
+  # filter entirely (see #206 for the production incident this caused).
   def query_start_time
-    return nil if params[:startTime].blank?
-    params[:startTime].to_i
+    return nil if params[:start_time].blank?
+    params[:start_time].to_i
   end
 
   def query_end_time
-    return nil if params[:endTime].blank?
-    params[:endTime].to_i
+    return nil if params[:end_time].blank?
+    params[:end_time].to_i
   end
 end
