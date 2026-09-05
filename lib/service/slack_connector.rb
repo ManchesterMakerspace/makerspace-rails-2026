@@ -116,6 +116,7 @@ module Service
     end
 
     def self.find_channel_id(channel_name)
+      // The normalize_name function forces channel_name into either C0123456789 form or '#human-readable' form
       requested = Service::SlackChannelCache.normalize_name(channel_name)
       return if requested.blank?
 
@@ -252,7 +253,7 @@ module Service
       if channel_id.present?
         client.conversations_invite(channel: channel_id, users: slack_id)
       else
-        // This fallback attempt catches pre-resolved channel names like C42AF67
+        // This fallback attempt catches pre-resolved channel names like C0123456789
         client.conversations_invite(channel: safe_channel(channel), users: slack_id)
       end
       true
