@@ -438,7 +438,7 @@ module Service
         send_slack_message(message, logs_channel)
       rescue => logging_error
         Rails.logger.error(
-          "[SlackChannelInviteFailed] unable to send failure to Slack logs channel #{logs_channel.inspect}, " \
+          "[SlackChannelInviteFailed] unable to send failure to Slack logs channel, " \
           "error=#{format_api_error(logging_error)}"
         )
       end
