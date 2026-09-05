@@ -1,10 +1,26 @@
 class Admin::CheckinsController < AuthenticationController
+  DEFAULT_LIMIT = 500
+
   def index
     checkins = checkins_collection.find(checkins_query).to_a
+    # timeOf/time are stored inconsistently as seconds or milliseconds per
+    # record (see CheckinTimeHelper), so a native Mongo sort on either raw
+    # field would interleave them out of chronological order. Normalize in
+    # Ruby before sorting/capping instead.
+    checkins = checkins.sort_by { |checkin| -(CheckinTimeHelper.normalize_to_seconds(checkin['timeOf'].presence || checkin['time']) || 0) }
+                        .first(result_limit)
     render json: { checkins: serialized_checkins(checkins) } and return
   end
 
   private
+
+  def result_limit
+    Integer(params[:limit] || DEFAULT_LIMIT).tap do |limit|
+      raise ::Error::UnprocessableEntity.new("Limit must be a positive integer") unless limit.positive?
+    end
+  rescue ArgumentError, TypeError
+    raise ::Error::UnprocessableEntity.new("Limit must be a positive integer")
+  end
 
   def checkins_collection
     Mongoid.default_client[:checkins]

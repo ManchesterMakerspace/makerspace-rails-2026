@@ -1,10 +1,23 @@
 class Admin::RejectionsController < AuthenticationController
+  DEFAULT_LIMIT = 500
+
   def index
-    rejections = RejectionCard.where(rejections_query).map(&:attributes)
+    rejections = RejectionCard.where(rejections_query)
+                              .desc(:timeOf)
+                              .limit(result_limit)
+                              .map(&:attributes)
     render json: { rejections: serialized_rejections(rejections) } and return
   end
 
   private
+
+  def result_limit
+    Integer(params[:limit] || DEFAULT_LIMIT).tap do |limit|
+      raise ::Error::UnprocessableEntity.new("Limit must be a positive integer") unless limit.positive?
+    end
+  rescue ArgumentError, TypeError
+    raise ::Error::UnprocessableEntity.new("Limit must be a positive integer")
+  end
 
   def rejections_query
     query = { :uid.in => permitted_query_uids }
