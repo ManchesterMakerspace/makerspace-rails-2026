@@ -247,8 +247,30 @@ module Service
     end
 
     def self.invite_to_channel(channel, slack_id)
-      return if Rails.env.test?
+      return true if Rails.env.test?
+
       client.conversations_invite(channel: safe_channel(channel), users: slack_id)
+      true
+    rescue Slack::Web::Api::Errors::AlreadyInChannel
+      true
+    rescue => error
+      log_channel_invite_failure(channel, slack_id, error)
+      raise
+    end
+
+    def self.channel_member?(channel, slack_id)
+      return false if Rails.env.test?
+
+      channel_id = safe_channel(channel)
+      cursor = nil
+      loop do
+        response = client.conversations_members(channel: channel_id, limit: 1_000, cursor: cursor)
+        return true if Array(response.members).include?(slack_id)
+
+        cursor = response.response_metadata&.next_cursor.to_s
+        break if cursor.blank?
+      end
+      false
     end
     def self.kick_from_channel(channel, slack_id)
       return if Rails.env.test?
@@ -400,6 +422,22 @@ module Service
       end
       nil
     end
+
+    def self.log_channel_invite_failure(channel, slack_id, error)
+      message = "[SlackChannelInviteFailed] channel=#{channel.inspect} slack_id=#{slack_id.inspect} " \
+        "error=#{format_api_error(error)}"
+      Rails.logger.error(message)
+
+      begin
+        send_slack_message(message, logs_channel)
+      rescue => logging_error
+        Rails.logger.error(
+          "[SlackChannelInviteFailed] unable to send failure to Slack logs channel " \
+          "error=#{format_api_error(logging_error)}"
+        )
+      end
+    end
+    private_class_method :log_channel_invite_failure
 
     private
 
