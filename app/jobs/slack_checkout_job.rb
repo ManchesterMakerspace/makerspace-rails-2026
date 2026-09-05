@@ -3,7 +3,8 @@ class SlackCheckoutJob < ApplicationJob
 
   def perform(params)
     response_url     = params['response_url']
-    channel_name     = params['channel_name']
+    #channel_name     = params['channel_name']
+    channel_name     = Service::SlackChannelCache.normalize_name( params[:channel_name] )
     text             = params['text'].to_s.strip
     invoker_slack_id = params['user_id']
 
