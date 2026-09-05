@@ -46,8 +46,7 @@ module Service
         #/ 
         # New approach takes bare channel name strings and prepends '#' only if not already there:
         normalized = raw_value.sub(/\A#+/, "").downcase
-        normalized.blank?
-          return value
+        return value if normalized.blank?
         end
         return "#" + normalized
       end
