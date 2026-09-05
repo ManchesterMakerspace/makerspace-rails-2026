@@ -101,9 +101,9 @@ RSpec.describe 'Tools API', type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(Service::SlackChannelAssignment).to have_received(:resolve!)
-        .with({ slack_channel: 'shop-docs' }, kind_of(Member))
+        .with({ slack_channel: '#shop-docs' }, kind_of(Member))
       expect(JSON.parse(response.body)).to include(
-        'slackChannel' => 'shop-docs',
+        'slackChannel' => '#shop-docs',
         'wikiUrl' => 'https://wiki.example.test/docs',
         'gdriveId' => 'folder-shop'
       )
@@ -152,11 +152,11 @@ RSpec.describe 'Tools API', type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(Service::SlackChannelAssignment).to have_received(:resolve!).with(
-        { announce_channel: 'shop-announcements' }, kind_of(Member)
+        { announce_channel: '#shop-announcements' }, kind_of(Member)
       )
       expect(JSON.parse(response.body)).to include(
-        'announceChannel' => 'shop-announcements',
-        'usersChannel' => 'bandsaw-users',
+        'announceChannel' => '#shop-announcements',
+        'usersChannel' => '#bandsaw-users',
         'gdriveId' => 'folder-tool'
       )
     end
