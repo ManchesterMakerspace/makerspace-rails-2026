@@ -41,16 +41,16 @@ module Service
         raw_value = value.to_s.strip
         return raw_value if channel_id?(raw_value)
 
-        // The old approach was to normalize to bare strings with no leading '#'
-        // raw_value.sub(/\A#+/, "").downcase
-        // 
-        // New approach takes bare channel name strings and prepends '#' only if not already there:
+        # The old approach was to normalize to bare strings with no leading '#'
+        # raw_value.sub(/\A#+/, "").downcase
+        #/ 
+        # New approach takes bare channel name strings and prepends '#' only if not already there:
         normalized = raw.sub(/\A#+/, "").downcase
         return "#" + normalized
       end
 
       def channel_id?(value)
-        // Does the supplied string look like a Slack Channel hex code?
+        # Does the supplied string look like a Slack Channel hex code?
         value.to_s.match?(CHANNEL_ID_PATTERN)
       end
 
