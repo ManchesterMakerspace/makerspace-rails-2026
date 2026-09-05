@@ -432,12 +432,6 @@ module Service
     def self.log_channel_invite_failure(channel, slack_id, error)
       message = "[SlackChannelInviteFailed] channel=#{channel.inspect} slack_id=#{slack_id.inspect} " \
         "error=#{format_api_error(error)}"
-      channel_id = find_channel_id(channel)
-        if channel_id.blank?
-          message << ", unresolvable to channel_id"
-        else
-          message << ", channel_id is #{channel_id}"
-        end
       Rails.logger.error(message)
 
       begin
