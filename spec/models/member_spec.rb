@@ -368,6 +368,15 @@ RSpec.describe Member, type: :model do
         expect(member.slack_previous_user_id).to eq(previous_slack_user.id)
       end
 
+      it "enqueues MemberProvisioningJob exactly once when expirationTime changes, regardless of how many cards the member holds" do
+        create(:card, member: member)
+        create(:card, member: member)
+
+        expect do
+          member.update!({ expirationTime: (Time.now + 1.month).to_i * 1000 })
+        end.to have_enqueued_job(MemberProvisioningJob).with(member.id.to_s).exactly(1).times
+      end
+
 
     it "disbands the household when the primary renews with an individual member invoice" do
       primary = create(:member, expirationTime: 1.month.from_now.to_i * 1000)
