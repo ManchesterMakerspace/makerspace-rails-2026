@@ -143,7 +143,7 @@ module Service
           )
         end
         channel = Array(response.channels).find do |candidate|
-          candidate.name.to_s.casecmp?(requested)
+          Service::SlackChannelCache.normalize_name(candidate.name) == requested
         end
         return channel.id if channel
 

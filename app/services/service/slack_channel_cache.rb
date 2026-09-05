@@ -41,13 +41,8 @@ module Service
         raw_value = value.to_s.strip
         return raw_value if channel_id?(raw_value)
 
-        # The old approach was to normalize to bare text strings with no leading '#'
-        # raw_value.sub(/\A#+/, "").downcase
-        #/ 
-        # New approach takes bare channel name strings and prepends '#' only if not already there:
         normalized = raw_value.sub(/\A#+/, "").downcase
-        return value if normalized.blank?
-        return "#" + normalized
+        normalized.present? ? "##{normalized}" : ""
       end
 
       def channel_id?(value)
