@@ -8,8 +8,8 @@ RSpec.describe 'Admin rejections', type: :request do
   let!(:member_rejection) { create(:rejection_card, uid: member_card.uid) }
   let!(:other_rejection)  { create(:rejection_card, uid: other_card.uid) }
 
-  def request_rejections(uids)
-    get '/api/admin/rejections', params: { uids: uids.to_json }
+  def request_rejections(uids, time_range: {})
+    get '/api/admin/rejections', params: { uids: uids.to_json }.merge(time_range)
   end
 
   context 'as a regular member' do
@@ -67,4 +67,30 @@ RSpec.describe 'Admin rejections', type: :request do
   include_examples 'privileged rejection access', :resource_manager
   include_examples 'privileged rejection access', :admin
   include_examples 'privileged rejection access', :board_member
+
+  describe 'time range filtering' do
+    let(:admin) { create(:member, :admin) }
+    let(:in_range_uid) { 'in-range-card' }
+    let(:out_of_range_uid) { 'out-of-range-card' }
+
+    before do
+      sign_in admin
+      now = Time.now
+      create(:rejection_card, uid: in_range_uid, timeOf: now - 1.hour)
+      create(:rejection_card, uid: out_of_range_uid, timeOf: now - 30.days)
+    end
+
+    it 'excludes rejections outside the requested startTime/endTime window' do
+      now = Time.now
+      # camelCase, exactly as the frontend sends via URLSearchParams
+      request_rejections([in_range_uid, out_of_range_uid], time_range: {
+        startTime: ((now - 7.days).to_i * 1000).to_s,
+        endTime: (now.to_i * 1000).to_s
+      })
+
+      expect(response).to have_http_status(:ok)
+      uids = JSON.parse(response.body).fetch('rejections').map { |rejection| rejection.fetch('uid') }
+      expect(uids).to contain_exactly(in_range_uid)
+    end
+  end
 end
