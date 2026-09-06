@@ -36,7 +36,7 @@ job wrapper records `job_status_<admin key>` with a completion time and
 | `garbage_collect` | `gc` | `RAILS_ENV=production bundle exec rake gc` | Deletes invoicing Redis cache entries older than 30 days and reports success or failure to the logs channel. This does not invoke Ruby's memory garbage collector. Only the job wrapper records status. |
 | `db_backup` | `db:backup` | `RAILS_ENV=production bundle exec rake backup` | Runs `mongodump` against `MLAB_URI`, writes a dated archive below `dump/`, uploads it to the configured Google Drive backup folder, removes the temporary MongoDB config file, and reports to the logs channel. The API-displayed and Whenever-scheduled name `db:backup` does not currently exist; the working task is `backup`. Only the job wrapper records status. |
 | `card_expiration_check` | `card_on_file_expiration_check` | `RAILS_ENV=production bundle exec rake card_on_file_expiration_check` | Finds active subscribers whose Braintree cards expire in the current Eastern-time month, caches the affected count and card types in Redis until next month, DMs members who have Slack identities, and reports every affected member to Member Relations. Only the job wrapper records status. |
-| `reservation_canvas_rebuild` | `reservations:rebuild_slack_canvases` | `RAILS_ENV=production bundle exec rake reservations:rebuild_slack_canvases` | Rebuilds today's and tomorrow's reservation Slack canvases for every shop. It creates missing reservation canvases and refreshes their agendas and owner access when relevant. For **every** shop it also synchronizes the volunteer canvas with `create_if_needed: true` and owner-access synchronization, so the run can create or mutate volunteer canvases. It retries Slack rate limits and fails after collecting per-shop failures. Only the job wrapper records status. |
+| `reservation_canvas_rebuild` | `reservations:rebuild_slack_canvases` | `RAILS_ENV=production bundle exec rake reservations:rebuild_slack_canvases` | Processes every shop, but rebuilds today's and tomorrow's reservation canvases only when the shop already has either canvas or has a blocking reservation/blackout in that two-day window. Thus it does not provision empty reservation canvases for an inactive shop. It creates a missing daily canvas when the shop qualifies, refreshes agendas and owner access, and stores its ID. Slack does not attach a newly created canvas to the shop channel header; after its first build, a channel manager must manually attach each daily canvas to its respective shop channel with Slack's **+** button. For **every** shop, including shops skipped by the reservation path, the command also synchronizes the volunteer canvas with `create_if_needed: true` and owner-access synchronization. It retries Slack rate limits and fails after collecting per-shop failures. Only the job wrapper records status. |
 
 ### Triggering through the admin API
 
@@ -72,7 +72,7 @@ values and would use the chosen scheduler's timezone.
 | Monthly at 03:15 | Rake `slack:refresh_public_channel_cache` | `RAILS_ENV=production bundle exec rake slack:refresh_public_channel_cache` | Refreshes the public-channel Redis cache described above. Whenever's `1.month` interval is translated by Whenever; verify the generated crontab when deploying. |
 | Hourly | `MemberProvisioningReconciliationJob.perform_now` | `RAILS_ENV=production bundle exec rails runner 'MemberProvisioningReconciliationJob.perform_now'` | Reconciles initialized members with live Slack state, promotes eligible Slack guests, and periodically revalidates/provisions Google Drive access when Drive invitations are enabled. Errors are isolated per member and reported without aborting the complete scan. |
 | At 08:00 on the first of each month | `CardExpirationCheckJob.perform_later` | `RAILS_ENV=production bundle exec rake card_on_file_expiration_check` | Runs the monthly card-expiration workflow described above. The Rake command performs the service but does not update the admin job status. |
-| Daily at 08:00 | `VolunteerEventReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'` | Finds open volunteer events whose date has passed and posts a reminder for each to the pending-volunteer Slack channel. Individual notification errors are reported and do not stop later events; the job records aggregate run status. This job is scheduled but is not exposed in the admin jobs list. |
+| Daily at 08:00 | `VolunteerEventReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'` | Finds open volunteer events whose date has passed and attempts to post a reminder for each to the pending-volunteer Slack channel. Individual delivery errors are reported and do not stop later events. The job records success after the scan completes even if one or every delivery failed, so its status does not represent delivery success. This template job is not exposed in the admin jobs list. |
 
 ## Recurring production Rake tasks not installed by Whenever
 
@@ -111,7 +111,7 @@ synchronous diagnostic invocation where one is useful.
 | `Service::SlackChannelCache.rebuild!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackChannelCache.rebuild!'` | Rebuilds and swaps the Redis public-channel cache. Prefer the Rake task, which also records admin-visible status through its job. |
 | `Service::MemberProvisioning.reconcile_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::MemberProvisioning.reconcile_all!'` | Implements hourly Slack/Drive reconciliation. It can change remote Slack membership and Google Drive permissions; it is not a read-only audit. |
 | `Service::CardExpirationCheck.run!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::CardExpirationCheck.run!'` | Performs the Braintree query, Redis cache update, member DMs, and Member Relations notifications. Prefer the job if admin-visible status is required. |
-| `Service::ReservationSlackCanvas.rebuild_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::ReservationSlackCanvas.rebuild_all!'` | Rebuilds all shops' two rolling reservation canvases and synchronizes every shop's volunteer canvas, creating it when absent and refreshing owner access. Prefer the Rake task or job for the normal operational path. |
+| `Service::ReservationSlackCanvas.rebuild_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::ReservationSlackCanvas.rebuild_all!'` | Rebuilds the two rolling reservation canvases only for shops with an existing daily canvas or relevant blocking reservation/blackout; it does not create empty canvases for other shops. It also synchronizes every shop's volunteer canvas, creating it when absent and refreshing owner access. Newly created reservation canvases require manual attachment to their Slack shop-channel headers. Prefer the Rake task or job for the normal operational path. |
 | `Service::GoogleDrive.upload_backup` | Do not call alone; use `RAILS_ENV=production bundle exec rake backup`. | Uploads the archive created by the backup task to Google Drive. Calling it directly requires an existing archive filename and does not create a database dump. |
 
 ## Operational cautions
@@ -136,7 +136,14 @@ synchronous diagnostic invocation where one is useful.
   run, and repeated runs can repeat notifications.
 - A reservation canvas rebuild also synchronizes every volunteer canvas and can
   create missing volunteer canvases or change their owner access. Do not treat
-  it as a reservation-only operation.
+  it as a reservation-only operation. It skips reservation synchronization for
+  shops with no existing daily canvas and no relevant blocking reservation or
+  blackout, and Slack requires a channel manager to attach each newly created
+  daily canvas manually to its shop channel header.
+- `VolunteerEventReminderJob` records success when its event scan completes,
+  not when its Slack messages are delivered. Each delivery error is rescued and
+  reported separately, so check error reporting when delivery confirmation
+  matters even if `job_status_volunteer_event_reminder` says `success`.
 - The database backup task writes a credentials-bearing config file in `/tmp`
   only for the duration of the run and removes it in `ensure`; protect process
   output and the generated archive as production data.
