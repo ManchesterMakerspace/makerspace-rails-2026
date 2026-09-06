@@ -275,6 +275,8 @@ module Service
     def self.kick_from_channel(channel, slack_id)
       return if Rails.env.test?
       client.conversations_kick(channel: resolved_channel_id(channel), user: slack_id)
+    rescue Slack::Web::Api::Errors::NotInChannel => e
+      raise "Bot not in channel #{channel} — cannot kick user #{slack_id}. Re-invite the bot to this channel."
     end
 
     # Slack's conversations.* APIs require an actual channel ID; our stored

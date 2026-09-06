@@ -111,7 +111,7 @@ class Admin::ShopsController < ApplicationController
       :name, :wiki_url, :gdrive_id, :slack_channel, :disabled, :reservable,
       :max_concurrent_reservations, :reservation_horizon_days,
       :max_reservation_duration_hours, :reservation_requires_approval,
-      :color_id,
+      :color_id, :floor_name, :capacity,
       reservation_prerequisite_tool_ids: []
     )
   end
