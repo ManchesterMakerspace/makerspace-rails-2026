@@ -149,6 +149,7 @@ module Service
         if channel
           Rails.logger.info("[find_channel_id] found #{channel.id} for channel_name=#{channel_name}, requested=#{requested}.")
           return channel.id
+        end
 
         cursor = response.response_metadata&.next_cursor.to_s
         break if cursor.blank?
