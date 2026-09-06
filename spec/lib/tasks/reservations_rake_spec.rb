@@ -1,4 +1,5 @@
 require "rails_helper"
+require "rake"
 
 RSpec.describe "reservations:backfill_resource_manager_shops" do
   before do

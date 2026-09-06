@@ -1,4 +1,5 @@
 require "rails_helper"
+require "rake"
 
 RSpec.describe ReservationSlackCanvasRebuildJob, type: :job do
   before do
