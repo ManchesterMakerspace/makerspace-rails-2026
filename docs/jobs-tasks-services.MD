@@ -29,7 +29,7 @@ job wrapper records `job_status_<admin key>` with a completion time and
 | Admin key | Task displayed by API | Manual command | Purpose and effect |
 | --- | --- | --- | --- |
 | `slack_sync` | `slack:sync_users` | `RAILS_ENV=production bundle exec rake slack:sync_users` | Reads the Slack workspace user list and creates or updates local `SlackUser` identities by matching email addresses to members. It reports created, updated, and unmatched counts to the logs channel. `slack_sync_enabled` can make the service skip the run. Both the task and job wrapper record status. |
-| `slack_profile_sync` | `slack:sync_profiles` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'SlackProfileSyncJob.perform_now'`. | Performs an expiration-only incremental sync. It selects members whose `expirationTime` is after the saved `slack_profile_sync_last_run_at` checkpoint and at or before the run time, then writes `Expired` to their Slack custom-profile field. On the first run, the lower bound is the Unix epoch. It does **not** reconcile active members or unrelated member-status changes. A successful run advances the checkpoint even when no members are selected. `slack_profile_sync_enabled` can skip the work, and the job records status. The API-displayed `slack:sync_profiles` task does not exist. |
+| `slack_profile_sync` | `slack:sync_profiles` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'SlackProfileSyncJob.perform_now'`. | Performs an expiration-only incremental sync. It selects members whose `expirationTime` is after the saved `slack_profile_sync_last_run_at` checkpoint and at or before the run time, then attempts to write `Expired` to their Slack custom-profile field. On the first run, the lower bound is the Unix epoch. It does **not** reconcile active members or unrelated member-status changes. `slack_profile_sync_enabled` can skip the work. The API-displayed `slack:sync_profiles` task does not exist. See the partial-success warning below before relying on its count or status. |
 | `slack_channel_cache` | `slack:refresh_public_channel_cache` | `RAILS_ENV=production bundle exec rake slack:refresh_public_channel_cache` | Rebuilds Redis lookups for active public Slack channels, atomically promotes the staged cache, removes stale live entries, and stores cache metadata. The task calls the job synchronously, so it records status. |
 | `member_review` | `member_review` | `RAILS_ENV=production bundle exec rake member_review` | On Sunday in production, compiles membership exceptions (orientation, no purchase, PayPal, missing contracts, and expired members with rentals), notifies affected members where applicable, queues contract emails, and posts a report to Member Relations. On other production days it exits successfully without a report. Only the job wrapper records status. |
 | `invoice_review` | `invoice_review` | `RAILS_ENV=production bundle exec rake invoice_review` | On Sunday in production, reports weekly invoice creation/settlement plus past-due, pending-settlement, and pending-refund cases to the treasurer. On other production days it exits successfully without a report. Only the job wrapper records status. |
@@ -53,14 +53,19 @@ The `200` response means the job was enqueued, not that its effects completed.
 Inspect the corresponding job status returned by `GET
 /api/admin/system_configs` and the application/error-reporting logs.
 
-## Installed production schedule
+## Inert Whenever schedule template
 
-`config/schedule.rb` is a Whenever configuration. Deployments must run
-`whenever --update-crontab` (or translate these entries into the platform's
-scheduler); merely deploying the file does not install cron entries. Times use
-the scheduler host's configured timezone.
+`config/schedule.rb` is only a template of intended schedules. The reviewed
+production setup does not include the Whenever gem in `Gemfile` or
+`Gemfile.lock`, and neither `Procfile` nor `heroku.yml` installs or consumes the
+file. Consequently, `whenever --update-crontab` is unavailable in the deployed
+bundle and **none of the entries below is activated by this repository**.
 
-| Frequency | Scheduled expression | Manual equivalent | Purpose and effect |
+Operators must translate each desired entry into an external platform scheduler
+or first add and configure a scheduling mechanism. Times below are template
+values and would use the chosen scheduler's timezone.
+
+| Template frequency | Template expression | Manual equivalent | Purpose and effect |
 | --- | --- | --- | --- |
 | Daily at 02:00 | Rake `db:backup` | `RAILS_ENV=production bundle exec rake backup` | Intended to perform the database backup described above. **The configured task name is currently invalid**, because only `backup` is defined. |
 | Daily at 07:00 | `SlackProfileSyncJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'SlackProfileSyncJob.perform_now'` | Performs the Slack profile synchronization described above. The scheduled form enqueues it. |
@@ -102,7 +107,7 @@ synchronous diagnostic invocation where one is useful.
 | Service | Manual invocation | Purpose and effect |
 | --- | --- | --- |
 | `Service::SlackUserSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackUserSync.sync_all'` | Implements bulk Slack identity synchronization. It observes `slack_sync_enabled`; use the Rake task for normal operations and Slack reporting. |
-| `Service::SlackProfileSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackProfileSync.sync_all'` | Performs the checkpointed expiration-only Slack profile update described above and observes `slack_profile_sync_enabled`. It is not a full profile-status reconciliation. This is currently the only direct implementation behind the admin profile-sync job. |
+| `Service::SlackProfileSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackProfileSync.sync_all'` | Performs the checkpointed expiration-only Slack profile update described above and observes `slack_profile_sync_enabled`. It is not a full profile-status reconciliation, and its returned count includes selected members whose Slack update failed. This is currently the only direct implementation behind the admin profile-sync job. |
 | `Service::SlackChannelCache.rebuild!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackChannelCache.rebuild!'` | Rebuilds and swaps the Redis public-channel cache. Prefer the Rake task, which also records admin-visible status through its job. |
 | `Service::MemberProvisioning.reconcile_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::MemberProvisioning.reconcile_all!'` | Implements hourly Slack/Drive reconciliation. It can change remote Slack membership and Google Drive permissions; it is not a read-only audit. |
 | `Service::CardExpirationCheck.run!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::CardExpirationCheck.run!'` | Performs the Braintree query, Redis cache update, member DMs, and Member Relations notifications. Prefer the job if admin-visible status is required. |
@@ -111,6 +116,16 @@ synchronous diagnostic invocation where one is useful.
 
 ## Operational cautions
 
+- Slack API errors from an individual profile update are rescued inside
+  `Service::SlackProfileSync.sync_one`. Despite that failure, `sync_all` counts
+  the member as synced, advances `slack_profile_sync_last_run_at`, and allows the
+  wrapper job to record success. The member is then outside later incremental
+  runs even though Slack was not updated. After correcting the Slack error,
+  retry that member directly with `RAILS_ENV=production bundle exec rails
+  runner 'pp Service::SlackProfileSync.sync_one(Member.find("MEMBER_ID"))'` and
+  confirm that it returns the member rather than `nil`. Rewinding the global
+  checkpoint is an alternative only when deliberately replaying all expirations
+  in that interval and accepting duplicate updates.
 - Manual Rake invocations of `member_review`, `invoice_review`, `gc`, `backup`,
   `card_on_file_expiration_check`, and
   `reservations:rebuild_slack_canvases` do not update their admin-visible job
