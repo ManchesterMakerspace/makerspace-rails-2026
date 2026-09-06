@@ -29,14 +29,14 @@ job wrapper records `job_status_<admin key>` with a completion time and
 | Admin key | Task displayed by API | Manual command | Purpose and effect |
 | --- | --- | --- | --- |
 | `slack_sync` | `slack:sync_users` | `RAILS_ENV=production bundle exec rake slack:sync_users` | Reads the Slack workspace user list and creates or updates local `SlackUser` identities by matching email addresses to members. It reports created, updated, and unmatched counts to the logs channel. `slack_sync_enabled` can make the service skip the run. Both the task and job wrapper record status. |
-| `slack_profile_sync` | `slack:sync_profiles` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'SlackProfileSyncJob.perform_now'`. | Synchronizes each eligible member's configured status into the Slack custom-profile field. `slack_profile_sync_enabled` can make the service do no member updates. The job records status. The API's displayed `slack:sync_profiles` name is not executable and should not be placed in a scheduler. |
+| `slack_profile_sync` | `slack:sync_profiles` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'SlackProfileSyncJob.perform_now'`. | Performs an expiration-only incremental sync. It selects members whose `expirationTime` is after the saved `slack_profile_sync_last_run_at` checkpoint and at or before the run time, then writes `Expired` to their Slack custom-profile field. On the first run, the lower bound is the Unix epoch. It does **not** reconcile active members or unrelated member-status changes. A successful run advances the checkpoint even when no members are selected. `slack_profile_sync_enabled` can skip the work, and the job records status. The API-displayed `slack:sync_profiles` task does not exist. |
 | `slack_channel_cache` | `slack:refresh_public_channel_cache` | `RAILS_ENV=production bundle exec rake slack:refresh_public_channel_cache` | Rebuilds Redis lookups for active public Slack channels, atomically promotes the staged cache, removes stale live entries, and stores cache metadata. The task calls the job synchronously, so it records status. |
 | `member_review` | `member_review` | `RAILS_ENV=production bundle exec rake member_review` | On Sunday in production, compiles membership exceptions (orientation, no purchase, PayPal, missing contracts, and expired members with rentals), notifies affected members where applicable, queues contract emails, and posts a report to Member Relations. On other production days it exits successfully without a report. Only the job wrapper records status. |
 | `invoice_review` | `invoice_review` | `RAILS_ENV=production bundle exec rake invoice_review` | On Sunday in production, reports weekly invoice creation/settlement plus past-due, pending-settlement, and pending-refund cases to the treasurer. On other production days it exits successfully without a report. Only the job wrapper records status. |
 | `garbage_collect` | `gc` | `RAILS_ENV=production bundle exec rake gc` | Deletes invoicing Redis cache entries older than 30 days and reports success or failure to the logs channel. This does not invoke Ruby's memory garbage collector. Only the job wrapper records status. |
 | `db_backup` | `db:backup` | `RAILS_ENV=production bundle exec rake backup` | Runs `mongodump` against `MLAB_URI`, writes a dated archive below `dump/`, uploads it to the configured Google Drive backup folder, removes the temporary MongoDB config file, and reports to the logs channel. The API-displayed and Whenever-scheduled name `db:backup` does not currently exist; the working task is `backup`. Only the job wrapper records status. |
 | `card_expiration_check` | `card_on_file_expiration_check` | `RAILS_ENV=production bundle exec rake card_on_file_expiration_check` | Finds active subscribers whose Braintree cards expire in the current Eastern-time month, caches the affected count and card types in Redis until next month, DMs members who have Slack identities, and reports every affected member to Member Relations. Only the job wrapper records status. |
-| `reservation_canvas_rebuild` | `reservations:rebuild_slack_canvases` | `RAILS_ENV=production bundle exec rake reservations:rebuild_slack_canvases` | Rebuilds today's and tomorrow's reservation Slack canvases for every shop. It creates missing canvases, refreshes their agendas and access, retries Slack rate limits, and fails the overall run after collecting per-shop failures. Only the job wrapper records status. |
+| `reservation_canvas_rebuild` | `reservations:rebuild_slack_canvases` | `RAILS_ENV=production bundle exec rake reservations:rebuild_slack_canvases` | Rebuilds today's and tomorrow's reservation Slack canvases for every shop. It creates missing reservation canvases and refreshes their agendas and owner access when relevant. For **every** shop it also synchronizes the volunteer canvas with `create_if_needed: true` and owner-access synchronization, so the run can create or mutate volunteer canvases. It retries Slack rate limits and fails after collecting per-shop failures. Only the job wrapper records status. |
 
 ### Triggering through the admin API
 
@@ -88,9 +88,9 @@ side effects.
 task and no entry in `config/schedule.rb`. If production policy requires it,
 invoke it with `RAILS_ENV=production bundle exec rails runner
 'RentalVacatingCheckJob.perform_now'`. It changes expired `vacating` rentals to
-`cancelled`, DMs the member, notifies admins, and queues an ended-rental email.
-It rescues errors per rental, so a run can finish even when some rentals were
-not changed.
+`cancelled`, DMs the member, posts the cancellation notice to the Member
+Relations channel, and queues an ended-rental email. It rescues errors per
+rental, so a run can finish even when some rentals were not changed.
 
 ## Supporting services
 
@@ -102,11 +102,11 @@ synchronous diagnostic invocation where one is useful.
 | Service | Manual invocation | Purpose and effect |
 | --- | --- | --- |
 | `Service::SlackUserSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackUserSync.sync_all'` | Implements bulk Slack identity synchronization. It observes `slack_sync_enabled`; use the Rake task for normal operations and Slack reporting. |
-| `Service::SlackProfileSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackProfileSync.sync_all'` | Updates Slack profile status fields for eligible linked members and observes `slack_profile_sync_enabled`. This is currently the only direct implementation behind the admin profile-sync job. |
+| `Service::SlackProfileSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackProfileSync.sync_all'` | Performs the checkpointed expiration-only Slack profile update described above and observes `slack_profile_sync_enabled`. It is not a full profile-status reconciliation. This is currently the only direct implementation behind the admin profile-sync job. |
 | `Service::SlackChannelCache.rebuild!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackChannelCache.rebuild!'` | Rebuilds and swaps the Redis public-channel cache. Prefer the Rake task, which also records admin-visible status through its job. |
 | `Service::MemberProvisioning.reconcile_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::MemberProvisioning.reconcile_all!'` | Implements hourly Slack/Drive reconciliation. It can change remote Slack membership and Google Drive permissions; it is not a read-only audit. |
 | `Service::CardExpirationCheck.run!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::CardExpirationCheck.run!'` | Performs the Braintree query, Redis cache update, member DMs, and Member Relations notifications. Prefer the job if admin-visible status is required. |
-| `Service::ReservationSlackCanvas.rebuild_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::ReservationSlackCanvas.rebuild_all!'` | Rebuilds all shops' two rolling reservation canvases. Prefer the Rake task or job for the normal operational path. |
+| `Service::ReservationSlackCanvas.rebuild_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::ReservationSlackCanvas.rebuild_all!'` | Rebuilds all shops' two rolling reservation canvases and synchronizes every shop's volunteer canvas, creating it when absent and refreshing owner access. Prefer the Rake task or job for the normal operational path. |
 | `Service::GoogleDrive.upload_backup` | Do not call alone; use `RAILS_ENV=production bundle exec rake backup`. | Uploads the archive created by the backup task to Google Drive. Calling it directly requires an existing archive filename and does not create a database dump. |
 
 ## Operational cautions
@@ -119,6 +119,9 @@ synchronous diagnostic invocation where one is useful.
 - Several workflows send Slack messages, email, or mutate remote Slack, Google,
   Braintree-derived caches, and Google Drive state. A manual run is not a dry
   run, and repeated runs can repeat notifications.
+- A reservation canvas rebuild also synchronizes every volunteer canvas and can
+  create missing volunteer canvases or change their owner access. Do not treat
+  it as a reservation-only operation.
 - The database backup task writes a credentials-bearing config file in `/tmp`
   only for the duration of the run and removes it in `ensure`; protect process
   output and the generated archive as production data.
