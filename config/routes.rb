@@ -235,6 +235,12 @@ Rails.application.routes.draw do
             post :run_job
           end
         end
+
+        resources :slack_identity_conflicts, only: [:index] do
+          collection do
+            post :reassign
+          end
+        end
         resources :templates, only: [:index] do
           member do
             post :refresh
