@@ -249,13 +249,7 @@ module Service
 
     def self.invite_to_channel(channel, slack_id)
       return true if Rails.env.test?
-      channel_id = find_channel_id(safe_channel(channel))
-      if channel_id.present?
-        client.conversations_invite(channel: channel_id, users: slack_id)
-      else
-        # This fallback attempt catches pre-resolved channel names like C0123456789
-        client.conversations_invite(channel: safe_channel(channel), users: slack_id)
-      end
+      client.conversations_invite(channel: resolved_channel_id(channel), users: slack_id)
       true
     rescue Slack::Web::Api::Errors::AlreadyInChannel
       true
@@ -267,7 +261,7 @@ module Service
     def self.channel_member?(channel, slack_id)
       return false if Rails.env.test?
 
-      channel_id = safe_channel(channel)
+      channel_id = resolved_channel_id(channel)
       cursor = nil
       loop do
         response = client.conversations_members(channel: channel_id, limit: 1_000, cursor: cursor)
@@ -280,7 +274,19 @@ module Service
     end
     def self.kick_from_channel(channel, slack_id)
       return if Rails.env.test?
-      client.conversations_kick(channel: safe_channel(channel), user: slack_id)
+      client.conversations_kick(channel: resolved_channel_id(channel), user: slack_id)
+    end
+
+    # Slack's conversations.* APIs require an actual channel ID; our stored
+    # channel fields are names (e.g. "#band-saw-users"). Resolve to an ID
+    # here, skipping the lookup entirely when we were already given one.
+    # Falls back to the raw value on lookup failure, matching the prior
+    # invite_to_channel fallback (e.g. for a pre-resolved ID Slack rejects).
+    def self.resolved_channel_id(channel)
+      channel = safe_channel(channel)
+      return channel if Service::SlackChannelCache.channel_id?(channel)
+
+      find_channel_id(channel) || channel
     end
     def self.init_team_id
       self.slack_team_id = ENV['SLACK_TEAM_ID'].presence
