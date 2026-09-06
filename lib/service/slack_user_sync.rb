@@ -50,6 +50,15 @@ module Service
         return nil
       end
 
+      unless member.active_membership_status?
+        ::Service::SlackConnector.send_slack_message(
+          "⚠ Slack user *#{real_name.presence || name}* (`#{slack_id}`) matches Member " \
+          "#{member.fullname}, who is not in good standing (status: #{member.status}). Skipping sync.",
+          ::Service::SlackConnector.logs_channel
+        )
+        return nil
+      end
+
       slack_user_attributes = sanitized_slack_user_attributes(
         slack_email: slack_email,
         name: name,
@@ -168,6 +177,12 @@ module Service
 
             unless member
               unmatched << { slack_id: slack_id, name: real_name.presence || name, email: slack_email }
+              next
+            end
+
+            unless member.active_membership_status?
+              puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — Member #{member.fullname} is not in good standing (status: #{member.status})"
+              skipped_count += 1
               next
             end
 
@@ -291,6 +306,7 @@ module Service
             source: 'conflict scan'
           )
           next unless member
+          next unless member.active_membership_status?
 
           conflict = existing ? active_identity_conflict(member, excluding: existing) : active_identity_conflict(member)
           next unless conflict
