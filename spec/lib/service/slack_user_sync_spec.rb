@@ -116,6 +116,90 @@ RSpec.describe Service::SlackUserSync do
     end
   end
 
+  describe '.sync_all' do
+    let(:client) { double('Slack client') }
+
+    def slack_member(id, email, real_name)
+      {
+        'id' => id,
+        'is_bot' => false,
+        'deleted' => false,
+        'name' => real_name,
+        'profile' => { 'email' => email, 'real_name' => real_name }
+      }
+    end
+
+    before do
+      SystemConfig.set(SystemConfig::SLACK_SYNC_ENABLED, 'true')
+      allow(Service::SlackConnector).to receive(:api_token_present?).and_return(true)
+      allow(Service::SlackConnector).to receive(:client).and_return(client)
+      allow(Service::SlackConnector).to receive(:send_slack_message)
+      allow(Service::SlackProfileSync).to receive(:sync_one)
+      allow(Service::AuditLogger).to receive(:log)
+      allow(Service::ErrorReporter).to receive(:notify)
+      # create(:member) fires MemberSubscriber#send_slack_invite, which looks
+      # up the member by email via this same client double — stub it to a
+      # harmless "not found" so member creation in these examples doesn't
+      # collide with the sync-specific users_list stubbing below.
+      allow(client).to receive(:users_lookupByEmail).and_raise(Slack::Web::Api::Errors::UsersNotFound.new('not_found'))
+    end
+
+    it "reports and skips instead of raising when a member already has a different active Slack identity, and still processes users after it" do
+      member = create(:member, email: 'shared@example.com')
+      SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email)
+
+      other_member = create(:member, email: 'other@example.com')
+
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true,
+        'members' => [
+          slack_member('UDUPLICATE', member.email, 'Duplicate Identity'),
+          slack_member('UNEXT', other_member.email, 'Next User')
+        ],
+        'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      result = nil
+      expect { result = described_class.sync_all }.not_to raise_error
+
+      expect(result).to include(skipped: 1, created: 1)
+      expect(SlackUser.where(slack_id: 'UDUPLICATE')).not_to exist
+      expect(SlackUser.find_by(slack_id: 'UNEXT').member_id).to eq(other_member.id)
+      expect(Service::AuditLogger).to have_received(:log).with(
+        hash_including(event_type: 'slack_identity_conflict', resource_id: member.id)
+      )
+    end
+
+    it "continues processing subsequent users after an unexpected per-user error" do
+      member = create(:member, email: 'first@example.com')
+      other_member = create(:member, email: 'second@example.com')
+
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true,
+        'members' => [
+          slack_member('UFAILS', member.email, 'Fails'),
+          slack_member('USUCCEEDS', other_member.email, 'Succeeds')
+        ],
+        'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      allow(described_class).to receive(:sanitized_slack_user_attributes).and_call_original
+      allow(described_class).to receive(:sanitized_slack_user_attributes)
+        .with(hash_including(slack_email: member.email))
+        .and_raise(StandardError, 'boom')
+
+      result = nil
+      expect { result = described_class.sync_all }.not_to raise_error
+
+      expect(result).to include(created: 1, failed: 1)
+      expect(SlackUser.where(slack_id: 'UFAILS')).not_to exist
+      expect(SlackUser.find_by(slack_id: 'USUCCEEDS').member_id).to eq(other_member.id)
+      expect(Service::ErrorReporter).to have_received(:notify).with(
+        instance_of(StandardError), context: hash_including(slack_id: 'UFAILS')
+      )
+    end
+  end
+
   describe '.sanitized_slack_user_attributes' do
     it 'sanitizes Slack-sourced fields before atomic persistence' do
       attributes = described_class.sanitized_slack_user_attributes(
