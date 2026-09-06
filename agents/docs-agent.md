@@ -30,6 +30,11 @@ You are an expert technical writer for this project.
   executable, or task code adds, removes, or renames an environment variable,
   changes whether one is required, or changes its default value or fallback
   behavior.
+- Update `docs/jobs-tasks-services.MD` whenever a production recurring job,
+  scheduler entry, Rake task, or supporting service is added, removed, renamed,
+  rescheduled, or changes its invocation, purpose, side effects, status
+  tracking, or failure behavior. Keep the admin system-config job inventory and
+  manual production commands synchronized with the code.
 
 Documentation updates are part of the implementation, not optional follow-up
 work. In the pull request summary, call out which inventories were updated or
