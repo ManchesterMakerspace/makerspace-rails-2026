@@ -15,6 +15,12 @@ class SystemConfig
   SLACK_PROFILE_SYNC_ENABLED = "slack_profile_sync_enabled"
   SIGNUP_LOCKOUT_ENABLED = "signup_lockout_enabled"
 
+  # Heroku Scheduler has no native monthly cadence, so these jobs run daily
+  # via a rake task that only does real work on the configured day of month.
+  CHANNEL_CACHE_REFRESH_DAY = "channel_cache_refresh_day"
+  CARD_EXPIRATION_CHECK_DAY = "card_expiration_check_day"
+  GARBAGE_COLLECT_DAY = "garbage_collect_day"
+
   JOB_KEYS = {
     "slack_sync"      => "slack:sync_users",
     "slack_profile_sync" => "slack:sync_profiles",
@@ -22,9 +28,11 @@ class SystemConfig
     "member_review"   => "member_review",
     "invoice_review"  => "invoice_review",
     "garbage_collect" => "gc",
-    "db_backup"       => "db:backup",
-    "card_expiration_check" => "card_on_file_expiration_check",
-    "reservation_canvas_rebuild" => "reservations:rebuild_slack_canvases"
+    "db_backup"       => "backup",
+    "card_expiration_check" => "card_expiration_check",
+    "reservation_canvas_rebuild" => "reservations:rebuild_slack_canvases",
+    "member_provisioning_reconciliation" => "member_provisioning_reconciliation",
+    "volunteer_event_reminder" => "volunteer_event_reminder"
   }.freeze
 
   def self.get(key)
@@ -36,6 +44,13 @@ class SystemConfig
     record.value = value.to_s
     record.save!
     record
+  end
+
+  # Heroku Scheduler has no monthly cadence -- a "monthly" job is scheduled
+  # to run daily and calls this to no-op except on its configured day.
+  def self.scheduled_day_matches?(key, default: 1)
+    configured_day = get(key).presence&.to_i || default
+    Date.current.day == configured_day
   end
 
   def self.enabled?(key)
