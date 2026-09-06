@@ -69,6 +69,12 @@ module Service
           '$unset' => { invalidated_at: '', invalidation_reason: '' }
         )
       else
+        conflict = active_identity_conflict(member)
+        if conflict
+          report_identity_conflict(member, slack_id, conflict, 'single-user sync')
+          return nil
+        end
+
         slack_user = SlackUser.create!(
           slack_user_attributes.merge(
             slack_id: slack_id,
@@ -239,9 +245,113 @@ module Service
       { created: created_count, updated: updated_count, skipped: skipped_count, failed: failed_count, unmatched: unmatched.size }
     end
 
+    # Reassigning an identity is a deliberate, permanent admin decision, same
+    # as a member_email_changed tombstone -- unlike e.g. 'slack_user_deleted',
+    # neither should ever silently auto-reactivate on a later sync.
+    MANUAL_REASSIGNMENT_REASON = 'manually_reassigned_by_admin'.freeze
+
     def self.quarantined_identity?(record)
       record.invalidated_at.present? &&
-        record.invalidation_reason.to_s.start_with?('member_email_changed')
+        (record.invalidation_reason.to_s.start_with?('member_email_changed') ||
+         record.invalidation_reason.to_s.start_with?(MANUAL_REASSIGNMENT_REASON))
+    end
+
+    # Read-only scan for Slack identity conflicts an admin needs to resolve --
+    # the same matching sync_all performs, but without writing anything, so
+    # it's always fresh: once a conflict is actually resolved this stops
+    # returning it, with no separate "resolved" bookkeeping to maintain.
+    def self.detect_conflicts
+      return [] unless ::Service::SlackConnector.api_token_present?
+
+      client = ::Service::SlackConnector.client
+      conflicts = []
+      cursor = nil
+
+      loop do
+        response = client.users_list(limit: 200, cursor: cursor)
+        raise 'Slack API returned ok=false' unless response['ok']
+
+        response['members'].each do |slack_user|
+          next if slack_user['is_bot'] || slack_user['deleted'] || slack_user['id'] == 'USLACKBOT'
+
+          slack_id    = slack_user['id']
+          slack_email = slack_user.dig('profile', 'email').to_s.strip.downcase
+          name        = slack_user['name'].to_s.strip
+          real_name   = slack_user.dig('profile', 'real_name').to_s.strip
+          next if slack_email.blank?
+
+          existing = SlackUser.unscoped.where(slack_id: slack_id).first
+          next if existing && quarantined_identity?(existing)
+
+          member = resolve_member(
+            existing: existing,
+            slack_email: slack_email,
+            slack_id: slack_id,
+            display_name: real_name.presence || name,
+            source: 'conflict scan'
+          )
+          next unless member
+
+          conflict = existing ? active_identity_conflict(member, excluding: existing) : active_identity_conflict(member)
+          next unless conflict
+
+          conflicts << {
+            slack_id: slack_id,
+            slack_name: real_name.presence || name,
+            slack_email: slack_email,
+            member_id: member.id.to_s,
+            member_name: member.fullname,
+            conflicting_slack_id: conflict.slack_id,
+            conflicting_slack_email: conflict.slack_email
+          }
+        end
+
+        cursor = response.dig('response_metadata', 'next_cursor').to_s
+        break if cursor.blank?
+      end
+
+      conflicts
+    end
+
+    # Admin-driven resolution: unlink whichever other active identity the
+    # member currently holds, then link the chosen slack_id via the normal
+    # sync_single path (which now safely re-checks for a conflict itself).
+    def self.reassign_identity(slack_id:, member_id:, actor: nil)
+      slack_id = slack_id.to_s.strip
+      raise Error::UnprocessableEntity.new('slack_id is required') if slack_id.blank?
+
+      member = Member.find(member_id)
+      raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: member_id }) if member.nil?
+
+      previous = SlackUser.where(member_id: member.id, :slack_id.ne => slack_id).first
+
+      if previous
+        SlackUser.collection.find(_id: previous.id).update_one(
+          '$unset' => { member_id: '' },
+          '$set' => {
+            invalidated_at: Time.current,
+            invalidation_reason: MANUAL_REASSIGNMENT_REASON
+          }
+        )
+        ::Service::AuditLogger.log(
+          log_type: 'member',
+          event_type: 'slack_identity_manually_reassigned',
+          resource_type: 'Member',
+          resource_id: member.id,
+          subject: member,
+          actor: actor,
+          message_details: "Admin unlinked Slack identity #{previous.slack_id} from #{member.fullname} " \
+            "in favor of #{slack_id}",
+          slack_channel: ::Service::SlackConnector.logs_channel
+        )
+      end
+
+      result = sync_single(slack_id)
+      raise Error::UnprocessableEntity.new(
+        "Could not link #{slack_id} to #{member.fullname} -- check Slack API connectivity and logs"
+      ) unless result == member
+
+      member
     end
 
     def self.resolve_member(existing:, slack_email:, slack_id:, display_name:, source:)

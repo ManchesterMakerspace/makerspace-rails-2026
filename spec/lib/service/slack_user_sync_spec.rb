@@ -114,6 +114,18 @@ RSpec.describe Service::SlackUserSync do
         hash_including(event_type: 'slack_email_mismatch', resource_id: member.id)
       )
     end
+
+    it 'does not create a duplicate identity when the member already has a different active Slack identity' do
+      SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email)
+
+      expect { described_class.sync_single('U123') }.not_to raise_error
+
+      expect(SlackUser.where(slack_id: 'U123')).not_to exist
+      expect(SlackUser.find_by(slack_id: 'UACTIVE').member_id).to eq(member.id)
+      expect(Service::AuditLogger).to have_received(:log).with(
+        hash_including(event_type: 'slack_identity_conflict', resource_id: member.id)
+      )
+    end
   end
 
   describe '.sync_all' do
@@ -197,6 +209,127 @@ RSpec.describe Service::SlackUserSync do
       expect(Service::ErrorReporter).to have_received(:notify).with(
         instance_of(StandardError), context: hash_including(slack_id: 'UFAILS')
       )
+    end
+  end
+
+  describe '.detect_conflicts' do
+    let(:client) { double('Slack client') }
+
+    def slack_member(id, email, real_name)
+      {
+        'id' => id,
+        'is_bot' => false,
+        'deleted' => false,
+        'name' => real_name,
+        'profile' => { 'email' => email, 'real_name' => real_name }
+      }
+    end
+
+    before do
+      allow(Service::SlackConnector).to receive(:api_token_present?).and_return(true)
+      allow(Service::SlackConnector).to receive(:client).and_return(client)
+      allow(Service::AuditLogger).to receive(:log)
+      allow(client).to receive(:users_lookupByEmail).and_raise(Slack::Web::Api::Errors::UsersNotFound.new('not_found'))
+    end
+
+    it 'reports a conflict without writing anything' do
+      member = create(:member, email: 'shared@example.com')
+      SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email)
+
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true,
+        'members' => [slack_member('UDUPLICATE', member.email, 'Duplicate Identity')],
+        'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      conflicts = described_class.detect_conflicts
+
+      expect(conflicts).to contain_exactly(
+        hash_including(
+          slack_id: 'UDUPLICATE',
+          member_id: member.id.to_s,
+          conflicting_slack_id: 'UACTIVE'
+        )
+      )
+      expect(SlackUser.where(slack_id: 'UDUPLICATE')).not_to exist
+    end
+
+    it 'returns no conflicts when nothing is in conflict' do
+      member = create(:member, email: 'resolved@example.com')
+      SlackUser.create!(member: member, slack_id: 'UNEW', slack_email: member.email)
+
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true,
+        'members' => [slack_member('UNEW', member.email, 'Now Linked')],
+        'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      expect(described_class.detect_conflicts).to eq([])
+    end
+  end
+
+  describe '.reassign_identity' do
+    let(:client) { double('Slack client') }
+    let(:member) { create(:member, email: 'kennith@example.com') }
+
+    before do
+      allow(Service::SlackConnector).to receive(:api_token_present?).and_return(true)
+      allow(Service::SlackConnector).to receive(:client).and_return(client)
+      allow(Service::SlackProfileSync).to receive(:sync_one)
+      allow(Service::AuditLogger).to receive(:log)
+      allow(client).to receive(:users_lookupByEmail).and_raise(Slack::Web::Api::Errors::UsersNotFound.new('not_found'))
+      allow(client).to receive(:users_info).with(user: 'UNEW').and_return(
+        'user' => {
+          'id' => 'UNEW',
+          'name' => 'kennith',
+          'profile' => { 'email' => member.email, 'real_name' => 'Kennith Jaggard' }
+        }
+      )
+    end
+
+    it 'unlinks the old identity, links the new one, and audits the change' do
+      old_identity = SlackUser.create!(member: member, slack_id: 'UOLD', slack_email: member.email)
+
+      result = described_class.reassign_identity(slack_id: 'UNEW', member_id: member.id.to_s, actor: nil)
+
+      expect(result).to eq(member)
+      expect(SlackUser.find_by(slack_id: 'UNEW').member_id).to eq(member.id)
+      expect(SlackUser.unscoped.find(old_identity.id)).to have_attributes(
+        member_id: nil,
+        invalidation_reason: Service::SlackUserSync::MANUAL_REASSIGNMENT_REASON
+      )
+      expect(Service::AuditLogger).to have_received(:log).with(
+        hash_including(event_type: 'slack_identity_manually_reassigned', resource_id: member.id)
+      )
+    end
+
+    it 'does not report a conflict for this member on a later conflict scan' do
+      SlackUser.create!(member: member, slack_id: 'UOLD', slack_email: member.email)
+
+      described_class.reassign_identity(slack_id: 'UNEW', member_id: member.id.to_s)
+
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true,
+        'members' => [
+          {
+            'id' => 'UOLD', 'is_bot' => false, 'deleted' => false, 'name' => 'kennith',
+            'profile' => { 'email' => member.email, 'real_name' => 'Kennith Jaggard' }
+          },
+          {
+            'id' => 'UNEW', 'is_bot' => false, 'deleted' => false, 'name' => 'kennith',
+            'profile' => { 'email' => member.email, 'real_name' => 'Kennith Jaggard' }
+          }
+        ],
+        'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      expect(described_class.detect_conflicts).to eq([])
+    end
+
+    it 'raises when the member does not exist' do
+      expect do
+        described_class.reassign_identity(slack_id: 'UNEW', member_id: BSON::ObjectId.new.to_s)
+      end.to raise_error(Mongoid::Errors::DocumentNotFound)
     end
   end
 
