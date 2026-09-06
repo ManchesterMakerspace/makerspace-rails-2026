@@ -70,6 +70,58 @@ RSpec.describe Service::SlackConnector do
     end
   end
 
+  describe '.channel_member? and .kick_from_channel' do
+    before do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new('production'))
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with('SLACK_ENV').and_return('production')
+    end
+
+    it 'resolves a channel name to an ID before checking membership' do
+      client = double('Slack client')
+      allow(described_class).to receive(:client).and_return(client)
+      allow(described_class).to receive(:find_channel_id).with('#band-saw-users').and_return('CBANDSAW')
+      allow(client).to receive(:conversations_members)
+        .with(channel: 'CBANDSAW', limit: 1_000, cursor: nil)
+        .and_return(double(members: ['UADA'], response_metadata: nil))
+
+      expect(described_class.channel_member?('#band-saw-users', 'UADA')).to be(true)
+    end
+
+    it 'skips resolution and uses the value directly when it is already a channel ID' do
+      client = double('Slack client')
+      allow(described_class).to receive(:client).and_return(client)
+      expect(described_class).not_to receive(:find_channel_id)
+      allow(client).to receive(:conversations_members)
+        .with(channel: 'C0123456789', limit: 1_000, cursor: nil)
+        .and_return(double(members: [], response_metadata: nil))
+
+      expect(described_class.channel_member?('C0123456789', 'UADA')).to be(false)
+    end
+
+    it 'resolves a channel name to an ID before kicking a member' do
+      client = double('Slack client')
+      allow(described_class).to receive(:client).and_return(client)
+      allow(described_class).to receive(:find_channel_id).with('#band-saw-users').and_return('CBANDSAW')
+      allow(client).to receive(:conversations_kick)
+
+      described_class.kick_from_channel('#band-saw-users', 'UADA')
+
+      expect(client).to have_received(:conversations_kick).with(channel: 'CBANDSAW', user: 'UADA')
+    end
+
+    it 'falls back to the raw value when a channel name cannot be resolved' do
+      client = double('Slack client')
+      allow(described_class).to receive(:client).and_return(client)
+      allow(described_class).to receive(:find_channel_id).with('#missing-channel').and_return(nil)
+      allow(client).to receive(:conversations_kick)
+
+      described_class.kick_from_channel('#missing-channel', 'UADA')
+
+      expect(client).to have_received(:conversations_kick).with(channel: '#missing-channel', user: 'UADA')
+    end
+  end
+
   describe '.promote_to_regular' do
     it 'posts to the legacy administrative endpoint' do
       allow(ENV).to receive(:[]).and_call_original
