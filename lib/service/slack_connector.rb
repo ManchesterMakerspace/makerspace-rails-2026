@@ -142,16 +142,20 @@ module Service
             cursor: cursor
           )
         end
+        Rails.logger.warn("[find_channel_id] channel_name=#{channel_name}, requested=#{requested}, got #{response.channels.length} candidates")
         channel = Array(response.channels).find do |candidate|
           Service::SlackChannelCache.normalize_name(candidate.name) == requested
         end
-        return channel.id if channel
+        if channel
+          Rails.logger.info("[find_channel_id] found #{channel.id} for channel_name=#{channel_name}, requested=#{requested}.")
+          return channel.id
 
         cursor = response.response_metadata&.next_cursor.to_s
         break if cursor.blank?
       end
       nil
     rescue Slack::Web::Api::Errors::ChannelNotFound
+      Rails.logger.warn("[find_channel_id] channel_name=#{channel_name}, nothing matched requested=#{requested}.")
       nil
     end
 
