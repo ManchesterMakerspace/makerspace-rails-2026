@@ -18,14 +18,18 @@ class Admin::Billing::TransactionsController < Admin::BillingController
   def destroy
     ::BraintreeService::Transaction.refund(@gateway, params[:id])
 
+    invoice = Invoice.find_by(transaction_id: params[:id])
+
     ::Service::AuditLogger.log(
-      log_type:       'member',
-      event_type:     'transaction_refunded',
-      resource_type:  'Transaction',
-      resource_id:    current_member.id,
-      actor:          current_member,
-      after_snapshot: { transaction_id: params[:id] },
-      slack_channel:  ::Service::SlackConnector.logs_channel
+      log_type:        'member',
+      event_type:      'transaction_refunded',
+      resource_type:   invoice ? 'Invoice' : 'Transaction',
+      resource_id:     invoice&.id || current_member.id,
+      actor:           current_member,
+      subject:         invoice&.member,
+      after_snapshot:  { transaction_id: params[:id] },
+      message_details: invoice ? "$#{invoice.amount} — #{invoice.description}" : "No invoice found for transaction #{params[:id]}",
+      slack_channel:   ::Service::SlackConnector.logs_channel
     )
 
     render json: {}, status: 204 and return

@@ -115,5 +115,36 @@ RSpec.describe Admin::Billing::TransactionsController, type: :controller do
       delete :destroy, params: { id: transaction.id }, format: :json
       expect(response).to have_http_status(204)
     end
+
+    it "logs the refund against the linked invoice and member when one exists" do
+      linked_invoice = create(:invoice, member: member, transaction_id: transaction.id, amount: 74.99)
+      allow(::BraintreeService::Transaction).to receive(:refund).with(gateway, transaction.id)
+      expect(Service::AuditLogger).to receive(:log).with(
+        hash_including(
+          resource_type: 'Invoice',
+          resource_id: linked_invoice.id,
+          subject: member,
+          message_details: a_string_matching(/74\.99/)
+        )
+      )
+
+      delete :destroy, params: { id: transaction.id }, format: :json
+      expect(response).to have_http_status(204)
+    end
+
+    it "falls back to logging against the admin when no invoice is linked to the transaction" do
+      allow(::BraintreeService::Transaction).to receive(:refund).with(gateway, transaction.id)
+      expect(Service::AuditLogger).to receive(:log).with(
+        hash_including(
+          resource_type: 'Transaction',
+          resource_id: admin.id,
+          subject: nil,
+          message_details: a_string_matching(/No invoice found/)
+        )
+      )
+
+      delete :destroy, params: { id: transaction.id }, format: :json
+      expect(response).to have_http_status(204)
+    end
   end
 end
