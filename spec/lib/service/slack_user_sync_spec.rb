@@ -126,6 +126,30 @@ RSpec.describe Service::SlackUserSync do
         hash_including(event_type: 'slack_identity_conflict', resource_id: member.id)
       )
     end
+
+    it 'does not create a new identity for a member who is not in good standing' do
+      member.update!(status: 'revoked')
+      allow(Service::SlackConnector).to receive(:send_slack_message)
+
+      result = described_class.sync_single('U123')
+
+      expect(result).to be_nil
+      expect(SlackUser.where(slack_id: 'U123')).not_to exist
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+        a_string_including('not in good standing'), ::Service::SlackConnector.logs_channel
+      )
+    end
+
+    it 'does not resync an already-linked member who is no longer in good standing' do
+      identity = SlackUser.create!(member: member, slack_id: 'U123', slack_email: 'stale@example.com')
+      member.update!(status: 'inactive')
+      allow(Service::SlackConnector).to receive(:send_slack_message)
+
+      result = described_class.sync_single('U123')
+
+      expect(result).to be_nil
+      expect(SlackUser.find(identity.id).slack_email).to eq('stale@example.com')
+    end
   end
 
   describe '.sync_all' do
@@ -180,6 +204,29 @@ RSpec.describe Service::SlackUserSync do
       expect(Service::AuditLogger).to have_received(:log).with(
         hash_including(event_type: 'slack_identity_conflict', resource_id: member.id)
       )
+    end
+
+    it "skips a member who is not in good standing, whether newly linking or already linked" do
+      revoked_member = create(:member, email: 'revoked@example.com', status: 'revoked')
+      SlackUser.create!(member: revoked_member, slack_id: 'USTALE', slack_email: 'old@example.com')
+      other_member = create(:member, email: 'other@example.com')
+
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true,
+        'members' => [
+          slack_member('UREVOKED', revoked_member.email, 'Revoked Member'),
+          slack_member('USTALE', revoked_member.email, 'Revoked Member Stale'),
+          slack_member('UNEXT', other_member.email, 'Next User')
+        ],
+        'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      result = described_class.sync_all
+
+      expect(result).to include(skipped: 2, created: 1)
+      expect(SlackUser.where(slack_id: 'UREVOKED')).not_to exist
+      expect(SlackUser.find(SlackUser.find_by(slack_id: 'USTALE').id).slack_email).to eq('old@example.com')
+      expect(SlackUser.find_by(slack_id: 'UNEXT').member_id).to eq(other_member.id)
     end
 
     it "continues processing subsequent users after an unexpected per-user error" do
@@ -264,6 +311,19 @@ RSpec.describe Service::SlackUserSync do
       allow(client).to receive(:users_list).and_return(
         'ok' => true,
         'members' => [slack_member('UNEW', member.email, 'Now Linked')],
+        'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      expect(described_class.detect_conflicts).to eq([])
+    end
+
+    it 'does not report a conflict for a member who is not in good standing' do
+      member = create(:member, email: 'revoked@example.com', status: 'revoked')
+      SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email)
+
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true,
+        'members' => [slack_member('UDUPLICATE', member.email, 'Duplicate Identity')],
         'response_metadata' => { 'next_cursor' => '' }
       )
 
