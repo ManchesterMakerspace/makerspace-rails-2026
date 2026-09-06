@@ -2,7 +2,7 @@ require "rails_helper"
 
 RSpec.describe ReservationSlackCanvasRebuildJob, type: :job do
   before do
-    Rails.application.load_tasks
+    Rails.application.load_tasks unless Rake::Task.task_defined?("reservations:rebuild_slack_canvases")
     Rake::Task["reservations:rebuild_slack_canvases"].reenable
     allow(Service::ReservationSlackCanvas).to receive(:rebuild_all!)
     allow(SystemConfig).to receive(:record_run)

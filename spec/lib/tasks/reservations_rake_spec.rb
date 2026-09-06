@@ -2,7 +2,7 @@ require "rails_helper"
 
 RSpec.describe "reservations:backfill_resource_manager_shops" do
   before do
-    Rails.application.load_tasks
+    Rails.application.load_tasks unless Rake::Task.task_defined?("reservations:backfill_resource_manager_shops")
     Rake::Task["reservations:backfill_resource_manager_shops"].reenable
   end
 
