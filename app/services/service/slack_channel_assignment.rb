@@ -7,8 +7,7 @@ module Service
         name = Service::SlackChannelCache.normalize_name(value)
         next if name.blank?
 
-        channel_id = Service::SlackConnector.find_channel_id(name)
-        channel_id ||= find_channel_id_with_admin(name)
+        channel_id = find_channel_id(name)
         unless channel_id.present?
           Rails.logger.warn(
             "[SlackChannelAssignment] resolution failed field=#{field} channel=#{name.inspect}"
@@ -28,6 +27,20 @@ module Service
 
       report_unresolved_channels(failures, actor) if failures.any?
       resolved_channels
+    end
+
+    def self.find_channel_id(channel_name)
+      channel_id = begin
+        Service::SlackConnector.find_channel_id(channel_name)
+      rescue Slack::Web::Api::Errors::SlackError => error
+        Rails.logger.warn(
+          "[SlackChannelAssignment] bot channel resolution failed " \
+          "channel=#{channel_name.inspect} error=#{error.class}; retrying with admin token"
+        )
+        nil
+      end
+
+      channel_id.presence || find_channel_id_with_admin(channel_name)
     end
 
     def self.find_channel_id_with_admin(channel_name)
@@ -80,6 +93,8 @@ module Service
       bot_user_id = nil
       failures = resolved_channels.values.filter_map do |channel|
         begin
+          next if bot_in_channel?(channel[:id])
+
           Service::SlackConnector.client.conversations_join(channel: channel[:id])
           nil
         rescue => error
@@ -95,6 +110,17 @@ module Service
     rescue => error
       Rails.logger.warn("[SlackChannelAssignment] bot invitation unavailable error=#{error.class}")
       notify_actor(resolved_channels.values, actor, bot_user_id)
+    end
+
+    def self.bot_in_channel?(channel_id)
+      response = Service::SlackConnector.client.conversations_info(channel: channel_id)
+      response.channel.respond_to?(:is_member) && response.channel.is_member
+    rescue Slack::Web::Api::Errors::SlackError => error
+      Rails.logger.warn(
+        "[SlackChannelAssignment] bot membership check failed channel_id=#{channel_id} " \
+        "error=#{error.class}; attempting join"
+      )
+      false
     end
 
     def self.invite_bot_with_admin(channel)
@@ -169,7 +195,8 @@ module Service
       name
     end
 
-    private_class_method :find_channel_id_with_admin, :invite_bot_with_admin, :notify_actor,
+    private_class_method :find_channel_id, :find_channel_id_with_admin, :bot_in_channel?,
+      :invite_bot_with_admin, :notify_actor,
       :report_unresolved_channels, :display_name
   end
 end
