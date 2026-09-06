@@ -27,7 +27,7 @@ RSpec.describe 'day-of-month guarded scheduled jobs' do
 
       travel_to(Time.zone.local(2026, 9, 15)) { task.invoke }
 
-      expect(GarbageCollectJob).to have_received(:perform_now)
+      expect(GarbageCollectJob).to have_received(:perform_now).at_least(:once)
     end
   end
 
@@ -52,7 +52,7 @@ RSpec.describe 'day-of-month guarded scheduled jobs' do
 
       travel_to(Time.zone.local(2026, 9, 1)) { task.invoke }
 
-      expect(CardExpirationCheckJob).to have_received(:perform_now)
+      expect(CardExpirationCheckJob).to have_received(:perform_now).at_least(:once)
     end
   end
 
@@ -77,7 +77,7 @@ RSpec.describe 'day-of-month guarded scheduled jobs' do
 
       travel_to(Time.zone.local(2026, 9, 1)) { task.invoke }
 
-      expect(SlackChannelCacheRefreshJob).to have_received(:perform_now)
+      expect(SlackChannelCacheRefreshJob).to have_received(:perform_now).at_least(:once)
     end
   end
 end
