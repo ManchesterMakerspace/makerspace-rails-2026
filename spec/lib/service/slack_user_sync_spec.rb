@@ -396,6 +396,49 @@ RSpec.describe Service::SlackUserSync do
     end
   end
 
+  describe '.dismiss_conflict' do
+    let(:member) { create(:member, email: 'kennith@example.com') }
+
+    before do
+      allow(Service::AuditLogger).to receive(:log)
+    end
+
+    it 'quarantines a never-before-seen conflicting identity without linking it to anyone' do
+      result = described_class.dismiss_conflict(
+        slack_id: 'UNEW', member_id: member.id.to_s,
+        slack_email: 'unew@example.com', slack_name: 'Duplicate Identity'
+      )
+
+      expect(result).to eq(member)
+      dismissed = SlackUser.unscoped.find_by(slack_id: 'UNEW')
+      expect(dismissed).to have_attributes(
+        member_id: nil,
+        invalidation_reason: Service::SlackUserSync::MANUAL_REASSIGNMENT_REASON
+      )
+      expect(Service::AuditLogger).to have_received(:log).with(
+        hash_including(event_type: 'slack_identity_conflict_dismissed', resource_id: member.id)
+      )
+    end
+
+    it 'unlinks and quarantines an existing identity that was already linked to someone' do
+      other_member = create(:member, email: 'other@example.com')
+      identity = SlackUser.create!(member: other_member, slack_id: 'USTRAY', slack_email: other_member.email)
+
+      described_class.dismiss_conflict(slack_id: 'USTRAY', member_id: member.id.to_s)
+
+      expect(SlackUser.unscoped.find(identity.id)).to have_attributes(
+        member_id: nil,
+        invalidation_reason: Service::SlackUserSync::MANUAL_REASSIGNMENT_REASON
+      )
+    end
+
+    it 'raises when the member does not exist' do
+      expect do
+        described_class.dismiss_conflict(slack_id: 'UNEW', member_id: BSON::ObjectId.new.to_s)
+      end.to raise_error(Mongoid::Errors::DocumentNotFound)
+    end
+  end
+
   describe '.sanitized_slack_user_attributes' do
     it 'sanitizes Slack-sourced fields before atomic persistence' do
       attributes = described_class.sanitized_slack_user_attributes(

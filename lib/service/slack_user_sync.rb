@@ -371,6 +371,56 @@ module Service
       member
     end
 
+    # Admin-driven resolution: the member keeps their currently-linked
+    # identity, and the conflicting slack_id is permanently quarantined so it
+    # stops being offered or re-flagged -- without needing anything done in
+    # Slack itself.
+    def self.dismiss_conflict(slack_id:, member_id:, slack_email: nil, slack_name: nil, actor: nil)
+      slack_id = slack_id.to_s.strip
+      raise Error::UnprocessableEntity.new('slack_id is required') if slack_id.blank?
+
+      member = Member.find(member_id)
+      raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: member_id }) if member.nil?
+
+      existing = SlackUser.unscoped.where(slack_id: slack_id).first
+      if existing
+        SlackUser.collection.find(_id: existing.id).update_one(
+          '$unset' => { member_id: '' },
+          '$set' => {
+            invalidated_at: Time.current,
+            invalidation_reason: MANUAL_REASSIGNMENT_REASON
+          }
+        )
+      else
+        attributes = sanitized_slack_user_attributes(
+          slack_email: slack_email.to_s,
+          name: slack_name.to_s,
+          real_name: slack_name.to_s
+        )
+        SlackUser.create!(
+          attributes.merge(
+            slack_id: slack_id,
+            invalidated_at: Time.current,
+            invalidation_reason: MANUAL_REASSIGNMENT_REASON
+          )
+        )
+      end
+
+      ::Service::AuditLogger.log(
+        log_type: 'member',
+        event_type: 'slack_identity_conflict_dismissed',
+        resource_type: 'Member',
+        resource_id: member.id,
+        subject: member,
+        actor: actor,
+        message_details: "Admin dismissed Slack identity #{slack_id} as a duplicate for #{member.fullname}; " \
+          "it will not be offered or reconciled again.",
+        slack_channel: ::Service::SlackConnector.logs_channel
+      )
+
+      member
+    end
+
     def self.resolve_member(existing:, slack_email:, slack_id:, display_name:, source:)
       linked_member = existing&.member
       if linked_member
