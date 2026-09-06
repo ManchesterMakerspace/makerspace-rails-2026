@@ -15,6 +15,8 @@ class Shop
   field :reservation_prerequisite_tool_ids, type: Array, default: []
   field :google_resource_id, type: String
   field :resource_email, type: String
+  field :floor_name, type: String, default: "1"
+  field :capacity, type: Integer, default: 10
   field :color_id, type: String, default: "1"
   field :canvas_today, type: String
   field :canvas_tomorrow, type: String
@@ -28,6 +30,8 @@ class Shop
 
   validates :name, presence: true, uniqueness: { case_sensitive: false }
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+  validates :floor_name, presence: true, inclusion: { in: %w[B 1 2] }
+  validates :capacity, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :reservation_horizon_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :max_reservation_duration_hours, numericality: { greater_than: 0 }
   validates :color_id, format: { with: /\A\d+\z/, allow_blank: true }

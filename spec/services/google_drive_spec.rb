@@ -15,4 +15,17 @@ RSpec.describe Service::GoogleDrive do
         .to raise_error(Error::UnprocessableEntity, 'Invalid signature')
     end
   end
+
+  describe '.generate_document_string' do
+    it 'resolves the documents/member_contract template instead of raising MissingTemplate' do
+      member = create(:member)
+      allow(described_class).to receive(:get_templates).and_return({ member_contract: {} })
+      allow(WickedPdf).to receive(:new).and_return(double(pdf_from_string: 'pdf-bytes'))
+
+      signature = Base64.strict_encode64('signature-bytes')
+      result = described_class.generate_document_string(:member_contract, { member: member }, signature)
+
+      expect(result).to eq('pdf-bytes')
+    end
+  end
 end

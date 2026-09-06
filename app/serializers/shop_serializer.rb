@@ -3,7 +3,7 @@ class ShopSerializer < ActiveModel::Serializer
              :max_concurrent_reservations, :reservation_horizon_days,
              :max_reservation_duration_hours, :reservation_requires_approval,
              :reservation_prerequisite_tool_ids, :reservation_prerequisite_names,
-             :color_id, :google_resource_id, :resource_email
+             :color_id, :google_resource_id, :resource_email, :floor_name, :capacity
 
   attribute :tool_count do
     object.tools.count

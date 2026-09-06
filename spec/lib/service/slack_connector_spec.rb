@@ -120,6 +120,17 @@ RSpec.describe Service::SlackConnector do
 
       expect(client).to have_received(:conversations_kick).with(channel: '#missing-channel', user: 'UADA')
     end
+
+    it 'raises a clear, actionable error naming the channel when the bot is not a member of it' do
+      client = double('Slack client')
+      allow(described_class).to receive(:client).and_return(client)
+      allow(described_class).to receive(:find_channel_id).with('#band-saw-users').and_return('CBANDSAW')
+      allow(client).to receive(:conversations_kick)
+        .and_raise(Slack::Web::Api::Errors::NotInChannel.new('not_in_channel'))
+
+      expect { described_class.kick_from_channel('#band-saw-users', 'UADA') }
+        .to raise_error(/Bot not in channel #band-saw-users/)
+    end
   end
 
   describe '.promote_to_regular' do

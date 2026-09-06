@@ -111,4 +111,49 @@ RSpec.describe Service::GoogleWorkspace do
       expect(REDIS).not_to have_received(:set)
     end
   end
+
+  describe ".ensure_resource!" do
+    let(:directory_service) { double("Google Directory service") }
+
+    before do
+      allow(described_class).to receive(:directory).and_return(directory_service)
+      allow(directory_service).to receive(:list_calendar_resources).and_return(
+        double(items: [], next_page_token: nil)
+      )
+    end
+
+    it "includes building_id, floor_name, and capacity when creating a Shop's CONFERENCE_ROOM resource" do
+      shop = create(:shop, floor_name: "2", capacity: 6)
+      created_resource = double(resource_id: "R1", resource_email: "shop@resource.calendar.google.com")
+
+      expect(directory_service).to receive(:calendar_resource) do |_customer_id, resource_object|
+        expect(resource_object.resource_category).to eq("CONFERENCE_ROOM")
+        expect(resource_object.building_id).to eq("36")
+        expect(resource_object.floor_name).to eq("2")
+        expect(resource_object.capacity).to eq(6)
+        created_resource
+      end
+
+      described_class.ensure_resource!(shop, "CONFERENCE_ROOM")
+
+      expect(shop.reload.google_resource_id).to eq("R1")
+    end
+
+    it "does not include location fields for a Tool's OTHER-category resource" do
+      tool = create(:tool)
+      created_resource = double(resource_id: "R2", resource_email: "tool@resource.calendar.google.com")
+
+      expect(directory_service).to receive(:calendar_resource) do |_customer_id, resource_object|
+        expect(resource_object.resource_category).to eq("OTHER")
+        expect(resource_object.building_id).to be_nil
+        expect(resource_object.floor_name).to be_nil
+        expect(resource_object.capacity).to be_nil
+        created_resource
+      end
+
+      described_class.ensure_resource!(tool, "OTHER")
+
+      expect(tool.reload.google_resource_id).to eq("R2")
+    end
+  end
 end

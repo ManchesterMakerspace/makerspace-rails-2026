@@ -365,7 +365,8 @@ module Service
           Google::Apis::AdminDirectoryV1::CalendarResource.new(
             resource_id: record.id.to_s,
             resource_name: record.name,
-            resource_category: category
+            resource_category: category,
+            **location_attributes_for(record, category)
           )
         )
 
@@ -374,6 +375,19 @@ module Service
           resource_email: resource.resource_email
         )
         resource
+      end
+
+      # Google's Admin SDK requires building_id/floor_name/capacity when
+      # creating a CONFERENCE_ROOM resource (Shops), but not for OTHER
+      # (Tools) -- Tools have no location fields on their model at all.
+      def location_attributes_for(record, category)
+        return {} unless category.to_s == "CONFERENCE_ROOM"
+
+        {
+          building_id: ENV["GOOGLE_BUILDING_ID"].presence || "36",
+          floor_name:  record.floor_name,
+          capacity:    record.capacity
+        }
       end
 
       def label_background_for(record)

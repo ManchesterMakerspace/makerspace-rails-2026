@@ -17,7 +17,8 @@ Rails.application.configure do
   config.cache_store = :redis_cache_store, {
     url: ENV["REDIS_URL"],
     expires_in: 1.hour,
-    namespace: "cache"
+    namespace: "cache",
+    ssl_params: { verify_mode: OpenSSL::SSL::VERIFY_NONE }
   }
 
   if ENV['GMAIL_USERNAME'].present?

@@ -119,7 +119,7 @@ module Service
       end
 
       document = ApplicationController.new.render_to_string(
-        "documents/#{document_name.to_s}.html.erb",
+        "documents/#{document_name.to_s}",
         locals: full_locals,
         layout: false,
         encoding: "UTF-8"
