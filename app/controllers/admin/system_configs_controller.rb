@@ -31,6 +31,10 @@ class Admin::SystemConfigsController < AdminController
     'reservation_token',
     # Security settings
     'devise_timeout_minutes',
+    # Job schedule
+    SystemConfig::CHANNEL_CACHE_REFRESH_DAY,
+    SystemConfig::CARD_EXPIRATION_CHECK_DAY,
+    SystemConfig::GARBAGE_COLLECT_DAY,
   ].freeze
 
   ALL_EDITABLE_KEYS = (FLAG_KEYS + SETTING_KEYS).freeze
@@ -90,6 +94,12 @@ class Admin::SystemConfigsController < AdminController
       reservation_token: SystemConfig.get('reservation_token') || '',
     }
 
+    job_schedule = {
+      channel_cache_refresh_day: SystemConfig.get(SystemConfig::CHANNEL_CACHE_REFRESH_DAY) || '1',
+      card_expiration_check_day:       SystemConfig.get(SystemConfig::CARD_EXPIRATION_CHECK_DAY)       || '1',
+      garbage_collect_day:             SystemConfig.get(SystemConfig::GARBAGE_COLLECT_DAY)             || '1',
+    }
+
     render json: {
       flags:     flags,
       jobs:      jobs,
@@ -98,6 +108,7 @@ class Admin::SystemConfigsController < AdminController
       totp:      totp,
       security:  security,
       reservation: reservation,
+      job_schedule: job_schedule,
     }, status: :ok
   end
 
@@ -192,6 +203,10 @@ class Admin::SystemConfigsController < AdminController
     when 'card_expiration_check' then CardExpirationCheckJob.perform_later
     when 'reservation_canvas_rebuild'
       ReservationSlackCanvasRebuildJob.perform_later
+    when 'member_provisioning_reconciliation'
+      MemberProvisioningReconciliationJob.perform_later
+    when 'volunteer_event_reminder'
+      VolunteerEventReminderJob.perform_later
     end
 
     render json: { message: "#{job_key} enqueued successfully" }, status: :ok
