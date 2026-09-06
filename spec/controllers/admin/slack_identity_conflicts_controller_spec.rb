@@ -43,6 +43,29 @@ RSpec.describe Admin::SlackIdentityConflictsController, type: :controller do
     end
   end
 
+  describe "POST #dismiss" do
+    it "dismisses the conflicting identity and returns the member" do
+      allow(Service::SlackUserSync).to receive(:dismiss_conflict)
+        .with(slack_id: 'UNEW', member_id: member.id.to_s, slack_email: 'unew@example.com', slack_name: 'Duplicate', actor: admin)
+        .and_return(member)
+
+      post :dismiss, params: {
+        slack_id: 'UNEW', member_id: member.id.to_s, slack_email: 'unew@example.com', slack_name: 'Duplicate'
+      }, format: :json
+
+      expect(response).to have_http_status(200)
+      parsed = JSON.parse(response.body)
+      expect(parsed['member_id']).to eq(member.id.to_s)
+      expect(parsed['message']).to include('UNEW')
+    end
+
+    it "requires slack_id and member_id" do
+      post :dismiss, params: { slack_id: 'UNEW' }, format: :json
+
+      expect(response).to have_http_status(422)
+    end
+  end
+
   describe "authorization" do
     it "rejects a non-admin, non-board member" do
       sign_in member

@@ -239,6 +239,7 @@ Rails.application.routes.draw do
         resources :slack_identity_conflicts, only: [:index] do
           collection do
             post :reassign
+            post :dismiss
           end
         end
         resources :templates, only: [:index] do
