@@ -234,7 +234,9 @@ RSpec.describe Service::SlackUserSync do
 
     it 'reports a conflict without writing anything' do
       member = create(:member, email: 'shared@example.com')
-      SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email)
+      SlackUser.create!(
+        member: member, slack_id: 'UACTIVE', slack_email: member.email, real_name: 'Real Account'
+      )
 
       allow(client).to receive(:users_list).and_return(
         'ok' => true,
@@ -248,7 +250,8 @@ RSpec.describe Service::SlackUserSync do
         hash_including(
           slack_id: 'UDUPLICATE',
           member_id: member.id.to_s,
-          conflicting_slack_id: 'UACTIVE'
+          conflicting_slack_id: 'UACTIVE',
+          conflicting_slack_name: 'Real Account'
         )
       )
       expect(SlackUser.where(slack_id: 'UDUPLICATE')).not_to exist

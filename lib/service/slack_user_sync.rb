@@ -302,6 +302,7 @@ module Service
             member_id: member.id.to_s,
             member_name: member.fullname,
             conflicting_slack_id: conflict.slack_id,
+            conflicting_slack_name: conflict.real_name.presence || conflict.name,
             conflicting_slack_email: conflict.slack_email
           }
         end
