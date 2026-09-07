@@ -16,10 +16,12 @@ task :invoice_review => :environment do
         base_url = Rails.configuration.x.app_base_url
         member = Member.find(member_id)
         "<#{base_url}/members/#{member.id}|#{member.fullname}>"
+      rescue Mongoid::Errors::DocumentNotFound
+        "(deleted member #{member_id})"
       end
 
       def build_member_list(invoice_list)
-        uniq_members = invoice_list.distinct(:member_id)
+        uniq_members = invoice_list.distinct(:member_id).compact
         uniq_members.map do |member_id|
           invoice_count = invoice_list.where(member_id: member_id).size
           url = build_member_url(member_id)
