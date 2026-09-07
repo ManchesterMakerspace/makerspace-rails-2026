@@ -428,7 +428,15 @@ module Service
         member_id: member.id
       }
       record = SlackUser.find_by(slack_id: slack_id)
-      record ? record.set(attributes) : SlackUser.create!(attributes.merge(slack_id: slack_id))
+      return record.set(attributes) if record
+
+      conflict = ::Service::SlackUserSync.active_identity_conflict(member)
+      if conflict
+        ::Service::SlackUserSync.report_identity_conflict(member, slack_id, conflict, 'member_provisioning')
+        return
+      end
+
+      SlackUser.create!(attributes.merge(slack_id: slack_id))
     end
 
     def google_permission_emails(folder_id, adequate_roles)
