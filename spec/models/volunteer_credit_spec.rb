@@ -46,9 +46,16 @@ describe VolunteerCredit, type: :model do
       expect(VolunteerCredit.new(valid_attrs.merge(status: 'bogus'))).not_to be_valid
     end
 
-    it 'does not allow approver to be same as member when status is approved' do
-      credit = VolunteerCredit.new(valid_attrs.merge(member_id: admin.id, issued_by_id: admin.id, status: 'approved'))
+    it 'does not allow a task completion to be self-verified' do
+      credit = VolunteerCredit.new(
+        valid_attrs.merge(member_id: admin.id, issued_by_id: admin.id, status: 'approved', task_id: BSON::ObjectId.new)
+      )
       expect(credit).not_to be_valid
+    end
+
+    it 'allows event attendance credit to be self-issued (organizer attended their own event)' do
+      credit = VolunteerCredit.new(valid_attrs.merge(member_id: admin.id, issued_by_id: admin.id, status: 'approved'))
+      expect(credit).to be_valid
     end
   end
 

@@ -176,7 +176,13 @@ class VolunteerCredit
 
   private
 
+  # Only meaningful for task completions, where a member claims a task and
+  # an admin/RM verifies it -- self-verifying your own work is the actual
+  # concern. Event attendance credits (task_id nil) are legitimately
+  # self-issued whenever the organizer closing the event also attended it,
+  # which VolunteerEvent#close! does for every attendee including the closer.
   def approver_is_not_self
+    return unless task_id.present?
     if issued_by_id && issued_by_id == member_id && status == 'approved'
       errors.add(:issued_by_id, 'cannot approve their own credit')
     end
