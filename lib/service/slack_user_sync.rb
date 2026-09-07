@@ -488,6 +488,6 @@ module Service
     end
 
     private_class_method :quarantined_identity?, :resolve_member, :report_email_mismatch,
-      :active_identity_conflict, :report_identity_conflict, :normalize_email, :safe_persistence_attributes
+      :normalize_email, :safe_persistence_attributes
   end
 end

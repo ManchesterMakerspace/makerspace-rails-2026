@@ -416,6 +416,32 @@ RSpec.describe Service::MemberProvisioning do
     end
   end
 
+  describe '.reconcile_slack_member' do
+    it 'reports a conflict instead of raising when the member already has a different active Slack identity' do
+      member = create(:member, email: 'member@example.com')
+      existing_identity = SlackUser.create!(
+        slack_email: 'member@example.com',
+        slack_id: 'UOTHER',
+        name: 'other identity',
+        member_id: member.id
+      )
+      live_user = {
+        'id' => 'UNEW',
+        'name' => 'member',
+        'deleted' => false,
+        'profile' => { 'email' => member.email }
+      }
+
+      expect { described_class.reconcile_slack_member(member, live_user) }.not_to raise_error
+
+      expect(SlackUser.find_by(slack_id: 'UNEW')).to be_nil
+      expect(SlackUser.find(existing_identity.id)).to have_attributes(member_id: member.id)
+      expect(Service::AuditLogger).to have_received(:log).with(
+        hash_including(event_type: 'slack_identity_conflict', resource_id: member.id)
+      )
+    end
+  end
+
   describe '.reconcile_all!' do
     it 'revalidates Drive access when a local confirmation is at least two weeks old' do
       member = active_member_with_card

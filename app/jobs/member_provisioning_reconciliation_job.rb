@@ -3,5 +3,13 @@ class MemberProvisioningReconciliationJob < ApplicationJob
 
   def perform
     Service::MemberProvisioning.reconcile_all!
+    SystemConfig.record_run("member_provisioning_reconciliation", success: true)
+  rescue => error
+    SystemConfig.record_run("member_provisioning_reconciliation", success: false)
+    Service::ErrorReporter.notify(
+      "MemberProvisioningReconciliationJob failed",
+      context: { error: error.message }
+    )
+    raise error
   end
 end
