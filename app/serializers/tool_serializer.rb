@@ -26,6 +26,17 @@ class ToolSerializer < ActiveModel::Serializer
     object.shop.try(:name)
   end
 
+  # Sensitive (e.g. lock combo) -- only present for privileged members,
+  # checkout approvers for this tool, or a member with an active checkout on
+  # it. See Tool#notes_visible_to?.
+  attribute :notes, if: :notes_visible? do
+    object.notes
+  end
+
+  def notes_visible?
+    object.notes_visible_to?(scope)
+  end
+
   attribute :prerequisite_names do
     object.prerequisites.map(&:name)
   end

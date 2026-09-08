@@ -8,6 +8,7 @@
 #
 # Commands:
 #   /checkout @member tool-name   — tool checkout (SlackCheckoutJob)
+#   /checkout request [tool-name] — member self-service request/notes resend (SlackCheckoutRequestJob)
 #   /reserve                       — reserve a shop/tool in the current shop channel
 #   /volunteer <subcommand>       — volunteer credits/tasks (SlackVolunteerJob)
 #
@@ -19,11 +20,15 @@ class Slack::CommandsController < ApplicationController
   def checkout
     text = params[:text].to_s.strip
 
+    if text.split(/\s+/, 2).first&.downcase == 'request'
+      return handle_checkout_request(text)
+    end
+
     parts = text.split(/\s+/, 2)
     if parts.length < 2
       render json: {
         response_type: 'ephemeral',
-        text: 'Usage: `/checkout @member tool-name` or `/checkout email@example.com tool-name`'
+        text: 'Usage: `/checkout @member tool-name`, `/checkout email@example.com tool-name`, or `/checkout request [tool-name]`'
       } and return
     end
 
@@ -87,6 +92,21 @@ class Slack::CommandsController < ApplicationController
   end
 
   private
+
+  # /checkout request [tool-name] -- member self-service, distinct from the
+  # admin/approver-driven `/checkout @member tool-name` above. No arguments
+  # lists eligible tools; a tool name requests a new checkout, or re-sends
+  # the notes DM if the member already has an active checkout on it.
+  def handle_checkout_request(text)
+    tool_name = text.split(/\s+/, 2)[1].to_s.strip.presence
+
+    SlackCheckoutRequestJob.perform_later(params.to_unsafe_h.stringify_keys.merge('tool_name' => tool_name))
+
+    render json: {
+      response_type: 'ephemeral',
+      text: tool_name ? "Processing your request for *#{tool_name}*..." : 'Looking up eligible tools...'
+    }
+  end
 
   # Verify the request actually came from Slack using signing secret
   def verify_slack_signature

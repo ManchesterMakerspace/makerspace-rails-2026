@@ -30,6 +30,19 @@ class ToolCheckout
     tool_name = self.tool.name
     approver_name = self.approved_by.try(:fullname) || "an admin"
     message = "You have been checked out on *#{tool_name}* in *#{shop_name}* by #{approver_name}. You are now approved to use this tool."
+    message += "\n\n*Notes:* #{self.tool.notes}" if self.tool.notes.present?
+    ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
+  end
+
+  # Re-send just the notes DM (e.g. /checkout request <tool> for a member
+  # who already has an active checkout) -- a no-op if there's nothing to send.
+  def send_notes_slack_notification
+    return if tool.notes.blank?
+
+    slack_user = SlackUser.find_by(member_id: self.member_id)
+    return if slack_user.nil? || member.direct_notifications_suppressed?
+
+    message = "*Notes for #{tool.name}:* #{tool.notes}"
     ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
   end
 

@@ -6,6 +6,10 @@ class Tool
   field :wiki_url, type: String
   field :gdrive_id, type: String
   field :description, type: String
+  # Sensitive/private info (e.g. lock combo) -- only surfaced to privileged
+  # members, checkout approvers for this tool, and members with an active
+  # checkout on it. See Tool#notes_visible_to? and ToolSerializer.
+  field :notes, type: String
   field :disabled, type: Boolean, default: false
   field :allow_pending, type: Boolean, default: false
   field :announce, type: Boolean, default: false
@@ -59,6 +63,18 @@ class Tool
   def allow_pending
     value = read_attribute(:allow_pending)
     value.nil? ? false : value
+  end
+
+  # Mirrors ApplicationController#can_approve_checkout_for_tool?, plus a
+  # member with a currently active (non-revoked) checkout -- an open,
+  # not-yet-approved request does not grant visibility (see #189).
+  def notes_visible_to?(member)
+    return false if member.nil?
+    return true if member.role.in?(%w[admin board_member])
+    return true if member.manages_shop?(shop_id)
+    return true if CheckoutApprover.find_by(member_id: member.id)&.can_approve_tool?(self)
+
+    ToolCheckout.where(member_id: member.id, tool_id: id, revoked_at: nil).exists?
   end
 
   def effective_reservation_prerequisite_ids
