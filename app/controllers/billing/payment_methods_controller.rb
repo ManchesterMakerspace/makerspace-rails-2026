@@ -74,23 +74,31 @@ class Billing::PaymentMethodsController < BillingController
     render json: payment_method, serializer: BraintreeService::PaymentMethodSerializer, adapter: :attributes, status: 200 and return
   end
 
+  # Read-only precheck so the client can warn (or guide toward switching
+  # subscriptions to a different payment method first) before the member
+  # commits to a delete that will cancel a membership/rental out from under
+  # them -- mirrors the matching logic in destroy without side effects.
+  def cancellation_impact
+    payment_method_token = params[:id]
+    raise Error::Braintree::MissingCustomer.new unless current_member.customer_id
+    # Only allowed to check own payment methods
+    ::BraintreeService::PaymentMethod.find_payment_method_for_customer(@gateway, payment_method_token, current_member.customer_id)
+
+    affected = subscriptions_using_payment_method(payment_method_token)
+
+    render json: {
+      membership: affected.any? { |a| a[:resource_class] == 'member' },
+      rentalCount: affected.count { |a| a[:resource_class] == 'rental' }
+    } and return
+  end
+
   def destroy
     payment_method_token = params[:id]
     raise Error::Braintree::MissingCustomer.new unless current_member.customer_id
     # Only allowed to modify own payment methods
     payment_method = ::BraintreeService::PaymentMethod.find_payment_method_for_customer(@gateway, payment_method_token, current_member.customer_id)
 
-    sub_ids = []
-
-    unless current_member.subscription_id.nil?
-      membership_sub = ::BraintreeService::Subscription.get_subscription(@gateway, current_member.subscription_id)
-      sub_ids.push(membership_sub.id) if membership_sub.payment_method_token == payment_method_token
-    end
-
-    current_member.rentals.each do |rental|
-      rental_sub = ::BraintreeService::Subscription.get_subscription(@gateway, rental.subscription_id) unless rental.subscription_id.nil?
-      sub_ids.push(rental_sub.id) if rental_sub.payment_method_token == payment_method_token
-    end
+    sub_ids = subscriptions_using_payment_method(payment_method_token).map { |a| a[:subscription_id] }
 
     result = ::BraintreeService::PaymentMethod.delete_payment_method(@gateway, payment_method.token)
     raise Error::Braintree::Result.new(result) unless result.success?
@@ -116,6 +124,26 @@ class Billing::PaymentMethodsController < BillingController
   end
 
   private
+
+  # Subscriptions (membership and/or rentals) currently billed to this
+  # specific payment method token -- these are the ones that would be
+  # cancelled if it were deleted.
+  def subscriptions_using_payment_method(payment_method_token)
+    affected = []
+
+    unless current_member.subscription_id.nil?
+      membership_sub = ::BraintreeService::Subscription.get_subscription(@gateway, current_member.subscription_id)
+      affected.push(resource_class: 'member', subscription_id: membership_sub.id) if membership_sub.payment_method_token == payment_method_token
+    end
+
+    current_member.rentals.each do |rental|
+      next if rental.subscription_id.nil?
+      rental_sub = ::BraintreeService::Subscription.get_subscription(@gateway, rental.subscription_id)
+      affected.push(resource_class: 'rental', subscription_id: rental_sub.id) if rental_sub.payment_method_token == payment_method_token
+    end
+
+    affected
+  end
 
   def payment_method_params
     params.require(:payment_method_nonce)

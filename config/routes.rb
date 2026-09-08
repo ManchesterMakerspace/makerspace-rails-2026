@@ -113,7 +113,11 @@ Rails.application.routes.draw do
       resources :documents, only: [:show], defaults: { format: :html }
 
       namespace :billing do
-        resources :payment_methods, only: [:new, :create, :show, :index, :destroy]
+        resources :payment_methods, only: [:new, :create, :show, :index, :destroy] do
+          member do
+            get :cancellation_impact
+          end
+        end
         resources :subscriptions, only: [:show, :update, :destroy] do
           member do
             get :cancellation_impact
