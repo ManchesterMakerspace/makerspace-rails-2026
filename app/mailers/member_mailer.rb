@@ -6,8 +6,11 @@ class MemberMailer < ApplicationMailer
       member_firstname: @member.firstname,
       url: base_url
     ))
-    template = @google_doc_content ? "shared/google_doc_email" : "member_mailer/password_changed"
-    mail to: @member.email, subject: "Your Manchester Makerspace password has been changed", template_path: "", template_name: template
+    if @google_doc_content
+      mail to: @member.email, subject: "Your Manchester Makerspace password has been changed", template_path: "shared", template_name: "google_doc_email"
+    else
+      mail to: @member.email, subject: "Your Manchester Makerspace password has been changed"
+    end
   end
 
   def admin_password_reset(member_email, password_token)
