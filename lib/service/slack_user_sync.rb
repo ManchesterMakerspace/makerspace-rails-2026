@@ -93,6 +93,8 @@ module Service
         ::Service::SlackProfileSync.sync_one(member)
       end
 
+      reconcile_provisioning(member, slack_user_data, slack_id: slack_id)
+
       member
     end
 
@@ -226,6 +228,8 @@ module Service
               puts "[Slack Sync] CREATED #{real_name} (#{slack_id}) -> Member #{member.fullname}"
               created_count += 1
             end
+
+            reconcile_provisioning(member, slack_user, slack_id: slack_id)
           rescue => e
             puts "[Slack Sync] FAILED #{real_name} (#{slack_id}) — #{e.message}"
             Service::ErrorReporter.notify(e, context: { slack_id: slack_id, phase: 'bulk sync per-user' })
@@ -487,7 +491,27 @@ module Service
       email_owner ? attributes.except(:slack_email) : attributes
     end
 
-    private_class_method :quarantined_identity?, :resolve_member, :report_email_mismatch,
+    # Sync only links the SlackUser record to a Member -- it doesn't touch
+    # the Member-level provisioning tracking fields (slack_joined_at,
+    # slack_full_member_at, etc.) that the admin UI's status icon reads, so a
+    # bulk-synced member's icon would otherwise report "unknown" forever even
+    # though the link is real (#243). Reusing reconcile_slack_member here
+    # (the same call invite_slack makes for an already-confirmed member)
+    # populates those fields from the live Slack user data sync already
+    # fetched, with no extra API calls. promote: false because promoting a
+    # guest to full member is a deliberate provisioning action, not something
+    # a sync pass should trigger as a side effect.
+    #
+    # Rescues internally: the SlackUser link above already succeeded, so a
+    # failure here is reported on its own rather than counted as a sync
+    # failure for this user.
+    def self.reconcile_provisioning(member, live_user, slack_id:)
+      ::Service::MemberProvisioning.reconcile_slack_member(member, live_user, promote: false, lookup: false)
+    rescue => e
+      Service::ErrorReporter.notify(e, context: { slack_id: slack_id, member_id: member.id.to_s, phase: 'sync provisioning reconcile' })
+    end
+
+    private_class_method :quarantined_identity?, :resolve_member, :report_email_mismatch, :reconcile_provisioning,
       :normalize_email, :safe_persistence_attributes
   end
 end
