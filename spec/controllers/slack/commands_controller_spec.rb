@@ -74,4 +74,39 @@ RSpec.describe Slack::CommandsController, type: :controller do
       end
     end
   end
+
+  describe "#checkout" do
+    before do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with('SLACK_SIGNING_SECRET').and_return(secret)
+    end
+
+    it "routes '/checkout request' (no tool) to SlackCheckoutRequestJob with no tool_name" do
+      sign_request!({ text: 'request' })
+      expect(SlackCheckoutRequestJob).to receive(:perform_later).with(hash_including('tool_name' => nil))
+
+      post :checkout, params: { text: 'request' }
+
+      expect(response).to have_http_status(200)
+    end
+
+    it "routes '/checkout request <tool>' to SlackCheckoutRequestJob with the tool name" do
+      sign_request!({ text: 'request Bandsaw' })
+      expect(SlackCheckoutRequestJob).to receive(:perform_later).with(hash_including('tool_name' => 'Bandsaw'))
+
+      post :checkout, params: { text: 'request Bandsaw' }
+
+      expect(response).to have_http_status(200)
+    end
+
+    it "still routes a plain '/checkout @member tool' to SlackCheckoutJob" do
+      sign_request!({ text: '@someone Bandsaw' })
+      expect(SlackCheckoutJob).to receive(:perform_later)
+      expect(SlackCheckoutRequestJob).not_to receive(:perform_later)
+
+      post :checkout, params: { text: '@someone Bandsaw' }
+
+      expect(response).to have_http_status(200)
+    end
+  end
 end

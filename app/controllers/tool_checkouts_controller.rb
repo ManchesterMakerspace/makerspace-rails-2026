@@ -21,6 +21,6 @@ class ToolCheckoutsController < ApplicationController
     end
 
     checkouts = checkouts.order_by(checked_out_at: :desc)
-    render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes
+    render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
   end
 end

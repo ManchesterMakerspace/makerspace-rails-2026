@@ -28,7 +28,7 @@ class Admin::ToolCheckoutsController < ApplicationController
     end
 
     checkouts = checkouts.order_by(checked_out_at: :desc)
-    render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes
+    render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
   end
 
   def create
@@ -72,7 +72,8 @@ class Admin::ToolCheckoutsController < ApplicationController
 
     render json: checkout.as_json(
       serializer: ToolCheckoutSerializer,
-      adapter: :attributes
+      adapter: :attributes,
+      scope: current_member
     ).merge(unmet_prerequisites: unmet.map(&:name)), adapter: :attributes
   end
 
@@ -82,7 +83,7 @@ class Admin::ToolCheckoutsController < ApplicationController
       @checkout.update_attributes!(update_params)
       @checkout.send_revocation_slack_notification if @checkout.revoked_at.present?
     end
-    render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes
+    render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
   end
 
   def destroy
@@ -107,7 +108,7 @@ class Admin::ToolCheckoutsController < ApplicationController
       slack_channel:  ::Service::SlackConnector.logs_channel
     )
 
-    render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes
+    render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
   end
 
   private

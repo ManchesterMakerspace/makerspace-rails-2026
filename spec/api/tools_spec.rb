@@ -162,6 +162,52 @@ RSpec.describe 'Tools API', type: :request do
     end
   end
 
+  describe 'PATCH /api/admin/tools/:id/notes' do
+    it 'allows an admin to set notes and logs an audit event' do
+      sign_in create(:member, :admin, :current)
+
+      patch "/api/admin/tools/#{visible_tool.id}/notes", params: { notes: 'Combo: 1-2-3' }
+
+      expect(response).to have_http_status(:ok)
+      expect(visible_tool.reload.notes).to eq('Combo: 1-2-3')
+      expect(JSON.parse(response.body)['notes']).to eq('Combo: 1-2-3')
+      audit_log = AuditLog.where(event_type: 'tool_notes_updated', resource_id: visible_tool.id).last
+      expect(audit_log).to be_present
+    end
+
+    it 'allows a checkout approver for the tool (but not a shop manager) to set notes' do
+      approver = create(:member, :current)
+      CheckoutApprover.create!(member: approver, tool_ids: [visible_tool.id.to_s])
+      sign_in approver
+
+      patch "/api/admin/tools/#{visible_tool.id}/notes", params: { notes: 'Ask Kevin for the key' }
+
+      expect(response).to have_http_status(:ok)
+      expect(visible_tool.reload.notes).to eq('Ask Kevin for the key')
+    end
+
+    it 'rejects a member with no approval rights for the tool' do
+      sign_in member
+
+      patch "/api/admin/tools/#{visible_tool.id}/notes", params: { notes: 'Should not be saved' }
+
+      expect(response).to have_http_status(:forbidden)
+      expect(visible_tool.reload.notes).to be_nil
+    end
+
+    it 'rejects a checkout approver assigned to a different tool' do
+      other_tool = Tool.create!(name: 'Table Saw', shop: shop)
+      approver = create(:member, :current)
+      CheckoutApprover.create!(member: approver, tool_ids: [other_tool.id.to_s])
+      sign_in approver
+
+      patch "/api/admin/tools/#{visible_tool.id}/notes", params: { notes: 'Should not be saved' }
+
+      expect(response).to have_http_status(:forbidden)
+      expect(visible_tool.reload.notes).to be_nil
+    end
+  end
+
   describe 'GET /api/admin/google_calendar/colors' do
     before { sign_in create(:member, :admin, :current) }
 

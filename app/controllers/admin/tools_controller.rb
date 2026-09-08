@@ -1,9 +1,10 @@
 class Admin::ToolsController < ApplicationController
   before_action :authenticate_member!
   before_action :authorize_index, only: [:index]
-  before_action :find_tool, only: [:update, :destroy]
+  before_action :find_tool, only: [:update, :destroy, :notes]
   before_action :authorize_create, only: [:create]
   before_action :authorize_manage, only: [:update, :destroy]
+  before_action :authorize_notes, only: [:notes]
   before_action :prevent_move_with_active_reservations, only: [:update]
 
   def index
@@ -45,7 +46,7 @@ class Admin::ToolsController < ApplicationController
       after_snapshot: tool.attributes
     )
 
-    render json: tool, serializer: ToolSerializer, adapter: :attributes
+    render json: tool, serializer: ToolSerializer, adapter: :attributes, scope: current_member
   end
 
   def update
@@ -69,7 +70,25 @@ class Admin::ToolsController < ApplicationController
       after_snapshot:  @tool.attributes
     )
 
-    render json: @tool, serializer: ToolSerializer, adapter: :attributes
+    render json: @tool, serializer: ToolSerializer, adapter: :attributes, scope: current_member
+  end
+
+  # Separate from #update: any checkout approver for this tool may set the
+  # notes (e.g. lock combo), not just shop managers/admins -- see #189.
+  def notes
+    before = @tool.notes
+    @tool.update_attributes!(notes: params[:notes])
+
+    ::Service::AuditLogger.log(
+      log_type:        'portal',
+      event_type:      'tool_notes_updated',
+      resource_type:   'Tool',
+      resource_id:     @tool.id,
+      actor:           current_member,
+      field_changes:   { 'notes' => [before, @tool.notes] }
+    )
+
+    render json: @tool, serializer: ToolSerializer, adapter: :attributes, scope: current_member
   end
 
   def destroy
@@ -136,6 +155,10 @@ class Admin::ToolsController < ApplicationController
   def authorize_create
     shop = Shop.find(tool_params[:shop_id])
     raise ::Error::Forbidden.new("User cannot manage this shop") unless can_manage_shop?(shop)
+  end
+
+  def authorize_notes
+    raise ::Error::Forbidden.new("User is not authorized to set notes for this tool") unless can_approve_checkout_for_tool?(@tool)
   end
 
   def authorize_manage

@@ -33,4 +33,16 @@ class ToolCheckoutSerializer < ActiveModel::Serializer
   attribute :active do
     object.active?
   end
+
+  # Sensitive (e.g. lock combo) -- only present when the viewer is entitled
+  # per Tool#notes_visible_to? (an active, approved checkout holder, a
+  # checkout approver for the tool, or a privileged member). An open,
+  # not-yet-approved request or a revoked checkout does not qualify.
+  attribute :tool_notes, if: :tool_notes_visible? do
+    object.tool.notes
+  end
+
+  def tool_notes_visible?
+    object.tool.present? && object.tool.notes_visible_to?(scope)
+  end
 end
