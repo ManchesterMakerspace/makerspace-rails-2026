@@ -89,6 +89,21 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
         dates = parsed.map { |l| Time.parse(l['createdAt']) }
         expect(dates).to eq(dates.sort.reverse)
       end
+
+      it 'paginates results and reports the unpaginated total via the total-items header' do
+        stub_const('FastQuery::ITEMS_PER_PAGE', 1)
+
+        get :index, params: { page_num: 0 }, format: :json
+        expect(response.headers['total-items']).to eq('2')
+        first_page = JSON.parse(response.body)
+        expect(first_page.length).to eq(1)
+        expect(first_page.first['eventType']).to eq('portal_setting_changed')
+
+        get :index, params: { page_num: 1 }, format: :json
+        second_page = JSON.parse(response.body)
+        expect(second_page.length).to eq(1)
+        expect(second_page.first['eventType']).to eq('member_updated')
+      end
     end
 
     context 'as board member' do
