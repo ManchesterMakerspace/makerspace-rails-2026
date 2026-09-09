@@ -2,7 +2,12 @@ class ReservationFeeService
   class << self
     def snapshot(attributes, reservation = nil)
       resources = attributes[:reservation_scope] == "shop" ? Shop.where(id: attributes[:shop_id]).to_a : Tool.where(:id.in => attributes[:tool_ids]).to_a
-      resources.map do |resource|
+      history = Array(reservation&.fee_rule_snapshot)
+      if reservation
+        original_ids = reservation.reservation_scope == "shop" ? [reservation.shop_id] : Array(reservation.tool_ids)
+        history += original_ids.map { |id| { "resourceId" => id.to_s, "rules" => [] } }
+      end
+      selected = resources.map do |resource|
         existing = saved_resource_rules(resource, reservation)
         next existing if existing
         rules = Array(resource.duration_fees).map do |raw|
@@ -12,6 +17,7 @@ class ReservationFeeService
         end
         { "resourceId" => resource.id.to_s, "rules" => rules }
       end
+      (history + selected).uniq { |entry| entry["resourceId"] }
     end
 
     def saved_resource_rules(resource, reservation)
@@ -127,6 +133,11 @@ class ReservationFeeService
       reservation.update!(fee_snapshot: lines, status: amount.positive? ? "unpaid" : (reservation.approval_reasons.present? ? "pending" : "approved"))
     end
 
+    def linked_invoices(reservation)
+      ids = ([reservation.invoice] + Array(reservation.previous_invoice_ids)).compact.map(&:to_s).uniq
+      Invoice.where(:id.in => ids).to_a
+    end
+
     def reconcile!(reservation)
       changed = false
       ReservationService.send(:with_shop_lock, reservation.shop_id) do
@@ -134,19 +145,23 @@ class ReservationFeeService
         invoice = reservation.fee_invoice || Invoice.where(reservation_id: reservation.id.to_s).order_by(created_at: :desc).first
         return unless invoice
         reservation.set(invoice: invoice.id.to_s) if reservation.invoice.blank?
-        if reservation.blocking? && !invoice.settled && reservation.status != "unpaid"
+        invoices = linked_invoices(reservation)
+        paid_credit = invoices.select(&:settled).sum { |item| BigDecimal(item.amount.to_s) }
+        fully_paid = invoice.settled && paid_credit >= BigDecimal(total(reservation.fee_snapshot).to_s)
+        overdue = invoices.reject(&:settled).any? { |item| item.due_date && item.due_date < Time.current }
+        if reservation.blocking? && !fully_paid && reservation.status != "unpaid"
           reservation.update!(status: "unpaid")
           changed = true
           ReservationService.send(:enqueue_external_syncs, reservation)
         end
         if reservation.status == "unpaid"
-          if invoice.settled
+          if fully_paid
             # Payment after the start cannot reclaim capacity already released.
-            status = invoice.settled_at >= reservation.start_at ? "cancelled" : (reservation.approval_reasons.present? ? "pending" : "approved")
+            status = invoices.select(&:settled).map(&:settled_at).max >= reservation.start_at ? "cancelled" : (reservation.approval_reasons.present? ? "pending" : "approved")
             reservation.update!(status: status)
             changed = true
             ReservationService.send(:enqueue_external_syncs, reservation)
-          elsif invoice.due_date < Time.current && reservation.start_at <= Time.current
+          elsif overdue && reservation.start_at <= Time.current
             reservation.update!(status: "cancelled", decision_note: "Unpaid reservation cancelled at start time")
             changed = true
             ReservationService.send(:enqueue_external_syncs, reservation)

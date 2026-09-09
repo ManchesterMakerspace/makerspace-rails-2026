@@ -144,6 +144,52 @@ RSpec.describe ReservationFeeService do
     expect(difference.reload.settled).to eq(false)
   end
 
+  it "reconciles a reversed historical payment against total fee credit" do
+    reservation = book
+    original = reservation.fee_invoice
+    original.update!(settled_at: Time.current)
+    described_class.reconcile!(reservation)
+    changes = attributes.merge(end_at: start_at + 16.hours)
+    preview = ReservationService.preview(member: member, attributes: changes, reservation: reservation)
+    ReservationService.update!(reservation: reservation, attributes: changes.merge(fee_confirmation: preview[:feeConfirmation]))
+    difference = reservation.fee_invoice
+    expect(difference.amount).to eq(10)
+    difference.update!(settled_at: Time.current)
+    described_class.reconcile!(reservation)
+    expect(reservation.reload.status).to eq("approved")
+
+    original.update!(settled_at: nil)
+    expect {
+      ReservationInvoiceSyncJob.perform_now(original.id.to_s)
+    }.to have_enqueued_job(ReservationFeeNotificationJob).with(reservation.id.to_s)
+    expect(reservation.reload.status).to eq("unpaid")
+    expect(described_class.amount_due(reservation.fee_snapshot, reservation)).to eq(30)
+    expect(Invoice.where(reservation_id: reservation.id.to_s).count).to eq(2)
+    original.update!(settled_at: Time.current)
+    ReservationInvoiceSyncJob.perform_now(original.id.to_s)
+    expect(reservation.reload.status).to eq("approved")
+  end
+
+  [0, 10].each do |original_price|
+    it "retains a removed tool's original #{original_price} fee when re-added" do
+      rule = { invoice_option_id: option.id.to_s, minimum_hours: 4, maximum_hours: 4 }
+      retained = create(:tool, shop: shop, reservable: true, max_reservation_duration_hours: 24)
+      removed = create(:tool, shop: shop, reservable: true, max_reservation_duration_hours: 24,
+        duration_fees: original_price.zero? ? [] : [rule])
+      [retained, removed].each { |tool| create(:tool_checkout, member: member, tool: tool) }
+      input = attributes.merge(reservation_scope: "tools", tool_ids: [retained.id.to_s, removed.id.to_s], end_at: start_at + 4.hours)
+      reservation = book(input)
+      removal = input.merge(tool_ids: [retained.id.to_s])
+      preview = ReservationService.preview(member: member, attributes: removal, reservation: reservation)
+      ReservationService.update!(reservation: reservation, attributes: removal.merge(fee_confirmation: preview[:feeConfirmation]))
+      removed.update!(duration_fees: [rule])
+      option.update!(amount: 99)
+      snapshot = described_class.snapshot(input, reservation.reload)
+      lines = described_class.quote(resources: [removed], start_at: start_at, end_at: start_at + 4.hours, full_day: false, rule_snapshot: snapshot)
+      expect(described_class.total(lines)).to eq(original_price)
+    end
+  end
+
   it "restores approval state on payment without reviving a cancelled reservation" do
     reservation = book
     invoice = reservation.fee_invoice

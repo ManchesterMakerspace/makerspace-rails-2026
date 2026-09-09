@@ -786,3 +786,8 @@ Legacy reservations with no fee-rule snapshot keep an empty saved rule set for e
 Full-day fee rules take precedence over all hourly rules for full-day bookings, including hourly rules lasting 24 hours or longer. Payment reconciliation resolves the current attached invoice only after locking and reloading the reservation, so settlement of a previous invoice cannot approve a newer unpaid difference charge.
 
 Reservation invoice IDs, fee snapshots, and Slack notification timestamps are serialized only for the reservation owner or an authorized shop manager/admin/board viewer. The member payment endpoint independently requires invoice ownership before entering the payment workflow; management settlement and Braintree callbacks retain their separate authorized paths.
+
+
+Fee-rule snapshots retain historical resource entries when tools are removed, including explicit fee-free entries for legacy tools. Re-adding a tool reuses its first-inclusion rules and prices. Reconciliation sums paid credit across current and historical invoices; reversing an earlier payment makes an active reservation unpaid if its fee is no longer covered, and repaying before the start restores approval. Reconciliation does not create duplicate debt or revive cancelled reservations.
+
+Member reservation details show approval explanations whenever approval reasons remain, including unpaid rows. Existing full-day reservations retain date-only mode when their resource maximum is subsequently lowered. Resource editors disable adding duration fees until an enabled positive-price fee is loaded, and offer Retry after catalog failures.

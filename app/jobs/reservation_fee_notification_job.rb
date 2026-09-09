@@ -8,6 +8,9 @@ class ReservationFeeNotificationJob < ApplicationJob
     return unless user && !reservation.member.direct_notifications_suppressed?
 
     invoice = reservation.fee_invoice
+    if invoice&.settled && ReservationFeeService.amount_due(reservation.fee_snapshot, reservation).positive?
+      invoice = ReservationFeeService.linked_invoices(reservation).find { |item| !item.settled } || invoice
+    end
     zone = ReservationService::ZONE
     resources = reservation.reservation_scope == "shop" ? reservation.shop.name : reservation.tools.map(&:name).join(", ")
     message = "Reservation: #{reservation.title} — #{resources}\n" \

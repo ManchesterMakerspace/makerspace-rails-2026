@@ -5,6 +5,6 @@ class ReservationInvoiceSyncJob < ApplicationJob
   def perform(invoice_id)
     invoice = Invoice.where(id: invoice_id).first
     return unless invoice
-    Reservation.any_of({ invoice: invoice_id }, { id: invoice.reservation_id }).each { |reservation| ReservationFeeService.reconcile!(reservation) }
+    Reservation.any_of({ invoice: invoice_id }, { previous_invoice_ids: invoice_id }, { id: invoice.reservation_id }).each { |reservation| ReservationFeeService.reconcile!(reservation) }
   end
 end
