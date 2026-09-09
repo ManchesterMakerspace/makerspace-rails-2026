@@ -79,9 +79,20 @@ module Service
       { status: :processed, google: google_result, slack: slack_result }
     end
 
-    def provision_google(member, raise_errors: false)
+    # force: bypasses the permanent-failure block below -- used by the admin's
+    # manual "Resend Google Drive Invite" action, since a person may have since
+    # created a Google account or an admin may have relaxed the sharing policy.
+    # Automatic callers (the hourly reconciliation sweep, on-demand provisioning
+    # from membership/card changes) never pass this, so a member blocked here
+    # simply stops being retried instead of failing -- and getting audit-logged
+    # -- every hour forever.
+    def provision_google(member, raise_errors: false, force: false)
       initialize_tracking(member)
       ensure_google_provisioning_allowed!(member)
+      if !force && member.google_provisioning_blocked_at.present?
+        return { status: :blocked, reason: member.google_provisioning_blocked_reason }
+      end
+
       member.set(google_last_attempt_at: Time.current, google_last_error: nil)
       revoke_previous_google_permissions(member)
 
@@ -103,13 +114,34 @@ module Service
         label: 'Google Transfer Share'
       )
 
-      member.set(google_last_error: nil)
+      member.set(google_last_error: nil, google_provisioning_blocked_at: nil, google_provisioning_blocked_reason: nil)
       results
     rescue => error
       member.set(google_last_attempt_at: Time.current, google_last_error: error_message(error))
+      newly_blocked = member.google_provisioning_blocked_at.blank? && permanent_google_error?(error)
+      if permanent_google_error?(error)
+        member.set(google_provisioning_blocked_at: Time.current, google_provisioning_blocked_reason: error_message(error))
+      end
       audit_failure(member, 'google_drive_provisioning_failed', error)
+      if newly_blocked
+        audit(
+          member,
+          'google_drive_provisioning_blocked',
+          "Google Drive provisioning will no longer retry automatically for #{member.fullname} -- " \
+          "#{error_message(error)}. An admin must resolve the underlying issue and use " \
+          "'Resend Google Drive Invite' to retry."
+        )
+      end
       raise error if raise_errors
       { status: :error, error: error }
+    end
+
+    # cannotInviteNonGoogleUser means the target email has no Google account --
+    # governed entirely by the destination Shared Drive/Workspace's own sharing
+    # policy, not anything this app controls. Retrying hourly can never succeed
+    # on its own, so this is the one error worth permanently blocking on.
+    def permanent_google_error?(error)
+      error.is_a?(Google::Apis::ClientError) && error.message.to_s.include?('cannotInviteNonGoogleUser')
     end
 
     def reconcile_slack_member(member, live_user = nil, promote: true, lookup: true)
@@ -256,7 +288,9 @@ module Service
         google_drive: {
           status: google_status(member, current: current),
           resources_access_confirmed_at: iso8601(member.google_resources_access_confirmed_at),
-          transfer_access_confirmed_at: iso8601(member.google_transfer_access_confirmed_at)
+          transfer_access_confirmed_at: iso8601(member.google_transfer_access_confirmed_at),
+          provisioning_blocked_at: iso8601(member.google_provisioning_blocked_at),
+          provisioning_blocked_reason: member.google_provisioning_blocked_reason
         }
       }
     end
@@ -487,6 +521,8 @@ module Service
     end
 
     def google_revalidation_due?(member)
+      return false if member.google_provisioning_blocked_at.present?
+
       cutoff = 2.weeks.ago
       [
         member.google_resources_access_confirmed_at,
@@ -605,6 +641,7 @@ module Service
 
     def google_status(member, current:)
       return 'blocked' if blocked_status?(member)
+      return 'permanently_failed' if member.google_provisioning_blocked_at.present?
       return 'unknown' unless current
       resources = member.google_resources_access_confirmed_at.present?
       transfer = member.google_transfer_access_confirmed_at.present?

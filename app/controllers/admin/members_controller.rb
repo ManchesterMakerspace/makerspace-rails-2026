@@ -122,7 +122,7 @@ class Admin::MembersController < AdminController
   # POST /api/admin/members/:id/invite_google_drive
   # Re-sends a Google Drive folder invite to the member.
   def invite_google_drive
-    ::Service::MemberProvisioning.provision_google(@member, raise_errors: true)
+    ::Service::MemberProvisioning.provision_google(@member, raise_errors: true, force: true)
     render json: {}, status: 204 and return
   rescue Error::NotAllowed => e
     render json: { message: e.message }, status: :unprocessable_content and return

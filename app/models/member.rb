@@ -85,6 +85,8 @@ class Member
   field :google_previous_email, type: String
   field :google_last_attempt_at, type: Time
   field :google_last_error, type: String
+  field :google_provisioning_blocked_at, type: Time
+  field :google_provisioning_blocked_reason, type: String
 
   search_in :email, :lastname
   search_in :firstname, index: :_firstname_keywords

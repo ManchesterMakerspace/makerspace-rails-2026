@@ -414,6 +414,64 @@ RSpec.describe Service::MemberProvisioning do
         described_class.provision_google(member, raise_errors: true)
       end.to raise_error(Error::NotAllowed, /usable fob/)
     end
+
+    it 'permanently blocks and stops retrying when the target email has no Google account' do
+      member = active_member_with_card
+      allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
+      allow(ENV).to receive(:[]).with('RESOURCES_FOLDER').and_return('resources')
+      allow(ENV).to receive(:[]).with('GOOGLE_TRANSFER_SHARE').and_return('transfer')
+      drive = double
+      allow(Service::GoogleDrive).to receive(:load_gdrive).and_return(drive)
+      allow(drive).to receive(:list_permissions)
+        .and_return(double(permissions: [], next_page_token: nil))
+      not_google_user = Google::Apis::ClientError.new(
+        "cannotInviteNonGoogleUser: Forbidden. User message: \"Sorry, you cannot share with " \
+        "#{member.email} because they do not have a Google Account.\""
+      )
+      allow(drive).to receive(:create_permission).and_raise(not_google_user)
+
+      result = described_class.provision_google(member)
+
+      expect(result[:status]).to eq(:error)
+      member.reload
+      expect(member.google_provisioning_blocked_at).to be_present
+      expect(member.google_provisioning_blocked_reason).to match(/cannotInviteNonGoogleUser/)
+      expect(Service::AuditLogger).to have_received(:log).with(
+        hash_including(event_type: 'google_drive_provisioning_blocked', resource_id: member.id)
+      )
+
+      # A second automatic attempt short-circuits instead of hitting the API again
+      result = described_class.provision_google(member)
+      expect(result[:status]).to eq(:blocked)
+      expect(drive).to have_received(:create_permission).once
+      expect(Service::AuditLogger).to have_received(:log).with(
+        hash_including(event_type: 'google_drive_provisioning_blocked')
+      ).once
+    end
+
+    it 'lets a forced retry bypass the block and clears it on success' do
+      member = active_member_with_card
+      member.set(
+        google_provisioning_blocked_at: 1.day.ago,
+        google_provisioning_blocked_reason: 'cannotInviteNonGoogleUser: Forbidden.'
+      )
+      allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
+      allow(ENV).to receive(:[]).with('RESOURCES_FOLDER').and_return('resources')
+      allow(ENV).to receive(:[]).with('GOOGLE_TRANSFER_SHARE').and_return('transfer')
+      drive = double
+      allow(Service::GoogleDrive).to receive(:load_gdrive).and_return(drive)
+      allow(drive).to receive(:list_permissions)
+        .and_return(double(permissions: [], next_page_token: nil))
+      allow(drive).to receive(:create_permission)
+
+      result = described_class.provision_google(member, force: true)
+
+      expect(result[:resources][:status]).to eq(:created)
+      expect(drive).to have_received(:create_permission).twice
+      member.reload
+      expect(member.google_provisioning_blocked_at).to be_nil
+      expect(member.google_provisioning_blocked_reason).to be_nil
+    end
   end
 
   describe '.reconcile_slack_member' do
@@ -468,6 +526,22 @@ RSpec.describe Service::MemberProvisioning do
         provisioning_email: member.email,
         google_resources_access_confirmed_at: 1.day.ago,
         google_transfer_access_confirmed_at: 13.days.ago
+      )
+      allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
+      allow(described_class).to receive(:slack_users_by_email).and_return({})
+      allow(described_class).to receive(:reconcile_slack_member)
+      expect(described_class).not_to receive(:provision_google)
+
+      described_class.reconcile_all!
+    end
+
+    it 'never retries a member permanently blocked from Drive provisioning' do
+      member = active_member_with_card
+      member.set(
+        provisioning_initialized_at: 1.day.ago,
+        provisioning_email: member.email,
+        google_provisioning_blocked_at: 1.day.ago,
+        google_provisioning_blocked_reason: 'cannotInviteNonGoogleUser: Forbidden.'
       )
       allow(ENV).to receive(:[]).with('GDRIVE_INVITES_ENABLED').and_return('true')
       allow(described_class).to receive(:slack_users_by_email).and_return({})
