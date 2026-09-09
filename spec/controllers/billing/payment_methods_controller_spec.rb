@@ -178,6 +178,8 @@ RSpec.describe Billing::PaymentMethodsController, type: :controller do
       expect(response).to have_http_status(200)
       expect(parsed_response['membership']).to eq(false)
       expect(parsed_response['rentalCount']).to eq(0)
+      expect(parsed_response['membershipSubscriptionId']).to be_nil
+      expect(parsed_response['rentalSubscriptionIds']).to eq([])
     end
 
     it "reports membership impact when the payment method matches the member's subscription" do
@@ -192,6 +194,8 @@ RSpec.describe Billing::PaymentMethodsController, type: :controller do
       expect(response).to have_http_status(200)
       expect(parsed_response['membership']).to eq(true)
       expect(parsed_response['rentalCount']).to eq(0)
+      expect(parsed_response['membershipSubscriptionId']).to eq("member_sub_1")
+      expect(parsed_response['rentalSubscriptionIds']).to eq([])
     end
 
     it "reports rental impact when the payment method matches a rental's subscription" do
@@ -206,6 +210,8 @@ RSpec.describe Billing::PaymentMethodsController, type: :controller do
       expect(response).to have_http_status(200)
       expect(parsed_response['membership']).to eq(false)
       expect(parsed_response['rentalCount']).to eq(1)
+      expect(parsed_response['membershipSubscriptionId']).to be_nil
+      expect(parsed_response['rentalSubscriptionIds']).to eq(["rental_sub_1"])
     end
 
     it "raises error if no customer" do
