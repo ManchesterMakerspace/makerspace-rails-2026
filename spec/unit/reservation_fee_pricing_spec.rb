@@ -36,6 +36,14 @@ RSpec.describe ReservationFeeService do
   it("does not apply a full-day rule to a timed booking") { expect(described_class.total(quote(24))).to eq(60) }
   it("charges multiple full days") { expect(described_class.total(quote(48, full_day: true))).to eq(30) }
 
+  [24, 48].each do |hourly_duration|
+    it "prefers a daily rule over a #{hourly_duration}-hour rule configured first" do
+      rules.unshift(invoice_option_id: "hourly", minimum_hours: 24, maximum_hours: hourly_duration)
+      expect(quote(48, full_day: true)).to match([hash_including(invoiceOptionId: "daily", amount: 30, units: 2)])
+      expect(quote(48)).to match([hash_including(invoiceOptionId: "hourly", unitHours: hourly_duration)])
+    end
+  end
+
   it "chooses only the longest overlapping hourly duration" do
     rules << { invoice_option_id: "daily", minimum_hours: 8, maximum_hours: 8 }
     expect(quote(12)).to match([hash_including(amount: 30, units: 2, unitHours: 8)])
@@ -51,6 +59,12 @@ RSpec.describe ReservationFeeService do
 
   it "keeps an originally free resource free after a new fee is added" do
     reservation = double(fee_rule_snapshot: [{ "resourceId" => "shop", "rules" => [] }])
+    expect(quote(12, reservation: reservation)).to eq([])
+  end
+
+  it "quotes retained legacy resources as free even without an explicit snapshot argument" do
+    reservation = double(fee_rule_snapshot: [], reservation_scope: "shop", shop_id: "shop")
+    expect(InvoiceOption).not_to receive(:where)
     expect(quote(12, reservation: reservation)).to eq([])
   end
 

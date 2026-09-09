@@ -14,7 +14,7 @@ class Billing::TransactionsController < BillingController
 
       if transaction_params[:invoice_id]
         invoice = Invoice.find(transaction_params[:invoice_id])
-        raise ::Mongoid::Errors::DocumentNotFound.new(Invoice, { id: transaction_params[:invoice_id] }) if invoice.nil?
+        raise ::Mongoid::Errors::DocumentNotFound.new(Invoice, { id: transaction_params[:invoice_id] }) if invoice.nil? || invoice.member_id != current_member.id
       else 
         invoice_option = InvoiceOption.find(transaction_params[:invoice_option_id])
         raise ::Mongoid::Errors::DocumentNotFound.new(InvoiceOption, { id: transaction_params[:invoice_option_id] }) if invoice_option.nil?

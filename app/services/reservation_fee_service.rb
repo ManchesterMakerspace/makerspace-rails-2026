@@ -3,7 +3,7 @@ class ReservationFeeService
     def snapshot(attributes, reservation = nil)
       resources = attributes[:reservation_scope] == "shop" ? Shop.where(id: attributes[:shop_id]).to_a : Tool.where(:id.in => attributes[:tool_ids]).to_a
       resources.map do |resource|
-        existing = Array(reservation&.fee_rule_snapshot).find { |entry| entry["resourceId"] == resource.id.to_s }
+        existing = saved_resource_rules(resource, reservation)
         next existing if existing
         rules = Array(resource.duration_fees).map do |raw|
           rule = raw.to_h.stringify_keys
@@ -14,19 +14,34 @@ class ReservationFeeService
       end
     end
 
+    def saved_resource_rules(resource, reservation)
+      return unless reservation
+
+      existing = Array(reservation.fee_rule_snapshot).find { |entry| entry["resourceId"] == resource.id.to_s }
+      return existing if existing
+
+      # Legacy bookings have no snapshot entries. Their retained resources were
+      # booked fee-free; only newly added resources may adopt current fee rules.
+      retained_ids = reservation.reservation_scope == "shop" ? [reservation.shop_id] : Array(reservation.tool_ids)
+      return unless retained_ids.map(&:to_s).include?(resource.id.to_s)
+
+      { "resourceId" => resource.id.to_s, "rules" => [] }
+    end
+    private :saved_resource_rules
+
     def quote(resources:, start_at:, end_at:, full_day:, reservation: nil, rule_snapshot: nil)
       return [] unless start_at && end_at && end_at > start_at
 
       hours = duration_hours(start_at, end_at, full_day)
       resources.filter_map do |resource|
-        saved = Array(rule_snapshot || reservation&.fee_rule_snapshot).find { |entry| entry["resourceId"] == resource.id.to_s }
+        saved = Array(rule_snapshot).find { |entry| entry["resourceId"] == resource.id.to_s } || saved_resource_rules(resource, reservation)
         candidates = Array(saved ? saved["rules"] : resource.duration_fees).map { |rule| rule.to_h.stringify_keys }
         rule = candidates.select do |fee|
           day = ActiveModel::Type::Boolean.new.cast(fee["full_day"])
           day ? full_day : hours >= fee["minimum_hours"].to_f
         end.max_by do |fee|
           day = ActiveModel::Type::Boolean.new.cast(fee["full_day"])
-          [day ? 24 : fee["maximum_hours"].to_f, day ? 24 : fee["minimum_hours"].to_f]
+          [day ? 1 : 0, day ? 24 : fee["maximum_hours"].to_f, day ? 24 : fee["minimum_hours"].to_f]
         end
         next unless rule
 
@@ -113,13 +128,12 @@ class ReservationFeeService
     end
 
     def reconcile!(reservation)
-      invoice = reservation.fee_invoice || Invoice.where(reservation_id: reservation.id.to_s).order_by(created_at: :desc).first
-      reservation.set(invoice: invoice.id.to_s) if invoice && reservation.invoice.blank?
-      return unless invoice
       changed = false
       ReservationService.send(:with_shop_lock, reservation.shop_id) do
         reservation.reload
-        invoice.reload
+        invoice = reservation.fee_invoice || Invoice.where(reservation_id: reservation.id.to_s).order_by(created_at: :desc).first
+        return unless invoice
+        reservation.set(invoice: invoice.id.to_s) if reservation.invoice.blank?
         if reservation.blocking? && !invoice.settled && reservation.status != "unpaid"
           reservation.update!(status: "unpaid")
           changed = true

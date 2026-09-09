@@ -778,3 +778,11 @@ Reservation creation, approval, denial, cancellation, edits (including title-onl
 
 
 Moving an existing reservation's start earlier must satisfy the resource's current minimum advance notice and same-day prohibition at the time of the edit. Preview reports a policy violation and saving rejects it without changing the original booking. This applies to both shop and tool reservations; the existing admin/board and managed-shop RM exemptions still apply. An earlier start exactly at the rounded notice cutoff is allowed.
+
+
+Legacy reservations with no fee-rule snapshot keep an empty saved rule set for every retained shop/tool when materially edited. Adding or switching to a new resource snapshots that resource's current fees, without retroactively charging retained resources. The first material edit persists the explicit empty rules; no data migration is required.
+
+
+Full-day fee rules take precedence over all hourly rules for full-day bookings, including hourly rules lasting 24 hours or longer. Payment reconciliation resolves the current attached invoice only after locking and reloading the reservation, so settlement of a previous invoice cannot approve a newer unpaid difference charge.
+
+Reservation invoice IDs, fee snapshots, and Slack notification timestamps are serialized only for the reservation owner or an authorized shop manager/admin/board viewer. The member payment endpoint independently requires invoice ownership before entering the payment workflow; management settlement and Braintree callbacks retain their separate authorized paths.

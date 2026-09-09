@@ -23,6 +23,41 @@ RSpec.describe ReservationFeeService do
     ReservationService.create!(member: member, attributes: input.merge(fee_confirmation: quote[:feeConfirmation]))
   end
 
+  it "preserves a legacy shop's fee-free rules through a material edit" do
+    legacy = create(:reservation, member: member, shop: shop, reservation_scope: "shop", tool_ids: [],
+      start_at: start_at, end_at: start_at + 4.hours, fee_rule_snapshot: [])
+    changes = attributes.merge(end_at: start_at + 8.hours)
+    preview = ReservationService.preview(member: member, attributes: changes, reservation: legacy)
+    expect(preview[:feeTotal]).to eq(0)
+    ReservationService.update!(reservation: legacy, attributes: changes)
+    expect(legacy.reload.fee_rule_snapshot).to eq([{ "resourceId" => shop.id.to_s, "rules" => [] }])
+    expect(legacy.invoice).to be_nil
+    expect(Invoice.where(reservation_id: legacy.id.to_s)).to be_empty
+  end
+
+  it "keeps retained legacy tools free but snapshots current fees for newly added tools" do
+    rule = { invoice_option_id: option.id.to_s, minimum_hours: 4, maximum_hours: 4 }
+    retained = create(:tool, shop: shop, reservable: true, max_reservation_duration_hours: 24, duration_fees: [rule])
+    added = create(:tool, shop: shop, reservable: true, max_reservation_duration_hours: 24, duration_fees: [rule])
+    [retained, added].each { |tool| create(:tool_checkout, member: member, tool: tool) }
+    legacy = create(:reservation, member: member, shop: shop, reservation_scope: "tools", tool_ids: [retained.id.to_s],
+      start_at: start_at, end_at: start_at + 4.hours, fee_rule_snapshot: [])
+    changes = attributes.merge(reservation_scope: "tools", tool_ids: [retained.id.to_s, added.id.to_s], end_at: start_at + 8.hours)
+    preview = ReservationService.preview(member: member, attributes: changes, reservation: legacy)
+    expect(preview[:feeLines]).to contain_exactly(hash_including(resourceId: added.id.to_s, amount: 20))
+    ReservationService.update!(reservation: legacy, attributes: changes.merge(fee_confirmation: preview[:feeConfirmation]))
+    expect(legacy.reload.fee_rule_snapshot.find { |entry| entry["resourceId"] == retained.id.to_s }["rules"]).to eq([])
+    expect(legacy.fee_invoice.amount).to eq(20)
+  end
+
+  it "uses current rules when a legacy reservation moves to a different shop" do
+    legacy_shop = create(:shop, reservable: true)
+    legacy = create(:reservation, member: member, shop: legacy_shop, reservation_scope: "shop", tool_ids: [],
+      start_at: start_at, end_at: start_at + 4.hours, fee_rule_snapshot: [])
+    preview = ReservationService.preview(member: member, attributes: attributes, reservation: legacy)
+    expect(preview[:feeTotal]).to eq(30)
+  end
+
   it "charges three four-hour units for twelve hours and only the daily fee for a full day" do
     quote = ReservationService.preview(member: member, attributes: attributes)
     expect(quote[:feeTotal]).to eq(30)
@@ -90,6 +125,23 @@ RSpec.describe ReservationFeeService do
       quote = described_class.quote(resources: [shop], start_at: start, end_at: finish, full_day: true)
       expect(described_class.total(quote)).to eq(15)
     end
+  end
+
+  it "reconciles the current difference invoice after acquiring the shop lock" do
+    reservation = book
+    original = reservation.fee_invoice
+    original.update!(settled_at: Time.current)
+    difference = Invoice.create!(member: member, resource_id: member.id.to_s, resource_class: "fee",
+      amount: 10, due_date: start_at - 4.hours, reservation_id: reservation.id.to_s)
+    allow(ReservationService).to receive(:with_shop_lock).with(reservation.shop_id) do |&block|
+      # Simulate an edit completing while reconciliation waits for the lock.
+      Reservation.find(reservation.id).set(invoice: difference.id.to_s, status: "unpaid")
+      block.call
+    end
+    described_class.reconcile!(reservation)
+    expect(reservation.reload.invoice).to eq(difference.id.to_s)
+    expect(reservation.status).to eq("unpaid")
+    expect(difference.reload.settled).to eq(false)
   end
 
   it "restores approval state on payment without reviving a cancelled reservation" do

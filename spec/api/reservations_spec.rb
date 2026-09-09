@@ -139,6 +139,26 @@ RSpec.describe "Reservations API", type: :request do
     end
   end
 
+  it "hides billing fields from unrelated availability viewers while preserving owner and manager access" do
+    owner = create(:member, :current)
+    booking = create(:reservation, member: owner, shop: shop, reservation_scope: "tools", tool_ids: [tool.id.to_s],
+      start_at: start_at, end_at: start_at + 1.hour, status: "unpaid", invoice: BSON::ObjectId.new.to_s,
+      fee_snapshot: [{ "amount" => 10 }], notified_at: "123.456")
+    day = start_at.in_time_zone(ReservationService::ZONE).to_date.iso8601
+    get "/api/reservations/availability", params: { date: day, shop_id: shop.id.to_s }
+    expect(response).to have_http_status(:ok)
+    row = JSON.parse(response.body).find { |item| item["id"] == booking.id.to_s }
+    expect(row).not_to have_key("invoice")
+    expect(row).not_to have_key("feeSnapshot")
+    expect(row).not_to have_key("notifiedAt")
+    [owner, create(:member, :current, role: "resource_manager", resource_manager_shop_ids: [shop.id.to_s])].each do |viewer|
+      sign_in viewer
+      get "/api/reservations/availability", params: { date: day, shop_id: shop.id.to_s }
+      row = JSON.parse(response.body).find { |item| item["id"] == booking.id.to_s }
+      expect(row["invoice"]).to eq(booking.invoice)
+    end
+  end
+
   it "previews and creates an eligible tool reservation" do
     post "/api/reservations/preview", params: reservation_params
 
