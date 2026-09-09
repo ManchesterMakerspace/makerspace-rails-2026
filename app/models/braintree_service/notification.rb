@@ -200,6 +200,13 @@ No automated actions have been taken at this time.")
   end
 
   def self.process_subscription_charge_failure(invoice, last_transaction)
+    # Record which transaction this failed attempt was, so it can still be
+    # linked back to this invoice (member, plan, description) when viewed
+    # later -- a plain update, not Invoice.claim_for_transaction, since a
+    # failed attempt never settles anything and must not touch transaction_id
+    # itself (that would block a later successful attempt from claiming it).
+    invoice.update(last_failed_transaction_id: last_transaction.id)
+
     slack_member = SlackUser.find_by(member_id: invoice.member.id)
     member_notified = slack_member ? "The member has been notified via Slack and email as well." : "Unable to notify member via Slack. Reach out to member to resolve."
     unless slack_member.nil?

@@ -404,6 +404,30 @@ RSpec.describe BraintreeService::Notification, type: :model do
       )
     end
 
+    it "links a failed charge to the invoice without touching transaction_id" do
+      allow(BraintreeService::Notification).to receive(:enque_message)
+      allow(BillingMailer).to receive_message_chain(:failed_payment, :deliver_later)
+
+      BraintreeService::Notification.send(:process_subscription_charge_failure, invoice, transaction)
+
+      invoice.reload
+      expect(invoice.last_failed_transaction_id).to eq(transaction.id)
+      expect(invoice.transaction_id).to be_nil
+    end
+
+    it "still lets a later successful charge claim the invoice after a prior failure" do
+      allow(BraintreeService::Notification).to receive(:enque_message)
+      allow(BillingMailer).to receive_message_chain(:failed_payment, :deliver_later)
+      BraintreeService::Notification.send(:process_subscription_charge_failure, invoice, pd_transaction)
+      invoice.reload
+      expect(invoice.last_failed_transaction_id).to eq(pd_transaction.id)
+
+      claimed = Invoice.claim_for_transaction(invoice.id, transaction.id)
+
+      expect(claimed).to be_present
+      expect(claimed.transaction_id).to eq(transaction.id)
+    end
+
     it "does not audit settlement when invoice processing is delayed" do
       allow(BraintreeService::Notification).to receive(:enque_message)
       allow(invoice).to receive(:submit_for_settlement)

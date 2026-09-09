@@ -77,6 +77,15 @@ RSpec.describe BraintreeService::Transaction, type: :model do
 
         expect(normalized.invoice).to be_nil
       end
+
+      it "resolves via last_failed_transaction_id for a failed attempt" do
+        invoice = create(:invoice, last_failed_transaction_id: "failed-id")
+        failed_transaction = build(:transaction, id: "failed-id")
+
+        normalized = BraintreeService::Transaction.normalize(gateway, failed_transaction)
+
+        expect(normalized.invoice).to eq(invoice)
+      end
     end
 
     describe "#get_transactions" do

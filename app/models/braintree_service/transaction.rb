@@ -130,7 +130,7 @@ class BraintreeService::Transaction < Braintree::Transaction
   def invoice
     return @invoice if defined?(@invoice)
 
-    Invoice.find_by({ transaction_id: id })
+    Invoice.find_by({ transaction_id: id }) || Invoice.find_by({ last_failed_transaction_id: id })
   end
 
   private
@@ -143,7 +143,8 @@ class BraintreeService::Transaction < Braintree::Transaction
     # the result via the invoice= writer so the plain id-based lookup above
     # doesn't run instead and silently find nothing.
     transaction_id = norm_transaction.refunded_transaction_id || norm_transaction.id
-    norm_transaction.invoice = Invoice.find_by(transaction_id: transaction_id)
+    norm_transaction.invoice = Invoice.find_by(transaction_id: transaction_id) ||
+      Invoice.find_by(last_failed_transaction_id: transaction_id)
     norm_transaction
   end
 end
