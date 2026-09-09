@@ -215,6 +215,30 @@ RSpec.describe Billing::PaymentMethodsController, type: :controller do
       expect(response).to have_http_status(403)
       expect(parsed_response['message']).to match(/customer/i)
     end
+
+    it "does not raise when the member's subscription_id is orphaned in Braintree" do
+      member.update_attributes!(subscription_id: "stale_sub")
+      allow(BraintreeService::PaymentMethod).to receive(:find_payment_method_for_customer).with(gateway, "foobar", "bar").and_return(payment_method)
+      allow(BraintreeService::Subscription).to receive(:get_subscription).with(gateway, "stale_sub").and_raise(Braintree::NotFoundError)
+
+      get :cancellation_impact, params: { id: "foobar" }, format: :json
+      parsed_response = JSON.parse(response.body)
+      expect(response).to have_http_status(200)
+      expect(parsed_response['membership']).to eq(false)
+      expect(parsed_response['rentalCount']).to eq(0)
+    end
+
+    it "does not raise when a rental's subscription_id is orphaned in Braintree" do
+      create(:rental, member: member, subscription_id: "stale_rental_sub")
+      allow(BraintreeService::PaymentMethod).to receive(:find_payment_method_for_customer).with(gateway, "foobar", "bar").and_return(payment_method)
+      allow(BraintreeService::Subscription).to receive(:get_subscription).with(gateway, "stale_rental_sub").and_raise(Braintree::NotFoundError)
+
+      get :cancellation_impact, params: { id: "foobar" }, format: :json
+      parsed_response = JSON.parse(response.body)
+      expect(response).to have_http_status(200)
+      expect(parsed_response['membership']).to eq(false)
+      expect(parsed_response['rentalCount']).to eq(0)
+    end
   end
 
   describe "DELETE #destroy" do
@@ -258,12 +282,22 @@ RSpec.describe Billing::PaymentMethodsController, type: :controller do
       expect(parsed_response['message']).to match(/service unavailable/i)
     end
 
-    it "raises error if no customer" do 
+    it "raises error if no customer" do
       sign_in non_customer
       delete :destroy, params: { id: "foobar" }, format: :json
       parsed_response = JSON.parse(response.body)
       expect(response).to have_http_status(403)
       expect(parsed_response['message']).to match(/customer/i)
+    end
+
+    it "still deletes the payment method when the member's subscription_id is orphaned in Braintree" do
+      member.update_attributes!(subscription_id: "stale_sub")
+      allow(BraintreeService::PaymentMethod).to receive(:find_payment_method_for_customer).with(gateway, "foobar", "bar").and_return(payment_method)
+      allow(BraintreeService::Subscription).to receive(:get_subscription).with(gateway, "stale_sub").and_raise(Braintree::NotFoundError)
+      allow(BraintreeService::PaymentMethod).to receive(:delete_payment_method).with(gateway, payment_method.token).and_return(success_result)
+
+      delete :destroy, params: { id: "foobar" }, format: :json
+      expect(response).to have_http_status(204)
     end
   end
 end
