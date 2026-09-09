@@ -46,7 +46,7 @@ RSpec.describe 'notification suppression', type: :mailer do
       expect(message.perform_deliveries).to be(true)
     end
 
-    xit 'sends password changed security notices to secondary household members' do
+    it 'sends password changed security notices to secondary household members' do
       primary = create(:member)
       secondary = create(:member, groupName: primary.id.to_s)
 
