@@ -3,6 +3,7 @@ class Slack::InteractionsController < ApplicationController
   before_action :verify_slack_signature
 
   def create
+    slack_request = nil
     payload = JSON.parse(params[:payload].to_s)
     return render json: {} unless payload["type"] == "view_submission" &&
       payload.dig("view", "callback_id") == "reservation_submit"
@@ -35,6 +36,10 @@ class Slack::InteractionsController < ApplicationController
       reasons = reservation.effective_approval_details.map { |detail| "• #{detail['message']}" }
       message += "\nApproval required because:\n#{reasons.join("\n")}"
     end
+    slack_request = {
+      method: "chat.postMessage",
+      arguments: { channel: payload.dig("user", "id"), text: message }
+    }
     Service::SlackConnector.send_slack_message(message, payload.dig("user", "id"))
     render json: { response_action: "clear" }
   rescue ::Error::CustomError => error
@@ -48,7 +53,7 @@ class Slack::InteractionsController < ApplicationController
   rescue => error
     Rails.logger.error(
       "[SlackReservationError] action=create member_id=#{member&.id} " \
-      "error=#{error.class}: #{error.message}"
+      "error=#{Service::SlackConnector.format_api_error(error, request: slack_request)}"
     )
     Honeybadger.notify(error) if defined?(Honeybadger)
     render json: {
