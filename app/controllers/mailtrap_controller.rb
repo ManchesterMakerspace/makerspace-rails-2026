@@ -60,9 +60,14 @@ class MailtrapController < ApplicationController
 
       mailtrap_event = MailtrapEvent.create!(mailtrap_attributes(event).merge(member_id: member.id))
 
-      # Link to MailtrapMessage if one was captured at send time (subject, mailer context)
-      if mailtrap_event.message_id.present?
-        msg = MailtrapMessage.where(message_id: mailtrap_event.message_id).first
+      # Link to the MailtrapMessage captured at send time (subject, mailer
+      # context) via our own app_message_id custom variable, echoed back by
+      # Mailtrap here -- NOT mailtrap_event.message_id, which is Mailtrap's
+      # own internal tracking id and never matches the SMTP Message-ID we
+      # stored the subject under.
+      app_message_id = event.dig('custom_variables', 'app_message_id')
+      if app_message_id.present?
+        msg = MailtrapMessage.where(message_id: app_message_id).first
         mailtrap_event.set(mailtrap_message_id: msg.id) if msg
       end
 
