@@ -124,6 +124,18 @@ RSpec.describe Admin::MembersController, type: :controller do
         expect(response).to have_http_status(422)
         expect(JSON.parse(response.body)["message"]).to match(/usable fob/i)
       end
+
+      it "forces past a permanent-failure block so an admin can manually retry" do
+        Card.create!(member: member, uid: SecureRandom.hex(6))
+        member.reload
+        expect(Service::MemberProvisioning).to receive(:provision_google)
+          .with(member, raise_errors: true, force: true)
+          .and_return({ status: :processed })
+
+        post :invite_google_drive, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(204)
+      end
     end
 
     describe "PUT #update" do
