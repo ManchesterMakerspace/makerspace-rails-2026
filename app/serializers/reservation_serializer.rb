@@ -1,5 +1,5 @@
 class ReservationSerializer < ActiveModel::Serializer
-  attributes :id, :title, :member_id, :member_name, :shop_id, :shop_name,
+  attributes :full_day, :invoice, :fee_snapshot, :notified_at, :id, :title, :member_id, :member_name, :shop_id, :shop_name,
              :reservation_scope, :tool_ids, :tool_names, :start_at, :end_at,
              :status, :approval_reasons, :decision_note, :decided_by_id,
              :decided_by_name, :decided_at, :source, :calendar_event_id,

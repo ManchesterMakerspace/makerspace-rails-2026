@@ -3,7 +3,7 @@ class ReservationService
   LOCK_TTL_SECONDS = 15
 
   class << self
-    def preview(member:, attributes:, reservation: nil)
+    def preview(member:, attributes:, reservation: nil, actor: member)
       normalized = normalize(attributes, reservation)
       if reservation && !material_edit?(reservation, normalized)
         errors = normalized[:title].blank? ? ["Title is required"] : []
@@ -16,11 +16,15 @@ class ReservationService
           requiresApproval: reservation.status == "pending",
           approvalReasons: reasons,
           approvalDetails: reservation.effective_approval_details,
-          maximumDurationHours: ((reservation.end_at - reservation.start_at) / 1.hour).to_f
+          feeLines: reservation.fee_snapshot,
+          feeTotal: ReservationFeeService.amount_due(reservation.fee_snapshot, reservation),
+          feeConfirmation: ReservationFeeService.confirmation(reservation.fee_snapshot, reservation),
+          feeWarning: ReservationFeeService.overdue_fees?(member) ? "Pay all overdue shop fee invoices before making or changing a fee-incurring reservation" : nil,
+          maximumDurationHours: ReservationFeeService.duration_hours(reservation.start_at, reservation.end_at, reservation.full_day)
         }
       end
 
-      evaluation = evaluate(member: member, attributes: normalized, reservation: reservation)
+      evaluation = evaluate(member: member, attributes: normalized, reservation: reservation, actor: actor)
       {
         eligible: evaluation[:errors].empty? && evaluation[:conflicts].empty?,
         errors: evaluation[:errors],
@@ -29,14 +33,17 @@ class ReservationService
         requiresApproval: evaluation[:approval_reasons].present?,
         approvalReasons: evaluation[:approval_reasons],
         approvalDetails: evaluation[:approval_details],
+        feeLines: evaluation[:fee_lines] || [],
+        feeTotal: ReservationFeeService.amount_due(evaluation[:fee_lines] || [], reservation),
+        feeConfirmation: ReservationFeeService.confirmation(evaluation[:fee_lines] || [], reservation),
         maximumDurationHours: evaluation[:maximum_duration_hours]
       }
     end
 
-    def create!(member:, attributes:, source: "portal")
+    def create!(member:, attributes:, source: "portal", actor: member)
       normalized = normalize(attributes)
-      with_shop_lock(normalized[:shop_id]) do
-        evaluation = evaluate(member: member, attributes: normalized)
+      with_shop_locks([normalized[:shop_id], "member-#{member.id}"]) do
+        evaluation = evaluate(member: member, attributes: normalized, actor: actor)
         raise_for_evaluation!(
           evaluation,
           member: member,
@@ -44,29 +51,41 @@ class ReservationService
           operation: "create"
         )
 
+        ReservationFeeService.confirm!(evaluation[:fee_lines] || [], attributes)
         reservation = Reservation.create!(
           normalized.merge(
             member_id: member.id,
-            status: evaluation[:approval_reasons].present? ? "pending" : "approved",
+            status: evaluation[:approval_reasons].present? ? "pending" : (evaluation[:fee_lines].present? ? "unpaid" : "approved"),
             approval_reasons: evaluation[:approval_reasons],
             approval_details: evaluation[:approval_details],
+            fee_rule_snapshot: evaluation[:fee_rule_snapshot] || [],
             source: source,
             calendar_sync_status: "pending"
           )
         )
+        begin
+          ReservationFeeService.apply!(reservation, evaluation[:fee_lines] || []) if evaluation[:fee_lines].present?
+        rescue
+          reservation.destroy unless Invoice.where(reservation_id: reservation.id.to_s).exists?
+          raise
+        end
         enqueue_external_syncs(reservation)
         reservation
       end
     end
 
-    def update!(reservation:, attributes:)
+    def update!(reservation:, attributes:, actor: reservation.member)
       unless reservation.blocking? && reservation.end_at > Time.current
         raise ::Error::UnprocessableEntity.new("Only future active reservations can be changed")
       end
 
       normalized = normalize(attributes, reservation)
-      previous_canvas_targets = slack_canvas_targets(reservation)
-      with_shop_locks([reservation.shop_id, normalized[:shop_id]]) do
+      with_shop_locks([reservation.shop_id, normalized[:shop_id], "member-#{reservation.member_id}"]) do
+        reservation.reload
+        previous_canvas_targets = slack_canvas_targets(reservation)
+        unless reservation.blocking? && reservation.end_at > Time.current
+          raise ::Error::UnprocessableEntity.new("Only future active reservations can be changed")
+        end
         unless material_edit?(reservation, normalized)
           reservation.update!(
             title: normalized[:title],
@@ -80,7 +99,7 @@ class ReservationService
           next reservation
         end
 
-        evaluation = evaluate(member: reservation.member, attributes: normalized, reservation: reservation)
+        evaluation = evaluate(member: reservation.member, attributes: normalized, reservation: reservation, actor: actor)
         raise_for_evaluation!(
           evaluation,
           member: reservation.member,
@@ -89,11 +108,13 @@ class ReservationService
           reservation: reservation
         )
 
-        reservation.update!(
+        ReservationFeeService.confirm!(evaluation[:fee_lines] || [], attributes, reservation)
+        reservation.assign_attributes(
           normalized.merge(
-            status: evaluation[:approval_reasons].present? ? "pending" : "approved",
+            status: evaluation[:approval_reasons].present? ? "pending" : (evaluation[:fee_lines].present? ? "unpaid" : "approved"),
             approval_reasons: evaluation[:approval_reasons],
             approval_details: evaluation[:approval_details],
+            fee_rule_snapshot: evaluation[:fee_rule_snapshot] || [],
             decided_by_id: nil,
             decided_at: nil,
             decision_note: nil,
@@ -101,6 +122,12 @@ class ReservationService
             calendar_sync_error: nil
           )
         )
+        raise Mongoid::Errors::Validations.new(reservation) unless reservation.valid?
+        if evaluation[:fee_lines].present? || reservation.invoice.present?
+          ReservationFeeService.apply!(reservation, evaluation[:fee_lines] || [])
+        else
+          reservation.save!
+        end
         enqueue_external_syncs(
           reservation,
           previous_canvas_targets: previous_canvas_targets
@@ -129,34 +156,46 @@ class ReservationService
     end
 
     def approve!(reservation:, actor:, note: nil)
-      raise ::Error::UnprocessableEntity.new("Only pending reservations can be approved") unless reservation.status == "pending"
-      raise ::Error::Forbidden.new("You cannot approve your own reservation") if reservation.member_id.to_s == actor.id.to_s
+      with_shop_lock(reservation.shop_id) do
+        reservation.reload
+        raise ::Error::UnprocessableEntity.new("Only pending reservations can be approved") unless reservation.status == "pending" || (reservation.status == "unpaid" && reservation.approval_reasons.present?)
+        raise ::Error::Forbidden.new("You cannot approve your own reservation") if reservation.member_id.to_s == actor.id.to_s
 
-      reservation.update!(
-        status: "approved",
-        decision_note: note,
-        decided_by_id: actor.id,
-        decided_at: Time.current,
-        calendar_sync_status: "pending",
-        calendar_sync_error: nil
-      )
-      enqueue_external_syncs(reservation)
-      reservation
+        reservation.assign_attributes(
+          status: reservation.fee_invoice && !reservation.fee_invoice.settled ? "unpaid" : "approved",
+          **(reservation.invoice.present? || reservation.fee_snapshot.present? ? { approval_reasons: [], approval_details: [] } : {}),
+          decision_note: note,
+          decided_by_id: actor.id,
+          decided_at: Time.current,
+          calendar_sync_status: "pending",
+          calendar_sync_error: nil
+        )
+        if reservation.fee_snapshot.present? || reservation.invoice.present?
+          ReservationFeeService.apply!(reservation, reservation.fee_snapshot, approved: true)
+        else
+          reservation.save!
+        end
+        enqueue_external_syncs(reservation)
+        reservation
+      end
     end
 
     def deny!(reservation:, actor:, note: nil)
-      raise ::Error::UnprocessableEntity.new("Only pending reservations can be denied") unless reservation.status == "pending"
+      with_shop_lock(reservation.shop_id) do
+        reservation.reload
+        raise ::Error::UnprocessableEntity.new("Only pending reservations can be denied") unless reservation.status == "pending" || (reservation.status == "unpaid" && reservation.approval_reasons.present?)
 
-      reservation.update!(
-        status: "denied",
-        decision_note: note,
-        decided_by_id: actor.id,
-        decided_at: Time.current,
-        calendar_sync_status: "pending",
-        calendar_sync_error: nil
-      )
-      enqueue_external_syncs(reservation)
-      reservation
+        reservation.update!(
+          status: "denied",
+          decision_note: note,
+          decided_by_id: actor.id,
+          decided_at: Time.current,
+          calendar_sync_status: "pending",
+          calendar_sync_error: nil
+        )
+        enqueue_external_syncs(reservation)
+        reservation
+      end
     end
 
     private
@@ -164,6 +203,7 @@ class ReservationService
     def normalize(attributes, reservation = nil)
       source = attributes.to_h.symbolize_keys
       {
+        full_day: source.key?(:full_day) ? ActiveModel::Type::Boolean.new.cast(source[:full_day]) : !!reservation&.full_day,
         title: source[:title].presence || reservation&.title,
         shop_id: source[:shop_id].presence || reservation&.shop_id,
         reservation_scope: source[:reservation_scope].presence || reservation&.reservation_scope,
@@ -180,7 +220,7 @@ class ReservationService
       nil
     end
 
-    def evaluate(member:, attributes:, reservation: nil)
+    def evaluate(member:, attributes:, reservation: nil, actor: member)
       member.reload if member.persisted?
       errors = []
       conflicts = []
@@ -205,6 +245,34 @@ class ReservationService
       tools = attributes[:reservation_scope] == "tools" ?
         Tool.where(shop_id: shop.id, :id.in => attributes[:tool_ids]).to_a : []
       resources = attributes[:reservation_scope] == "shop" ? [shop] : tools
+      booking_window_changed = !reservation || reservation.start_at != attributes[:start_at] ||
+        reservation.shop_id.to_s != shop.id.to_s || reservation.reservation_scope != attributes[:reservation_scope] ||
+        reservation.tool_ids.map(&:to_s).sort != attributes[:tool_ids].map(&:to_s).sort
+      unless actor.role.in?(%w[admin board_member]) || actor.manages_shop?(shop)
+        if booking_window_changed && attributes[:start_at] && resources.present?
+          now = Time.current.in_time_zone(ZONE)
+          notice = resources.map(&:minimum_advance_notice_hours).max.to_f
+          cutoff = Time.at(((now + notice.hours).to_f / 30.minutes).floor * 30.minutes).in_time_zone(ZONE)
+          errors << "Minimum advance notice is #{notice} hours; earliest start is #{cutoff.strftime('%B %-d, %Y at %H:%M')}" if attributes[:start_at] < cutoff
+          if resources.any?(&:prohibit_same_day_reservations) && attributes[:start_at].in_time_zone(ZONE).to_date == now.to_date
+            errors << "Same day reservations are prohibited for this resource"
+          end
+        end
+      end
+      full_day = attributes[:full_day]
+      errors << "This resource requires full-day reservations" if resources.any?(&:reservation_full_day) && !full_day
+      if full_day && attributes[:start_at] && attributes[:end_at]
+        start_local = attributes[:start_at].in_time_zone(ZONE)
+        end_local = attributes[:end_at].in_time_zone(ZONE)
+        errors << "Full-day reservations must start on a future date" unless start_local.to_date > Time.current.in_time_zone(ZONE).to_date
+        errors << "Full-day reservations must run midnight to midnight" unless start_local == start_local.beginning_of_day && end_local == end_local.beginning_of_day
+        errors << "Full-day reservations require a maximum duration of at least 24 hours" if resources.any? { |resource| resource.max_reservation_duration_hours < 24 }
+      end
+      fee_rule_snapshot = ReservationFeeService.snapshot(attributes, reservation)
+      fee_lines = ReservationFeeService.quote(resources: resources, start_at: attributes[:start_at], end_at: attributes[:end_at], full_day: full_day, reservation: reservation, rule_snapshot: fee_rule_snapshot)
+      if (fee_lines.present? || (reservation&.fee_invoice && !reservation.fee_invoice.settled)) && ReservationFeeService.overdue_fees?(member)
+        errors << "Pay all overdue shop fee invoices before making or changing a fee-incurring reservation"
+      end
 
       errors << "Title is required" if attributes[:title].blank?
       unless board_override || member.status == 'pending' || member.active_unexpired?
@@ -245,7 +313,7 @@ class ReservationService
           errors << "Reservation is outside the allowed booking window" if start_date > today + strict_horizon
         end
 
-        duration_hours = (attributes[:end_at] - attributes[:start_at]) / 1.hour
+        duration_hours = ReservationFeeService.duration_hours(attributes[:start_at], attributes[:end_at], full_day)
         strict_duration = board_override ? 72.0 : resources.map(&:max_reservation_duration_hours).min.to_f
         errors << "Reservation exceeds the maximum duration" if duration_hours > strict_duration
         blackout_window_valid = duration_hours.positive? &&
@@ -266,7 +334,8 @@ class ReservationService
             start_at: attributes[:start_at],
             end_at: attributes[:end_at],
             reservation: reservation,
-            existing_by_resource: duration_session_existing
+            existing_by_resource: duration_session_existing,
+            full_day: full_day
           ))
         end
       end
@@ -347,7 +416,8 @@ class ReservationService
         start_at: attributes[:start_at],
         resources: resources,
         reservation: reservation,
-        duration_session_existing: duration_session_existing
+        duration_session_existing: duration_session_existing,
+        full_day: full_day
       )
 
       {
@@ -356,6 +426,8 @@ class ReservationService
         missing_prerequisites: missing,
         approval_reasons: approval_reasons.uniq,
         approval_details: approval_details.uniq,
+        fee_rule_snapshot: fee_rule_snapshot,
+        fee_lines: fee_lines,
         maximum_duration_hours: maximum_duration
       }
     rescue Mongoid::Errors::DocumentNotFound, Mongoid::Errors::InvalidFind
@@ -387,28 +459,30 @@ class ReservationService
       start_at:,
       resources:,
       reservation:,
-      duration_session_existing:
+      duration_session_existing:,
+      full_day: false
     )
       return 0 unless start_at.present? && resources.present?
 
       return 72.0 if board_reservation_override?(member)
 
       configured_max = resources.map(&:max_reservation_duration_hours).min.to_f
-      if !member.active_membership_subscription? && member.membership_expires_at.present?
+      if !full_day && !member.active_membership_subscription? && member.membership_expires_at.present?
         membership_max = (member.membership_expires_at - start_at) / 1.hour
         configured_max = [configured_max, membership_max].min
       end
 
-      steps = [(configured_max * 2).floor, 0].max
+      steps = [full_day ? (configured_max / 24).floor : (configured_max * 2).floor, 0].max
       return 0 if steps.zero?
 
-      window_end = start_at + (steps * 0.5).hours
+      window_end = full_day ? start_at.in_time_zone(ZONE).advance(days: steps) : start_at + (steps * 0.5).hours
       overlaps = overlapping_reservations(start_at, window_end, reservation)
         .where(shop_id: shop.id).to_a
       allowed = 0.0
 
       1.upto(steps) do |step|
-        candidate_end = start_at + (step * 0.5).hours
+        candidate_end = full_day ? start_at.in_time_zone(ZONE).advance(days: step) : start_at + (step * 0.5).hours
+        break if !member.active_membership_subscription? && member.membership_expires_at.present? && candidate_end > member.membership_expires_at
         unless duration_session_exempt?(member)
           break if duration_session_errors(
             member: member,
@@ -418,7 +492,8 @@ class ReservationService
             start_at: start_at,
             end_at: candidate_end,
             reservation: reservation,
-            existing_by_resource: duration_session_existing
+            existing_by_resource: duration_session_existing,
+            full_day: full_day
           ).present?
         end
         candidate_overlaps = overlaps.select do |existing|
@@ -433,7 +508,7 @@ class ReservationService
           end_at: candidate_end
         ).present?
 
-        allowed = step * 0.5
+        allowed = full_day ? step * 24.0 : step * 0.5
       end
       allowed
     end
@@ -454,7 +529,8 @@ class ReservationService
       start_at:,
       end_at:,
       reservation:,
-      existing_by_resource: nil
+      existing_by_resource: nil,
+      full_day: false
     )
       resources = reservation_scope == "shop" ? [shop] : tools
       resources.filter_map do |resource|
@@ -472,14 +548,14 @@ class ReservationService
           {
             start_at: item.start_at,
             end_at: item.end_at,
-            duration: (item.end_at - item.start_at) / 1.hour,
+            duration: ReservationFeeService.duration_hours(item.start_at, item.end_at, item.full_day),
             candidate: false
           }
         end
         entries << {
           start_at: start_at,
           end_at: end_at,
-          duration: (end_at - start_at) / 1.hour,
+          duration: ReservationFeeService.duration_hours(start_at, end_at, full_day),
           candidate: true
         }
         candidate_cluster = reservation_session_clusters(entries, gap_hours)
@@ -591,7 +667,8 @@ class ReservationService
         reservation.reservation_scope != attributes[:reservation_scope] ||
         Array(reservation.tool_ids).map(&:to_s).sort != Array(attributes[:tool_ids]).map(&:to_s).sort ||
         reservation.start_at != attributes[:start_at] ||
-        reservation.end_at != attributes[:end_at]
+        reservation.end_at != attributes[:end_at] ||
+        reservation.full_day != attributes[:full_day]
     end
 
     def raise_for_evaluation!(evaluation, member:, attributes:, operation:, reservation: nil)
@@ -607,10 +684,10 @@ class ReservationService
       raise ::Error::Conflict.new(evaluation[:conflicts].join(". ")) if evaluation[:conflicts].present?
     end
 
-    def with_shop_lock(shop_id)
+    def with_shop_lock(shop_id, ttl: LOCK_TTL_SECONDS)
       token = SecureRandom.uuid
       key = "reservation_lock/shop/#{shop_id}"
-      acquired = REDIS.set(key, token, nx: true, ex: LOCK_TTL_SECONDS)
+      acquired = REDIS.set(key, token, nx: true, ex: ttl)
       raise ::Error::Conflict.new("Reservation processing is busy; please retry") unless acquired
 
       yield
@@ -635,17 +712,20 @@ class ReservationService
       end
     end
 
-    def with_shop_locks(shop_ids, &block)
+    def with_shop_locks(shop_ids, ttl: LOCK_TTL_SECONDS, &block)
       ids = Array(shop_ids).compact.map(&:to_s).uniq.sort
       acquire = lambda do |index|
         return block.call if index >= ids.length
 
-        with_shop_lock(ids[index]) { acquire.call(index + 1) }
+        with_shop_lock(ids[index], ttl: ttl) { acquire.call(index + 1) }
       end
       acquire.call(0)
     end
 
     def enqueue_external_syncs(reservation, previous_canvas_targets: [])
+      if reservation.invoice.present? || (reservation.decided_at.present? && reservation.status.in?(%w[approved denied]))
+        ReservationFeeNotificationJob.perform_later(reservation.id.to_s)
+      end
       ReservationCalendarSyncJob.perform_later(reservation.id.to_s)
       ReservationSlackReminderSyncJob.perform_later(reservation.id.to_s)
 
@@ -665,11 +745,13 @@ class ReservationService
 
       today = Time.current.in_time_zone(ZONE).to_date
       relevant_dates = [today, today + 1.day]
-      start_date = reservation.start_at.in_time_zone(ZONE).to_date
-      end_date = reservation.end_at.in_time_zone(ZONE).to_date
-
       relevant_dates
-        .select { |date| date >= start_date && date <= end_date }
+        .select do |date|
+          day_start = ZONE.local(date.year, date.month, date.day)
+          next_date = date + 1.day
+          day_end = ZONE.local(next_date.year, next_date.month, next_date.day)
+          reservation.start_at < day_end && reservation.end_at > day_start
+        end
         .map { |date| [reservation.shop_id.to_s, date] }
     end
   end

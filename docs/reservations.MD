@@ -38,7 +38,7 @@ An active, unexpired member can create a reservation when:
   later than the current membership expiration.
 
 Members can view their own reservations, including cancelled reservations.
-They can edit or cancel their own future pending or approved reservations.
+They can edit or cancel their own future pending, unpaid, or approved reservations.
 
 Inactive, expired, or revoked members cannot create or edit reservations. They
 can still view and cancel existing reservations. Revoking a member cancels their
@@ -111,19 +111,19 @@ Tools also store `google_resource_id` and `resource_email`.
 - A member first chooses a shop, then the entire shop or one or more tools.
 - Multi-tool reservations are atomic: every selected tool must be eligible and
   available.
-- Pending and approved reservations consume capacity.
+- Pending, unpaid, and approved reservations consume capacity.
 - Cancelled and denied reservations do not consume capacity.
 - A shop-wide reservation conflicts with all tool reservations in that shop.
 - A tool reservation conflicts with a shop-wide reservation in that shop.
 - Tool capacity is evaluated independently for every selected tool.
 - A reservation is pending when any selected resource requires approval.
 - A reservation is also pending when its owner already has an overlapping
-  pending or approved reservation anywhere.
+  pending, unpaid, or approved reservation anywhere.
 - Material edits repeat current eligibility and capacity validation and may
   return an approved reservation to pending.
 - Configuration changes do not invalidate existing reservations, but new and
   materially edited reservations use the current configuration.
-- Shops and tools referenced by future pending or approved reservations cannot
+- Shops and tools referenced by future pending, unpaid, or approved reservations cannot
   be deleted.
 
 Reservation writes are serialized with a Redis lock scoped to the shop. If Redis
@@ -132,6 +132,7 @@ or locking is unavailable, the request fails safely with a retryable message.
 ## Reservation statuses
 
 - `pending`: waiting for RM/Admin/Board approval; blocks capacity.
+- `unpaid`: awaiting reservation fee payment; blocks capacity until cancelled.
 - `approved`: valid reservation; blocks capacity.
 - `denied`: rejected; does not block capacity.
 - `cancelled`: cancelled by the member, manager, membership lifecycle, or
@@ -467,7 +468,7 @@ corresponding shop agenda canvas. The first refresh creates an unbound canvas
 named **Today's SHOPNAME Reservations** or **Tomorrow's SHOPNAME Reservations**,
 grants the configured shop channel read access, and saves the returned canvas
 ID as `canvas_today` or `canvas_tomorrow` on the shop. Subsequent refreshes
-replace the agenda with the day's pending and approved reservations. Cancelled
+replace the agenda with the day's pending, unpaid, and approved reservations. Cancelled
 and denied reservations are removed because they do not consume capacity.
 
 Slack does not automatically add these read-only canvases to the shop channel
@@ -572,7 +573,7 @@ screenshots, documentation, analytics, or other public artifacts.
 ### Agenda behavior
 
 The window begins when the response is generated and ends exactly 24 hours
-later. It includes blocking reservations—pending and approved reservations—that
+later. It includes blocking reservations—pending, unpaid, and approved reservations—that
 overlap that interval, including reservations already in progress. Cancelled,
 denied, and blackout records are not shown.
 
@@ -640,3 +641,140 @@ Agenda rows expose reservation titles, member names, Slack usernames, times,
 resources, and statuses. Before using a publicly visible screen or feed,
 consider whether this member information is appropriate for its audience and
 physically secure the display and its configuration.
+
+
+## Duration-based reservation fees and full days
+
+Admins, Board members, and the shop's assigned Resource Managers can use **Add
+duration-based fee** in the shop/tool editor. Each rule selects an enabled item
+from **Shop fees** and specifies a minimum duration and maximum hours per billing
+unit, or **Full day**. There is no limit on the number of rules, and overlapping
+rules are allowed. The minimum is the eligibility threshold; the maximum is the
+size of a repeatable billing unit, not a cap on the reservation's duration.
+Only the applicable rule with the longest billing duration applies per resource.
+Equal billing durations prefer the higher minimum; exact ties use the first
+configured rule. Fees for separately selected tools are added together.
+
+Partial units round up. For example, a $10 rule with a four-hour minimum and
+four-hour maximum charges three units ($30) for a twelve-hour reservation.
+A $15 Full day rule charges $15 for a one-day full-day booking, taking precedence
+over the four-hour rule. Full-day rules apply only to full-day bookings; timed
+bookings continue to use the hourly rules. Shorter bookings below every minimum
+remain free. Monetary totals are rounded to cents.
+
+Rules and catalog prices are snapshotted for each resource when it is first
+included in a reservation. Deleting a duration rule or changing/deleting its
+catalog item does not change existing reservations, their fees, or their rule
+snapshots. Material edits use those snapshots; adding a different resource uses
+that resource's current rules. New reservations use current rules. No migration
+is required: Mongoid supplies empty rule arrays and false full-day flags for
+existing documents.
+
+### Full-day configuration and booking
+
+**Minimum reservation duration: full day** requires full-day bookings for the
+resource. Its maximum must be at least 24 hours and a multiple of 24. The portal
+shows **Full day** whenever the selected resources permit at least 24 hours,
+forces it on and disables it for resources requiring full days, and replaces the
+time and duration controls with start/end date fields. The end date is exclusive:
+September 10 through September 11 means all of September 10.
+
+A full day starts at midnight and ends at the following midnight in
+`America/New_York`. The start date must be later than today's local date; same-day
+full-day bookings are forbidden, including for Board members. Multiple days must
+be consecutive complete calendar days. Each counts as 24 nominal hours for fees
+and duration limits. At daylight-saving transitions the actual elapsed time is
+23 or 25 hours so that midnight boundaries remain correct. Capacity checks and
+membership expiration still use the actual instants. These requirements are
+validated on the server as well as represented in the portal.
+
+### Confirmation, invoices, and reservation status
+
+The preview response adds `feeLines`, `feeTotal` (the outstanding amount after paid credits), and `feeConfirmation`. The portal
+highlights the applicable fees and units. The first submit click displays the
+fee warning; the second explicitly approves the amount and saves. A create or
+material edit carrying fees must submit the preview's `fee_confirmation` token.
+Changing the selected duration/resources or the quoted price requires fresh
+confirmation. Clients cannot supply their own price. Slack's existing timed
+modal cannot accept charges: use the portal for fee-incurring or full-day
+bookings; all server rules also apply to Slack submissions.
+
+When RM approval is required (including **Reservation requires RM approval** on
+any selected resource), the request stays `pending` and saves the member-confirmed
+fee snapshot without issuing an invoice or an unpaid-fee Slack notice. Pending
+edits update the saved quote; denial or cancellation before approval creates no
+invoice. RM approval issues the invoice from that snapshot and changes the
+reservation to `unpaid`; payment then makes it `approved`. The preview still shows
+the fee and requires the member's confirmation before requesting approval.
+
+A charged reservation without an approval requirement creates its invoice at
+submission. In both cases, it is a one-off `Invoice` with `resource_class: "fee"`,
+the reserving member as its billing resource, and a due date exactly four hours
+before the reservation starts. `Reservation.invoice` stores its invoice ID, and
+the reservation status is `unpaid`. Unpaid reservations consume capacity and may
+be edited/cancelled. `fee_snapshot` records the selected line items;
+`fee_rule_snapshot` preserves the available rules and prices. Title-only edits
+preserve all billing state.
+
+For material edits requiring renewed approval, billing changes are deferred until
+approval; previously issued invoices remain payable. Otherwise an unsettled invoice is adjusted to the revised positive
+charge and due date. A payment in progress blocks material edits. Paid amounts
+are credited against a revised charge; an increase creates an invoice only for
+the difference and archives the prior ID in `previous_invoice_ids`. Reductions
+do not automatically refund payments or erase outstanding debt. Cancelling or
+denying a reservation likewise leaves its invoice payable. Existing invoices
+remain available in billing history.
+
+Invoice settlement/reversal enqueues `ReservationInvoiceSyncJob`. Payment before
+the start changes `unpaid` to `approved`, or to `pending` if manager approval is
+still required. Manager approval of an unpaid reservation clears the approval
+requirement but leaves it unpaid until payment arrives. Cancelled/denied
+reservations are never revived by payment. Payment at or after the start cannot
+reclaim an unpaid reservation. Calendar, reminder, and applicable shop canvas
+syncs run when the status changes.
+
+### Slack notices and overdue debt
+
+`ReservationFeeNotificationJob` sends a direct message with the reservation,
+resources, start/end, status, amount, and due date. The returned Slack `ts` is
+stored as the string field `notified_at` (it is not a date), and the returned DM
+channel is stored in `notified_channel_id`. Subsequent updates first call
+`chat.update`; a missing message/channel falls back to a new message. Other Slack
+failures propagate for job retry. Notification suppression preferences and
+members without linked Slack users are respected.
+
+The existing `reservations:rebuild_slack_canvases` task reconciles unpaid
+reservations before rebuilding the agendas. Before the start, overdue invoices
+produce an updated warning that the reservation is invalid unless paid before
+start. At/after the start, unpaid reservations are cancelled and release capacity;
+the message explains the cancellation and the invoice remains unpaid. Rebuild
+processing includes unpaid reservations whose start/end dates have already
+passed, so missed runs do not strand reservations. A background worker and the
+existing recurring canvas rebuild schedule are required.
+
+A member with **any overdue unpaid fee invoice** cannot create or materially edit
+a fee-incurring reservation, regardless of role or whether it is created on their
+behalf. This includes ordinary shop charges, not just reservation invoices.
+Free reservations remain available, subject to the other eligibility rules.
+The preview shows the debt warning and disables submission until overdue fee
+invoices are cleared. Cancelling a reservation does not clear this restriction.
+
+
+### Minimum advance notice and same-day bookings
+
+Shop and tool reservation settings include `minimum_advance_notice_hours` (default 2, minimum 0) and `prohibit_same_day_reservations` (default false). Existing resources receive these defaults. For multiple tools, the longest notice and any same-day prohibition apply. Shop settings govern whole-shop reservations; tool settings govern tool reservations.
+
+For ordinary members, the earliest start is the current time plus notice, rounded down to a 30-minute interval: at 17:11 with two hours notice, 19:00 is allowed and 18:30 is rejected. Zero disables advance notice; the existing future-time and interval requirements still apply. Same-day prohibition compares dates in America/New_York. These rules apply on creation and when changing the start time or reserved resources; unchanged-start duration and title edits do not reapply them.
+
+Admin and board actors bypass both settings. Resource managers bypass them only for shops they manage, including tools within those shops, whether booking for themselves or another member. Delegated booking checks the authenticated actor rather than the beneficiary. Preview and submission enforce the same rules. These exemptions do not change the separate full-day future-date requirement.
+
+
+Approval and denial notifications use the same saved reservation DM as invoice notifications, including reservations without a fee. Messages include the current status, resource, dates and decision note. Approval with an unpaid fee explicitly confirms approval while explaining payment is still required. Braintree payment confirmation reconciles the reservation before updating its DM to show the paid amount. Payment for a cancelled or denied reservation does not reinstate it.
+
+These notifications first call `chat.update` using `notified_at` and `notified_channel_id`. If no message is saved, or Slack reports `message_not_found`, `channel_not_found`, or `cant_update_message`, a new DM is sent and its timestamp/channel replace the saved values. Other Slack errors propagate instead of silently sending duplicate messages. Member direct-notification suppression remains respected.
+
+
+Reservation creation, approval, denial, cancellation, edits (including title-only edits), and payment-driven status changes queue refreshes of the affected shop's today/tomorrow Slack canvases. Dates use America/New_York and an exclusive reservation end: a booking ending at midnight does not occupy the following day. Edits refresh the union of the saved old and new shop/date targets, so moving a reservation also clears its old canvas rows. Reservations spanning both days refresh both canvases; changes entirely beyond tomorrow require no immediate canvas update. The regular rebuild handles subsequent date rollover.
+
+
+Moving an existing reservation's start earlier must satisfy the resource's current minimum advance notice and same-day prohibition at the time of the edit. Preview reports a policy violation and saving rejects it without changing the original booking. This applies to both shop and tool reservations; the existing admin/board and managed-shop RM exemptions still apply. An earlier start exactly at the rounded notice cutoff is allowed.

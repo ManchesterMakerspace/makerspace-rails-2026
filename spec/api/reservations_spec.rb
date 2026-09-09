@@ -24,6 +24,121 @@ RSpec.describe "Reservations API", type: :request do
     sign_in member
   end
 
+  context "booking notice" do
+    around do |example|
+      travel_to(ReservationService::ZONE.local(2026, 9, 9, 17, 11)) { example.run }
+    end
+
+    def notice_preview(hour, minute = 0, actor: member)
+      start = ReservationService::ZONE.local(2026, 9, 9, hour, minute)
+      ReservationService.preview(member: member, actor: actor, attributes: reservation_params.merge(
+        start_at: start.iso8601, end_at: (start + 30.minutes).iso8601
+      ))
+    end
+
+    it "rounds two hours notice down to 19:00 at 17:11" do
+      expect(notice_preview(17, 30)[:errors].join).to include("Minimum advance notice")
+      expect(notice_preview(18, 30)[:errors].join).to include("Minimum advance notice")
+      expect(notice_preview(19)[:eligible]).to eq(true)
+      start = ReservationService::ZONE.local(2026, 9, 9, 18, 30)
+      post "/api/reservations", params: reservation_params.merge(start_at: start.iso8601, end_at: (start + 30.minutes).iso8601)
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+
+    it "allows zero notice while retaining future-time validation" do
+      tool.update!(minimum_advance_notice_hours: 0)
+      expect(notice_preview(17, 30)[:eligible]).to eq(true)
+      expect(notice_preview(17)[:errors]).to include("Start time must be in the future")
+    end
+
+    it "prohibits today's date in the shop timezone" do
+      tool.update!(prohibit_same_day_reservations: true)
+      expect(notice_preview(23)[:errors].join).to include("Same day reservations")
+      expect(ReservationService.preview(member: member, attributes: reservation_params)[:eligible]).to eq(true)
+    end
+
+    it "uses the acting RM's shop scope for delegated bookings" do
+      tool.update!(prohibit_same_day_reservations: true)
+      manager = create(:member, :current, role: "resource_manager", resource_manager_shop_ids: [shop.id.to_s])
+      expect(notice_preview(17, 30, actor: manager)[:eligible]).to eq(true)
+      manager.update!(resource_manager_shop_ids: [])
+      expect(notice_preview(17, 30, actor: manager)[:errors].join).to include("Minimum advance notice", "Same day reservations")
+    end
+
+    %w[admin board_member].each do |role|
+      it "lets an acting #{role} bypass both rules" do
+        tool.update!(prohibit_same_day_reservations: true)
+        actor = create(:member, :current, role: role)
+        expect(notice_preview(17, 30, actor: actor)[:eligible]).to eq(true)
+      end
+    end
+
+    %w[shop tools].each do |scope|
+      [:minimum_advance_notice_hours, :prohibit_same_day_reservations].each do |policy|
+        it "rejects an earlier #{scope} start violating #{policy} in preview and save" do
+          resource = scope == "shop" ? shop : tool
+          resource.update!(reservable: true, minimum_advance_notice_hours: 2,
+            prohibit_same_day_reservations: policy == :prohibit_same_day_reservations)
+          existing = create(:reservation, member: member, shop: shop, reservation_scope: scope,
+            tool_ids: scope == "tools" ? [tool.id.to_s] : [], start_at: start_at, end_at: start_at + 1.hour)
+          original_start = existing.start_at
+          original_end = existing.end_at
+          new_start = ReservationService::ZONE.local(2026, 9, 9, policy == :minimum_advance_notice_hours ? 18 : 20, 30)
+          changes = { start_at: new_start.iso8601, end_at: (new_start + 1.hour).iso8601 }
+          expected_error = policy == :minimum_advance_notice_hours ? "Minimum advance notice" : "Same day reservations"
+
+          post "/api/reservations/#{existing.id}/preview", params: changes
+          expect(response).to have_http_status(:ok)
+          expect(JSON.parse(response.body)["eligible"]).to eq(false)
+          expect(JSON.parse(response.body)["errors"].join).to include(expected_error)
+          patch "/api/reservations/#{existing.id}", params: changes
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(JSON.parse(response.body)["message"]).to include(expected_error)
+          expect(existing.reload.start_at).to eq(original_start)
+          expect(existing.end_at).to eq(original_end)
+        end
+      end
+    end
+
+    it "allows an earlier start at the rounded notice cutoff" do
+      existing = create(:reservation, member: member, shop: shop, reservation_scope: "tools",
+        tool_ids: [tool.id.to_s], start_at: start_at, end_at: start_at + 1.hour)
+      new_start = ReservationService::ZONE.local(2026, 9, 9, 19)
+      patch "/api/reservations/#{existing.id}", params: {
+        start_at: new_start.iso8601, end_at: (new_start + 1.hour).iso8601
+      }
+      expect(response).to have_http_status(:ok)
+      expect(existing.reload.start_at).to eq(new_start)
+    end
+
+    it "preserves the managed-shop RM exception when moving a start earlier" do
+      tool.update!(prohibit_same_day_reservations: true)
+      manager = create(:member, :current, role: "resource_manager", resource_manager_shop_ids: [shop.id.to_s])
+      existing = create(:reservation, member: member, shop: shop, reservation_scope: "tools",
+        tool_ids: [tool.id.to_s], start_at: start_at, end_at: start_at + 1.hour)
+      sign_in manager
+      new_start = ReservationService::ZONE.local(2026, 9, 9, 17, 30)
+      patch "/api/admin/reservations/#{existing.id}", params: {
+        start_at: new_start.iso8601, end_at: (new_start + 1.hour).iso8601
+      }
+      expect(response).to have_http_status(:ok)
+      expect(existing.reload.start_at).to eq(new_start)
+    end
+
+    it "passes the manager actor through delegated preview and creation" do
+      tool.update!(prohibit_same_day_reservations: true)
+      manager = create(:member, :current, role: "resource_manager", resource_manager_shop_ids: [shop.id.to_s])
+      sign_in manager
+      start = ReservationService::ZONE.local(2026, 9, 9, 17, 30)
+      params = reservation_params.merge(member_id: member.id.to_s, start_at: start.iso8601, end_at: (start + 30.minutes).iso8601)
+      post "/api/admin/reservations/preview", params: params
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)["eligible"]).to eq(true)
+      post "/api/admin/reservations", params: params
+      expect(response).to have_http_status(:created)
+    end
+  end
+
   it "previews and creates an eligible tool reservation" do
     post "/api/reservations/preview", params: reservation_params
 

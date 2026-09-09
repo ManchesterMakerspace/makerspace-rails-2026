@@ -110,9 +110,9 @@ class Admin::ShopsController < ApplicationController
     params.permit(
       :name, :wiki_url, :gdrive_id, :slack_channel, :disabled, :reservable,
       :max_concurrent_reservations, :reservation_horizon_days,
-      :max_reservation_duration_hours, :reservation_requires_approval,
+      :minimum_advance_notice_hours, :prohibit_same_day_reservations, :reservation_full_day, :max_reservation_duration_hours, :reservation_requires_approval,
       :color_id, :floor_name, :capacity,
-      reservation_prerequisite_tool_ids: []
+      duration_fees: [:invoice_option_id, :minimum_hours, :maximum_hours, :full_day], reservation_prerequisite_tool_ids: []
     )
   end
 
