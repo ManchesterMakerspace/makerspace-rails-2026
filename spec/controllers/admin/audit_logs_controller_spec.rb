@@ -94,7 +94,7 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
         stub_const('FastQuery::ITEMS_PER_PAGE', 1)
 
         get :index, params: { page_num: 0 }, format: :json
-        expect(response.headers['total-items']).to eq('2')
+        expect(response.headers['total-items'].to_s).to eq('2')
         first_page = JSON.parse(response.body)
         expect(first_page.length).to eq(1)
         expect(first_page.first['eventType']).to eq('portal_setting_changed')
