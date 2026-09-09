@@ -10,7 +10,7 @@ class VolunteerController < AuthenticationController
   # GET /api/volunteer/summary
   def summary
     member_id       = current_member.id
-    is_earned       = EarnedMembership.where(member_id: member_id).exists?
+    is_earned       = EarnedMembership.active.where(member_id: member_id).exists?
     year_count      = VolunteerCredit.year_count_for(member_id)
     lifetime_count  = VolunteerCredit.lifetime_count_for(member_id)
     rolling_days    = (SystemConfig.get('volunteer_rolling_days') || 90).to_i

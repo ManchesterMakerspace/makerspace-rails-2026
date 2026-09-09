@@ -269,6 +269,10 @@ Rails.application.routes.draw do
         end
 
         resources :earned_memberships, only: [:index, :show, :create, :update] do
+          member do
+            post :suspend
+            post :reactivate
+          end
           scope module: :earned_memberships do
             resources :reports, only: [:index]
           end

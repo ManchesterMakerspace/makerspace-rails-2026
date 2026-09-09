@@ -15,7 +15,7 @@ describe VolunteerCredit, type: :model do
   end
 
   before do
-    allow(EarnedMembership).to receive_message_chain(:where, :exists?).and_return(false)
+    allow(EarnedMembership).to receive_message_chain(:active, :where, :exists?).and_return(false)
     allow(SlackUser).to receive(:find_by).and_return(nil)
     allow(Service::SlackConnector).to receive(:enque_message)
     allow(Service::SlackConnector).to receive(:send_slack_message)
@@ -156,7 +156,7 @@ describe VolunteerCredit, type: :model do
 
     it 'does not apply discount for earned membership members' do
       allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).and_return(nil)
-      allow(EarnedMembership).to receive_message_chain(:where, :exists?).and_return(true)
+      allow(EarnedMembership).to receive_message_chain(:active, :where, :exists?).and_return(true)
       4.times do
         VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 1.0))
           .tap { |c| c.approve!(admin) }
@@ -188,6 +188,72 @@ describe VolunteerCredit, type: :model do
           .tap { |c| c.approve!(admin) }
       end
       expect(notified).to be > 0
+    end
+  end
+
+  describe 'earned_while_em_active' do
+    before do
+      allow(EarnedMembership).to receive_message_chain(:active, :where, :exists?).and_call_original
+    end
+
+    it 'flags a credit created while the member has an active earned membership' do
+      create(:earned_membership, member: member)
+      credit = VolunteerCredit.create!(valid_attrs)
+      expect(credit.earned_while_em_active).to be true
+    end
+
+    it 'does not flag a credit created without an earned membership' do
+      credit = VolunteerCredit.create!(valid_attrs)
+      expect(credit.earned_while_em_active).to be false
+    end
+
+    it 'does not flag a credit created after the earned membership is suspended' do
+      em = create(:earned_membership, member: member)
+      em.suspend!(admin)
+      credit = VolunteerCredit.create!(valid_attrs)
+      expect(credit.earned_while_em_active).to be false
+    end
+
+    it 'reversal inherits the flag from the original regardless of current EM status' do
+      em = create(:earned_membership, member: member)
+      credit = VolunteerCredit.create!(valid_attrs)
+      expect(credit.earned_while_em_active).to be true
+
+      em.suspend!(admin)
+      reversal = credit.reverse!(admin, 'test reversal')
+      expect(reversal.earned_while_em_active).to be true
+    end
+
+    it 'never counts EM-period credits toward a discount, even after the member converts to a paid subscription' do
+      allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).and_return(nil)
+      em = create(:earned_membership, member: member)
+
+      # 8 credits earned while EM was active would satisfy the threshold
+      # (credits_per_discount defaults to 8) on their own, but must never count.
+      8.times do
+        VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 1.0))
+          .tap { |c| c.approve!(admin) }
+      end
+      expect(VolunteerCredit.where(member_id: member.id, discount_applied: true).count).to eq(0)
+
+      em.suspend!(admin)
+      member.update!(subscription_id: 'sub_123')
+
+      # 7 more post-conversion credits -- still short of 8 on their own
+      7.times do
+        VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 1.0))
+          .tap { |c| c.approve!(admin) }
+      end
+      expect(VolunteerCredit.where(member_id: member.id, discount_applied: true).count).to eq(0)
+
+      # The 8th post-conversion credit crosses the threshold using only
+      # post-conversion credits -- the 8 EM-period ones stay excluded.
+      VolunteerCredit.create!(valid_attrs.merge(status: 'pending', issued_by_id: nil, credit_value: 1.0))
+        .tap { |c| c.approve!(admin) }
+
+      discount_applied_credits = VolunteerCredit.where(member_id: member.id, discount_applied: true)
+      expect(discount_applied_credits.count).to eq(8)
+      expect(discount_applied_credits.pluck(:earned_while_em_active).uniq).to eq([false])
     end
   end
 end

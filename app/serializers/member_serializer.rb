@@ -5,6 +5,7 @@ class MemberSerializer < MemberSummarySerializer
              :subscription,
              :subscription_id,
              :earned_membership_id,
+             :earned_membership_active,
              :customer_id,
              :address,
              :phone,
@@ -25,8 +26,17 @@ class MemberSerializer < MemberSummarySerializer
     active_card && active_card.id
   end
 
+  # Presence-based, deliberately -- keeps report/requirement history (and the
+  # Reports tab) visible on the member's profile regardless of status.
   def earned_membership_id
     object.earned_membership && object.earned_membership.id
+  end
+
+  # Status-based, unlike earned_membership_id above -- used to decide whether
+  # the member is *currently* covered by an earned membership (e.g. the
+  # self-service Membership panel), which a suspended record no longer is.
+  def earned_membership_active
+    !!object.earned_membership&.active?
   end
 
   def group_name
