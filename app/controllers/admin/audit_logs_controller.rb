@@ -13,6 +13,12 @@ class Admin::AuditLogsController < AdminController
 
     logs = logs.order_by(created_at: :desc)
 
+    # Paginate the already-ordered/filtered set ourselves rather than via
+    # query_resource -- that helper's own order_query would override the
+    # created_at:desc ordering above with its column-sort default.
+    @total_items = logs.count
+    logs = paginate_resource(logs, query_params[:page_num])
+
     render_with_total_items(logs, { each_serializer: AuditLogSerializer, adapter: :attributes })
   end
 
