@@ -66,6 +66,16 @@ RSpec.describe Service::Analytics do
     ensure
       File.delete(path) if path && File.exist?(path)
     end
+
+    it "finds invoices with a refund requested but not yet completed" do
+      Invoice.collection.insert_many([
+        { plan_id: "membership-one-month-recurring", amount: 50.0, refunded: false, refund_requested: Time.current },
+        { plan_id: "membership-one-month-recurring", amount: 60.0, refunded: true, refund_requested: Time.current },
+        { plan_id: "membership-one-month-recurring", amount: 70.0, refunded: false }
+      ])
+
+      expect(described_class.query_refunds_pending.pluck(:amount)).to eq([50.0])
+    end
   end
 
   describe Service::Analytics::Payments do

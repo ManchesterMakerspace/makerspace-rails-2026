@@ -198,7 +198,7 @@ module Service
       end
 
       def self.query_refunds_pending(base = Mongoid::Criteria.new(Invoice)) #invoice review and controller
-        base.where(refunded: false, :refunded_requested.ne => nil)
+        base.where(refunded: false, :refund_requested.ne => nil)
       end
 
       def self.query_settlement_pending(base = Mongoid::Criteria.new(Invoice)) # invoice review
