@@ -28,6 +28,7 @@ class Admin::MembersController < AdminController
     permitted_params = get_camel_case_params(update_member_params())
     normalize_and_validate_rm_assignments!(permitted_params, @member)
     authorize_silence_emails_change!(permitted_params, @member)
+    apply_google_drive_provisioning_block!(permitted_params)
 
     @member.update!(permitted_params)
 
@@ -213,9 +214,27 @@ class Admin::MembersController < AdminController
 
   def update_member_params
     params.permit(:firstname, :lastname, :role, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
-      :silence_emails, :phone, :subscription, :email,
+      :silence_emails, :phone, :subscription, :email, :google_drive_provisioning_blocked,
       resource_manager_shop_ids: [], resourceManagerShopIds: [],
       address: [:street, :unit, :city, :state, :postal_code])
+  end
+
+  # Admin-settable on/off toggle for Google Drive provisioning, surfaced as a
+  # single boolean on the member profile. Translates it into the underlying
+  # google_provisioning_blocked_at/reason fields (also set automatically by
+  # provision_google on a permanent failure -- see Service::MemberProvisioning)
+  # so both paths share one meaning: "not currently being retried."
+  def apply_google_drive_provisioning_block!(permitted_params)
+    return unless permitted_params.key?(:google_drive_provisioning_blocked)
+
+    blocked = ActiveModel::Type::Boolean.new.cast(permitted_params.delete(:google_drive_provisioning_blocked))
+    if blocked
+      permitted_params[:google_provisioning_blocked_at] = Time.current
+      permitted_params[:google_provisioning_blocked_reason] = "Manually blocked by #{current_member.fullname}"
+    else
+      permitted_params[:google_provisioning_blocked_at] = nil
+      permitted_params[:google_provisioning_blocked_reason] = nil
+    end
   end
 
   def password_params
