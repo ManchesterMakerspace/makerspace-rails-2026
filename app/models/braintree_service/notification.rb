@@ -435,7 +435,7 @@ No automated actions have been taken at this time.")
           subject:         processed_invoice.member,
           before_snapshot: resource_before,
           after_snapshot:  resource_after,
-          message_details: "Settlement declined with status: #{last_transaction.status}"
+          message_details: "Braintree invoice ID: #{processed_invoice.id}, resource class: #{processed_invoice.resource_class} — Settlement declined with status: #{last_transaction.status}"
         )
         member_notified = slack_member ? "The member has been notified via Slack and email as well." : "Unable to notify member via Slack. Reach out to member to resolve."
         unless slack_member.nil?
@@ -505,7 +505,7 @@ No automated actions have been taken at this time.")
 
   def self.log_invoice_settled(invoice, transaction)
     snapshot = payment_log_details(transaction, invoice)
-    message_details = nil
+    message_details = "Braintree invoice ID: #{invoice.id}, resource class: #{invoice.resource_class}"
 
     if discount_confirmed_match?(invoice, transaction)
       total_discount = transaction_discount_total(transaction)
@@ -521,7 +521,7 @@ No automated actions have been taken at this time.")
         totalDiscountApplied: total_discount.to_f,
         discounts: discount_text
       }
-      message_details = "Discount-confirmed match; total discount $#{format('%.2f', total_discount)} " \
+      message_details += " — Discount-confirmed match; total discount $#{format('%.2f', total_discount)} " \
         "(#{discount_text.join(', ')})"
     end
 
@@ -573,7 +573,8 @@ No automated actions have been taken at this time.")
       memberId: order_id_invoice.member_id.to_s
     }
     resolved_member = member ? "member #{member.id}" : "no known member"
-    message = "Braintree transaction #{transaction.id} order_id resolved to invoice #{order_id_invoice.id} " \
+    message = "Braintree transaction #{transaction.id} order_id resolved to Braintree invoice ID: #{order_id_invoice.id} " \
+      "(resource class: #{order_id_invoice.resource_class}) " \
       "owned by member #{order_id_invoice.member_id}, but the transaction's customer resolved to " \
       "#{resolved_member}. Ignoring the order_id match."
 

@@ -60,7 +60,8 @@ class Admin::ReservationBlackoutsController < ApplicationController
       resource_id: blackout_id,
       actor: current_member,
       before_snapshot: before,
-      after_snapshot: {}
+      after_snapshot: {},
+      message_details: "shop: #{Shop.find(shop_id).name}"
     )
     enqueue_canvas_sync(shop_id)
     head :no_content
@@ -103,6 +104,7 @@ class Admin::ReservationBlackoutsController < ApplicationController
       resource_type: "ReservationBlackout",
       resource_id: blackout.id,
       actor: current_member,
+      message_details: "shop: #{blackout.shop.name}",
       **options
     )
   end

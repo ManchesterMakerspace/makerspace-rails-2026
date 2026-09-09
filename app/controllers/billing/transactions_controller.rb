@@ -41,6 +41,7 @@ class Billing::TransactionsController < BillingController
         subject:        invoice.member,
         after_snapshot: { invoice_id: invoice.id.to_s, amount: invoice.amount,
                           plan_id: invoice.plan_id, resource_class: invoice.resource_class },
+        message_details: "Braintree invoice ID: #{invoice.id}, resource class: #{invoice.resource_class}",
         slack_channel:  ::Service::SlackConnector.logs_channel
       )
 
@@ -73,6 +74,7 @@ class Billing::TransactionsController < BillingController
         subject:        invoice.member,
         after_snapshot: { transaction_id: transaction.id, amount: invoice.amount,
                           description: description },
+        message_details: "Braintree invoice ID: #{invoice.id}, resource class: #{invoice.resource_class}",
         slack_channel:  ::Service::SlackConnector.logs_channel
       )
 
