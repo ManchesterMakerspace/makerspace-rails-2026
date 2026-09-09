@@ -85,10 +85,17 @@ class Billing::PaymentMethodsController < BillingController
     ::BraintreeService::PaymentMethod.find_payment_method_for_customer(@gateway, payment_method_token, current_member.customer_id)
 
     affected = subscriptions_using_payment_method(payment_method_token)
+    membership_match = affected.find { |a| a[:resource_class] == 'member' }
+    rental_matches = affected.select { |a| a[:resource_class] == 'rental' }
 
+    # Subscription ids are included so the client can send the member straight
+    # into switching each affected subscription's payment method, rather than
+    # just naming the consequence with nothing to act on.
     render json: {
-      membership: affected.any? { |a| a[:resource_class] == 'member' },
-      rentalCount: affected.count { |a| a[:resource_class] == 'rental' }
+      membership: !membership_match.nil?,
+      rentalCount: rental_matches.count,
+      membershipSubscriptionId: membership_match && membership_match[:subscription_id],
+      rentalSubscriptionIds: rental_matches.map { |a| a[:subscription_id] }
     } and return
   end
 
