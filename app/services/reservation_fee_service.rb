@@ -111,9 +111,15 @@ class ReservationFeeService
       end
       current = reservation.fee_invoice || Invoice.where(reservation_id: reservation.id.to_s).order_by(created_at: :desc).first
       reservation.set(invoice: current.id.to_s) if current && reservation.invoice.blank?
-      paid = Array(reservation.previous_invoice_ids).filter_map { |id| Invoice.where(id: id).first }.select(&:settled).sum(&:amount)
+      historical = Array(reservation.previous_invoice_ids).map(&:to_s).uniq
+        .reject { |id| id == current&.id.to_s }
+        .filter_map { |id| Invoice.where(id: id).first }
+      paid = historical.select(&:settled).sum(&:amount)
       paid += current.amount if current&.settled
-      amount = [total(lines) - paid, 0].max.round(2)
+      # Reversed historical invoices remain payable. Offset that debt before
+      # updating or creating a difference invoice, rather than billing it twice.
+      historical_unpaid = historical.reject(&:settled).sum(&:amount)
+      amount = [total(lines) - paid - historical_unpaid, 0].max.round(2)
       details = lines.map { |line| "#{line[:resourceName]}: #{line[:units]} × #{line[:name]} ($#{format('%.2f', line[:unitAmount])})" }.join("; ")
       if current && !current.settled
         if amount.positive?
@@ -130,7 +136,7 @@ class ReservationFeeService
           due_date: reservation.start_at - 4.hours, reservation_id: reservation.id.to_s)
         reservation.set(invoice: invoice.id.to_s, previous_invoice_ids: history)
       end
-      reservation.update!(fee_snapshot: lines, status: amount.positive? ? "unpaid" : (reservation.approval_reasons.present? ? "pending" : "approved"))
+      reservation.update!(fee_snapshot: lines, status: (amount.positive? || historical_unpaid.positive?) ? "unpaid" : (reservation.approval_reasons.present? ? "pending" : "approved"))
     end
 
     def linked_invoices(reservation)

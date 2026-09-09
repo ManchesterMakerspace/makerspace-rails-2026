@@ -66,7 +66,11 @@ class ReservationService
         begin
           ReservationFeeService.apply!(reservation, evaluation[:fee_lines] || []) if evaluation[:fee_lines].present?
         rescue
-          reservation.destroy unless Invoice.where(reservation_id: reservation.id.to_s).exists?
+          # Invoice callbacks can fail after persistence, before apply! links the
+          # invoice. Remove every invoice created for this new booking as well.
+          # Use callback-free deletion so failed notifications cannot block cleanup.
+          Invoice.where(reservation_id: reservation.id.to_s).delete_all
+          reservation.delete
           raise
         end
         enqueue_external_syncs(reservation)

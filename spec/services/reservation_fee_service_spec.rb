@@ -190,6 +190,65 @@ RSpec.describe ReservationFeeService do
     end
   end
 
+  def reversed_historical_booking
+    reservation = book
+    original = reservation.fee_invoice
+    original.update!(settled_at: Time.current)
+    described_class.reconcile!(reservation)
+    changes = attributes.merge(end_at: start_at + 16.hours)
+    preview = ReservationService.preview(member: member, attributes: changes, reservation: reservation)
+    ReservationService.update!(reservation: reservation, attributes: changes.merge(fee_confirmation: preview[:feeConfirmation]))
+    reservation.fee_invoice.update!(settled_at: Time.current)
+    original.update!(settled_at: nil)
+    described_class.reconcile!(reservation)
+    reservation
+  end
+
+  it "offsets reversed historical debt across edits and new difference invoices" do
+    reservation = reversed_historical_booking
+    [16, 20, 24].each do |hours|
+      changes = attributes.merge(start_at: start_at + 1.day, end_at: start_at + 1.day + hours.hours)
+      preview = ReservationService.preview(member: member, attributes: changes, reservation: reservation)
+      ReservationService.update!(reservation: reservation, attributes: changes.merge(fee_confirmation: preview[:feeConfirmation]))
+      invoices = described_class.linked_invoices(reservation.reload)
+      expect(invoices.reject(&:settled).sum(&:amount)).to eq(hours / 4 * 10 - 10)
+      expect(invoices.length).to eq(hours == 16 ? 2 : 3)
+      expect(reservation.status).to eq("unpaid")
+    end
+  end
+
+  it "does not duplicate a reversed charge on RM approval" do
+    reservation = reversed_historical_booking
+    reservation.update!(status: "pending", approval_reasons: ["resource_requires_approval"])
+    ReservationService.approve!(reservation: reservation, actor: create(:member, :current))
+    invoices = described_class.linked_invoices(reservation.reload)
+    expect(invoices.length).to eq(2)
+    expect(invoices.reject(&:settled).sum(&:amount)).to eq(30)
+    expect(reservation.status).to eq("unpaid")
+  end
+
+  it "cleans up a persisted invoice when its creation notification raises, allowing a retry" do
+    allow_any_instance_of(Invoice).to receive(:send_rental_email).and_raise("notification unavailable")
+    expect { book }.to raise_error("notification unavailable")
+    expect(Reservation.count).to eq(0)
+    expect(Invoice.count).to eq(0)
+    allow_any_instance_of(Invoice).to receive(:send_rental_email).and_call_original
+    expect(book.fee_invoice.amount).to eq(30)
+    expect(Reservation.count).to eq(1)
+    expect(Invoice.count).to eq(1)
+  end
+
+  it "cleans up both records when saving the fee snapshot fails, allowing a retry" do
+    allow_any_instance_of(Reservation).to receive(:update!).and_raise("snapshot write failed")
+    expect { book }.to raise_error("snapshot write failed")
+    expect(Reservation.count).to eq(0)
+    expect(Invoice.count).to eq(0)
+    allow_any_instance_of(Reservation).to receive(:update!).and_call_original
+    expect(book.fee_invoice.amount).to eq(30)
+    expect(Reservation.count).to eq(1)
+    expect(Invoice.count).to eq(1)
+  end
+
   it "restores approval state on payment without reviving a cancelled reservation" do
     reservation = book
     invoice = reservation.fee_invoice
