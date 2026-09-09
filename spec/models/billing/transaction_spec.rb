@@ -51,6 +51,34 @@ RSpec.describe BraintreeService::Transaction, type: :model do
       end
     end
 
+    describe "#invoice" do
+      it "resolves via the original transaction's id for a refund" do
+        invoice = create(:invoice, transaction_id: "original-id")
+        refund_transaction = build(:transaction, id: "refund-id", refunded_transaction_id: "original-id")
+
+        normalized = BraintreeService::Transaction.normalize(gateway, refund_transaction)
+
+        expect(normalized.invoice).to eq(invoice)
+      end
+
+      it "resolves via its own id for a non-refund transaction" do
+        invoice = create(:invoice, transaction_id: "charge-id")
+        charge_transaction = build(:transaction, id: "charge-id")
+
+        normalized = BraintreeService::Transaction.normalize(gateway, charge_transaction)
+
+        expect(normalized.invoice).to eq(invoice)
+      end
+
+      it "returns nil when no invoice matches" do
+        unmatched_transaction = build(:transaction, id: "unmatched-id")
+
+        normalized = BraintreeService::Transaction.normalize(gateway, unmatched_transaction)
+
+        expect(normalized.invoice).to be_nil
+      end
+    end
+
     describe "#get_transactions" do
       it "fetches transactions" do
         allow(gateway).to receive_message_chain(:transaction, search: [fake_transaction]) # Setup method calls to gateway

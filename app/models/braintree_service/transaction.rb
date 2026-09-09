@@ -127,7 +127,9 @@ class BraintreeService::Transaction < Braintree::Transaction
     status.titleize
   end
 
-  def invoice 
+  def invoice
+    return @invoice if defined?(@invoice)
+
     Invoice.find_by({ transaction_id: id })
   end
 
@@ -135,8 +137,13 @@ class BraintreeService::Transaction < Braintree::Transaction
   def self.normalize(gateway, transaction)
     norm_transaction = self.new(gateway, instance_to_hash(transaction))
 
-    # Search by refunded ID if it's a refund transaction
+    # A refund is its own distinct Braintree transaction, separate from the
+    # original charge -- Invoice#transaction_id points at the original, so
+    # look up by refunded_transaction_id when this is a refund, and cache
+    # the result via the invoice= writer so the plain id-based lookup above
+    # doesn't run instead and silently find nothing.
     transaction_id = norm_transaction.refunded_transaction_id || norm_transaction.id
+    norm_transaction.invoice = Invoice.find_by(transaction_id: transaction_id)
     norm_transaction
   end
 end
