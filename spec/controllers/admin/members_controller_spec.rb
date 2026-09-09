@@ -233,6 +233,36 @@ RSpec.describe Admin::MembersController, type: :controller do
           expect(member.reload.silence_emails).to be false
         end
 
+        it "lets admins manually block and unblock Google Drive provisioning" do
+          member = Member.create valid_attributes
+
+          put :update, params: { id: member.to_param, googleDriveProvisioningBlocked: true }, format: :json
+          expect(response).to have_http_status(200)
+          member.reload
+          expect(member.google_provisioning_blocked_at).to be_present
+          expect(member.google_provisioning_blocked_reason).to match(/manually blocked/i)
+
+          put :update, params: { id: member.to_param, googleDriveProvisioningBlocked: false }, format: :json
+          expect(response).to have_http_status(200)
+          member.reload
+          expect(member.google_provisioning_blocked_at).to be_nil
+          expect(member.google_provisioning_blocked_reason).to be_nil
+        end
+
+        it "leaves the Google Drive provisioning block untouched when not included in the update" do
+          member = Member.create valid_attributes.merge(
+            google_provisioning_blocked_at: 1.day.ago,
+            google_provisioning_blocked_reason: 'cannotInviteNonGoogleUser: Forbidden.'
+          )
+
+          put :update, params: { id: member.to_param, firstname: 'Renamed' }, format: :json
+
+          expect(response).to have_http_status(200)
+          member.reload
+          expect(member.google_provisioning_blocked_at).to be_present
+          expect(member.google_provisioning_blocked_reason).to eq('cannotInviteNonGoogleUser: Forbidden.')
+        end
+
         it "does not allow admins to change marketing email silence for revoked members" do
           member = Member.create valid_attributes.merge(status: 'revoked', silence_emails: true)
 
