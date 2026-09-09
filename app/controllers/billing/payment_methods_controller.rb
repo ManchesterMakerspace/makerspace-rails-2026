@@ -132,17 +132,27 @@ class Billing::PaymentMethodsController < BillingController
     affected = []
 
     unless current_member.subscription_id.nil?
-      membership_sub = ::BraintreeService::Subscription.get_subscription(@gateway, current_member.subscription_id)
-      affected.push(resource_class: 'member', subscription_id: membership_sub.id) if membership_sub.payment_method_token == payment_method_token
+      membership_sub = find_subscription_or_nil(current_member.subscription_id)
+      affected.push(resource_class: 'member', subscription_id: membership_sub.id) if membership_sub&.payment_method_token == payment_method_token
     end
 
     current_member.rentals.each do |rental|
       next if rental.subscription_id.nil?
-      rental_sub = ::BraintreeService::Subscription.get_subscription(@gateway, rental.subscription_id)
-      affected.push(resource_class: 'rental', subscription_id: rental_sub.id) if rental_sub.payment_method_token == payment_method_token
+      rental_sub = find_subscription_or_nil(rental.subscription_id)
+      affected.push(resource_class: 'rental', subscription_id: rental_sub.id) if rental_sub&.payment_method_token == payment_method_token
     end
 
     affected
+  end
+
+  # A member/rental can carry a subscription_id that Braintree no longer
+  # recognizes (e.g. deleted directly in Braintree, or stale data) -- treat
+  # that as "not billed to any payment method" rather than raising, since
+  # this is a read path that must never block viewing or deleting a payment method.
+  def find_subscription_or_nil(subscription_id)
+    ::BraintreeService::Subscription.get_subscription(@gateway, subscription_id)
+  rescue Braintree::NotFoundError
+    nil
   end
 
   def payment_method_params
