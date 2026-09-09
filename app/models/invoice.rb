@@ -48,6 +48,11 @@ class Invoice
   field :plan_id, type: String
   # ID of transaction used to settle invoice
   field :transaction_id, type: String
+  # ID of the most recent failed settlement attempt against this invoice --
+  # distinct from transaction_id so a failed attempt can never satisfy
+  # Invoice.claim_for_transaction's nil-or-matching guard and block a later
+  # successful attempt from ever claiming/settling the invoice.
+  field :last_failed_transaction_id, type: String
 
   index(
     { transaction_id: 1 },

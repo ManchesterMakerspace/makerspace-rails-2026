@@ -12,6 +12,7 @@ RSpec.describe Invoice, type: :model do
                                     :resource_class,
                                     :plan_id,
                                     :transaction_id,
+                                    :last_failed_transaction_id,
                                     :subscription_id,
                                     :discount_id).of_type(String) }
     it { is_expected.to have_field(:amount).of_type(Float) }
