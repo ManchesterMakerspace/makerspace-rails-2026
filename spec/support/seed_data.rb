@@ -354,6 +354,14 @@ class SeedData
 
   # ── Braintree Subscriptions ───────────────────────────────────────────────
 
+  # Braintree's sandbox rejects bursts of rapid-fire requests with a
+  # Braintree::AuthorizationError (no Retry-After header to guide the delay) --
+  # observed even on an otherwise-idle sandbox account, not just under
+  # concurrent CI runs. Pace our own requests and retry transient rejections
+  # with backoff rather than aborting the whole seed run.
+  BRAINTREE_SEED_PACING = 0.3 # seconds between each member's Braintree calls
+  BRAINTREE_RETRY_DELAYS = [2, 5, 10].freeze # seconds, one retry per entry
+
   def create_subscriptions
     gateway        = Service::BraintreeGateway.connect_gateway
     invoice_option = InvoiceOption.find("one-month")
@@ -367,6 +375,7 @@ class SeedData
         member = Member.find_by(email: "#{prefix}#{n}@test.com")
         if member
           seed_subscription_for(member, invoice_option, gateway, SANDBOX_VISA_NONCE)
+          sleep(BRAINTREE_SEED_PACING)
         else
           puts "  [seed] Warning: #{label} member #{n} not found, skipping subscription."
         end
@@ -374,8 +383,28 @@ class SeedData
     end
   end
 
+  # Retries a Braintree sandbox call that failed with AuthorizationError,
+  # which in practice here means a transient rejection rather than a real
+  # auth problem (the surrounding calls in the same run succeed with the same
+  # credentials). Re-raises after exhausting BRAINTREE_RETRY_DELAYS.
+  def with_braintree_retry(description)
+    attempt = 0
+    begin
+      yield
+    rescue Braintree::AuthorizationError
+      delay = BRAINTREE_RETRY_DELAYS[attempt]
+      raise if delay.nil?
+      attempt += 1
+      puts "  [seed] Braintree::AuthorizationError on #{description} -- retrying in #{delay}s (attempt #{attempt}/#{BRAINTREE_RETRY_DELAYS.size})"
+      sleep(delay)
+      retry
+    end
+  end
+
   def seed_subscription_for(member, invoice_option, gateway, nonce)
-    results           = gateway.customer.search { |s| s.email.is(member.email) }
+    results = with_braintree_retry("customer search for #{member.email}") do
+      gateway.customer.search { |s| s.email.is(member.email) }
+    end
     existing_customer = results.first
     if existing_customer
       active_sub = find_active_subscription(existing_customer)
@@ -396,10 +425,12 @@ class SeedData
       # Creating a fresh customer instead avoids growing that history further.
       puts "  [seed] No active subscription for #{member.fullname} — creating fresh Braintree customer instead of reusing #{existing_customer.id}"
     end
-    result = gateway.customer.create(
-      first_name: member.firstname, last_name: member.lastname,
-      email: member.email, payment_method_nonce: nonce
-    )
+    result = with_braintree_retry("customer create for #{member.email}") do
+      gateway.customer.create(
+        first_name: member.firstname, last_name: member.lastname,
+        email: member.email, payment_method_nonce: nonce
+      )
+    end
     unless result.success?
       puts "  [seed] Warning: Could not create Braintree customer for #{member.fullname}: #{result.message}"
       return
@@ -440,11 +471,13 @@ class SeedData
       due_date: Time.now + 1.month
     )
     subscription_id = invoice.generate_subscription_id
-    result = gateway.subscription.create(
-      payment_method_token: payment_method_token,
-      plan_id: SANDBOX_PLAN_ID,
-      id: subscription_id
-    )
+    result = with_braintree_retry("subscription create for #{member.email}") do
+      gateway.subscription.create(
+        payment_method_token: payment_method_token,
+        plan_id: SANDBOX_PLAN_ID,
+        id: subscription_id
+      )
+    end
     unless result.success?
       puts "  [seed] Warning: Could not create subscription for #{member.fullname}: #{result.message}"
       return
