@@ -803,3 +803,7 @@ Reservation Slack notifications report the total outstanding balance across all 
 
 
 Edits that reuse an unpaid invoice restore its prior amount, due date, and description if reservation persistence fails, along with the reservation fields touched by the edit. This recovery handles errors both before and after the reservation write and permits retry without changing the invoice ID. A historical transaction ID alone no longer blocks edits after reversal: the processing guard uses an active invoice lock and timestamp, matching the invoice claim's 15-minute expiry. Direct payment submission remains protected by reservation shop/member locks.
+
+Payment notifications remain deliverable after a cancelled or denied reservation's shop is deleted. They use the original shop name from the fee snapshot when available, otherwise "Deleted shop", while retaining the existing DM update/fallback behavior.
+
+The published `ReservationPreview` contract includes required `feeLines`, `feeTotal`, and `feeConfirmation` fields, plus optional nullable `feeWarning`. Fee lines expose resource and invoice-option IDs, names, unit hours, quantity, unit price, and line amount. Clients should obtain a fresh preview after changes and submit its opaque token unchanged as `feeConfirmation` for charged creates/material edits. Free previews return an empty fee-line array and zero total.

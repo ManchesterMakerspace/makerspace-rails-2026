@@ -553,11 +553,35 @@ RSpec.configure do |config|
             required: [:code, :message]
           }
         },
+        feeLines: {
+          type: :array,
+          description: "Itemized duration fees for the proposed reservation.",
+          items: {
+            type: :object,
+            properties: {
+              resourceId: { type: :string },
+              resourceName: { type: :string },
+              invoiceOptionId: { type: :string },
+              name: { type: :string },
+              unitHours: { type: :number, minimum: 0 },
+              units: { type: :integer, minimum: 1 },
+              unitAmount: { type: :number, minimum: 0 },
+              amount: { type: :number, minimum: 0 }
+            },
+            required: [:resourceId, :resourceName, :invoiceOptionId, :name, :unitHours, :units, :unitAmount, :amount]
+          }
+        },
+        feeTotal: { type: :number, minimum: 0, description: "Amount due for this quote after paid invoice credit." },
+        feeConfirmation: {
+          type: :string,
+          description: "Opaque quote token. Send unchanged as feeConfirmation when creating or materially editing a fee-incurring reservation. Obtain a fresh preview after changing the reservation."
+        },
+        feeWarning: { type: :string, nullable: true, description: "Optional billing warning, such as overdue fee debt." },
         maximumDurationHours: { type: :number, multipleOf: 0.5, minimum: 0 }
       },
       required: [
         :eligible, :errors, :conflicts, :missingPrerequisites, :requiresApproval,
-        :approvalReasons, :approvalDetails, :maximumDurationHours
+        :approvalReasons, :approvalDetails, :maximumDurationHours, :feeLines, :feeTotal, :feeConfirmation
       ]
     },
     ReservationBlackout: {

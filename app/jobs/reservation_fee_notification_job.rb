@@ -13,7 +13,13 @@ class ReservationFeeNotificationJob < ApplicationJob
     balance = (fully_paid ? invoices : unpaid_invoices).sum { |invoice| BigDecimal(invoice.amount.to_s) }
     due_date = unpaid_invoices.map(&:due_date).compact.min
     zone = ReservationService::ZONE
-    resources = reservation.reservation_scope == "shop" ? reservation.shop.name : reservation.tools.map(&:name).join(", ")
+    resources = if reservation.reservation_scope == "shop"
+      saved_resource = Array(reservation.fee_snapshot).find { |line| line.to_h.stringify_keys["resourceId"] == reservation.shop_id.to_s }
+      Shop.where(id: reservation.shop_id).first&.name.presence ||
+        saved_resource&.to_h&.stringify_keys&.dig("resourceName").presence || "Deleted shop"
+    else
+      reservation.tools.map(&:name).join(", ")
+    end
     message = "Reservation: #{reservation.title} — #{resources}\n" \
       "#{reservation.start_at.in_time_zone(zone).strftime('%b %-d, %Y %H:%M %Z')} to #{reservation.end_at.in_time_zone(zone).strftime('%b %-d, %Y %H:%M %Z')}\n" \
       "Status: #{reservation.status}."

@@ -104,4 +104,32 @@ RSpec.describe ReservationFeeNotificationJob do
     described_class.perform_now(reservation.id.to_s)
   end
 
+  %w[cancelled denied].each do |status|
+    it "updates the payment DM for a #{status} reservation after its shop is deleted" do
+      reservation.update!(status: status, notified_at: "old.ts", notified_channel_id: "D123",
+        fee_snapshot: [{ "resourceId" => shop.id.to_s, "resourceName" => "Original shop", "amount" => 30 }])
+      shop.delete
+      invoice.update!(settled_at: Time.current)
+      allow(REDIS).to receive(:set).and_return(true)
+      allow(REDIS).to receive(:eval).and_return(1)
+      expect {
+        ReservationInvoiceSyncJob.perform_now(invoice.id.to_s)
+      }.to have_enqueued_job(ReservationFeeNotificationJob).with(reservation.id.to_s)
+      expect(Service::SlackConnector).to receive(:update_slack_message).with("D123", "old.ts",
+        include("Original shop", "Paid: $30.00", "Payment confirmed", "remains #{status}"))
+      expect(Service::SlackConnector).not_to receive(:send_slack_message)
+      described_class.perform_now(reservation.id.to_s)
+      expect(reservation.reload.status).to eq(status)
+    end
+  end
+
+  it "uses a readable fallback and sends a DM when no saved shop name exists" do
+    reservation.update!(status: "cancelled")
+    shop.delete
+    invoice.update!(settled_at: Time.current)
+    expect(Service::SlackConnector).to receive(:send_slack_message).with(include("Deleted shop", "Payment confirmed"), "U123")
+    described_class.perform_now(reservation.id.to_s)
+    expect(reservation.reload.notified_at).to eq("123.456")
+  end
+
 end
