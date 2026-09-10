@@ -53,6 +53,7 @@ class Slack::CommandsController < ApplicationController
   end
 
   def reserve
+    slack_request = nil
     channel_name=Service::SlackChannelCache.normalize_name( params[:channel_name] )
     shop = Shop.find_by(slack_channel: channel_name ) || Shop.find_by(slack_channel: params[:channel_name])
     unless shop
@@ -72,6 +73,7 @@ class Slack::CommandsController < ApplicationController
     end
 
     view = SlackReservationModal.build(shop, member)
+    slack_request = { method: "views.open", arguments: { trigger_id: params[:trigger_id], view: view } }
     Service::SlackConnector.open_modal(params[:trigger_id], view)
     render json: { response_type: "ephemeral", text: "Opening reservation form…" }
   rescue ::Error::CustomError => error
@@ -82,7 +84,7 @@ class Slack::CommandsController < ApplicationController
   rescue => error
     Rails.logger.error(
       "[SlackReservationError] action=open_modal slack_user_id=#{params[:user_id]} " \
-      "error=#{error.class}: #{error.message}"
+      "error=#{Service::SlackConnector.format_api_error(error, request: slack_request)}"
     )
     Honeybadger.notify(error) if defined?(Honeybadger)
     render json: {
