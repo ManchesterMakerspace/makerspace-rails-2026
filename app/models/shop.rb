@@ -81,9 +81,18 @@ class Shop
 
   def enqueue_checkout_canvas_sync_after_channel_change
     return unless previous_changes.key?("slack_channel")
-    return if checkout_canvas_id.blank? || slack_channel.blank?
+    return if slack_channel.blank?
+    return if checkout_canvas_id.blank? && !active_tool_checkouts?
 
     ToolCheckoutSlackCanvasSyncJob.perform_later(id.to_s)
+  end
+
+  def active_tool_checkouts?
+    tool_ids = tools.pluck(:id)
+    tool_ids.present? && ToolCheckout.where(
+      :tool_id.in => tool_ids,
+      revoked_at: nil
+    ).exists?
   end
 
   def reservation_duration_uses_half_hours
