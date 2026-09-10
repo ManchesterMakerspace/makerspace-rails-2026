@@ -225,7 +225,8 @@ describe VolunteerCredit, type: :model do
     end
 
     it 'never counts EM-period credits toward a discount, even after the member converts to a paid subscription' do
-      allow_any_instance_of(VolunteerCredit).to receive(:notify_discount_applied).and_return(nil)
+      allow(VolunteerCredit).to receive(:discount_id).and_return('monthly_membership_sso')
+      allow_any_instance_of(VolunteerCredit).to receive(:apply_braintree_discount).and_return(nil)
       em = create(:earned_membership, member: member)
 
       # 8 credits earned while EM was active would satisfy the threshold
