@@ -72,4 +72,36 @@ RSpec.describe ReservationFeeNotificationJob do
     described_class.perform_now(reservation.id.to_s)
   end
 
+  it "reports all unpaid debt, excluding paid invoices and duplicate links" do
+    historical = invoice
+    difference = Invoice.create!(member: member, resource_id: member.id.to_s, resource_class: "fee",
+      amount: 10, due_date: 1.day.from_now, reservation_id: reservation.id.to_s)
+    paid = Invoice.create!(member: member, resource_id: member.id.to_s, resource_class: "fee",
+      amount: 5, due_date: 1.day.from_now, settled_at: Time.current, reservation_id: reservation.id.to_s)
+    reservation.update!(invoice: difference.id.to_s, previous_invoice_ids: [historical.id.to_s, historical.id.to_s, paid.id.to_s],
+      notified_at: "old.ts", notified_channel_id: "D123")
+    expect(Service::SlackConnector).to receive(:update_slack_message).with("D123", "old.ts",
+      include("Unpaid: $40.00", "2 unpaid invoices", "paid before"))
+    expect(Service::SlackConnector).not_to receive(:send_slack_message)
+    described_class.perform_now(reservation.id.to_s)
+  end
+
+  it "reports historical unpaid debt even if the current invoice is paid" do
+    historical = invoice
+    current = Invoice.create!(member: member, resource_id: member.id.to_s, resource_class: "fee",
+      amount: 10, due_date: 1.day.from_now, settled_at: Time.current, reservation_id: reservation.id.to_s)
+    reservation.update!(invoice: current.id.to_s, previous_invoice_ids: [historical.id.to_s])
+    expect(Service::SlackConnector).to receive(:send_slack_message).with(include("Unpaid: $30.00", "paid before"), "U123")
+    described_class.perform_now(reservation.id.to_s)
+  end
+
+  it "reports total payment across all settled invoices" do
+    invoice.update!(settled_at: Time.current)
+    current = Invoice.create!(member: member, resource_id: member.id.to_s, resource_class: "fee",
+      amount: 10, due_date: 1.day.from_now, settled_at: Time.current, reservation_id: reservation.id.to_s)
+    reservation.update!(invoice: current.id.to_s, previous_invoice_ids: [invoice.id.to_s], status: "approved")
+    expect(Service::SlackConnector).to receive(:send_slack_message).with(include("Paid: $40.00", "Payment confirmed"), "U123")
+    described_class.perform_now(reservation.id.to_s)
+  end
+
 end

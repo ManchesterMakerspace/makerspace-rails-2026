@@ -797,3 +797,6 @@ The member reservation page groups unpaid bookings with outstanding approval rea
 
 
 Every material edit replaces the accepted fee quote, including replacing it with an empty quote when a pending request becomes free. Later RM approval therefore cannot apply a superseded charge. Difference-invoice creation retains the draft invoice ID and restores the persisted reservation fields on failure (including failures after the reservation write), deleting the new invoice without touching earlier invoices or concurrent Slack message metadata. The same recovery protects invoicing during approval and permits clean retries.
+
+
+Reservation Slack notifications report the total outstanding balance across all linked unpaid invoices, counting each invoice once and excluding settled invoices. If every linked invoice is settled, they report the total paid. The payment warning and due date use the earliest outstanding invoice due date. Both published Reservation and ReservationAgenda status enums include `unpaid`, including the checked-in Swagger document.

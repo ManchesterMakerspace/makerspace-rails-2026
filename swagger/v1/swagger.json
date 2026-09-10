@@ -1135,6 +1135,7 @@
             "type": "string",
             "enum": [
               "pending",
+              "unpaid",
               "approved",
               "denied",
               "cancelled"
@@ -1419,6 +1420,7 @@
                   "type": "string",
                   "enum": [
                     "pending",
+                    "unpaid",
                     "approved"
                   ]
                 },

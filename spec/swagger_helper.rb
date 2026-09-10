@@ -502,7 +502,7 @@ RSpec.configure do |config|
         toolNames: { type: :array, items: { type: :string } },
         startAt: { type: :string, format: 'date-time' },
         endAt: { type: :string, format: 'date-time' },
-        status: { type: :string, enum: %w[pending approved denied cancelled] },
+        status: { type: :string, enum: %w[pending unpaid approved denied cancelled] },
         approvalReasons: { type: :array, items: { type: :string } },
         approvalDetails: {
           type: :array,
@@ -604,7 +604,7 @@ RSpec.configure do |config|
               slackUsername: { type: :string, 'x-nullable': true },
               startAt: { type: :string, format: 'date-time' },
               endAt: { type: :string, format: 'date-time' },
-              status: { type: :string, enum: %w[pending approved] },
+              status: { type: :string, enum: %w[pending unpaid approved] },
               reservationScope: { type: :string, enum: %w[shop tools] },
               toolNames: { type: :array, items: { type: :string } },
               inProgress: { type: :boolean }

@@ -7,10 +7,11 @@ class ReservationFeeNotificationJob < ApplicationJob
     user = SlackUser.find_by(member_id: reservation.member_id)
     return unless user && !reservation.member.direct_notifications_suppressed?
 
-    invoice = reservation.fee_invoice
-    if invoice&.settled && ReservationFeeService.amount_due(reservation.fee_snapshot, reservation).positive?
-      invoice = ReservationFeeService.linked_invoices(reservation).find { |item| !item.settled } || invoice
-    end
+    invoices = ReservationFeeService.linked_invoices(reservation)
+    unpaid_invoices = invoices.reject(&:settled)
+    fully_paid = unpaid_invoices.empty?
+    balance = (fully_paid ? invoices : unpaid_invoices).sum { |invoice| BigDecimal(invoice.amount.to_s) }
+    due_date = unpaid_invoices.map(&:due_date).compact.min
     zone = ReservationService::ZONE
     resources = reservation.reservation_scope == "shop" ? reservation.shop.name : reservation.tools.map(&:name).join(", ")
     message = "Reservation: #{reservation.title} — #{resources}\n" \
@@ -20,19 +21,22 @@ class ReservationFeeNotificationJob < ApplicationJob
       message += " Your reservation has been approved; payment is required to make it valid."
     end
     message += "\nNote: #{reservation.decision_note}" if reservation.decision_note.present?
-    if invoice
-      message += " #{invoice.settled ? 'Paid' : 'Unpaid'}: $#{format('%.2f', invoice.amount)}."
-      if invoice.settled
+    if invoices.present?
+      message += " #{fully_paid ? 'Paid' : 'Unpaid'}: $#{format('%.2f', balance)}."
+      if fully_paid
         message += " Payment confirmed."
         message += " This reservation remains #{reservation.status}; payment does not reinstate it." if reservation.cancelled? || reservation.status == "denied"
       elsif reservation.cancelled?
         message += " Your unpaid reservation has been cancelled. The invoice remains payable."
       elsif reservation.status == "denied"
         message += " Your reservation was denied. The invoice remains payable."
-      elsif invoice.due_date < Time.current
+      elsif due_date && due_date < Time.current
         message += " Warning: this is not a valid reservation unless the fee is paid before the reservation starts."
       end
-      message += "\nPayment due: #{invoice.due_date.in_time_zone(zone).strftime('%b %-d, %Y %H:%M %Z')}." unless invoice.settled
+      if unpaid_invoices.length > 1
+        message += " The outstanding balance covers #{unpaid_invoices.length} unpaid invoices."
+      end
+      message += "\nPayment due: #{due_date.in_time_zone(zone).strftime('%b %-d, %Y %H:%M %Z')}." if due_date
       message += " <#{Rails.configuration.x.app_base_url}/billing/invoices|View invoices>"
     end
     if reservation.notified_at.present?
