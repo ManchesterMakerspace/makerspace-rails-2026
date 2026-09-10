@@ -329,6 +329,108 @@ RSpec.describe Service::SlackUserSync do
 
       expect(described_class.detect_conflicts).to eq([])
     end
+
+    it 'includes a persisted conflict that no longer reproduces via a live directory scan' do
+      member = create(:member, email: 'shared@example.com')
+      SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email, real_name: 'Real Account')
+      SlackIdentityConflict.create!(
+        slack_id: 'UGONE', slack_name: 'Gone Identity', slack_email: 'gone@example.com',
+        member_id: member.id, conflicting_slack_id: 'UACTIVE', conflicting_slack_name: 'Real Account',
+        conflicting_slack_email: member.email, source: 'member_provisioning'
+      )
+
+      # The rejected identity no longer appears in the live directory at all --
+      # e.g. deactivated since the conflict was originally reported.
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true, 'members' => [], 'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      conflicts = described_class.detect_conflicts
+
+      expect(conflicts).to contain_exactly(
+        hash_including(slack_id: 'UGONE', member_id: member.id.to_s, conflicting_slack_id: 'UACTIVE')
+      )
+    end
+
+    it 'does not duplicate a conflict the live scan already found' do
+      member = create(:member, email: 'shared@example.com')
+      SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email, real_name: 'Real Account')
+      SlackIdentityConflict.create!(
+        slack_id: 'UDUPLICATE', slack_name: 'Duplicate Identity', slack_email: member.email,
+        member_id: member.id, conflicting_slack_id: 'UACTIVE', conflicting_slack_name: 'Real Account',
+        conflicting_slack_email: member.email, source: 'bulk sync'
+      )
+
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true,
+        'members' => [slack_member('UDUPLICATE', member.email, 'Duplicate Identity')],
+        'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      expect(described_class.detect_conflicts.size).to eq(1)
+    end
+
+    it 'skips a persisted conflict whose member no longer exists' do
+      SlackIdentityConflict.create!(
+        slack_id: 'UGHOST', member_id: BSON::ObjectId.new, conflicting_slack_id: 'UACTIVE'
+      )
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true, 'members' => [], 'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      expect(described_class.detect_conflicts).to eq([])
+    end
+  end
+
+  describe 'persisting conflicts' do
+    let(:client) { double('Slack client') }
+    let(:member) { create(:member, email: 'member@example.com') }
+
+    before do
+      allow(Service::SlackConnector).to receive(:api_token_present?).and_return(true)
+      allow(Service::SlackConnector).to receive(:client).and_return(client)
+      allow(Service::AuditLogger).to receive(:log)
+      allow(client).to receive(:users_lookupByEmail).and_raise(Slack::Web::Api::Errors::UsersNotFound.new('not_found'))
+      allow(client).to receive(:users_info).with(user: 'UNEW').and_return(
+        'user' => {
+          'id' => 'UNEW', 'name' => 'member',
+          'profile' => { 'email' => member.email, 'real_name' => 'Member Name' }
+        }
+      )
+    end
+
+    it 'persists an unresolved conflict when sync_single hits one' do
+      SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email, real_name: 'Real Account')
+
+      described_class.sync_single('UNEW')
+
+      persisted = SlackIdentityConflict.find_by(slack_id: 'UNEW')
+      expect(persisted).to have_attributes(
+        member_id: member.id,
+        conflicting_slack_id: 'UACTIVE',
+        source: 'single-user sync',
+        resolved_at: nil
+      )
+    end
+
+    it 'clears the persisted conflict once reassign_identity links the rejected identity' do
+      SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email, real_name: 'Real Account')
+      described_class.sync_single('UNEW')
+      expect(SlackIdentityConflict.find_by(slack_id: 'UNEW').resolved_at).to be_nil
+
+      described_class.reassign_identity(slack_id: 'UNEW', member_id: member.id.to_s)
+
+      expect(SlackIdentityConflict.find_by(slack_id: 'UNEW').resolved_at).to be_present
+    end
+
+    it 'clears the persisted conflict once dismiss_conflict quarantines the rejected identity' do
+      SlackUser.create!(member: member, slack_id: 'UACTIVE', slack_email: member.email, real_name: 'Real Account')
+      described_class.sync_single('UNEW')
+
+      described_class.dismiss_conflict(slack_id: 'UNEW', member_id: member.id.to_s)
+
+      expect(SlackIdentityConflict.find_by(slack_id: 'UNEW').resolved_at).to be_present
+    end
   end
 
   describe '.reassign_identity' do
