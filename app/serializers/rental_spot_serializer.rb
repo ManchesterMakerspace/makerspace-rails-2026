@@ -13,6 +13,7 @@ class RentalSpotSerializer < ActiveModel::Serializer
              :invoice_option_id,
              :invoice_option_name,
              :invoice_option_amount,
+             :invoice_option_quantity,
              :invoice_option_plan_id
 
   def available
@@ -33,6 +34,11 @@ class RentalSpotSerializer < ActiveModel::Serializer
 
   def invoice_option_amount
     object.invoice_option&.amount
+  end
+
+  # See RentalTypeSerializer#invoice_option_quantity for what this represents.
+  def invoice_option_quantity
+    object.invoice_option&.quantity
   end
 
   def invoice_option_plan_id
