@@ -201,7 +201,8 @@ module Service
         [
           shop.canvas_today,
           shop.canvas_tomorrow,
-          shop.volunteer_canvas_id
+          shop.volunteer_canvas_id,
+          shop.checkout_canvas_id
         ].compact_blank.uniq
       end
 

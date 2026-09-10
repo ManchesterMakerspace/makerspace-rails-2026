@@ -21,6 +21,7 @@ class Shop
   field :canvas_today, type: String
   field :canvas_tomorrow, type: String
   field :volunteer_canvas_id, type: String
+  field :checkout_canvas_id, type: String
 
   has_many :tools, dependent: :destroy
   has_many :reservation_blackouts, dependent: :destroy
