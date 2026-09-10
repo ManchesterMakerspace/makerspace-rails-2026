@@ -18,7 +18,14 @@ class ReservationFeeNotificationJob < ApplicationJob
       Shop.where(id: reservation.shop_id).first&.name.presence ||
         saved_resource&.to_h&.stringify_keys&.dig("resourceName").presence || "Deleted shop"
     else
-      reservation.tools.map(&:name).join(", ")
+      current_names = reservation.tools.to_h { |tool| [tool.id.to_s, tool.name] }
+      saved_names = Array(reservation.fee_snapshot).to_h do |line|
+        entry = line.to_h.stringify_keys
+        [entry["resourceId"], entry["resourceName"]]
+      end
+      Array(reservation.tool_ids).map do |tool_id|
+        current_names[tool_id.to_s].presence || saved_names[tool_id.to_s].presence || "Deleted tool"
+      end.join(", ")
     end
     message = "Reservation: #{reservation.title} — #{resources}\n" \
       "#{reservation.start_at.in_time_zone(zone).strftime('%b %-d, %Y %H:%M %Z')} to #{reservation.end_at.in_time_zone(zone).strftime('%b %-d, %Y %H:%M %Z')}\n" \

@@ -918,6 +918,48 @@
             "items": {
               "type": "string"
             }
+          },
+          "minimumAdvanceNoticeHours": {
+            "type": "number",
+            "minimum": 0,
+            "default": 2
+          },
+          "prohibitSameDayReservations": {
+            "type": "boolean",
+            "default": false
+          },
+          "reservationFullDay": {
+            "type": "boolean",
+            "default": false
+          },
+          "durationFees": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "object",
+              "properties": {
+                "invoiceOptionId": {
+                  "type": "string"
+                },
+                "minimumHours": {
+                  "type": "number",
+                  "nullable": true,
+                  "description": "Required for hourly rules; positive half-hour increments."
+                },
+                "maximumHours": {
+                  "type": "number",
+                  "nullable": true,
+                  "description": "Required for hourly rules; at least minimumHours."
+                },
+                "fullDay": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "required": [
+                "invoiceOptionId"
+              ]
+            }
           }
         }
       },
@@ -1196,6 +1238,67 @@
           "calendarSyncError": {
             "type": "string",
             "x-nullable": true
+          },
+          "fullDay": {
+            "type": "boolean",
+            "default": false
+          },
+          "invoice": {
+            "type": "string",
+            "nullable": true,
+            "description": "Attached invoice ID; included only for the owner or a manager."
+          },
+          "notifiedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Slack message timestamp (not a date-time); included only for the owner or a manager."
+          },
+          "feeSnapshot": {
+            "type": "array",
+            "description": "Saved fee line items; included only for the owner or a manager.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resourceId": {
+                  "type": "string"
+                },
+                "resourceName": {
+                  "type": "string"
+                },
+                "invoiceOptionId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "unitHours": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "units": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "unitAmount": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "amount": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "resourceId",
+                "resourceName",
+                "invoiceOptionId",
+                "name",
+                "unitHours",
+                "units",
+                "unitAmount",
+                "amount"
+              ]
+            }
           }
         },
         "required": [
@@ -1207,7 +1310,8 @@
           "toolIds",
           "startAt",
           "endAt",
-          "status"
+          "status",
+          "fullDay"
         ]
       },
       "ReservationPreview": {

@@ -807,3 +807,7 @@ Edits that reuse an unpaid invoice restore its prior amount, due date, and descr
 Payment notifications remain deliverable after a cancelled or denied reservation's shop is deleted. They use the original shop name from the fee snapshot when available, otherwise "Deleted shop", while retaining the existing DM update/fallback behavior.
 
 The published `ReservationPreview` contract includes required `feeLines`, `feeTotal`, and `feeConfirmation` fields, plus optional nullable `feeWarning`. Fee lines expose resource and invoice-option IDs, names, unit hours, quantity, unit price, and line amount. Clients should obtain a fresh preview after changes and submit its opaque token unchanged as `feeConfirmation` for charged creates/material edits. Free previews return an empty fee-line array and zero total.
+
+For deleted tools, payment notifications resolve each selected tool by its current name, then its saved fee-snapshot name, then "Deleted tool". Historical fee lines for tools no longer selected are not included.
+
+The shared published resource configuration includes minimumAdvanceNoticeHours (default 2, minimum 0), prohibitSameDayReservations, reservationFullDay, and durationFees with invoiceOptionId, minimumHours, maximumHours, and fullDay. Reservation responses publish fullDay and the optional owner/manager billing fields invoice, feeSnapshot, and notifiedAt. Invoice and notification IDs may be null; notifiedAt is a Slack message timestamp string, not a date-time.

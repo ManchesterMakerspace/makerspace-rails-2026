@@ -132,4 +132,27 @@ RSpec.describe ReservationFeeNotificationJob do
     expect(reservation.reload.notified_at).to eq("123.456")
   end
 
+  %w[cancelled denied].each do |status|
+    it "uses saved names for deleted tools while retaining current names for surviving tools (#{status})" do
+      removed = create(:tool, shop: shop, name: "Removed tool")
+      surviving = create(:tool, shop: shop, name: "Current tool")
+      unknown = create(:tool, shop: shop, name: "Unsaved tool")
+      unknown_id = unknown.id.to_s
+      reservation.update!(reservation_scope: "tools", tool_ids: [removed.id.to_s, surviving.id.to_s, unknown_id],
+        status: status, notified_at: "old.ts", notified_channel_id: "D123",
+        fee_snapshot: [
+          { "resourceId" => removed.id.to_s, "resourceName" => "Saved tool", "amount" => 30 },
+          { "resourceId" => surviving.id.to_s, "resourceName" => "Old tool name", "amount" => 0 },
+          { "resourceId" => BSON::ObjectId.new.to_s, "resourceName" => "Previously removed selection", "amount" => 0 }
+        ])
+      removed.delete
+      unknown.delete
+      invoice.update!(settled_at: Time.current)
+      expect(Service::SlackConnector).to receive(:update_slack_message).with("D123", "old.ts",
+        include("Saved tool, Current tool, Deleted tool", "Payment confirmed", "remains #{status}"))
+      expect(Service::SlackConnector).not_to receive(:send_slack_message)
+      described_class.perform_now(reservation.id.to_s)
+    end
+  end
+
 end
