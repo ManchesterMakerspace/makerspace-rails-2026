@@ -348,8 +348,8 @@ module Service
             if resource.resource_name != record.name
               resource.resource_name = record.name
               resource = directory.update_calendar_resource(customer_id, resource.resource_id, resource)
-              ensure_default_free_busy_acl(resource.resource_email)
             end
+            ensure_default_free_busy_acl(resource.resource_email)
             record.set(resource_email: resource.resource_email)
             return resource
           rescue Google::Apis::ClientError => error
@@ -372,7 +372,7 @@ module Service
             **location_attributes_for(record, category)
           )
         )
-        ensure_default_free_busy_acl(resource.resource_email) unless matches.first
+        ensure_default_free_busy_acl(resource.resource_email)
 
         record.set(
           google_resource_id: resource.resource_id,
@@ -386,7 +386,14 @@ module Service
           scope: Google::Apis::CalendarV3::AclRule::Scope.new(type: "default"),
           role: "freeBusyReader"
         )
-        calendar.insert_acl(calendar_id, rule)
+        service = calendar
+        begin
+          service.update_acl(calendar_id, "default", rule)
+        rescue Google::Apis::ClientError => error
+          raise unless error.status_code == 404
+
+          service.insert_acl(calendar_id, rule)
+        end
       rescue Google::Apis::Error => error
         Rails.logger.error(
           "[GoogleCalendarAcl] Could not set default free/busy access for " \

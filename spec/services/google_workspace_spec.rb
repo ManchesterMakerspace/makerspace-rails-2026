@@ -114,7 +114,9 @@ RSpec.describe Service::GoogleWorkspace do
 
   describe ".ensure_resource!" do
     let(:directory_service) { double("Google Directory service") }
-    let(:calendar_service) { double("Google Calendar service", insert_acl: nil) }
+    let(:calendar_service) do
+      double("Google Calendar service", update_acl: nil, insert_acl: nil)
+    end
 
     before do
       allow(described_class).to receive(:directory).and_return(directory_service)
@@ -139,8 +141,9 @@ RSpec.describe Service::GoogleWorkspace do
       described_class.ensure_resource!(shop, "CONFERENCE_ROOM")
 
       expect(shop.reload.google_resource_id).to eq("R1")
-      expect(calendar_service).to have_received(:insert_acl) do |calendar_id, rule|
+      expect(calendar_service).to have_received(:update_acl) do |calendar_id, rule_id, rule|
         expect(calendar_id).to eq("shop@resource.calendar.google.com")
+        expect(rule_id).to eq("default")
         expect(rule.scope.type).to eq("default")
         expect(rule.role).to eq("freeBusyReader")
       end
@@ -171,7 +174,7 @@ RSpec.describe Service::GoogleWorkspace do
       )
       allow(directory_service).to receive(:calendar_resource).and_return(created_resource)
       error = Google::Apis::ServerError.new("ACL unavailable")
-      allow(calendar_service).to receive(:insert_acl).and_raise(error)
+      allow(calendar_service).to receive(:update_acl).and_raise(error)
       allow(Rails.logger).to receive(:error)
 
       expect { described_class.ensure_resource!(shop, "CONFERENCE_ROOM") }.not_to raise_error
@@ -179,6 +182,49 @@ RSpec.describe Service::GoogleWorkspace do
       expect(shop.reload.google_resource_id).to eq("R3")
       expect(Rails.logger).to have_received(:error).with(
         include("shop-3@resource.calendar.google.com", "ACL unavailable")
+      )
+    end
+
+    it "inserts the default ACL when it does not exist yet" do
+      tool = create(:tool)
+      created_resource = double(
+        resource_id: "R5",
+        resource_email: "tool-5@resource.calendar.google.com"
+      )
+      not_found = Google::Apis::ClientError.new("ACL not found")
+      allow(not_found).to receive(:status_code).and_return(404)
+      allow(directory_service).to receive(:calendar_resource).and_return(created_resource)
+      allow(calendar_service).to receive(:update_acl).and_raise(not_found)
+
+      described_class.ensure_resource!(tool, "OTHER")
+
+      expect(calendar_service).to have_received(:insert_acl) do |calendar_id, rule|
+        expect(calendar_id).to eq("tool-5@resource.calendar.google.com")
+        expect(rule.scope.type).to eq("default")
+        expect(rule.role).to eq("freeBusyReader")
+      end
+    end
+
+    it "reapplies the ACL when an existing resource is unchanged" do
+      shop = create(
+        :shop,
+        google_resource_id: "R4",
+        resource_email: "old-address@resource.calendar.google.com"
+      )
+      resource = double(
+        resource_id: "R4",
+        resource_name: shop.name,
+        resource_email: "shop-4@resource.calendar.google.com"
+      )
+      allow(directory_service).to receive(:get_calendar_resource).and_return(resource)
+
+      described_class.ensure_resource!(shop, "CONFERENCE_ROOM")
+
+      expect(directory_service).not_to have_received(:list_calendar_resources)
+      expect(calendar_service).to have_received(:update_acl).with(
+        "shop-4@resource.calendar.google.com",
+        "default",
+        an_instance_of(Google::Apis::CalendarV3::AclRule)
       )
     end
   end
