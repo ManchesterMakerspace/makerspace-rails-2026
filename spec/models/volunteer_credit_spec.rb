@@ -192,6 +192,10 @@ describe VolunteerCredit, type: :model do
   end
 
   describe 'earned_while_em_active' do
+    # The outer before block stubs EarnedMembership.active.where(...).exists?
+    # to always return false -- these tests need the real query behavior.
+    before { allow(EarnedMembership).to receive(:active).and_call_original }
+
     it 'flags a credit created while the member has an active earned membership' do
       create(:earned_membership, member: member)
       credit = VolunteerCredit.create!(valid_attrs)
