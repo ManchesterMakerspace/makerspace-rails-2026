@@ -9,6 +9,43 @@ class SlackReservationModal
       scope_options << option("Entire shop", "shop") if shop.reservable
       scope_options << option("One or more tools", "tools") if tools.present?
 
+      blocks = [
+        input("title", "title", "Title", { type: "plain_text_input" }),
+        input("scope", "scope", "Reserve", {
+          type: "radio_buttons",
+          options: scope_options,
+          initial_option: scope_options.first
+        })
+      ]
+      if tools.present?
+        blocks << {
+          type: "input",
+          block_id: "tools",
+          optional: true,
+          label: plain("Tools"),
+          element: {
+            type: "multi_static_select",
+            action_id: "tools",
+            placeholder: plain("Select tools"),
+            options: tools.map { |tool| option(tool.name, tool.id.to_s) }
+          }
+        }
+      end
+      blocks.concat([
+        input("date", "date", "Date", {
+          type: "datepicker",
+          initial_date: Time.current.in_time_zone(ReservationService::ZONE).to_date.iso8601
+        }),
+        input("start_time", "start_time", "Start time", {
+          type: "timepicker",
+          initial_time: next_half_hour.strftime("%H:%M")
+        }),
+        input("end_time", "end_time", "End time", {
+          type: "timepicker",
+          initial_time: (next_half_hour + 1.hour).strftime("%H:%M")
+        })
+      ])
+
       {
         type: "modal",
         callback_id: "reservation_submit",
@@ -16,38 +53,7 @@ class SlackReservationModal
         title: plain("Reserve #{shop.name}".first(24)),
         submit: plain("Reserve"),
         close: plain("Cancel"),
-        blocks: [
-          input("title", "title", "Title", { type: "plain_text_input" }),
-          input("scope", "scope", "Reserve", {
-            type: "radio_buttons",
-            options: scope_options,
-            initial_option: scope_options.first
-          }),
-          {
-            type: "input",
-            block_id: "tools",
-            optional: true,
-            label: plain("Tools"),
-            element: {
-              type: "multi_static_select",
-              action_id: "tools",
-              placeholder: plain("Select tools"),
-              options: tools.map { |tool| option(tool.name, tool.id.to_s) }
-            }
-          },
-          input("date", "date", "Date", {
-            type: "datepicker",
-            initial_date: Time.current.in_time_zone(ReservationService::ZONE).to_date.iso8601
-          }),
-          input("start_time", "start_time", "Start time", {
-            type: "timepicker",
-            initial_time: next_half_hour.strftime("%H:%M")
-          }),
-          input("end_time", "end_time", "End time", {
-            type: "timepicker",
-            initial_time: (next_half_hour + 1.hour).strftime("%H:%M")
-          })
-        ]
+        blocks: blocks
       }
     end
 
