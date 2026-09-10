@@ -22,6 +22,18 @@ RSpec.describe SlackCheckoutRequestJob do
     described_class.perform_now('response_url' => 'https://example.test/response', 'user_id' => 'U123', 'tool_name' => tool_name)
   end
 
+  it 'rejects open tools without creating requests' do
+    tool.update!(open: true)
+    expect { perform(tool.name) }.not_to change { ToolCheckoutRequest.count }
+    expect(posted_bodies.last['text']).to include('No checkout required')
+  end
+
+  it 'rejects tools in hidden shops' do
+    tool.name
+    shop.update!(disabled: true)
+    expect { perform(tool.name) }.not_to change { ToolCheckoutRequest.count }
+  end
+
   it 'lists eligible tools when no tool name is given' do
     tool_name = tool.name # force creation before the job queries for eligible tools
     perform(nil)

@@ -1,0 +1,4 @@
+<h1><%= page[:name] %></h1><p class="description"><%= page[:description] %></p>
+<p><%= link_to page[:shop][:name], "/shops/#{page[:shop][:id]}/public.html" %></p>
+<% if page[:wiki_url] %><p><%= link_to "Tool wiki", page[:wiki_url] %></p><% end %>
+<% if page[:open] %><p class="status">No checkout required</p><% else %><%= link_to "Request checkout", "/tools/#{page[:id]}/request-checkout", class: "button" %><% end %>

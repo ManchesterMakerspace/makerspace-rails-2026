@@ -1,0 +1,5 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title><%= page[:name] %> · Manchester Makerspace</title><%= stylesheet_link_tag "public_catalog" %></head>
+<body><header><a href="https://manchestermakerspace.org"><%= image_tag "FilledLaserableLogo.svg", alt: "Manchester Makerspace", width: 180 %></a></header>
+<main><article><%= yield %></article></main></body></html>

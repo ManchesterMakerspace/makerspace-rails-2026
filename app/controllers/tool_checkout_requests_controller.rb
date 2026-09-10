@@ -1,4 +1,7 @@
 class ToolCheckoutRequestsController < AuthenticationController
+  include CatalogUnavailable
+  prepend_before_action { response.set_header("Cache-Control", "private, no-store") }
+
   before_action :find_request, only: [:update, :destroy]
 
   def index
@@ -15,7 +18,8 @@ class ToolCheckoutRequestsController < AuthenticationController
   end
 
   def create
-    tool = Tool.find(request_params[:tool_id])
+    tool, = PublicCatalog.tool(request_params[:tool_id], public_only: false)
+    raise ::Error::UnprocessableEntity.new("No checkout required") if tool.open
     eligible = if current_member.status == 'pending'
       tool.allow_pending
     else

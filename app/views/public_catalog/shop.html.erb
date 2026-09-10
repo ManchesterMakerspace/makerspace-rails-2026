@@ -1,0 +1,5 @@
+<h1><%= page[:name] %></h1>
+<% if page[:wiki_url] %><p><%= link_to "Shop wiki", page[:wiki_url] %></p><% end %>
+<h2>Tools</h2><ul>
+<% page[:tools].each do |tool| %><li><%= link_to tool[:name], "/tools/#{tool[:id]}/public.html" %><% if tool[:open] %> <span class="status">No checkout required</span><% end %></li><% end %>
+</ul>

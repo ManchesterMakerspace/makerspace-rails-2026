@@ -5,6 +5,11 @@ Rails.application.routes.draw do
     mount Rswag::Api::Engine => '/api-docs'
   end
 
+  get "/shops/:id/public", to: "public_catalog#shop", defaults: { format: :json }
+  get "/tools/:id/public", to: "public_catalog#tool", defaults: { format: :json }
+  get "/tools/:id/request-checkout", to: "checkout_links#show"
+  get "/api/tools/:id/coreq", to: "checkout_links#context"
+
   root to: "application#application"
   post '/ipnlistener', to: 'paypal#notify'
   post '/mailtrap_listener', to: 'mailtrap#webhooks', defaults: { format: :json }

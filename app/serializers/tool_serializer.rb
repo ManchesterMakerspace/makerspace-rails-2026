@@ -1,5 +1,5 @@
 class ToolSerializer < ActiveModel::Serializer
-  attributes :id, :name, :wiki_url, :gdrive_id, :description, :disabled,
+  attributes :open, :id, :name, :wiki_url, :gdrive_id, :description, :disabled,
              :allow_pending, :announce,
              :announce_channel, :users_channel, :shop_id, :prerequisite_ids,
              :reservable, :max_concurrent_reservations, :reservation_horizon_days,
@@ -52,7 +52,7 @@ class ToolSerializer < ActiveModel::Serializer
   end
 
   attribute :requestable, if: :include_availability? do
-    true
+    !object.open
   end
 
   def include_availability?

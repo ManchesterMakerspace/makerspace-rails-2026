@@ -17,6 +17,12 @@ class ToolCheckoutRequest
   validates :status, inclusion: { in: %w[open closed deleted] }
   validates :note, length: { maximum: 128 }, allow_blank: true
 
+  validate :tool_requires_checkout, on: :create
+
+  def tool_requires_checkout
+    errors.add(:tool, "No checkout required") if tool&.open
+  end
+
   def open?
     status == "open"
   end

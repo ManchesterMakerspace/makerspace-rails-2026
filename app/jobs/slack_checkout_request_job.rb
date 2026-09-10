@@ -27,6 +27,11 @@ class SlackCheckoutRequestJob < ApplicationJob
       return
     end
 
+    if tool.open || tool.shop.nil? || tool.shop.disabled?
+      post_response(response_url, :ephemeral, tool.open ? "No checkout required" : "Tool unavailable")
+      return
+    end
+
     existing_checkout = ToolCheckout.where(member_id: invoker.id, tool_id: tool.id, revoked_at: nil).first
     if existing_checkout
       existing_checkout.send_notes_slack_notification
@@ -49,7 +54,7 @@ class SlackCheckoutRequestJob < ApplicationJob
   end
 
   def eligible?(member, tool)
-    return false if tool.disabled?
+    return false if tool.open || tool.disabled? || tool.shop.nil? || tool.shop.disabled?
     if member.status == 'pending'
       tool.allow_pending
     else
