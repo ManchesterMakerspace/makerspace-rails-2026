@@ -68,7 +68,10 @@ module Service
       if existing
         conflict = active_identity_conflict(member, excluding: existing)
         if conflict
-          report_identity_conflict(member, slack_id, conflict, 'single-user sync')
+          report_identity_conflict(
+            member, slack_id, conflict, 'single-user sync',
+            slack_name: real_name.presence || name, slack_email: slack_email
+          )
           return nil
         end
 
@@ -80,7 +83,10 @@ module Service
       else
         conflict = active_identity_conflict(member)
         if conflict
-          report_identity_conflict(member, slack_id, conflict, 'single-user sync')
+          report_identity_conflict(
+            member, slack_id, conflict, 'single-user sync',
+            slack_name: real_name.presence || name, slack_email: slack_email
+          )
           return nil
         end
 
@@ -197,7 +203,10 @@ module Service
               conflict = active_identity_conflict(member, excluding: existing)
               if conflict
                 puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — Member #{member.fullname} already has an active Slack identity"
-                report_identity_conflict(member, slack_id, conflict, 'bulk sync')
+                report_identity_conflict(
+                  member, slack_id, conflict, 'bulk sync',
+                  slack_name: real_name.presence || name, slack_email: slack_email
+                )
                 skipped_count += 1
                 next
               end
@@ -213,7 +222,10 @@ module Service
               conflict = active_identity_conflict(member)
               if conflict
                 puts "[Slack Sync] SKIP #{real_name} (#{slack_id}) — Member #{member.fullname} already has an active Slack identity"
-                report_identity_conflict(member, slack_id, conflict, 'bulk sync')
+                report_identity_conflict(
+                  member, slack_id, conflict, 'bulk sync',
+                  slack_name: real_name.presence || name, slack_email: slack_email
+                )
                 skipped_count += 1
                 next
               end
@@ -275,11 +287,43 @@ module Service
          record.invalidation_reason.to_s.start_with?(MANUAL_REASSIGNMENT_REASON))
     end
 
-    # Read-only scan for Slack identity conflicts an admin needs to resolve --
-    # the same matching sync_all performs, but without writing anything, so
-    # it's always fresh: once a conflict is actually resolved this stops
-    # returning it, with no separate "resolved" bookkeeping to maintain.
+    # Scan for Slack identity conflicts an admin needs to resolve. Combines
+    # two sources:
+    #  - a live re-derivation against Slack's current directory (the same
+    #    matching sync_all performs) -- always fresh, no bookkeeping needed
+    #    for conflicts it can find this way.
+    #  - persisted SlackIdentityConflict records not yet resolved -- covers
+    #    conflicts reported by a one-off reconciliation (e.g. member
+    #    provisioning, see #ensure_slack_user_record) whose rejected identity
+    #    may no longer independently reproduce via a live directory scan
+    #    (deactivated, email changed, etc.) even though nothing ever actually
+    #    resolved it for the member.
     def self.detect_conflicts
+      conflicts = live_conflicts
+      found_slack_ids = conflicts.map { |c| c[:slack_id] }
+
+      SlackIdentityConflict.unresolved.each do |persisted|
+        next if found_slack_ids.include?(persisted.slack_id)
+
+        member = Member.find_by(id: persisted.member_id)
+        next unless member
+
+        conflicts << {
+          slack_id: persisted.slack_id,
+          slack_name: persisted.slack_name,
+          slack_email: persisted.slack_email,
+          member_id: member.id.to_s,
+          member_name: member.fullname,
+          conflicting_slack_id: persisted.conflicting_slack_id,
+          conflicting_slack_name: persisted.conflicting_slack_name,
+          conflicting_slack_email: persisted.conflicting_slack_email
+        }
+      end
+
+      conflicts
+    end
+
+    def self.live_conflicts
       return [] unless ::Service::SlackConnector.api_token_present?
 
       client = ::Service::SlackConnector.client
@@ -333,6 +377,7 @@ module Service
 
       conflicts
     end
+    private_class_method :live_conflicts
 
     # Admin-driven resolution: unlink whichever other active identity the
     # member currently holds, then link the chosen slack_id via the normal
@@ -372,6 +417,7 @@ module Service
         "Could not link #{slack_id} to #{member.fullname} -- check Slack API connectivity and logs"
       ) unless result == member
 
+      resolve_persisted_conflict(slack_id)
       member
     end
 
@@ -422,6 +468,7 @@ module Service
         slack_channel: ::Service::SlackConnector.logs_channel
       )
 
+      resolve_persisted_conflict(slack_id)
       member
     end
 
@@ -464,7 +511,9 @@ module Service
       scope.first
     end
 
-    def self.report_identity_conflict(member, slack_id, conflict, source)
+    def self.report_identity_conflict(member, slack_id, conflict, source, slack_name: nil, slack_email: nil)
+      persist_conflict(member, slack_id, conflict, source, slack_name: slack_name, slack_email: slack_email)
+
       Service::AuditLogger.log(
         log_type: 'member',
         event_type: 'slack_identity_conflict',
@@ -477,6 +526,28 @@ module Service
           "can be reactivated.",
         slack_channel: Service::SlackConnector.logs_channel
       )
+    end
+
+    # Upserts by slack_id so a conflict re-reported by a later sync pass (the
+    # same rejected identity, still unresolved) updates the existing record
+    # rather than piling up duplicates.
+    def self.persist_conflict(member, slack_id, conflict, source, slack_name:, slack_email:)
+      SlackIdentityConflict.find_or_initialize_by(slack_id: slack_id).update!(
+        slack_name: slack_name,
+        slack_email: slack_email,
+        member_id: member.id,
+        conflicting_slack_id: conflict.slack_id,
+        conflicting_slack_name: conflict.real_name.presence || conflict.name,
+        conflicting_slack_email: conflict.slack_email,
+        source: source,
+        resolved_at: nil
+      )
+    rescue => e
+      Service::ErrorReporter.notify(e, context: { slack_id: slack_id, member_id: member.id.to_s, phase: 'persist_conflict' })
+    end
+
+    def self.resolve_persisted_conflict(slack_id)
+      SlackIdentityConflict.unresolved.where(slack_id: slack_id).update_all(resolved_at: Time.current)
     end
 
     def self.normalize_email(email)
@@ -512,6 +583,6 @@ module Service
     end
 
     private_class_method :quarantined_identity?, :resolve_member, :report_email_mismatch, :reconcile_provisioning,
-      :normalize_email, :safe_persistence_attributes
+      :normalize_email, :safe_persistence_attributes, :persist_conflict, :resolve_persisted_conflict
   end
 end

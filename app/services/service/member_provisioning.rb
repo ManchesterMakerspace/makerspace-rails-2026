@@ -466,7 +466,10 @@ module Service
 
       conflict = ::Service::SlackUserSync.active_identity_conflict(member)
       if conflict
-        ::Service::SlackUserSync.report_identity_conflict(member, slack_id, conflict, 'member_provisioning')
+        ::Service::SlackUserSync.report_identity_conflict(
+          member, slack_id, conflict, 'member_provisioning',
+          slack_name: attributes[:real_name].presence || attributes[:name], slack_email: attributes[:slack_email]
+        )
         return
       end
 
