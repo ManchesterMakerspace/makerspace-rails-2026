@@ -6,8 +6,12 @@ module Service
       def sync!(shop)
         return if shop.slack_channel.blank?
 
-        channel = Service::SlackChannelCache.lookup(shop.slack_channel)
+        channel = Service::SlackChannelCache.lookup(
+          shop.slack_channel,
+          refresh_on_miss: true
+        )
         channel_id = channel&.dig(:id) || channel&.dig("id")
+        return if channel_id.blank?
 
         with_canvas_lock(shop.id) do
           shop.reload

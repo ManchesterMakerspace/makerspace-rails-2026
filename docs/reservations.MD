@@ -488,7 +488,10 @@ created checkout canvas visible in the shop channel header. After the shop's
 first checkout creates **SHOPNAME Checkouts**, a channel manager must manually
 open the shop channel, use the header's **+** button, and add that canvas. This
 is a one-time step for each shop; subsequent checkout additions and revocations
-update the same canvas.
+update the same canvas. Changes to a checkout holder's membership status or
+expiration also queue updates for every shop where that member has a current
+checkout, so renewals and revocations are reflected without another checkout
+event.
 
 When a canvas is first created, the portal collects the linked Slack IDs for
 all admins, board members, and Resource Managers assigned to that shop and

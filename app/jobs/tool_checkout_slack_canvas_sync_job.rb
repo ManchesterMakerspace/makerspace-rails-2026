@@ -1,5 +1,6 @@
 class ToolCheckoutSlackCanvasSyncJob < ApplicationJob
   queue_as :default
+  retry_on StandardError, wait: :polynomially_longer, attempts: 5
 
   def perform(shop_id)
     Service::ToolCheckoutSlackCanvas.sync!(Shop.find(shop_id))

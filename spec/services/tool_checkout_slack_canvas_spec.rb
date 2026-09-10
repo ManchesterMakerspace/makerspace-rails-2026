@@ -7,7 +7,8 @@ RSpec.describe Service::ToolCheckoutSlackCanvas do
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:eval).and_return(1)
     allow(Service::SlackChannelCache).to receive(:lookup)
-      .with("#woodshop").and_return({ id: "C123ABC456" })
+      .with("#woodshop", refresh_on_miss: true)
+      .and_return({ id: "C123ABC456" })
     allow(Service::SlackConnector).to receive(:create_canvas)
       .and_return("FCHECKOUTS")
     allow(Service::SlackConnector).to receive(:set_canvas_user_access)
@@ -64,11 +65,22 @@ RSpec.describe Service::ToolCheckoutSlackCanvas do
     end
   end
 
-  it "falls back to the configured channel name when its ID is not cached" do
+  it "does not create an unshared canvas when the channel cannot be resolved" do
     allow(Service::SlackChannelCache).to receive(:lookup).and_return(nil)
 
-    markdown = described_class.canvas_markdown(shop)
+    described_class.sync!(shop)
 
-    expect(markdown).to include("Current tool checkouts in #woodshop")
+    expect(Service::SlackConnector).not_to have_received(:create_canvas)
+  end
+
+  it "refreshes the Slack channel cache before treating the channel as unresolved" do
+    expect(Service::SlackChannelCache).to receive(:lookup)
+      .with("#woodshop", refresh_on_miss: true)
+      .and_return({ id: "CREFRESHED1" })
+
+    described_class.sync!(shop)
+
+    expect(Service::SlackConnector).to have_received(:create_canvas)
+      .with("Wood Shop Checkouts", channel_id: "CREFRESHED1")
   end
 end
