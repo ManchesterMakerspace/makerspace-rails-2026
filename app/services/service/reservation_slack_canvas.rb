@@ -5,6 +5,7 @@ module Service
 
     class << self
       def rebuild_all!
+        Reservation.where(status: "unpaid").each { |reservation| ReservationFeeService.reconcile!(reservation) }
         today = Time.current.in_time_zone(ReservationService::ZONE).to_date
         dates = [today.iso8601, (today + 1.day).iso8601]
         failures = []

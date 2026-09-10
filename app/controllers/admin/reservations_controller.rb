@@ -26,6 +26,7 @@ class Admin::ReservationsController < ApplicationController
     authorize_delegated_shop!
     reservation = ReservationService.create!(
       member: member,
+      actor: current_member,
       attributes: reservation_params,
       source: "portal"
     )
@@ -39,6 +40,7 @@ class Admin::ReservationsController < ApplicationController
     authorize_delegated_shop!
     render json: ReservationService.preview(
       member: member,
+      actor: current_member,
       attributes: reservation_params
     )
   end
@@ -48,7 +50,7 @@ class Admin::ReservationsController < ApplicationController
     unless is_admin? || is_board_member? || manages_shop?(target_shop_id)
       raise ::Error::Forbidden.new("You are not authorized to move this reservation to the selected shop")
     end
-    reservation = ReservationService.update!(reservation: @reservation, attributes: reservation_params)
+    reservation = ReservationService.update!(reservation: @reservation, attributes: reservation_params, actor: current_member)
     audit_reservation_action("reservation_updated_by_manager", reservation)
     render json: reservation, serializer: ReservationSerializer, adapter: :attributes, scope: current_member
   end
@@ -60,6 +62,7 @@ class Admin::ReservationsController < ApplicationController
     end
     render json: ReservationService.preview(
       member: @reservation.member,
+      actor: current_member,
       attributes: reservation_params,
       reservation: @reservation
     )
@@ -78,7 +81,6 @@ class Admin::ReservationsController < ApplicationController
       note: decision_params[:decision_note]
     )
     audit_reservation_action("reservation_approved", reservation)
-    ReservationDecisionNotificationJob.perform_later(reservation.id.to_s)
     render json: reservation, serializer: ReservationSerializer, adapter: :attributes, scope: current_member
   end
 
@@ -89,7 +91,6 @@ class Admin::ReservationsController < ApplicationController
       note: decision_params[:decision_note]
     )
     audit_reservation_action("reservation_denied", reservation)
-    ReservationDecisionNotificationJob.perform_later(reservation.id.to_s)
     render json: reservation, serializer: ReservationSerializer, adapter: :attributes, scope: current_member
   end
 
@@ -141,7 +142,7 @@ class Admin::ReservationsController < ApplicationController
   end
 
   def reservation_params
-    params.permit(:title, :shop_id, :reservation_scope, :start_at, :end_at, tool_ids: [])
+    params.permit(:title, :shop_id, :reservation_scope, :start_at, :end_at, :full_day, :fee_confirmation, tool_ids: [])
   end
 
   def decision_params

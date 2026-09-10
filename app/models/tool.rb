@@ -1,5 +1,6 @@
 class Tool
   include Mongoid::Document
+  include DurationFeeResource
   include ActiveModel::Serializers::JSON
 
   field :name, type: String

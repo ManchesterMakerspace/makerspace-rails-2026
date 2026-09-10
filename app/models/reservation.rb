@@ -3,10 +3,22 @@ class Reservation
   include Mongoid::Timestamps
   include ActiveModel::Serializers::JSON
 
-  STATUSES = %w[pending approved denied cancelled].freeze
+  STATUSES = %w[pending unpaid approved denied cancelled].freeze
   SCOPES = %w[shop tools].freeze
-  ACTIVE_STATUSES = %w[pending approved].freeze
+  ACTIVE_STATUSES = %w[pending unpaid approved].freeze
   SOURCES = %w[portal slack].freeze
+
+  field :full_day, type: Boolean, default: false
+  field :invoice, type: String
+  field :previous_invoice_ids, type: Array, default: []
+  field :fee_rule_snapshot, type: Array, default: []
+  field :fee_snapshot, type: Array, default: []
+  field :notified_at, type: String
+  field :notified_channel_id, type: String
+
+  def fee_invoice
+    Invoice.where(id: invoice).first if invoice.present?
+  end
 
   field :title, type: String
   field :reservation_scope, type: String
@@ -31,6 +43,7 @@ class Reservation
   belongs_to :shop
   belongs_to :decided_by, class_name: "Member", optional: true
 
+  index({ invoice: 1 }, { sparse: true })
   index({ shop_id: 1, status: 1, start_at: 1, end_at: 1 })
   index({ member_id: 1, status: 1, start_at: 1, end_at: 1 })
   index({ tool_ids: 1, status: 1, start_at: 1, end_at: 1 })

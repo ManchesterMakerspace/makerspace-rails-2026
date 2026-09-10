@@ -67,7 +67,7 @@ RSpec.describe ReservationService do
   it "refreshes both the old and new day canvases when a reservation moves" do
     travel_to(ReservationService::ZONE.local(2026, 7, 24, 8, 0)) do
       create(:tool_checkout, member: member, tool: tool)
-      original_start = ReservationService::ZONE.local(2026, 7, 24, 9, 0)
+      original_start = ReservationService::ZONE.local(2026, 7, 24, 10, 0)
       reservation = described_class.create!(
         member: member,
         attributes: attributes.merge(

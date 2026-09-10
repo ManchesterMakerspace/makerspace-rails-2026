@@ -53,6 +53,9 @@ RSpec.describe Billing::TransactionsController, type: :controller do
   }
 
   before(:each) do
+    cache = {}
+    allow(REDIS).to receive(:set) { |key, value| cache[key] = value; "OK" }
+    allow(REDIS).to receive(:get) { |key| cache[key] }
     create(:billing_permission, member: member)
     create(:billing_permission, member: non_customer)
     allow_any_instance_of(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
@@ -157,6 +160,18 @@ RSpec.describe Billing::TransactionsController, type: :controller do
       parsed_response = JSON.parse(response.body)
       expect(response).to have_http_status(200)
       expect(parsed_response['id']).to eq(transaction.id)
+    end
+
+    %w[member admin].each do |role|
+      it "rejects another member's invoice before payment even for a #{role}" do
+        member.update!(role: role)
+        other_invoice = create(:invoice, member: non_customer)
+        allow(BraintreeService::PaymentMethod).to receive(:find_payment_method_for_customer).and_return(true)
+        expect(InvoiceHelper).not_to receive(:pay_workflow)
+        post :create, params: { payment_method_id: "foo", invoice_id: other_invoice.id.to_s }, format: :json
+        expect(response).to have_http_status(:not_found)
+        expect(other_invoice.reload.settled).to eq(false)
+      end
     end
 
     it "settles the invoice" do 

@@ -429,6 +429,23 @@ RSpec.configure do |config|
         maxConcurrentReservations: { type: :integer, minimum: 1, default: 1 },
         reservationHorizonDays: { type: :integer, minimum: 0, default: 7 },
         maxReservationDurationHours: { type: :number, minimum: 0.5, multipleOf: 0.5, default: 8 },
+        minimumAdvanceNoticeHours: { type: :number, minimum: 0, default: 2 },
+        prohibitSameDayReservations: { type: :boolean, default: false },
+        reservationFullDay: { type: :boolean, default: false },
+        durationFees: {
+          type: :array,
+          default: [],
+          items: {
+            type: :object,
+            properties: {
+              invoiceOptionId: { type: :string },
+              minimumHours: { type: :number, nullable: true, description: "Required for hourly rules; positive half-hour increments." },
+              maximumHours: { type: :number, nullable: true, description: "Required for hourly rules; at least minimumHours." },
+              fullDay: { type: :boolean, default: false }
+            },
+            required: [:invoiceOptionId]
+          }
+        },
         reservationRequiresApproval: { type: :boolean, default: false },
         reservationPrerequisiteToolIds: { type: :array, items: { type: :string } }
       }
@@ -502,7 +519,28 @@ RSpec.configure do |config|
         toolNames: { type: :array, items: { type: :string } },
         startAt: { type: :string, format: 'date-time' },
         endAt: { type: :string, format: 'date-time' },
-        status: { type: :string, enum: %w[pending approved denied cancelled] },
+        fullDay: { type: :boolean, default: false },
+        invoice: { type: :string, nullable: true, description: "Attached invoice ID; included only for the owner or a manager." },
+        notifiedAt: { type: :string, nullable: true, description: "Slack message timestamp (not a date-time); included only for the owner or a manager." },
+        feeSnapshot: {
+          type: :array,
+          description: "Saved fee line items; included only for the owner or a manager.",
+          items: {
+            type: :object,
+            properties: {
+              resourceId: { type: :string },
+              resourceName: { type: :string },
+              invoiceOptionId: { type: :string },
+              name: { type: :string },
+              unitHours: { type: :number, minimum: 0 },
+              units: { type: :integer, minimum: 1 },
+              unitAmount: { type: :number, minimum: 0 },
+              amount: { type: :number, minimum: 0 }
+            },
+            required: [:resourceId, :resourceName, :invoiceOptionId, :name, :unitHours, :units, :unitAmount, :amount]
+          }
+        },
+        status: { type: :string, enum: %w[pending unpaid approved denied cancelled] },
         approvalReasons: { type: :array, items: { type: :string } },
         approvalDetails: {
           type: :array,
@@ -523,7 +561,7 @@ RSpec.configure do |config|
         calendarSyncStatus: { type: :string, 'x-nullable': true },
         calendarSyncError: { type: :string, 'x-nullable': true }
       },
-      required: [:id, :title, :memberId, :shopId, :reservationScope, :toolIds, :startAt, :endAt, :status]
+      required: [:id, :title, :memberId, :shopId, :reservationScope, :toolIds, :startAt, :endAt, :status, :fullDay]
     },
     ReservationPreview: {
       type: :object,
@@ -553,11 +591,35 @@ RSpec.configure do |config|
             required: [:code, :message]
           }
         },
+        feeLines: {
+          type: :array,
+          description: "Itemized duration fees for the proposed reservation.",
+          items: {
+            type: :object,
+            properties: {
+              resourceId: { type: :string },
+              resourceName: { type: :string },
+              invoiceOptionId: { type: :string },
+              name: { type: :string },
+              unitHours: { type: :number, minimum: 0 },
+              units: { type: :integer, minimum: 1 },
+              unitAmount: { type: :number, minimum: 0 },
+              amount: { type: :number, minimum: 0 }
+            },
+            required: [:resourceId, :resourceName, :invoiceOptionId, :name, :unitHours, :units, :unitAmount, :amount]
+          }
+        },
+        feeTotal: { type: :number, minimum: 0, description: "Amount due for this quote after paid invoice credit." },
+        feeConfirmation: {
+          type: :string,
+          description: "Opaque quote token. Send unchanged as feeConfirmation when creating or materially editing a fee-incurring reservation. Obtain a fresh preview after changing the reservation."
+        },
+        feeWarning: { type: :string, nullable: true, description: "Optional billing warning, such as overdue fee debt." },
         maximumDurationHours: { type: :number, multipleOf: 0.5, minimum: 0 }
       },
       required: [
         :eligible, :errors, :conflicts, :missingPrerequisites, :requiresApproval,
-        :approvalReasons, :approvalDetails, :maximumDurationHours
+        :approvalReasons, :approvalDetails, :maximumDurationHours, :feeLines, :feeTotal, :feeConfirmation
       ]
     },
     ReservationBlackout: {
@@ -604,7 +666,7 @@ RSpec.configure do |config|
               slackUsername: { type: :string, 'x-nullable': true },
               startAt: { type: :string, format: 'date-time' },
               endAt: { type: :string, format: 'date-time' },
-              status: { type: :string, enum: %w[pending approved] },
+              status: { type: :string, enum: %w[pending unpaid approved] },
               reservationScope: { type: :string, enum: %w[shop tools] },
               toolNames: { type: :array, items: { type: :string } },
               inProgress: { type: :boolean }

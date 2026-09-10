@@ -185,7 +185,7 @@ RSpec.describe Invoice, type: :model do
 
       describe "submit for settlement" do
         let(:gateway) { double } # Create a fake gateway
-        let(:transaction) { build(:transaction) }
+        let(:transaction) { double(id: "settlement-test-transaction") }
         let(:first_transaction) { build(:transaction) }
         let(:success_result) { double(success?: true) }
         let(:error_result) { double(success?: false) }
@@ -621,6 +621,7 @@ RSpec.describe Invoice, type: :model do
       it "delays invoice operation if delay callback exists" do
         allow(invoice).to receive_message_chain(:resource, :delay_invoice_operation).with(invoice.operation).and_return(true)
         expect(invoice).to receive_message_chain(:resource, :delay_invoice_operation).with(invoice.operation).and_return(true)
+        expect(invoice).to receive(:enque_message).with("Delaying processing of invoice #{invoice.id}... Is member missing a key?")
         invoice.send(:execute_invoice_operation)
         expect(invoice.settled).to be_falsey
       end

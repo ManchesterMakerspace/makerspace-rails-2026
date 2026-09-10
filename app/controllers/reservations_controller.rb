@@ -122,7 +122,7 @@ class ReservationsController < ApplicationController
   private
 
   def reservation_params
-    params.permit(:title, :shop_id, :reservation_scope, :start_at, :end_at, tool_ids: [])
+    params.permit(:title, :shop_id, :reservation_scope, :start_at, :end_at, :full_day, :fee_confirmation, tool_ids: [])
   end
 
   def find_reservation

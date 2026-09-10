@@ -1,10 +1,18 @@
 class ReservationSerializer < ActiveModel::Serializer
-  attributes :id, :title, :member_id, :member_name, :shop_id, :shop_name,
+  attributes :full_day, :id, :title, :member_id, :member_name, :shop_id, :shop_name,
              :reservation_scope, :tool_ids, :tool_names, :start_at, :end_at,
              :status, :approval_reasons, :decision_note, :decided_by_id,
              :decided_by_name, :decided_at, :source, :calendar_event_id,
              :calendar_html_link, :calendar_sync_status, :calendar_synced_at,
              :created_at, :updated_at
+
+  attribute :invoice, if: :billing_view?
+  attribute :fee_snapshot, if: :billing_view?
+  attribute :notified_at, if: :billing_view?
+
+  def billing_view?
+    scope && (scope.id == object.member_id || manager_view?)
+  end
 
   attribute :approval_details do
     object.effective_approval_details

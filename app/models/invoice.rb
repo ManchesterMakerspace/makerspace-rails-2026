@@ -17,6 +17,14 @@ class Invoice
 
   ## Transaction Information
   # User friendly name for invoice displayed on receipt
+  field :reservation_id, type: String
+  index({ reservation_id: 1 }, { sparse: true })
+  after_save :sync_reservation_payment, if: -> { previous_changes.key?("settled_at") && reservation_id.present? }
+
+  def sync_reservation_payment
+    ReservationInvoiceSyncJob.perform_later(id.to_s)
+  end
+
   field :name, type: String
   # Any details about the invoice. Also shown on receipt
   field :description, type: String
@@ -133,6 +141,18 @@ class Invoice
   end
 
   def submit_for_settlement(gateway=nil, payment_method_id=nil, transaction_id=nil)
+    reservation = Reservation.where(id: reservation_id).first if reservation_id.present? && payment_method_id
+    if reservation
+      ReservationService.send(:with_shop_locks, [reservation.shop_id, "member-#{member_id}"], ttl: 120) do
+        reload
+        submit_for_settlement_without_reservation_lock(gateway, payment_method_id, transaction_id)
+      end
+    else
+      submit_for_settlement_without_reservation_lock(gateway, payment_method_id, transaction_id)
+    end
+  end
+
+  def submit_for_settlement_without_reservation_lock(gateway=nil, payment_method_id=nil, transaction_id=nil)
     raise Error::UnprocessableEntity.new("Already paid") if settled
     raise Error::UnprocessableEntity.new("Cannot dictate transaction id when creating new transaction") if payment_method_id && transaction_id
 
@@ -413,6 +433,7 @@ class Invoice
   end
 
   def send_shop_charge_slack_notification
+    return if reservation_id.present?
     slack_user = SlackUser.find_by(member_id: member_id)
     return if slack_user.nil? || member&.direct_notifications_suppressed?
 

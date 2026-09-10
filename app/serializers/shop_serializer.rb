@@ -1,7 +1,7 @@
 class ShopSerializer < ActiveModel::Serializer
   attributes :id, :name, :wiki_url, :gdrive_id, :slack_channel, :disabled, :reservable,
              :max_concurrent_reservations, :reservation_horizon_days,
-             :max_reservation_duration_hours, :reservation_requires_approval,
+             :minimum_advance_notice_hours, :prohibit_same_day_reservations, :reservation_full_day, :duration_fees, :max_reservation_duration_hours, :reservation_requires_approval,
              :reservation_prerequisite_tool_ids, :reservation_prerequisite_names,
              :color_id, :google_resource_id, :resource_email, :floor_name, :capacity
 
