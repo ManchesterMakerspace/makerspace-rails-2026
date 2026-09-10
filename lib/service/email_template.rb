@@ -73,7 +73,7 @@ module Service
       member_registered: { format: :html, placeholders: %w[member_name], fallback: 'member_mailer/member_registered', default: 'external_templates/member_registered_default' },
       new_subscription: { format: :html, placeholders: %w[member_name friendly_type quantity next_billing_date url], fallback: 'billing_mailer/new_subscription', default: 'external_templates/new_subscription_default' },
       failed_payment: { format: :html, placeholders: %w[member_name friendly_type error_status url], fallback: 'billing_mailer/failed_payment', default: 'external_templates/failed_payment_default' },
-      canceled_subscription: { format: :html, placeholders: %w[member_name friendly_type url], fallback: 'billing_mailer/canceled_subscription', default: 'external_templates/canceled_subscription_default' },
+      canceled_subscription: { format: :html, placeholders: %w[member_name friendly_type cancellation_reason url], fallback: 'billing_mailer/canceled_subscription', default: 'external_templates/canceled_subscription_default' },
       household_disbanded_primary_email: { format: :html, placeholders: %w[support_email], fallback: 'external_templates/household_disbanded_primary_email' },
       household_disbanded_secondary_email: { format: :html, placeholders: %w[primary_member_name support_email], fallback: 'external_templates/household_disbanded_secondary_email' },
       reservation_reminder: { format: :text, placeholders: %w[reservation_title reservation_time resources reservations_url], fallback: 'external_templates/reservation_reminder' },
