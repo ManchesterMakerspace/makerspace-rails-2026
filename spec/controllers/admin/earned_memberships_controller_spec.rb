@@ -159,11 +159,11 @@ RSpec.describe Admin::EarnedMembershipsController, type: :controller do
         expect(parsed_response["requirements"].last["name"]).to eq("bar")
       end
 
-      it "Raises a 404 error if a requirement does not exist" do 
+      it "Raises a 404 error if a requirement does not exist" do
         requirement_2 = build(:requirement, name: "bar")
         init_membership = create(:earned_membership)
         requirements_json = ActiveModelSerializers::SerializableResource.new(
-          [requirement_2], 
+          [requirement_2],
           each_serializer: EarnedMembership::RequirementSerializer,
           adapter: :attributes
         ).as_json
@@ -173,6 +173,42 @@ RSpec.describe Admin::EarnedMembershipsController, type: :controller do
         }
         put :update, params: membership_params, format: :json
         expect(response).to have_http_status(404)
+      end
+    end
+
+    describe "POST suspend" do
+      it "suspends without deleting the record" do
+        post :suspend, params: { id: membership.to_param }, format: :json
+        expect(response).to have_http_status(200)
+        parsed_response = JSON.parse(response.body)
+        expect(parsed_response["status"]).to eq("suspended")
+        membership.reload
+        expect(membership).to be_suspended
+      end
+
+      it "suspends a member who has already converted to a paid subscription" do
+        membership.member.update!(subscription_id: "sub_123")
+        post :suspend, params: { id: membership.to_param }, format: :json
+        expect(response).to have_http_status(200)
+      end
+    end
+
+    describe "POST reactivate" do
+      it "reactivates a suspended membership" do
+        membership.suspend!(create(:member, :admin))
+        post :reactivate, params: { id: membership.to_param }, format: :json
+        expect(response).to have_http_status(200)
+        parsed_response = JSON.parse(response.body)
+        expect(parsed_response["status"]).to eq("active")
+      end
+
+      it "rejects reactivating when the member currently has a paid subscription" do
+        membership.suspend!(create(:member, :admin))
+        membership.member.update!(subscription_id: "sub_123")
+        post :reactivate, params: { id: membership.to_param }, format: :json
+        expect(response).to have_http_status(422)
+        membership.reload
+        expect(membership).to be_suspended
       end
     end
   end
@@ -230,6 +266,34 @@ RSpec.describe Admin::EarnedMembershipsController, type: :controller do
         member = create(:member)
         sign_in member
         put :update, params: { id: "foo" }, format: :json
+        expect(response).to have_http_status(403)
+      end
+    end
+
+    describe "POST suspend" do
+      it "Rejects unauthenticated requests" do
+        post :suspend, params: { id: "foo" }, format: :json
+        expect(response).to have_http_status(401)
+      end
+
+      it "Rejects non admin users" do
+        member = create(:member)
+        sign_in member
+        post :suspend, params: { id: "foo" }, format: :json
+        expect(response).to have_http_status(403)
+      end
+    end
+
+    describe "POST reactivate" do
+      it "Rejects unauthenticated requests" do
+        post :reactivate, params: { id: "foo" }, format: :json
+        expect(response).to have_http_status(401)
+      end
+
+      it "Rejects non admin users" do
+        member = create(:member)
+        sign_in member
+        post :reactivate, params: { id: "foo" }, format: :json
         expect(response).to have_http_status(403)
       end
     end

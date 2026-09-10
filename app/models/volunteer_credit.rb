@@ -34,12 +34,23 @@ class VolunteerCredit
   field :reversal_of_id,  type: BSON::ObjectId, default: nil
   field :reversal_reason, type: String,          default: nil
 
+  # Set once at creation from whether the member had an active earned
+  # membership at that exact moment -- permanent regardless of later
+  # suspend/reactivate. Excludes the credit from ever counting toward a
+  # Braintree discount (see check_discount_threshold!), even after the
+  # member converts to a paid subscription; it still counts everywhere else
+  # (lifetime/year/rolling totals), so it's fully available to e.g. future
+  # gamification. See #257.
+  field :earned_while_em_active, type: Boolean, default: false
+
   validates :member_id,    presence: true
   validates :description,  presence: true
   validates :credit_value, numericality: { other_than: 0 }  # 0 invalid; negative allowed for reversal records
   validates_inclusion_of :status, in: %w[pending approved rejected reversal]
 
   validate :approver_is_not_self
+
+  before_validation :set_earned_while_em_active, on: :create
 
   index({ member_id: 1 })
   index({ status: 1 })
@@ -77,6 +88,19 @@ class VolunteerCredit
 
   def self.year_count_for(member_id)
     where(status: { '$in' => ['approved', 'reversal'] })
+      .this_year
+      .where(member_id: member_id)
+      .sum(:credit_value).to_f
+  end
+
+  # Same as year_count_for, but excludes credits earned while an active
+  # earned membership applied -- those never count toward a Braintree
+  # discount, even after the member later converts to a paid subscription.
+  # Used only by check_discount_threshold!; every other display/summary use
+  # of "this year's credits" should keep including them. See #257.
+  def self.discount_eligible_year_count_for(member_id)
+    where(status: { '$in' => ['approved', 'reversal'] })
+      .where(earned_while_em_active: false)
       .this_year
       .where(member_id: member_id)
       .sum(:credit_value).to_f
@@ -147,17 +171,20 @@ class VolunteerCredit
     raise Error::Forbidden.new unless status == 'approved'
     raise Error::Forbidden.new if reversed
 
-    # Create the negative offsetting record
+    # Create the negative offsetting record. earned_while_em_active is copied
+    # explicitly (not recomputed) so this correctly cancels out the original
+    # in discount math regardless of the member's EM status at reversal time.
     reversal = VolunteerCredit.new(
-      member_id:       member_id,
-      issued_by_id:    reversed_by.id,
-      description:     "Reversal: #{description}",
-      credit_value:    -credit_value,
-      status:          'reversal',
-      reversal_of_id:  id,
-      reversal_reason: reason,
-      reversed_by_id:  reversed_by.id,
-      reversed_at:     Time.now
+      member_id:              member_id,
+      issued_by_id:           reversed_by.id,
+      description:            "Reversal: #{description}",
+      credit_value:           -credit_value,
+      status:                 'reversal',
+      reversal_of_id:         id,
+      reversal_reason:        reason,
+      reversed_by_id:         reversed_by.id,
+      reversed_at:            Time.now,
+      earned_while_em_active: earned_while_em_active
     )
     reversal.save!
 
@@ -186,6 +213,13 @@ class VolunteerCredit
     if issued_by_id && issued_by_id == member_id && status == 'approved'
       errors.add(:issued_by_id, 'cannot approve their own credit')
     end
+  end
+
+  # Reversals inherit their flag explicitly from the original credit (see
+  # reverse!) rather than being recomputed here.
+  def set_earned_while_em_active
+    return if status == 'reversal'
+    self.earned_while_em_active = EarnedMembership.active.where(member_id: member_id).exists?
   end
 
   # DM the member when their credit is approved.
@@ -287,11 +321,15 @@ class VolunteerCredit
   def check_discount_threshold!
     return if status == 'reversal'
     return if VolunteerCredit.discount_id.blank?
+    # This specific credit was earned while an active earned membership
+    # applied -- never itself counts toward or triggers a discount, even
+    # after the member later converts to a paid subscription. See #257.
+    return if earned_while_em_active
 
     m = member
-    return if EarnedMembership.where(member_id: m.id).exists?
+    return if EarnedMembership.active.where(member_id: m.id).exists?
 
-    year_total     = VolunteerCredit.year_count_for(m.id)
+    year_total     = VolunteerCredit.discount_eligible_year_count_for(m.id)
     discounts_used = VolunteerCredit.discounts_applied_this_year_for(m.id)
     threshold      = VolunteerCredit.credits_per_discount
     max_discounts  = VolunteerCredit.max_discounts_per_year
@@ -304,13 +342,16 @@ class VolunteerCredit
       return
     end
 
-    # Atomically claim the first unmarked credit — race condition guard
+    # Atomically claim the first unmarked, discount-eligible credit — race
+    # condition guard. earned_while_em_active: false excludes old EM-period
+    # credits from ever being claimed toward a discount here.
     claimed_doc = VolunteerCredit.collection.find_one_and_update(
       {
-        member_id:        member_id,
-        status:           'approved',
-        discount_applied: false,
-        created_at:       { :$gte => Time.now.beginning_of_year }
+        member_id:              member_id,
+        status:                 'approved',
+        discount_applied:       false,
+        earned_while_em_active: false,
+        created_at:             { :$gte => Time.now.beginning_of_year }
       },
       { :$set => { discount_applied: true, discount_applied_at: Time.now } },
       sort:            { created_at: 1 },
@@ -323,7 +364,7 @@ class VolunteerCredit
 
     if remaining > 0
       VolunteerCredit.approved.this_year
-                     .where(member_id: member_id, discount_applied: false)
+                     .where(member_id: member_id, discount_applied: false, earned_while_em_active: false)
                      .order_by(created_at: :asc)
                      .each do |credit|
         break if remaining <= 0
