@@ -45,9 +45,11 @@ module Service
           wiki = "[#{escape_markdown(tool.name)} Wiki](#{tool.effective_wiki_url})"
           lines << [description, "(#{wiki})"].reject(&:blank?).join(" ")
 
-          prerequisites = tool.prerequisites.where(:disabled.ne => true)
-            .order_by(name: :asc).pluck(:name)
-          lines << "Pre-requisites: #{prerequisites.join(', ')}" if prerequisites.present?
+          if tool.prerequisite_ids.present?
+            prerequisites = tool.prerequisites.where(:disabled.ne => true)
+              .order_by(name: :asc).pluck(:name)
+            lines << "Pre-requisites: #{prerequisites.join(', ')}" if prerequisites.present?
+          end
 
           active_checkout_members(tool).each do |member|
             marker = checkout_approver?(member, tool) ? ":ballot_box_with_check:" : ":white_check_mark:"

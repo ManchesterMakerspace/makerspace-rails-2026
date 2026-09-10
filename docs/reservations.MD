@@ -474,12 +474,28 @@ Slack does not automatically add these read-only canvases to the shop channel
 header. A channel manager must manually add each canvas to the header using the
 **+** button.
 
+Tool checkouts use a separate read-only canvas named **SHOPNAME Checkouts**.
+Creating or revoking a checkout queues a refresh for the tool's shop. The first
+refresh creates the canvas and saves its ID as `checkout_canvas_id` on the
+shop; later refreshes replace its contents. The canvas lists every enabled tool
+in the shop, its description and wiki link, enabled checkout prerequisites,
+and active, unexpired members with a current checkout. Checkout approvers and
+Resource Managers for the shop are distinguished from other checked-out
+members.
+
+Like reservation canvases, Slack does **not** automatically make a newly
+created checkout canvas visible in the shop channel header. After the shop's
+first checkout creates **SHOPNAME Checkouts**, a channel manager must manually
+open the shop channel, use the header's **+** button, and add that canvas. This
+is a one-time step for each shop; subsequent checkout additions and revocations
+update the same canvas.
+
 When a canvas is first created, the portal collects the linked Slack IDs for
 all admins, board members, and Resource Managers assigned to that shop and
 grants those users `owner` access with `canvases.access.set`. Members without a
-linked Slack ID are skipped. Assigning an RM to a shop updates both cached shop
-canvases to `owner` access; removing that shop assignment changes the member's
-access on both canvases to `read`.
+linked Slack ID are skipped. Assigning an RM to a shop updates all cached
+reservation, volunteer, and checkout canvases to `owner` access; removing that
+shop assignment changes the member's access on those canvases to `read`.
 
 The **Reservation Canvas Rebuild** automated job is available beside
 **Database Backup** under Admin Settings → Jobs. It runs the
