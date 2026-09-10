@@ -131,10 +131,27 @@ class ReservationFeeService
       elsif amount.positive?
         history = Array(reservation.previous_invoice_ids)
         history |= [current.id.to_s] if current
-        invoice = Invoice.create!(member: reservation.member, resource_class: "fee", resource_id: reservation.member_id.to_s,
+        # Keep the new invoice's ID even when an after_create callback raises.
+        invoice = Invoice.new(member: reservation.member, resource_class: "fee", resource_id: reservation.member_id.to_s,
           name: "Reservation: #{reservation.title}", description: details, amount: amount, quantity: 1,
           due_date: reservation.start_at - 4.hours, reservation_id: reservation.id.to_s)
-        reservation.set(invoice: invoice.id.to_s, previous_invoice_ids: history)
+        original = Reservation.find(reservation.id).attributes
+        changed_fields = reservation.changes.keys | %w[invoice previous_invoice_ids fee_snapshot status updated_at]
+        begin
+          invoice.save!
+          reservation.assign_attributes(invoice: invoice.id.to_s, previous_invoice_ids: history)
+          reservation.update!(fee_snapshot: lines, status: "unpaid")
+        rescue
+          # Restore only fields this operation writes; preserve concurrent DM metadata.
+          reservation.set(original.slice(*changed_fields))
+          missing_fields = changed_fields - original.keys
+          reservation.unset(*missing_fields) if missing_fields.present?
+          invoice.delete
+          reservation.reload
+          raise
+        end
+        return
+
       end
       reservation.update!(fee_snapshot: lines, status: (amount.positive? || historical_unpaid.positive?) ? "unpaid" : (reservation.approval_reasons.present? ? "pending" : "approved"))
     end

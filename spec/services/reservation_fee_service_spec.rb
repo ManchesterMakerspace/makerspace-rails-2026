@@ -285,6 +285,55 @@ RSpec.describe ReservationFeeService do
     expect(reservation.reload.status).to eq("approved")
   end
 
+  it "clears a pending quote when an edit becomes free, so approval creates no invoice" do
+    shop.update!(reservation_requires_approval: true)
+    reservation = book
+    expect(described_class.total(reservation.fee_snapshot)).to eq(30)
+    ReservationService.update!(reservation: reservation, attributes: attributes.merge(end_at: start_at + 2.hours))
+    expect(reservation.reload.status).to eq("pending")
+    expect(reservation.fee_snapshot).to eq([])
+    expect(reservation.invoice).to be_nil
+    ReservationService.approve!(reservation: reservation, actor: create(:member, :current))
+    expect(reservation.reload.status).to eq("approved")
+    expect(Invoice.where(reservation_id: reservation.id.to_s)).to be_empty
+  end
+
+  [:invoice_callback, :reservation_write].each do |failure|
+    it "rolls back a failed difference invoice on #{failure} and allows a clean retry" do
+      reservation = book
+      original_invoice = reservation.fee_invoice
+      original_invoice.update!(settled_at: Time.current)
+      described_class.reconcile!(reservation)
+      original_end = reservation.end_at
+      original_snapshot = reservation.reload.fee_snapshot.deep_dup
+      changes = attributes.merge(end_at: start_at + 16.hours)
+      preview = ReservationService.preview(member: member, attributes: changes, reservation: reservation)
+      changes[:fee_confirmation] = preview[:feeConfirmation]
+      if failure == :invoice_callback
+        allow_any_instance_of(Invoice).to receive(:send_rental_email).and_raise("difference failed")
+      else
+        allow(reservation).to receive(:update!).and_wrap_original do |method, *args|
+          method.call(*args)
+          raise "difference failed"
+        end
+      end
+      expect { ReservationService.update!(reservation: reservation, attributes: changes) }.to raise_error("difference failed")
+      expect(reservation.reload.end_at).to eq(original_end)
+      expect(reservation.invoice).to eq(original_invoice.id.to_s)
+      expect(reservation.previous_invoice_ids).to eq([])
+      expect(reservation.fee_snapshot).to eq(original_snapshot)
+      expect(reservation.status).to eq("approved")
+      expect(Invoice.where(reservation_id: reservation.id.to_s).count).to eq(1)
+      expect(original_invoice.reload.settled).to eq(true)
+      allow_any_instance_of(Invoice).to receive(:send_rental_email).and_call_original
+      allow(reservation).to receive(:update!).and_call_original
+      ReservationService.update!(reservation: reservation, attributes: changes)
+      expect(reservation.reload.end_at).to eq(start_at + 16.hours)
+      expect(reservation.fee_invoice.amount).to eq(10)
+      expect(Invoice.where(reservation_id: reservation.id.to_s).count).to eq(2)
+    end
+  end
+
   it "updates the pending quote without an invoice and bills that quote on approval" do
     shop.update!(reservation_requires_approval: true)
     reservation = book

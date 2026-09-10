@@ -794,3 +794,6 @@ Member reservation details show approval explanations whenever approval reasons 
 
 
 The member reservation page groups unpaid bookings with outstanding approval reasons under Pending rather than Upcoming. On edits and RM approval, linked historical unpaid invoices offset the charge before a new difference invoice is created, preventing a reversed charge from being billed twice. If fee application fails during initial reservation creation, callback-free cleanup removes all invoices linked to that new reservation and the reservation itself; retrying therefore does not encounter a blocking partial booking or an extra charge.
+
+
+Every material edit replaces the accepted fee quote, including replacing it with an empty quote when a pending request becomes free. Later RM approval therefore cannot apply a superseded charge. Difference-invoice creation retains the draft invoice ID and restores the persisted reservation fields on failure (including failures after the reservation write), deleting the new invoice without touching earlier invoices or concurrent Slack message metadata. The same recovery protects invoicing during approval and permits clean retries.

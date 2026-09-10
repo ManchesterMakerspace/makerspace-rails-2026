@@ -91,20 +91,6 @@ RSpec.describe ReservationFeeService do
     described_class.apply!(reservation, lines)
   end
 
-  it "issues an invoice from the persisted fee snapshot after approval" do
-    stub_const("Invoice", Class.new) unless defined?(Invoice)
-    lines = quote(12)
-    reservation = double(approval_reasons: [], fee_invoice: nil, invoice: nil, id: "reservation",
-      previous_invoice_ids: [], member: "member", member_id: "member", title: "Project", start_at: start_at)
-    scope = double
-    allow(Invoice).to receive(:where).with(reservation_id: "reservation").and_return(scope)
-    allow(scope).to receive(:order_by).with(created_at: :desc).and_return([])
-    expect(Invoice).to receive(:create!).with(hash_including(amount: 30,
-      due_date: start_at - 4.hours, description: "Shop: 3 × Four hours ($10.00)"))
-      .and_return(double(id: "invoice"))
-    expect(reservation).to receive(:set).with(invoice: "invoice", previous_invoice_ids: [])
-    expect(reservation).to receive(:update!).with(fee_snapshot: lines, status: "unpaid")
-    described_class.apply!(reservation, lines.map(&:stringify_keys), approved: true)
-  end
+
 
 end

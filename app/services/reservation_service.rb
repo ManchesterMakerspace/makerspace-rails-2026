@@ -59,6 +59,7 @@ class ReservationService
             approval_reasons: evaluation[:approval_reasons],
             approval_details: evaluation[:approval_details],
             fee_rule_snapshot: evaluation[:fee_rule_snapshot] || [],
+            fee_snapshot: evaluation[:fee_lines] || [],
             source: source,
             calendar_sync_status: "pending"
           )
@@ -119,6 +120,7 @@ class ReservationService
             approval_reasons: evaluation[:approval_reasons],
             approval_details: evaluation[:approval_details],
             fee_rule_snapshot: evaluation[:fee_rule_snapshot] || [],
+            fee_snapshot: evaluation[:fee_lines] || [],
             decided_by_id: nil,
             decided_at: nil,
             decision_note: nil,
