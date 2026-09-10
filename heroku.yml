@@ -7,6 +7,6 @@ build:
 release:
   image: web
   command:
-    - bundle exec rake reservations:backfill_resource_manager_shops data:ensure_unique_indexes
+    - bundle exec rake reservations:backfill_resource_manager_shops earned_memberships:backfill_status data:ensure_unique_indexes
 run:
   web: bundle exec puma -C config/puma.rb

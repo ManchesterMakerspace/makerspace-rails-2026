@@ -6,7 +6,7 @@ RSpec.describe "Heroku process configuration" do
   let(:repository_root) { Pathname.new(__dir__).join("../..").expand_path }
 
   let(:maintenance_command) do
-    "bundle exec rake reservations:backfill_resource_manager_shops data:ensure_unique_indexes"
+    "bundle exec rake reservations:backfill_resource_manager_shops earned_memberships:backfill_status data:ensure_unique_indexes"
   end
 
   it "runs database maintenance in the container release phase" do

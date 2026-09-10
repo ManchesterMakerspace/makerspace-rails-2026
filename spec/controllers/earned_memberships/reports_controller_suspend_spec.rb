@@ -17,7 +17,7 @@ RSpec.describe EarnedMemberships::ReportsController, type: :controller do
   describe "GET index while suspended" do
     it "still allows viewing report history for a suspended earned membership" do
       membership.suspend!(create(:member, :admin))
-      get :index, format: :json
+      get :index, params: { earned_membership_id: membership.id }, format: :json
       expect(response).to have_http_status(200)
     end
   end

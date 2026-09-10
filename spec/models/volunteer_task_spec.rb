@@ -20,7 +20,7 @@ describe VolunteerTask, type: :model do
 
   before do
     allow(VolunteerTask).to receive(:max_credit_value).and_return(2.0)
-    allow(EarnedMembership).to receive_message_chain(:where, :exists?).and_return(false)
+    allow(EarnedMembership).to receive_message_chain(:active, :where, :exists?).and_return(false)
     allow(SlackUser).to receive(:find_by).and_return(nil)
     allow(Service::SlackConnector).to receive(:enque_message)
     allow(Service::SlackConnector).to receive(:send_slack_message)

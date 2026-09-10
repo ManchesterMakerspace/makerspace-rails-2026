@@ -182,7 +182,10 @@ FactoryBot.define do
   end
 
   factory :earned_membership_with_reports, :parent => :earned_membership do
-    after(:build) do |earned_membership|
+    # Must run after(:create), not after(:build) -- the parent factory's
+    # after(:create) hook is what adds requirements, and report_with_report_requirements
+    # needs those to already exist (it maps over earned_membership.requirements).
+    after(:create) do |earned_membership|
       FactoryBot.create_list(:report_with_report_requirements, 2, earned_membership: earned_membership)
     end
   end

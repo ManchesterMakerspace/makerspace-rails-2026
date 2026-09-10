@@ -192,10 +192,6 @@ describe VolunteerCredit, type: :model do
   end
 
   describe 'earned_while_em_active' do
-    before do
-      allow(EarnedMembership).to receive_message_chain(:active, :where, :exists?).and_call_original
-    end
-
     it 'flags a credit created while the member has an active earned membership' do
       create(:earned_membership, member: member)
       credit = VolunteerCredit.create!(valid_attrs)
