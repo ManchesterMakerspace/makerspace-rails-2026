@@ -93,7 +93,7 @@ class ReservationFeeService
 
     def confirm!(lines, attributes, reservation = nil)
       invoice = reservation&.fee_invoice
-      if invoice && !invoice.settled && (invoice.transaction_id.present? || invoice.locked_at.present?)
+      if invoice && !invoice.settled && (invoice.locked && invoice.locked_at && invoice.locked_at >= 15.minutes.ago)
         raise Error::UnprocessableEntity.new("Payment is processing. Please wait before changing this reservation")
       end
       return if amount_due(lines, reservation).zero?
@@ -122,12 +122,21 @@ class ReservationFeeService
       amount = [total(lines) - paid - historical_unpaid, 0].max.round(2)
       details = lines.map { |line| "#{line[:resourceName]}: #{line[:units]} × #{line[:name]} ($#{format('%.2f', line[:unitAmount])})" }.join("; ")
       if current && !current.settled
-        if amount.positive?
-          current.update!(amount: amount, due_date: reservation.start_at - 4.hours, description: details)
-        else
-          # An accepted charge survives edits and cancellations; never erase debt.
-          amount = current.amount
+        original = Reservation.find(reservation.id).attributes
+        changed_fields = reservation.changes.keys | %w[fee_snapshot status updated_at]
+        original_invoice_fields = current.attributes.slice("amount", "due_date", "description")
+        begin
+          if amount.positive?
+            current.update!(amount: amount, due_date: reservation.start_at - 4.hours, description: details)
+          end
+          # An accepted unpaid charge survives even when an edit becomes free.
+          reservation.update!(fee_snapshot: lines, status: "unpaid")
+        rescue
+          current.set(original_invoice_fields)
+          restore_reservation_fields!(reservation, original, changed_fields)
+          raise
         end
+        return
       elsif amount.positive?
         history = Array(reservation.previous_invoice_ids)
         history |= [current.id.to_s] if current
@@ -143,9 +152,7 @@ class ReservationFeeService
           reservation.update!(fee_snapshot: lines, status: "unpaid")
         rescue
           # Restore only fields this operation writes; preserve concurrent DM metadata.
-          reservation.set(original.slice(*changed_fields))
-          missing_fields = changed_fields - original.keys
-          reservation.unset(*missing_fields) if missing_fields.present?
+          restore_reservation_fields!(reservation, original, changed_fields)
           invoice.delete
           reservation.reload
           raise
@@ -155,6 +162,14 @@ class ReservationFeeService
       end
       reservation.update!(fee_snapshot: lines, status: (amount.positive? || historical_unpaid.positive?) ? "unpaid" : (reservation.approval_reasons.present? ? "pending" : "approved"))
     end
+
+    def restore_reservation_fields!(reservation, original, changed_fields)
+      reservation.set(original.slice(*changed_fields))
+      missing_fields = changed_fields - original.keys
+      reservation.unset(*missing_fields) if missing_fields.present?
+      reservation.reload
+    end
+    private :restore_reservation_fields!
 
     def linked_invoices(reservation)
       ids = ([reservation.invoice] + Array(reservation.previous_invoice_ids)).compact.map(&:to_s).uniq

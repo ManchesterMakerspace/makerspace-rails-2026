@@ -254,11 +254,25 @@ class WorkshopSerializer < ActiveModel::Serializer
     cached = Service::SlackChannelCache.fetch(channel_name)
     return nil if cached.blank?
 
+    # Resolve only mentioned identities, retaining the cached Slack text itself.
+    mention_pattern = /<@([A-Z0-9]+)(?:\|([^>]+))?>/
+    ids = [cached[:topic], cached[:purpose]].compact.flat_map { |text| text.scan(mention_pattern).map(&:first) }.uniq
+    names = if ids.empty?
+      {}
+    else
+      SlackUser.where(:slack_id.in => ids).includes(:member).to_h do |user|
+        [user.slack_id, user.member&.fullname.presence || user.real_name.presence || user.name.presence]
+      end
+    end
+    display_text = lambda do |text|
+      text&.gsub(mention_pattern) { |mention| names[Regexp.last_match(1)].presence || Regexp.last_match(2).presence || mention }
+    end
+
     {
       id: cached[:id],
       name: cached[:name],
-      topic: cached[:topic],
-      purpose: cached[:purpose],
+      topic: display_text.call(cached[:topic]),
+      purpose: display_text.call(cached[:purpose]),
       slackUrl: Service::SlackConnector.slack_channel_url(cached[:id])
     }
   end

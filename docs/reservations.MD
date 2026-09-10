@@ -800,3 +800,6 @@ Every material edit replaces the accepted fee quote, including replacing it with
 
 
 Reservation Slack notifications report the total outstanding balance across all linked unpaid invoices, counting each invoice once and excluding settled invoices. If every linked invoice is settled, they report the total paid. The payment warning and due date use the earliest outstanding invoice due date. Both published Reservation and ReservationAgenda status enums include `unpaid`, including the checked-in Swagger document.
+
+
+Edits that reuse an unpaid invoice restore its prior amount, due date, and description if reservation persistence fails, along with the reservation fields touched by the edit. This recovery handles errors both before and after the reservation write and permits retry without changing the invoice ID. A historical transaction ID alone no longer blocks edits after reversal: the processing guard uses an active invoice lock and timestamp, matching the invoice claim's 15-minute expiry. Direct payment submission remains protected by reservation shop/member locks.

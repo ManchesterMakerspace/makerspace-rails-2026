@@ -18,6 +18,25 @@ RSpec.describe "Workshops", type: :request do
     sign_in member
   end
 
+  it "renders Slack mentions as member names in workshop topic and purpose" do
+    manager = create(:member, :current, firstname: "Alex", lastname: "Maker")
+    SlackUser.create!(member: manager, slack_id: "U069GUEV5PE", name: "old-handle", real_name: "Old Slack Name")
+    SlackUser.create!(slack_id: "U1ZLYBXCZ", real_name: "Sam Checkout")
+    shop.update!(slack_channel: "woodshop")
+    cached = {
+      id: "C123", name: "woodshop",
+      topic: "Shop manager: <@U069GUEV5PE> / <@U1ZLYBXCZ> --- Wiki <https://wiki.example.org/workshops>",
+      purpose: "Officer: <@U069GUEV5PE|old-label> / <@UUNKNOWN|Guest> / <@UNOMATCH>"
+    }
+    allow(Service::SlackChannelCache).to receive(:fetch).with("#woodshop").and_return(cached)
+    get "/api/workshops"
+    expect(response).to have_http_status(:ok)
+    details = JSON.parse(response.body).fetch("workshops").find { |row| row["id"] == shop.id.to_s }.fetch("slackChannelDetails")
+    expect(details["topic"]).to eq("Shop manager: Alex Maker / Sam Checkout --- Wiki <https://wiki.example.org/workshops>")
+    expect(details["purpose"]).to eq("Officer: Alex Maker / Guest / <@UNOMATCH>")
+    expect(cached[:topic]).to include("<@U069GUEV5PE>")
+  end
+
   it "hides disabled shops and shows hidden tools only when checked out" do
     get "/api/workshops"
 

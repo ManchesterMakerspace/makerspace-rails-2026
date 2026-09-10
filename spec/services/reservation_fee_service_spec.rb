@@ -334,6 +334,62 @@ RSpec.describe ReservationFeeService do
     end
   end
 
+  [false, true].each do |write_completed|
+    it "restores an unpaid invoice when reservation persistence fails (written: #{write_completed})" do
+      reservation = book
+      original_invoice = reservation.fee_invoice
+      original_fields = original_invoice.attributes.slice("amount", "due_date", "description")
+      original_end = reservation.end_at
+      original_quote = reservation.reload.fee_snapshot.deep_dup
+      changes = attributes.merge(start_at: start_at + 1.day, end_at: start_at + 1.day + 16.hours)
+      preview = ReservationService.preview(member: member, attributes: changes, reservation: reservation)
+      changes[:fee_confirmation] = preview[:feeConfirmation]
+      allow(reservation).to receive(:update!).and_wrap_original do |method, *args|
+        method.call(*args) if write_completed
+        raise "reservation write failed"
+      end
+      expect { ReservationService.update!(reservation: reservation, attributes: changes) }.to raise_error("reservation write failed")
+      expect(original_invoice.reload.attributes.slice(*original_fields.keys)).to eq(original_fields)
+      expect(reservation.reload.end_at).to eq(original_end)
+      expect(reservation.fee_snapshot).to eq(original_quote)
+      expect(reservation.invoice).to eq(original_invoice.id.to_s)
+      allow(reservation).to receive(:update!).and_call_original
+      ReservationService.update!(reservation: reservation, attributes: changes)
+      expect(original_invoice.reload.amount).to eq(40)
+      expect(original_invoice.due_date).to eq(start_at + 1.day - 4.hours)
+      expect(reservation.reload.end_at).to eq(start_at + 1.day + 16.hours)
+      expect(Invoice.where(reservation_id: reservation.id.to_s).count).to eq(1)
+    end
+  end
+
+  it "allows a confirmed edit after settlement reversal retains its transaction ID" do
+    reservation = book
+    invoice = reservation.fee_invoice
+    invoice.submit_for_settlement(nil, nil, "completed-transaction")
+    invoice.reverse_settlement
+    invoice.update!(locked: false, locked_at: nil)
+    described_class.reconcile!(reservation)
+    expect(invoice.reload.transaction_id).to eq("completed-transaction")
+    changes = attributes.merge(end_at: start_at + 16.hours)
+    preview = ReservationService.preview(member: member, attributes: changes, reservation: reservation)
+    ReservationService.update!(reservation: reservation, attributes: changes.merge(fee_confirmation: preview[:feeConfirmation]))
+    expect(reservation.reload.end_at).to eq(start_at + 16.hours)
+    expect(invoice.reload.amount).to eq(40)
+  end
+
+  it "blocks an actively locked payment but permits an expired claim" do
+    reservation = book
+    invoice = reservation.fee_invoice
+    invoice.update!(locked: true, locked_at: Time.current, transaction_id: "claimed-payment")
+    changes = attributes.merge(end_at: start_at + 16.hours)
+    preview = ReservationService.preview(member: member, attributes: changes, reservation: reservation)
+    changes[:fee_confirmation] = preview[:feeConfirmation]
+    expect { ReservationService.update!(reservation: reservation, attributes: changes) }.to raise_error(Error::UnprocessableEntity, /Payment is processing/)
+    invoice.update!(locked_at: 16.minutes.ago)
+    ReservationService.update!(reservation: reservation, attributes: changes)
+    expect(reservation.reload.end_at).to eq(start_at + 16.hours)
+  end
+
   it "updates the pending quote without an invoice and bills that quote on approval" do
     shop.update!(reservation_requires_approval: true)
     reservation = book
