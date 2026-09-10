@@ -498,6 +498,37 @@ RSpec.describe Service::MemberProvisioning do
         hash_including(event_type: 'slack_identity_conflict', resource_id: member.id)
       )
     end
+
+    it 'does not re-flag a conflict already resolved by an admin (quarantined identity)' do
+      member = create(:member, email: 'member@example.com')
+      active_identity = SlackUser.create!(
+        slack_email: 'member@example.com',
+        slack_id: 'UACTIVE',
+        name: 'active identity',
+        member_id: member.id
+      )
+      quarantined_identity = SlackUser.create!(
+        slack_email: 'quarantined@example.com',
+        slack_id: 'UQUARANTINED',
+        name: 'quarantined identity',
+        invalidated_at: Time.current,
+        invalidation_reason: 'manually_reassigned_by_admin'
+      )
+      live_user = {
+        'id' => 'UQUARANTINED',
+        'name' => 'quarantined identity',
+        'deleted' => false,
+        'profile' => { 'email' => member.email }
+      }
+
+      expect { described_class.reconcile_slack_member(member, live_user) }.not_to raise_error
+
+      expect(SlackUser.find(quarantined_identity.id)).to have_attributes(invalidated_at: be_present)
+      expect(SlackUser.find(active_identity.id)).to have_attributes(member_id: member.id)
+      expect(Service::AuditLogger).not_to have_received(:log).with(
+        hash_including(event_type: 'slack_identity_conflict')
+      )
+    end
   end
 
   describe '.reconcile_all!' do
