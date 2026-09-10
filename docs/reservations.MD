@@ -504,7 +504,11 @@ The **Reservation Canvas Rebuild** automated job is available beside
 **Database Backup** under Admin Settings → Jobs. It runs the
 `reservations:rebuild_slack_canvases` rake task through
 `ReservationSlackCanvasRebuildJob`, records its last-run status, and can be
-started with **Run Now**. It can also be invoked directly with:
+started with **Run Now**. In addition to the reservation and volunteer canvas
+work, it rebuilds every checkout canvas whose ID is recorded on a shop. A
+checkout canvas failure is posted as a warning in the interface-log Slack
+channel and stored in the audit log, then processing continues with the next
+shop. The job can also be invoked directly with:
 
 ```sh
 bundle exec rake reservations:rebuild_slack_canvases

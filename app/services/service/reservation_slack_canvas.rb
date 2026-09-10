@@ -18,6 +18,8 @@ module Service
           end
         end
 
+        Service::ToolCheckoutSlackCanvas.rebuild_all!
+
         return if failures.empty?
 
         raise "Slack canvas rebuild failed for #{failures.join('; ')}"

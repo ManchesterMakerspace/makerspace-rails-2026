@@ -28,6 +28,7 @@ class Shop
 
   before_validation :normalize_external_fields
   after_save :warm_changed_slack_channel_cache
+  after_save :enqueue_checkout_canvas_sync_after_channel_change
 
   validates :name, presence: true, uniqueness: { case_sensitive: false }
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
@@ -76,6 +77,13 @@ class Shop
       slack_channel,
       refresh_on_miss: true
     )
+  end
+
+  def enqueue_checkout_canvas_sync_after_channel_change
+    return unless previous_changes.key?("slack_channel")
+    return if checkout_canvas_id.blank? || slack_channel.blank?
+
+    ToolCheckoutSlackCanvasSyncJob.perform_later(id.to_s)
   end
 
   def reservation_duration_uses_half_hours

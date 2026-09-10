@@ -84,4 +84,35 @@ RSpec.describe Service::ToolCheckoutSlackCanvas do
     expect(Service::SlackConnector).to have_received(:create_canvas)
       .with("Wood Shop Checkouts", channel_id: "GPRIVATE01")
   end
+
+  it "reports a rebuild failure and continues to the next recorded canvas" do
+    failed_shop = create(:shop, checkout_canvas_id: "FFAIL")
+    successful_shop = create(:shop, checkout_canvas_id: "FSUCCESS")
+    allow(described_class).to receive(:sync!).with(failed_shop)
+      .and_raise(StandardError, "not found")
+    allow(described_class).to receive(:sync!).with(successful_shop)
+    allow(described_class).to receive(:report_failure)
+
+    described_class.rebuild_all!
+
+    expect(described_class).to have_received(:report_failure)
+      .with(failed_shop, an_instance_of(StandardError))
+    expect(described_class).to have_received(:sync!).with(successful_shop)
+  end
+
+  it "sends failures to the interface log channel and records an audit entry" do
+    error = StandardError.new("canvas not found")
+    allow(Service::AuditLogger).to receive(:log)
+
+    described_class.report_failure(shop, error)
+
+    expect(Service::AuditLogger).to have_received(:log).with(
+      hash_including(
+        event_type: "checkout_canvas_sync_failed",
+        resource_id: shop.id,
+        message_details: a_string_including(":warning:", "canvas not found"),
+        slack_channel: Service::SlackConnector.logs_channel
+      )
+    )
+  end
 end

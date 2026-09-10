@@ -1,5 +1,5 @@
 namespace :reservations do
-  desc "Rebuild today's and tomorrow's Slack reservation canvases"
+  desc "Rebuild reservation, volunteer, and recorded checkout Slack canvases"
   task rebuild_slack_canvases: :environment do
     Service::ReservationSlackCanvas.rebuild_all!
   end

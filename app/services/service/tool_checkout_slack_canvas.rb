@@ -9,7 +9,10 @@ module Service
         channel = Service::SlackChannelCache.lookup(shop.slack_channel)
         channel_id = channel&.dig(:id) || channel&.dig("id")
         channel_id ||= Service::SlackConnector.find_channel_id(shop.slack_channel)
-        return if channel_id.blank?
+        if channel_id.blank?
+          report_failure(shop, StandardError.new("Slack channel not found"))
+          return
+        end
 
         with_canvas_lock(shop.id) do
           shop.reload
@@ -75,6 +78,30 @@ module Service
         Tool.where(:id.in => tool_ids).distinct(:shop_id).each do |shop_id|
           ToolCheckoutSlackCanvasSyncJob.perform_later(shop_id.to_s)
         end
+      end
+
+      def rebuild_all!
+        Shop.all.each do |shop|
+          next if shop.checkout_canvas_id.blank?
+
+          sync!(shop)
+        rescue => error
+          report_failure(shop, error)
+        end
+      end
+
+      def report_failure(shop, error)
+        details = "shop: #{shop.name}, channel: #{shop.slack_channel}, " \
+          "error: #{Service::SlackConnector.format_api_error(error)}"
+        Rails.logger.error("[ToolCheckoutSlackCanvasError] #{details}")
+        Service::AuditLogger.log(
+          log_type: "portal",
+          event_type: "checkout_canvas_sync_failed",
+          resource_type: "Shop",
+          resource_id: shop.id,
+          message_details: ":warning: #{details}",
+          slack_channel: Service::SlackConnector.logs_channel
+        )
       end
 
       private

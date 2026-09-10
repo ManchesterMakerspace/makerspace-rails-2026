@@ -111,7 +111,9 @@ class Tool
 
   def enqueue_checkout_canvas_syncs(shop_ids)
     Shop.where(:id.in => shop_ids.compact.uniq).each do |affected_shop|
-      next if affected_shop.checkout_canvas_id.blank?
+      has_active_checkouts = affected_shop.id.to_s == shop_id.to_s &&
+        ToolCheckout.where(tool_id: id, revoked_at: nil).exists?
+      next if affected_shop.checkout_canvas_id.blank? && !has_active_checkouts
 
       ToolCheckoutSlackCanvasSyncJob.perform_later(affected_shop.id.to_s)
     end

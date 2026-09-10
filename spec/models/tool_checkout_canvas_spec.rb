@@ -27,4 +27,15 @@ RSpec.describe Tool, type: :model do
       tool.update!(description: "Updated")
     }.not_to have_enqueued_job(ToolCheckoutSlackCanvasSyncJob)
   end
+
+  it "creates the destination canvas when a checked-out tool moves shops" do
+    destination = create(:shop)
+    tool = create(:tool, shop: shop)
+    ToolCheckout.create!(member: create(:member, :current), tool: tool)
+
+    expect {
+      tool.update!(shop: destination)
+    }.to have_enqueued_job(ToolCheckoutSlackCanvasSyncJob)
+      .with(destination.id.to_s)
+  end
 end
