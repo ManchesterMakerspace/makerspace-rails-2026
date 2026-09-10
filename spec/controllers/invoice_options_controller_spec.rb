@@ -160,6 +160,17 @@ RSpec.describe InvoiceOptionsController, type: :controller do
         expect(parsed_response[1]['id']).to eq(first_io.id.to_s)
         expect(parsed_response.count).to eq(3)
       end
+
+      it "still excludes disabled options for admins when only_enabled is requested" do
+        create(:invoice_option, disabled: true)
+        enabled_io = create(:invoice_option, plan_id: "foo")
+
+        get :index, params: { only_enabled: true }
+
+        expect(response).to have_http_status(200)
+        parsed_response = JSON.parse(response.body)
+        expect(parsed_response.pluck('id')).to eq([enabled_io.id.to_s])
+      end
     end
 
     it "does not allow admin status to bypass signup eligibility filters" do
