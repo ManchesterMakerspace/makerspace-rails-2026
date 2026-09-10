@@ -248,7 +248,7 @@ RSpec.describe Invoice, type: :model do
           # A transient failure on this cycle (later paid successfully) must
           # not cause a later, unrelated cancellation of next cycle's invoice
           # to be misreported as payment-related.
-          base_invoice = create(:invoice, due_date: Time.now, last_failed_transaction_id: "txn-that-failed")
+          base_invoice = create(:invoice, due_date: Time.now, settled_at: Time.now, last_failed_transaction_id: "txn-that-failed")
           base_invoice.build_next_invoice
           expect(Invoice.last.last_failed_transaction_id).to be_nil
         end
