@@ -114,9 +114,11 @@ RSpec.describe Service::GoogleWorkspace do
 
   describe ".ensure_resource!" do
     let(:directory_service) { double("Google Directory service") }
+    let(:calendar_service) { double("Google Calendar service", insert_acl: nil) }
 
     before do
       allow(described_class).to receive(:directory).and_return(directory_service)
+      allow(described_class).to receive(:calendar).and_return(calendar_service)
       allow(directory_service).to receive(:list_calendar_resources).and_return(
         double(items: [], next_page_token: nil)
       )
@@ -137,6 +139,11 @@ RSpec.describe Service::GoogleWorkspace do
       described_class.ensure_resource!(shop, "CONFERENCE_ROOM")
 
       expect(shop.reload.google_resource_id).to eq("R1")
+      expect(calendar_service).to have_received(:insert_acl) do |calendar_id, rule|
+        expect(calendar_id).to eq("shop@resource.calendar.google.com")
+        expect(rule.scope.type).to eq("default")
+        expect(rule.role).to eq("freeBusyReader")
+      end
     end
 
     it "does not include location fields for a Tool's OTHER-category resource" do
@@ -154,6 +161,25 @@ RSpec.describe Service::GoogleWorkspace do
       described_class.ensure_resource!(tool, "OTHER")
 
       expect(tool.reload.google_resource_id).to eq("R2")
+    end
+
+    it "logs an ACL Google error and still saves the created resource" do
+      shop = create(:shop)
+      created_resource = double(
+        resource_id: "R3",
+        resource_email: "shop-3@resource.calendar.google.com"
+      )
+      allow(directory_service).to receive(:calendar_resource).and_return(created_resource)
+      error = Google::Apis::ServerError.new("ACL unavailable")
+      allow(calendar_service).to receive(:insert_acl).and_raise(error)
+      allow(Rails.logger).to receive(:error)
+
+      expect { described_class.ensure_resource!(shop, "CONFERENCE_ROOM") }.not_to raise_error
+
+      expect(shop.reload.google_resource_id).to eq("R3")
+      expect(Rails.logger).to have_received(:error).with(
+        include("shop-3@resource.calendar.google.com", "ACL unavailable")
+      )
     end
   end
 end
