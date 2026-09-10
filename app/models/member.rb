@@ -742,10 +742,7 @@ class Member
   def enqueue_checkout_canvas_syncs
     return unless previous_changes.keys.any? { |key| %w[expirationTime status].include?(key.to_s) }
 
-    tool_ids = ToolCheckout.where(member_id: id, revoked_at: nil).pluck(:tool_id)
-    Tool.where(:id.in => tool_ids).distinct(:shop_id).each do |shop_id|
-      ToolCheckoutSlackCanvasSyncJob.perform_later(shop_id.to_s)
-    end
+    Service::ToolCheckoutSlackCanvas.enqueue_for_members([id])
   end
 
   def publish_destroy

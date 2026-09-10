@@ -1,0 +1,30 @@
+require "rails_helper"
+
+RSpec.describe Tool, type: :model do
+  let(:shop) { create(:shop, checkout_canvas_id: "FCHECKOUTS") }
+
+  it "refreshes an existing checkout canvas when a tool becomes hidden" do
+    tool = create(:tool, shop: shop)
+
+    expect {
+      tool.update!(disabled: true)
+    }.to have_enqueued_job(ToolCheckoutSlackCanvasSyncJob).with(shop.id.to_s)
+  end
+
+  it "refreshes an existing checkout canvas when a tool is deleted" do
+    tool = create(:tool, shop: shop)
+
+    expect {
+      tool.destroy!
+    }.to have_enqueued_job(ToolCheckoutSlackCanvasSyncJob).with(shop.id.to_s)
+  end
+
+  it "does not create a checkout canvas solely because a tool is edited" do
+    shop.update!(checkout_canvas_id: nil)
+    tool = create(:tool, shop: shop)
+
+    expect {
+      tool.update!(description: "Updated")
+    }.not_to have_enqueued_job(ToolCheckoutSlackCanvasSyncJob)
+  end
+end

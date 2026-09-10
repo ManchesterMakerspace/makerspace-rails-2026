@@ -7,8 +7,8 @@ RSpec.describe Service::ToolCheckoutSlackCanvas do
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:eval).and_return(1)
     allow(Service::SlackChannelCache).to receive(:lookup)
-      .with("#woodshop", refresh_on_miss: true)
-      .and_return({ id: "C123ABC456" })
+      .with("#woodshop").and_return({ id: "C123ABC456" })
+    allow(Service::SlackConnector).to receive(:find_channel_id)
     allow(Service::SlackConnector).to receive(:create_canvas)
       .and_return("FCHECKOUTS")
     allow(Service::SlackConnector).to receive(:set_canvas_user_access)
@@ -67,20 +67,21 @@ RSpec.describe Service::ToolCheckoutSlackCanvas do
 
   it "does not create an unshared canvas when the channel cannot be resolved" do
     allow(Service::SlackChannelCache).to receive(:lookup).and_return(nil)
+    allow(Service::SlackConnector).to receive(:find_channel_id).and_return(nil)
 
     described_class.sync!(shop)
 
     expect(Service::SlackConnector).not_to have_received(:create_canvas)
   end
 
-  it "refreshes the Slack channel cache before treating the channel as unresolved" do
-    expect(Service::SlackChannelCache).to receive(:lookup)
-      .with("#woodshop", refresh_on_miss: true)
-      .and_return({ id: "CREFRESHED1" })
+  it "resolves private channels through Slack when they are absent from the public cache" do
+    allow(Service::SlackChannelCache).to receive(:lookup).and_return(nil)
+    expect(Service::SlackConnector).to receive(:find_channel_id)
+      .with("#woodshop").and_return("GPRIVATE01")
 
     described_class.sync!(shop)
 
     expect(Service::SlackConnector).to have_received(:create_canvas)
-      .with("Wood Shop Checkouts", channel_id: "CREFRESHED1")
+      .with("Wood Shop Checkouts", channel_id: "GPRIVATE01")
   end
 end

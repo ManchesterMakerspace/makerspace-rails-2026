@@ -6,11 +6,9 @@ module Service
       def sync!(shop)
         return if shop.slack_channel.blank?
 
-        channel = Service::SlackChannelCache.lookup(
-          shop.slack_channel,
-          refresh_on_miss: true
-        )
+        channel = Service::SlackChannelCache.lookup(shop.slack_channel)
         channel_id = channel&.dig(:id) || channel&.dig("id")
+        channel_id ||= Service::SlackConnector.find_channel_id(shop.slack_channel)
         return if channel_id.blank?
 
         with_canvas_lock(shop.id) do
@@ -67,6 +65,16 @@ module Service
           "",
           "_Last updated #{Time.current.in_time_zone(ReservationService::ZONE).strftime('%B %-d, %Y at %H:%M %Z')}._"
         ]).join("\n")
+      end
+
+      def enqueue_for_members(member_ids)
+        tool_ids = ToolCheckout.where(
+          :member_id.in => Array(member_ids),
+          revoked_at: nil
+        ).distinct(:tool_id)
+        Tool.where(:id.in => tool_ids).distinct(:shop_id).each do |shop_id|
+          ToolCheckoutSlackCanvasSyncJob.perform_later(shop_id.to_s)
+        end
       end
 
       private
