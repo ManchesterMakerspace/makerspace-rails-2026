@@ -464,6 +464,15 @@ module Service
       record = SlackUser.find_by(slack_id: slack_id)
       return record.set(attributes) if record
 
+      # SlackUser's default scope hides quarantined records (dismissed or
+      # reassigned away by an admin), so a quarantined slack_id looks
+      # indistinguishable from "never seen" above. Without this check, every
+      # later reconciliation re-derives the same rejected identity from
+      # member.email, finds it "new", and re-reports + reopens the exact
+      # conflict the admin already resolved.
+      quarantined = SlackUser.unscoped.where(slack_id: slack_id).first
+      return if quarantined && ::Service::SlackUserSync.quarantined_identity?(quarantined)
+
       conflict = ::Service::SlackUserSync.active_identity_conflict(member)
       if conflict
         ::Service::SlackUserSync.report_identity_conflict(

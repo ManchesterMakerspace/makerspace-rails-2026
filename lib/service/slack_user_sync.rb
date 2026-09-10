@@ -582,7 +582,9 @@ module Service
       Service::ErrorReporter.notify(e, context: { slack_id: slack_id, member_id: member.id.to_s, phase: 'sync provisioning reconcile' })
     end
 
-    private_class_method :quarantined_identity?, :resolve_member, :report_email_mismatch, :reconcile_provisioning,
+    # quarantined_identity? stays public -- MemberProvisioning#ensure_slack_user_record
+    # needs it to recognize an admin-resolved identity before re-flagging it.
+    private_class_method :resolve_member, :report_email_mismatch, :reconcile_provisioning,
       :normalize_email, :safe_persistence_attributes, :persist_conflict, :resolve_persisted_conflict
   end
 end
