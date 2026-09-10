@@ -18,6 +18,8 @@ module Service
           end
         end
 
+        Service::ToolCheckoutSlackCanvas.rebuild_all!
+
         return if failures.empty?
 
         raise "Slack canvas rebuild failed for #{failures.join('; ')}"
@@ -201,7 +203,8 @@ module Service
         [
           shop.canvas_today,
           shop.canvas_tomorrow,
-          shop.volunteer_canvas_id
+          shop.volunteer_canvas_id,
+          shop.checkout_canvas_id
         ].compact_blank.uniq
       end
 

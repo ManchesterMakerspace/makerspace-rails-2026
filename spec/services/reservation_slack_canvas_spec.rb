@@ -45,6 +45,7 @@ RSpec.describe Service::ReservationSlackCanvas do
     before do
       allow(described_class).to receive(:sync!)
       allow(Service::VolunteerSlackCanvas).to receive(:sync!)
+      allow(Service::ToolCheckoutSlackCanvas).to receive(:rebuild_all!)
     end
 
     it "rebuilds today and tomorrow and refreshes owners only for shops with canvases" do
@@ -73,6 +74,7 @@ RSpec.describe Service::ReservationSlackCanvas do
           create_if_needed: true,
           sync_owner_access: true
         )
+      expect(Service::ToolCheckoutSlackCanvas).to have_received(:rebuild_all!)
     end
 
     it "rebuilds a shop without cached canvases when a reservation enters the display window" do

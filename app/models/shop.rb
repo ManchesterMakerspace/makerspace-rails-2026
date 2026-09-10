@@ -21,12 +21,14 @@ class Shop
   field :canvas_today, type: String
   field :canvas_tomorrow, type: String
   field :volunteer_canvas_id, type: String
+  field :checkout_canvas_id, type: String
 
   has_many :tools, dependent: :destroy
   has_many :reservation_blackouts, dependent: :destroy
 
   before_validation :normalize_external_fields
   after_save :warm_changed_slack_channel_cache
+  after_save :enqueue_checkout_canvas_sync_after_channel_change
 
   validates :name, presence: true, uniqueness: { case_sensitive: false }
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
@@ -75,6 +77,22 @@ class Shop
       slack_channel,
       refresh_on_miss: true
     )
+  end
+
+  def enqueue_checkout_canvas_sync_after_channel_change
+    return unless previous_changes.key?("slack_channel")
+    return if slack_channel.blank?
+    return if checkout_canvas_id.blank? && !active_tool_checkouts?
+
+    ToolCheckoutSlackCanvasSyncJob.perform_later(id.to_s)
+  end
+
+  def active_tool_checkouts?
+    tool_ids = tools.pluck(:id)
+    tool_ids.present? && ToolCheckout.where(
+      :tool_id.in => tool_ids,
+      revoked_at: nil
+    ).exists?
   end
 
   def reservation_duration_uses_half_hours

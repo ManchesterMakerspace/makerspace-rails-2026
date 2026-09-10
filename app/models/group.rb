@@ -73,6 +73,7 @@ class Group
       "$set" => { expirationTime: new_expiration, groupName: household_key }
     )
     Card.where(:member_id.in => member_ids).update_all(expiry: new_expiration)
+    Service::ToolCheckoutSlackCanvas.enqueue_for_members(member_ids)
 
     true
   end

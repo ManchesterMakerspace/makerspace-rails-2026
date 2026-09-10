@@ -30,6 +30,8 @@ class Tool
 
   before_validation :normalize_external_fields
   after_save :warm_changed_slack_channel_cache
+  after_save :enqueue_checkout_canvas_sync_after_catalog_change
+  after_destroy :enqueue_checkout_canvas_sync_after_destroy
 
   validates :name, presence: true
   validates :name, uniqueness: { case_sensitive: false }
@@ -91,6 +93,31 @@ class Tool
   end
 
   private
+
+  CHECKOUT_CANVAS_FIELDS = %w[
+    shop_id name description wiki_url prerequisite_ids disabled
+  ].freeze
+
+  def enqueue_checkout_canvas_sync_after_catalog_change
+    return unless previous_changes.keys.any? { |field| CHECKOUT_CANVAS_FIELDS.include?(field.to_s) }
+
+    previous_shop_id = previous_changes["shop_id"]&.first
+    enqueue_checkout_canvas_syncs([shop_id, previous_shop_id])
+  end
+
+  def enqueue_checkout_canvas_sync_after_destroy
+    enqueue_checkout_canvas_syncs([shop_id])
+  end
+
+  def enqueue_checkout_canvas_syncs(shop_ids)
+    Shop.where(:id.in => shop_ids.compact.uniq).each do |affected_shop|
+      has_active_checkouts = affected_shop.id.to_s == shop_id.to_s &&
+        ToolCheckout.where(tool_id: id, revoked_at: nil).exists?
+      next if affected_shop.checkout_canvas_id.blank? && !has_active_checkouts
+
+      ToolCheckoutSlackCanvasSyncJob.perform_later(affected_shop.id.to_s)
+    end
+  end
 
   def normalize_external_fields
     self.wiki_url = wiki_url.to_s.strip.presence

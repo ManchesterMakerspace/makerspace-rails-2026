@@ -15,7 +15,8 @@ class ToolCheckout
   validates :member, presence: true
   validates :tool, presence: true
 
-  after_create :close_open_request, :invite_member_to_users_channel
+  after_create :close_open_request, :invite_member_to_users_channel, :enqueue_checkout_canvas_sync
+  after_update :enqueue_checkout_canvas_sync_after_revocation
 
   def active?
     revoked_at.nil?
@@ -118,6 +119,14 @@ class ToolCheckout
   end
 
   private
+
+  def enqueue_checkout_canvas_sync
+    ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s)
+  end
+
+  def enqueue_checkout_canvas_sync_after_revocation
+    enqueue_checkout_canvas_sync if previous_changes.key?("revoked_at")
+  end
 
   def close_open_request
     request = ToolCheckoutRequest.where(member_id: member_id, tool_id: tool_id, status: "open").first

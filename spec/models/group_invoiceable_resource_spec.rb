@@ -83,5 +83,17 @@ RSpec.describe Group, type: :model do
       expect(primary_card.reload.expiry).to eq(new_expiration)
       expect(secondary_card.reload.expiry).to eq(new_expiration)
     end
+
+    if ENV['RUN_OPTIONAL_CHECKOUT_CANVAS_SPECS'] == 'true'
+      it 'refreshes checkout canvases for every household member after a bulk expiration update' do
+        secondary = create(:member, groupName: member.id.to_s)
+        shop = create(:shop)
+        ToolCheckout.create!(member: secondary, tool: create(:tool, shop: shop))
+
+        expect {
+          group.update_expiration(group.expiry + 1.month.to_i * 1000)
+        }.to have_enqueued_job(ToolCheckoutSlackCanvasSyncJob).with(shop.id.to_s)
+      end
+    end
   end
 end
