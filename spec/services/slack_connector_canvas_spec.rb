@@ -97,6 +97,35 @@ RSpec.describe Service::SlackConnector do
     )
   end
 
+  it "logs the complete Slack validation messages and filters secrets from requests and responses" do
+    validation_message = "invalid block " + ("detail " * 1_000)
+    response = double(
+      status: 400,
+      body: {
+        ok: false,
+        response_metadata: { messages: [validation_message, "received xoxb-embedded-secret"] },
+        token: "response-secret"
+      }
+    )
+    error = Slack::Web::Api::Errors::InvalidArguments.new("invalid_arguments", response)
+
+    details = described_class.format_api_error(
+      error,
+      request: {
+        method: "views.open",
+        arguments: {
+          trigger_id: "trigger-secret",
+          view: { private_metadata: "not-a-secret" },
+          api_key: "request-secret"
+        }
+      }
+    )
+
+    expect(details).to include(validation_message, "not-a-secret")
+    expect(details).to include('"trigger_id":"[FILTERED]"', '"api_key":"[FILTERED]"', '"token":"[FILTERED]"')
+    expect(details).not_to include("trigger-secret", "request-secret", "response-secret", "xoxb-embedded-secret")
+  end
+
   it "resolves a configured channel name to its Slack channel ID" do
     channel = double(name: "woodshop", id: "C123")
     response = double(

@@ -1,3 +1,5 @@
+require 'active_support/parameter_filter'
+
 module Service
   module SlackConnector
     mattr_accessor :slack_team_id
@@ -226,26 +228,48 @@ module Service
       end
     end
 
-    def self.format_api_error(error)
+    def self.format_api_error(error, request: nil)
       details = "#{error.class}: #{error.message.to_s.gsub(/\s+/, ' ').strip}"
       response = error.respond_to?(:response) ? error.response : nil
-      return details if response.nil?
-
       status = response.respond_to?(:status) ? response.status : nil
       body = response.respond_to?(:body) ? response.body : response
-      body = body.to_h if body.respond_to?(:to_h)
-      response_text = JSON.generate(body).gsub(/\s+/, ' ').strip
-      response_text = response_text.first(4_000)
 
       [
         details,
+        ("slack_request=#{JSON.generate(filter_log_data(request))}" if request.present?),
         ("http_status=#{status}" if status),
-        ("slack_response=#{response_text}" if response_text.present?)
+        ("slack_response=#{JSON.generate(filter_log_data(body))}" if body.present?)
       ].compact.join(" ")
     rescue => formatting_error
       "#{details} response_format_error=#{formatting_error.class}: " \
         "#{formatting_error.message.to_s.gsub(/\s+/, ' ').strip}"
     end
+
+    def self.filter_log_data(data)
+      data = data.to_h if data.respond_to?(:to_h)
+      filters = Array(Rails.application.config.filter_parameters) + [
+        :access_token, :authorization, :cookie, :response_url, :signing_secret,
+        :trigger_id, :webhook_url
+      ]
+      redact_secret_strings(ActiveSupport::ParameterFilter.new(filters).filter(data))
+    end
+
+    def self.redact_secret_strings(data)
+      case data
+      when Hash
+        data.transform_values { |value| redact_secret_strings(value) }
+      when Array
+        data.map { |value| redact_secret_strings(value) }
+      when String
+        data
+          .gsub(/xox[a-z]-[A-Za-z0-9-]+/i, "[FILTERED]")
+          .gsub(%r{https://hooks\.slack\.com/services/[^\s"']+}i, "[FILTERED]")
+          .gsub(/\b(Bearer\s+)[^\s,"']+/i, '\1[FILTERED]')
+      else
+        data
+      end
+    end
+    private_class_method :redact_secret_strings
 
     def self.invite_to_channel(channel, slack_id)
       return true if Rails.env.test?
