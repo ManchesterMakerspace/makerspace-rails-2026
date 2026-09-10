@@ -243,6 +243,15 @@ RSpec.describe Invoice, type: :model do
           expect(new_invoice.past_due).to be_falsey
           expect(new_invoice.quantity).to eq(base_invoice.quantity)
         end
+
+        it "does not carry a failed-payment flag from this cycle into the next" do
+          # A transient failure on this cycle (later paid successfully) must
+          # not cause a later, unrelated cancellation of next cycle's invoice
+          # to be misreported as payment-related.
+          base_invoice = create(:invoice, due_date: Time.now, last_failed_transaction_id: "txn-that-failed")
+          base_invoice.build_next_invoice
+          expect(Invoice.last.last_failed_transaction_id).to be_nil
+        end
       end
     end
 
@@ -268,12 +277,43 @@ RSpec.describe Invoice, type: :model do
           paid_invoice.send_cancellation_notification
         end
 
-        it "Gracefully handles deleted rentals" do 
+        it "Gracefully handles deleted rentals" do
           outstanding_rental_invoice
           rental.delete
           expect(SlackUser).to receive(:find_by).with({ member_id: member.id }).and_return(SlackUser.new())
           expect(::Service::SlackConnector).to receive(:send_slack_message).twice
           outstanding_rental_invoice.send_cancellation_notification
+        end
+
+        it "logs a plain cancellation and a neutral member message when no payment ever failed" do
+          allow(SlackUser).to receive(:find_by).and_return(nil)
+          expect(BillingMailer).to receive(:canceled_subscription)
+            .with(member.email, "member", cancellation_reason: "")
+            .and_return(double(deliver_later: true))
+
+          expect(::Service::SlackConnector).to receive(:send_slack_message)
+            .with(a_string_matching(/has been canceled\.\z/), ::Service::SlackConnector.members_relations_channel)
+
+          expect { paid_invoice.send_cancellation_notification }.to change(AuditLog, :count).by(1)
+          log = AuditLog.last
+          expect(log.event_type).to eq("subscription_cancelled")
+        end
+
+        it "identifies an auto-cancellation from a failed payment in both the audit log and the member message" do
+          allow(SlackUser).to receive(:find_by).and_return(nil)
+          paid_invoice.update!(last_failed_transaction_id: "txn-failed-123")
+
+          expect(BillingMailer).to receive(:canceled_subscription)
+            .with(member.email, "member", cancellation_reason: " after repeated failed payment attempts")
+            .and_return(double(deliver_later: true))
+
+          expect(::Service::SlackConnector).to receive(:send_slack_message)
+            .with(a_string_matching(/after repeated failed payment attempts\.\z/), ::Service::SlackConnector.members_relations_channel)
+
+          expect { paid_invoice.send_cancellation_notification }.to change(AuditLog, :count).by(1)
+          log = AuditLog.last
+          expect(log.event_type).to eq("subscription_auto_cancelled_payment_failure")
+          expect(log.slack_message).to include("txn-failed-123")
         end
       end
     end

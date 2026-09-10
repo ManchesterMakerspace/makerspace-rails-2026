@@ -173,6 +173,10 @@ class Invoice
     next_invoice.locked = false
     next_invoice.locked_at = nil
     next_invoice.settlement_processed_at = nil
+    # A failure on THIS cycle must not carry over and misattribute a later,
+    # unrelated cancellation of the next cycle's invoice as payment-related
+    # (see #send_cancellation_notification's auto_cancelled detection).
+    next_invoice.last_failed_transaction_id = nil
     next_invoice.due_date = self.due_date + self.quantity.months
 
     if next_invoice.subscription_id && gateway
@@ -183,17 +187,42 @@ class Invoice
     next_invoice.save!
   end
 
+  # Runs for every subscription cancellation, whether a member/admin
+  # deliberately canceled it or Braintree auto-canceled it after exhausting
+  # its own retry attempts on repeated failed payments. Distinguishing the
+  # two matters both for the audit trail (a voluntary cancel already logs
+  # its own 'subscription_cancelled' entry at initiation in
+  # Billing::SubscriptionsController#destroy -- this entry is the only audit
+  # record at all for the auto-canceled case) and for what the member is
+  # told, since a stale card is a very different story than "you canceled."
+  # last_failed_transaction_id is the reliable signal: it's only set by
+  # process_subscription_charge_failure, on this exact invoice/cycle.
   def send_cancellation_notification
     slack_user = SlackUser.find_by(member_id: self.member_id)
     type = self.resource_class == "member" ? "membership" : "rental"
-    message = "#{self.member.fullname}'s #{type} subscription#{type == "rental" ? " for #{self.resource.try(:number) || self.name}" : ""} has been canceled."
+    auto_cancelled = self.last_failed_transaction_id.present?
+    reason_clause = auto_cancelled ? " after repeated failed payment attempts" : ""
+    message = "#{self.member.fullname}'s #{type} subscription#{type == "rental" ? " for #{self.resource.try(:number) || self.name}" : ""} has been canceled#{reason_clause}."
     begin
       ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id) unless slack_user.nil?
       ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.members_relations_channel)
     rescue => e
       Rails.logger.error("send_cancellation_notification: Slack notify failed: #{e.message}")
     end
-    BillingMailer.canceled_subscription(self.member.email, self.resource_class).deliver_later
+
+    ::Service::AuditLogger.log(
+      log_type:        'member',
+      event_type:      auto_cancelled ? 'subscription_auto_cancelled_payment_failure' : 'subscription_cancelled',
+      resource_type:   'Invoice',
+      resource_id:     self.id,
+      subject:         self.member,
+      after_snapshot:  { subscription_id: self.subscription_id, resource_class: self.resource_class, resource_id: self.resource_id },
+      message_details: auto_cancelled ?
+        "#{type.capitalize} subscription automatically canceled by Braintree after repeated failed payment attempts (last failed transaction: #{self.last_failed_transaction_id})." :
+        "#{type.capitalize} subscription canceled."
+    )
+
+    BillingMailer.canceled_subscription(self.member.email, self.resource_class, cancellation_reason: reason_clause).deliver_later
   end
 
   def self.process_cancellation(invoice_id, skip_notification=false)

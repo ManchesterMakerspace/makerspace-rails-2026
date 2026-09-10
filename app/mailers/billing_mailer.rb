@@ -78,17 +78,19 @@ class BillingMailer < ApplicationMailer
     send_mail(member.email, "Refund Requested for transaction #{@transaction.id}", __method__.to_s)
   end
 
-  def canceled_subscription(email, invoice_resource_class)
+  def canceled_subscription(email, invoice_resource_class, cancellation_reason: "")
     member = Member.find_by(email: email.to_s.downcase)
-    _canceled_subscription(member, invoice_resource_class)
+    _canceled_subscription(member, invoice_resource_class, cancellation_reason)
   end
 
-  def _canceled_subscription(member, invoice_resource_class)
+  def _canceled_subscription(member, invoice_resource_class, cancellation_reason = "")
     @member = member
     @type = invoice_resource_class
+    @cancellation_reason = cancellation_reason
     @google_doc_content = ::Service::EmailTemplate.render(:canceled_subscription, ::Service::EmailTemplate.common_variables(member).merge(
       member_name: member.fullname,
       friendly_type: invoice_resource_class == "member" ? "membership" : "rental",
+      cancellation_reason: cancellation_reason,
       url: get_profile_url_string(member)
     ))
     send_mail(member.email, "Canceled Manchester Makerspace Subscription", __method__.to_s)
