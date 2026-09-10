@@ -169,6 +169,16 @@ class ApplicationController < ActionController::Base
   def totp_challenge_exempt_request?
     return true if controller_path == 'members/totp_sessions' && action_name == 'create'
     return true if controller_path == 'client_config' && action_name == 'index'
+    # warden.authenticate! establishes the Devise session before this gate
+    # ever sees a pending TOTP challenge (see SessionsController#create), so
+    # member_signed_in? is already true the moment a TOTP-required login
+    # starts. Without this exemption, any later call to sign_in -- a
+    # deliberate retry, a second tab, a stray request racing the code entry
+    # step -- gets rejected here instead of restarting the login/TOTP flow,
+    # with no way out except clearing cookies. sign_in itself still requires
+    # a correct password (warden.authenticate!) and still re-demands a fresh
+    # TOTP code when one is enrolled, so this doesn't weaken the challenge.
+    return true if controller_path == 'sessions' && action_name == 'create'
 
     false
   end
