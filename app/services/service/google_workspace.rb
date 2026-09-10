@@ -121,6 +121,7 @@ module Service
           label_properties.event_labels = labels
           calendar_record.label_properties = label_properties
           calendar.update_calendar(calendar_id, calendar_record)
+          ensure_default_free_busy_acl(calendar_id)
           label
         end
       end
@@ -144,6 +145,7 @@ module Service
           label_properties.event_labels = labels.reject { |item| item.id == label_id }
           calendar_record.label_properties = label_properties
           calendar.update_calendar(reservations_calendar_id, calendar_record)
+          ensure_default_free_busy_acl(reservations_calendar_id)
         end
       end
 
@@ -347,6 +349,7 @@ module Service
               resource.resource_name = record.name
               resource = directory.update_calendar_resource(customer_id, resource.resource_id, resource)
             end
+            ensure_default_free_busy_acl(resource.resource_email)
             record.set(resource_email: resource.resource_email)
             return resource
           rescue Google::Apis::ClientError => error
@@ -369,12 +372,34 @@ module Service
             **location_attributes_for(record, category)
           )
         )
+        ensure_default_free_busy_acl(resource.resource_email)
 
         record.set(
           google_resource_id: resource.resource_id,
           resource_email: resource.resource_email
         )
         resource
+      end
+
+      def ensure_default_free_busy_acl(calendar_id)
+        rule = Google::Apis::CalendarV3::AclRule.new(
+          scope: Google::Apis::CalendarV3::AclRule::Scope.new(type: "default"),
+          role: "freeBusyReader"
+        )
+        service = calendar
+        begin
+          service.update_acl(calendar_id, "default", rule)
+        rescue Google::Apis::ClientError => error
+          raise unless error.status_code == 404
+
+          service.insert_acl(calendar_id, rule)
+        end
+      rescue Google::Apis::Error => error
+        Rails.logger.error(
+          "[GoogleCalendarAcl] Could not set default free/busy access for " \
+          "#{calendar_id}: #{error.class}: #{error.message}"
+        )
+        nil
       end
 
       # Google's Admin SDK requires building_id/floor_name/capacity when
