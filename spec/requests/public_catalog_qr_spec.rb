@@ -8,12 +8,13 @@ RSpec.describe "Public QR codes and workshop directory", type: :request do
   before do
     allow(Rails).to receive(:cache).and_return(cache)
     allow(ENV).to receive(:fetch).and_call_original
-    allow(ENV).to receive(:fetch).with("APP_DOMAIN").and_return("portal.example.test")
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:fetch).with("APP_DOMAIN").and_return("portal.example.org")
   end
 
   it "encodes working canonical HTTPS links in public SVGs without cookies" do
     { "tool" => tool, "shop" => shop }.each do |kind, record|
-      target = "https://portal.example.test/api/#{kind}/#{record.id}/public.html"
+      target = "https://portal.example.org/api/#{kind}/#{record.id}/public.html"
       expect(RQRCode::QRCode).to receive(:new).with(target).and_call_original
       get "/#{kind}/#{record.id}/public.svg"
       expect(response).to have_http_status(:ok)
@@ -23,6 +24,26 @@ RSpec.describe "Public QR codes and workshop directory", type: :request do
       expect(response.headers["Cache-Control"].split(", ")).to match_array(%w[public max-age=259200 s-maxage=259200])
       get URI(target).request_uri
       expect(response).to have_http_status(:ok)
+    end
+  end
+
+  [
+    ["https://portal.example.org/", "https://portal.example.org"],
+    ["portal.example.org:8443", "https://portal.example.org:8443"],
+    ["http://localhost:3035/", "http://localhost:3035"],
+    ["localhost", "http://localhost"]
+  ].each do |domain, base_url|
+    it "normalizes QR destinations for #{domain}" do
+      allow(ENV).to receive(:fetch).with("APP_DOMAIN").and_return(domain)
+      %w[ENVIRONMENT RAILS_ENV RACK_ENV].each do |key|
+        allow(ENV).to receive(:[]).with(key).and_return("test")
+      end
+      { "tool" => tool, "shop" => shop }.each do |kind, record|
+        expect(RQRCode::QRCode).to receive(:new)
+          .with("#{base_url}/api/#{kind}/#{record.id}/public.html").and_call_original
+        get "/#{kind}/#{record.id}/public.svg"
+        expect(response).to have_http_status(:ok)
+      end
     end
   end
 
@@ -51,8 +72,8 @@ RSpec.describe "Public QR codes and workshop directory", type: :request do
     get "/shop/#{shop.id}/public.svg"
     expect(response).to have_http_status(:ok)
     original_etag = response.headers["ETag"]
-    allow(ENV).to receive(:fetch).with("APP_DOMAIN").and_return("new.example.test")
-    expect(RQRCode::QRCode).to receive(:new).with("https://new.example.test/api/shop/#{shop.id}/public.html").and_call_original
+    allow(ENV).to receive(:fetch).with("APP_DOMAIN").and_return("new.example.org")
+    expect(RQRCode::QRCode).to receive(:new).with("https://new.example.org/api/shop/#{shop.id}/public.html").and_call_original
     get "/shop/#{shop.id}/public.svg"
     expect(response.headers["ETag"]).not_to eq(original_etag)
   end

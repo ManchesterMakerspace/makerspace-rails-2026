@@ -44,7 +44,7 @@ class PublicCatalogController < ActionController::Base
   def serve_qr(record, kind)
     domain = ENV.fetch("APP_DOMAIN").to_s.strip
     raise URI::InvalidComponentError if domain.blank?
-    url = URI::HTTPS.build(host: domain, path: "/api/#{kind}/#{record.id}/public.html").to_s
+    url = "#{AppDomainUrl.base_url(domain, environment: Rails.env)}/api/#{kind}/#{record.id}/public.html"
     digest = Digest::SHA256.hexdigest([TEMPLATE_VERSION, "qr", url].join("\n"))
     return unless fresh_public_response?(digest)
 

@@ -11,8 +11,10 @@ The plural URLs remain supported. Their `/api/shop/...` and `/api/tool/...`
 aliases are also unauthenticated.
 
 `/shop/:id/public.svg` and `/tool/:id/public.svg` produce RQRCode SVGs encoding
-`https://APP_DOMAIN/api/shop/:id/public.html` or the corresponding tool URL.
-Set `APP_DOMAIN` to the public hostname (without a scheme). QR rendering uses
+`AppDomainUrl.base_url(APP_DOMAIN)/api/shop/:id/public.html` or the corresponding
+tool URL. `APP_DOMAIN` accepts a hostname, host:port, or scheme-prefixed value.
+The shared helper uses HTTPS in production and for .com/.net/.org hosts, and HTTP
+for other development/test hosts. QR rendering uses
 the existing Redis-backed `Rails.cache`, a 30-minute lifetime, visibility checks
 before cache access/304, and the same three-day browser/shared-cache policy.
 Changing the hostname changes the cache key and ETag. Redis failure falls back
