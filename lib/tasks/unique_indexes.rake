@@ -52,6 +52,10 @@ namespace :data do
         raise "Cannot create unique index on #{model.collection_name}.#{field}: #{summary}"
       end
 
+      if model == Shortcode && duplicates.any?
+        raise "Cannot create full unique index on shortcodes.#{field}: duplicate missing/null values"
+      end
+
       if duplicates.any?
         puts "#{model.collection_name}.#{field}: duplicate nil/missing values found; using the model's partial unique index"
       else
@@ -72,6 +76,9 @@ namespace :data do
       end
       existing_unique_index = matching_indexes.find do |index|
         next false unless (index['unique'] || index[:unique]) == true
+        if model == Shortcode
+          next false if index['partialFilterExpression'] || index[:partialFilterExpression] || index['sparse'] || index[:sparse]
+        end
         if model == SlackUser && %i[member_id slack_email].include?(field)
           filter = index['partialFilterExpression'] || index[:partialFilterExpression] || {}
           expected_type = field == :member_id ? 'objectId' : 'string'
@@ -95,12 +102,14 @@ namespace :data do
 
       matching_indexes.each do |index|
         index_name = index['name'] || index[:name]
-        puts "#{model.collection_name}.#{field}: replacing non-unique index #{index_name.inspect}"
+        puts "#{model.collection_name}.#{field}: replacing incompatible index #{index_name.inspect}"
         model.collection.indexes.drop_one(index_name)
       end
 
       index_options = { unique: true }
-      if field == :member_id || field == :slack_email
+      if model == Shortcode
+        # Allocation requires full uniqueness, including missing/null values.
+      elsif field == :member_id || field == :slack_email
         field_type = field == :member_id ? 'objectId' : 'string'
         index_options[:partial_filter_expression] = {
           field => { '$type' => field_type },

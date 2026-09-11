@@ -17,7 +17,8 @@ bundle exec rake db:mongoid:create_indexes
 The existing Mongoid index job now runs `shortcodes:ensure_indexes` after its
 normal index creation. The shortcode task can also be run independently.
 It creates and verifies the separate unique `code` and `target_url` indexes
-in `shortcodes`. The general `data:ensure_unique_indexes` task also includes them.
+in `shortcodes`. The release task `data:ensure_unique_indexes` also creates full unique indexes
+and replaces older partial or sparse shortcode indexes.
 Allocation refuses to proceed without those indexes. No resource backfill is
 required; mappings are created when requested. Preserve and back up this
 collection: mappings are permanent, immutable, and never recycled. Retain the
@@ -57,8 +58,9 @@ Public SVGs and tool/rental QR dialogs encode the exact uppercase short URL,
 using alphanumeric QR encoding where supported. Existing error-correction
 settings remain. SVGs retain their separate 30-minute render cache and three-day
 HTTP lifetime. Old browser-cached SVGs can retain long links for three days.
-Rental Copy Link uses the same allocation service as its QR dialog. Errors are
-shown instead of silently substituting long links. Email/Slack link generation,
+Rental Copy Link uses the same allocation service as its QR dialog. QR allocation errors are shown without substituting long QR links. Rental
+Copy Link falls back to a full URL and displays it for manual copying if needed;
+the action is disabled while pending, and changed selections ignore stale results. Email/Slack link generation,
 password tokens, and TOTP QR payloads are outside this feature.
 
 Allocation collisions, missing indexes, and backend failures use `[ShortUrl]`
