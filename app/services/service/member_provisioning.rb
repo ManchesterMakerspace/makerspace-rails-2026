@@ -322,10 +322,16 @@ module Service
     # member sitting at status "activeMember" past their real expirationTime
     # (status doesn't flip automatically on expiry) could still get a live
     # Slack invite or promotion attempted.
+    #
+    # A blank expirationTime is deliberately NOT treated as blocked: a
+    # brand-new signup has no expirationTime yet for the few days until their
+    # first payment settles and their fob goes active, and they're still
+    # supposed to get their Slack invite immediately at signup during that
+    # window. Only a real, already-past expirationTime counts as expired.
     def blocked_status?(member)
       return true if %w[revoked inactive nonMember].include?(member.status)
 
-      member.expirationTime.blank? || member.expirationTime <= (Time.current.to_i * 1000)
+      member.expirationTime.present? && member.expirationTime <= (Time.current.to_i * 1000)
     end
 
     def matching_slack_user(member)

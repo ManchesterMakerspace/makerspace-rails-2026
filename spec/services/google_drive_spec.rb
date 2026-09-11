@@ -88,7 +88,7 @@ RSpec.describe Service::GoogleDrive do
       member = create(:member, member_contract_signed_date: Date.new(2020, 7, 18))
       matched_file = double(id: 'file-1', web_content_link: 'link')
       drive = double(list_files: double(files: [matched_file]))
-      allow(drive).to receive(:get_file) { |_id, download_dest:| download_dest.write('pdf-bytes'); download_dest }
+      allow(drive).to receive(:get_file) { |_id, download_dest:| download_dest.write('pdf-bytes'); download_dest.flush; download_dest }
       allow(described_class).to receive(:load_gdrive).and_return(drive)
 
       result = described_class.get_document(member, 'member_contract')
