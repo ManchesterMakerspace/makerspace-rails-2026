@@ -15,6 +15,8 @@ namespace :data do
     ].freeze
 
     targets = [
+      [Shortcode, :code, nil],
+      [Shortcode, :target_url, nil],
       [Tool, :name, { locale: 'en', strength: 2 }],
       [Shop, :name, { locale: 'en', strength: 2 }],
       [Card, :uid, nil],

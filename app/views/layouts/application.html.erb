@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <% if request.env["shortcode.resolved_path"].present? %>
+    <meta name="shortcode-target" content="<%= request.env["shortcode.resolved_path"] %>">
+  <% end %>
   <title><%= (ENV['BT_ENV'] != 'production' || ENV['SLACK_ENV'] != 'production' || Rails.env != 'production' || ENV['RACK_ENV'] != 'production') ? 'DEV - ' : '' %>Makerspace Authorization</title>
   <%= favicon_link_tag asset_path('favicon.png'), :rel => 'icon', :type =>  'image/png' %>
   <%= favicon_link_tag asset_path('favicon.png'), :rel => 'apple-touch-icon', :type =>  'image/png' %>

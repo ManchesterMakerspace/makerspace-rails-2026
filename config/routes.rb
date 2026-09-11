@@ -41,6 +41,7 @@ Rails.application.routes.draw do
   get '/reservations/agenda', to: 'reservation_agendas#index'
 
   scope :api, defaults: { format: :json } do
+    post "/shortcodes", to: "shortcodes#create"
     devise_for :members, skip: [:registrations], controllers: { sessions: "sessions" }
     devise_scope :member do
        post "members", to: "registrations#create"

@@ -6,6 +6,9 @@ RSpec.describe "Public QR codes and workshop directory", type: :request do
   let(:cache) { ActiveSupport::Cache::MemoryStore.new }
 
   before do
+    Shortcode.create_indexes
+    allow(REDIS).to receive(:get).and_return(nil)
+    allow(REDIS).to receive(:set).and_return("OK")
     allow(Rails).to receive(:cache).and_return(cache)
     allow(ENV).to receive(:fetch).and_call_original
     allow(ENV).to receive(:[]).and_call_original
@@ -15,7 +18,7 @@ RSpec.describe "Public QR codes and workshop directory", type: :request do
   it "encodes working canonical HTTPS links in public SVGs without cookies" do
     { "tool" => tool, "shop" => shop }.each do |kind, record|
       target = "https://portal.example.org/api/#{kind}/#{record.id}/public.html"
-      expect(RQRCode::QRCode).to receive(:new).with(target).and_call_original
+      expect(RQRCode::QRCode).to receive(:new).with(ShortUrl.allocate(target)[:short_url], mode: :alphanumeric).and_call_original
       get "/#{kind}/#{record.id}/public.svg"
       expect(response).to have_http_status(:ok)
       expect(response.media_type).to eq("image/svg+xml")
@@ -40,7 +43,7 @@ RSpec.describe "Public QR codes and workshop directory", type: :request do
       end
       { "tool" => tool, "shop" => shop }.each do |kind, record|
         expect(RQRCode::QRCode).to receive(:new)
-          .with("#{base_url}/api/#{kind}/#{record.id}/public.html").and_call_original
+          .with(ShortUrl.allocate("#{base_url}/api/#{kind}/#{record.id}/public.html")[:short_url], mode: :alphanumeric).and_call_original
         get "/#{kind}/#{record.id}/public.svg"
         expect(response).to have_http_status(:ok)
       end
@@ -73,7 +76,7 @@ RSpec.describe "Public QR codes and workshop directory", type: :request do
     expect(response).to have_http_status(:ok)
     original_etag = response.headers["ETag"]
     allow(ENV).to receive(:fetch).with("APP_DOMAIN").and_return("new.example.org")
-    expect(RQRCode::QRCode).to receive(:new).with("https://new.example.org/api/shop/#{shop.id}/public.html").and_call_original
+    expect(RQRCode::QRCode).to receive(:new).with(ShortUrl.allocate("/api/shop/#{shop.id}/public.html")[:short_url], mode: :alphanumeric).and_call_original
     get "/shop/#{shop.id}/public.svg"
     expect(response.headers["ETag"]).not_to eq(original_etag)
   end
