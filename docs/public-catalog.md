@@ -21,7 +21,9 @@ Changing the hostname changes the cache key and ETag. Redis failure falls back
 to generating the SVG.
 
 Tool headings link to the wiki. Public shop and tool HTML embeds configured
-resource calendars; a tool page includes its tool and parent-shop calendars,
+resource calendars using their synchronized `resource_email` addresses, with
+`google_resource_id` conversion retained for legacy records without an email.
+A tool page includes its tool and parent-shop calendars,
 deduplicating identical resources. Calendar IDs are not added to public JSON.
 All public HTML pages include the member portal's footer icons and destinations,
 without accessing or changing authentication state. The portal's `(QR)` links

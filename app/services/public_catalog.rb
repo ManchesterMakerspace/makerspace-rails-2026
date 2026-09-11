@@ -3,7 +3,7 @@ class PublicCatalog
   class Unavailable < StandardError; end
   def self.shop(id)
     raise Unavailable unless BSON::ObjectId.legal?(id.to_s)
-    record = Shop.where(id: id, :disabled.ne => true).only(:id, :name, :wiki_url, :google_resource_id).first
+    record = Shop.where(id: id, :disabled.ne => true).only(:id, :name, :wiki_url, :google_resource_id, :resource_email).first
     raise Unavailable unless record
     record
   end
@@ -11,7 +11,7 @@ class PublicCatalog
   def self.tool(id, public_only: true)
     raise Unavailable unless BSON::ObjectId.legal?(id.to_s)
     query = Tool.where(id: id, :disabled.ne => true)
-    query = query.only(:id, :name, :description, :wiki_url, :shop_id, :open, :google_resource_id) if public_only
+    query = query.only(:id, :name, :description, :wiki_url, :shop_id, :open, :google_resource_id, :resource_email) if public_only
     record = query.first
     raise Unavailable unless record
     [record, shop(record.shop_id)]
@@ -29,10 +29,13 @@ class PublicCatalog
 
   def self.calendar_fields(record)
     resource_id = record.google_resource_id.to_s.strip
-    return nil if resource_id.blank?
+    address = record.resource_email.to_s.strip
+    if address.blank?
+      return nil if resource_id.blank?
 
-    # Existing calendar integrations may store either the ID or its full address.
-    address = resource_id.end_with?("@resource.calendar.google.com") ? resource_id : "#{resource_id}@resource.calendar.google.com"
+      # Legacy records may have only a calendar ID or full calendar address.
+      address = resource_id.end_with?("@resource.calendar.google.com") ? resource_id : "#{resource_id}@resource.calendar.google.com"
+    end
     { name: record.name, url: "https://calendar.google.com/calendar/embed?#{URI.encode_www_form(src: address)}" }
   end
 

@@ -116,6 +116,25 @@ RSpec.describe "Public QR codes and workshop directory", type: :request do
     expect(response.body).to eq("Not Found")
   end
 
+  it "embeds synchronized resource emails from projected tool and shop reads" do
+    shop.update!(google_resource_id: "R1", resource_email: "shop-calendar@resource.calendar.google.com")
+    tool.update!(google_resource_id: "R2", resource_email: "tool-calendar@resource.calendar.google.com")
+    get "/tool/#{tool.id}/public.html"
+    calendars = -> { Nokogiri::HTML(response.body).css("iframe").map { |frame| URI.decode_www_form(URI(frame["src"]).query).to_h["src"] } }
+    expect(calendars.call).to eq(%w[tool-calendar@resource.calendar.google.com shop-calendar@resource.calendar.google.com])
+    etag = response.headers["ETag"]
+    tool.update!(resource_email: "updated-calendar@resource.calendar.google.com")
+    get "/tool/#{tool.id}/public.html", headers: { "If-None-Match" => etag }
+    expect(response).to have_http_status(:ok)
+    expect(calendars.call.first).to eq("updated-calendar@resource.calendar.google.com")
+    get "/shop/#{shop.id}/public.html"
+    expect(calendars.call).to eq([shop.resource_email])
+    get "/tool/#{tool.id}/public.json"
+    expect(response.body).not_to include("resource_email", "resource.calendar.google.com", "google_resource_id")
+    get "/shop/#{shop.id}/public.json"
+    expect(response.body).not_to include("resource_email", "resource.calendar.google.com", "google_resource_id")
+  end
+
   it "links the tool title to its wiki and embeds only configured resource calendars" do
     shop.update!(google_resource_id: "shop-calendar")
     tool.update!(google_resource_id: "tool-calendar@resource.calendar.google.com")
