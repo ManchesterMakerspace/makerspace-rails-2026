@@ -222,13 +222,43 @@ RSpec.describe Service::MemberProvisioning do
       )
     end
 
-    it 'blocks revoked and inactive members' do
-      %w[revoked inactive].each do |status|
+    it 'blocks revoked, inactive, and non-member statuses' do
+      %w[revoked inactive nonMember].each do |status|
         member = create(:member, status: status)
         expect do
           described_class.invite_slack(member, raise_errors: true)
-        end.to raise_error(Error::NotAllowed, /revoked or inactive/)
+        end.to raise_error(Error::NotAllowed, /revoked, inactive, non-member, or expired/)
       end
+    end
+
+    it 'blocks a member sitting at an active-looking status past their real expiration' do
+      # status doesn't flip automatically when a membership expires -- this
+      # is the case that let real Slack invites/promotions fire for expired
+      # members before this check existed.
+      member = create(:member, status: 'activeMember', expirationTime: 1.day.ago.to_i * 1000)
+
+      expect do
+        described_class.invite_slack(member, raise_errors: true)
+      end.to raise_error(Error::NotAllowed, /revoked, inactive, non-member, or expired/)
+    end
+
+    it 'still allows a brand-new signup with no expiration set yet (no fob/first payment yet)' do
+      # A blank expirationTime is a normal, days-long transitional state for
+      # a new signup, not something to block -- only a real, already-past
+      # expiration should count as expired.
+      member = create(:member, status: 'activeMember', expirationTime: nil)
+      allow(Service::SlackConnector).to receive(:invite_to_slack).and_return(ok: true)
+      allow(Service::SlackConnector).to receive(:new_signup_invite_mode).and_return('full_member')
+
+      expect { described_class.invite_slack(member, raise_errors: true) }.not_to raise_error
+    end
+
+    it 'still allows a current, unexpired active member' do
+      member = create(:member, status: 'activeMember', expirationTime: 1.month.from_now.to_i * 1000)
+      allow(Service::SlackConnector).to receive(:invite_to_slack).and_return(ok: true)
+      allow(Service::SlackConnector).to receive(:new_signup_invite_mode).and_return('full_member')
+
+      expect { described_class.invite_slack(member, raise_errors: true) }.not_to raise_error
     end
   end
 

@@ -163,30 +163,53 @@ module Service
       ::Service::GoogleDrive.get_document(resource, document_name)
     end
 
-    def self.get_document(resource, document_name)
+    # Filename the archived copy of a signed document is expected to have,
+    # derived from the resource's own recorded signed date (not Time.now --
+    # that's only used when naming the file at upload time). Shared by
+    # get_document and document_uploaded? so both agree on what "the file"
+    # means for a given resource.
+    def self.expected_document_filename(resource, document_name)
       member_name = resource.kind_of?(Member) ? resource.fullname : resource.member.fullname
       signed_date = resource.kind_of?(Member) ? resource.member_contract_signed_date : resource.contract_signed_date
-      raise ::Error::NotFound.new() if signed_date.nil?
-      
-      date_str = signed_date.strftime('%m-%d-%Y')
+      return nil if signed_date.nil?
 
-      drive = load_gdrive
+      "#{member_name}_#{document_name}_#{signed_date.strftime('%m-%d-%Y')}.pdf"
+    end
+
+    def self.find_document_file(resource, document_name)
+      doc_name = expected_document_filename(resource, document_name)
+      return nil if doc_name.nil?
+
       folder_id = get_templates()[document_name.to_sym][:folder_id]
-      doc_name = "#{member_name}_#{document_name}_#{date_str}"
 
-      doc = report_google_exceptions("drive.files.list") do
-        drive.list_files(
-          q: "'#{folder_id}' in parents and name = '#{doc_name}.pdf'",
+      result = report_google_exceptions("drive.files.list") do
+        load_gdrive.list_files(
+          q: "'#{folder_id}' in parents and name = '#{doc_name}'",
           fields: "files(id, web_content_link)",
         )
       end
 
-      first_match = doc.files[0]
+      result.files[0]
+    end
+
+    # Confirms the archived copy actually exists in Drive -- used right after
+    # an upload reports success, since a misconfigured destination folder
+    # makes the upload API call succeed without ever raising,
+    # even though the file didn't land where get_document will later look.
+    def self.document_uploaded?(resource, document_name)
+      !find_document_file(resource, document_name).nil?
+    end
+
+    def self.get_document(resource, document_name)
+      raise ::Error::NotFound.new() if expected_document_filename(resource, document_name).nil?
+
+      first_match = find_document_file(resource, document_name)
       raise ::Error::NotFound.new() if first_match.nil?
-      file = Tempfile.new([doc_name, ".pdf"], encoding: "ASCII-8BIT")
+
+      file = Tempfile.new(["#{document_name}_download", ".pdf"], encoding: "ASCII-8BIT")
 
       report_google_exceptions("drive.files.get") do
-        drive.get_file(first_match.id, download_dest: file)
+        load_gdrive.get_file(first_match.id, download_dest: file)
       end
     end
 

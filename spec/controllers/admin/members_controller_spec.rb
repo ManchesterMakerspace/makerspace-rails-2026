@@ -109,7 +109,7 @@ RSpec.describe Admin::MembersController, type: :controller do
         post :invite_slack, params: { id: member.to_param }, format: :json
 
         expect(response).to have_http_status(422)
-        expect(JSON.parse(response.body)["message"]).to match(/revoked or inactive/i)
+        expect(JSON.parse(response.body)["message"]).to match(/revoked, inactive, non-member, or expired/i)
       end
     end
 
