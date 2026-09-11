@@ -111,6 +111,7 @@ RSpec.describe "Public catalog", type: :request do
       [response.status, response.body, response.headers.values_at("Content-Type", "Cache-Control", "ETag", "Set-Cookie")]
     end
     expect(signatures.uniq.length).to eq(1)
-    expect(signatures.first.first(2)).to eq([404, "Not Found"])
+    expect(signatures.first[0]).to eq(404)
+    expect(Nokogiri::HTML(signatures.first[1]).at_css("title").text).to eq("Workshops")
   end
 end

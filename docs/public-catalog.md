@@ -2,7 +2,28 @@
 
 `/shops/:id/public` and `/tools/:id/public` return public JSON. Append `.html`
 for Rails pages. URLs use MongoDB IDs. Hidden tools and tools with hidden or
-missing shops return `404 Not Found`, as do malformed and missing IDs.
+missing shops, malformed IDs, and missing IDs return 404. HTML requests display
+an alphabetically sorted **Workshops** directory with `Cache-Control: no-store`;
+JSON and SVG requests retain the generic `Not Found` body.
+
+Canonical HTML URLs are `/shop/:id/public.html` and `/tool/:id/public.html`.
+The plural URLs remain supported. Their `/api/shop/...` and `/api/tool/...`
+aliases are also unauthenticated.
+
+`/shop/:id/public.svg` and `/tool/:id/public.svg` produce RQRCode SVGs encoding
+`https://APP_DOMAIN/api/shop/:id/public.html` or the corresponding tool URL.
+Set `APP_DOMAIN` to the public hostname (without a scheme). QR rendering uses
+the existing Redis-backed `Rails.cache`, a 30-minute lifetime, visibility checks
+before cache access/304, and the same three-day browser/shared-cache policy.
+Changing the hostname changes the cache key and ETag. Redis failure falls back
+to generating the SVG.
+
+Tool headings link to the wiki. Public shop and tool HTML embeds configured
+resource calendars; a tool page includes its tool and parent-shop calendars,
+deduplicating identical resources. Calendar IDs are not added to public JSON.
+All public HTML pages include the member portal's footer icons and destinations,
+without accessing or changing authentication state. The portal's `(QR)` links
+open the corresponding public tool HTML page.
 
 Public HTML reads the current public projection on every origin request, then
 uses a content digest plus `PublicCatalogController::TEMPLATE_VERSION` to cache
@@ -32,7 +53,7 @@ self-checkout requirement; explicit prerequisites remain required.
 Focused verification:
 
 ```sh
-bundle exec rspec spec/requests/public_catalog_spec.rb spec/requests/checkout_links_spec.rb spec/models/tool_open_spec.rb spec/requests/pending_tool_checkout_requests_spec.rb spec/jobs/slack_checkout_request_job_spec.rb spec/controllers/sessions_controller_spec.rb spec/models/reservation_spec.rb
+bundle exec rspec spec/requests/public_catalog_spec.rb spec/requests/public_catalog_qr_spec.rb spec/requests/checkout_links_spec.rb spec/models/tool_open_spec.rb spec/requests/pending_tool_checkout_requests_spec.rb spec/jobs/slack_checkout_request_job_spec.rb spec/controllers/sessions_controller_spec.rb spec/models/reservation_spec.rb
 ```
 
 Build the React assets before Rails HTML request tests. The suite requires an

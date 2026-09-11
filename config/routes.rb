@@ -5,6 +5,11 @@ Rails.application.routes.draw do
     mount Rswag::Api::Engine => '/api-docs'
   end
 
+  # Singular public URLs are also the targets encoded in printed QR codes.
+  %w[shop tool].each do |kind|
+    get "/#{kind}/:id/public", to: "public_catalog##{kind}", defaults: { format: :html }
+    get "/api/#{kind}/:id/public", to: "public_catalog##{kind}", defaults: { format: :html }
+  end
   get "/shops/:id/public", to: "public_catalog#shop", defaults: { format: :json }
   get "/tools/:id/public", to: "public_catalog#tool", defaults: { format: :json }
   get "/tools/:id/request-checkout", to: "checkout_links#show"

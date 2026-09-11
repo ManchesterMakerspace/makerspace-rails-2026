@@ -3,7 +3,7 @@ class PublicCatalog
   class Unavailable < StandardError; end
   def self.shop(id)
     raise Unavailable unless BSON::ObjectId.legal?(id.to_s)
-    record = Shop.where(id: id, :disabled.ne => true).only(:id, :name, :wiki_url).first
+    record = Shop.where(id: id, :disabled.ne => true).only(:id, :name, :wiki_url, :google_resource_id).first
     raise Unavailable unless record
     record
   end
@@ -11,7 +11,7 @@ class PublicCatalog
   def self.tool(id, public_only: true)
     raise Unavailable unless BSON::ObjectId.legal?(id.to_s)
     query = Tool.where(id: id, :disabled.ne => true)
-    query = query.only(:id, :name, :description, :wiki_url, :shop_id, :open) if public_only
+    query = query.only(:id, :name, :description, :wiki_url, :shop_id, :open, :google_resource_id) if public_only
     record = query.first
     raise Unavailable unless record
     [record, shop(record.shop_id)]
@@ -25,6 +25,25 @@ class PublicCatalog
     { id: tool.id.to_s, name: tool.name, description: tool.description,
       open: tool.open, wiki_url: safe_url(tool.wiki_url.presence || WikiUrlBuilder.tool_url(shop.name, tool.name)),
       shop: shop_fields(shop) }
+  end
+
+  def self.calendar_fields(record)
+    resource_id = record.google_resource_id.to_s.strip
+    return nil if resource_id.blank?
+
+    # Existing calendar integrations may store either the ID or its full address.
+    address = resource_id.end_with?("@resource.calendar.google.com") ? resource_id : "#{resource_id}@resource.calendar.google.com"
+    { name: record.name, url: "https://calendar.google.com/calendar/embed?#{URI.encode_www_form(src: address)}" }
+  end
+
+  def self.footer_links
+    [
+      { label: "Public Home", icon: "home", url: "https://manchestermakerspace.org/" },
+      { label: "Public Wiki", icon: "help_center", url: safe_url(WikiUrlBuilder.base_url) },
+      { label: "Event Calendar", icon: "calendar_month", url: "https://manchestermakerspace.org/calendar" },
+      { label: "Chat with us on Slack", icon: "chat", url: "https://manchestermakerspace.slack.com/archives/C29L2UMDF" },
+      { label: "Contact us via Email", icon: "mail", url: "mailto:#{ENV.fetch('SMTP_FROM', 'contact@manchestermakerspace.org')}?subject=Member%20Portal%20assistance%20request" }
+    ].select { |link| link[:url].present? }
   end
 
   def self.safe_url(value)
