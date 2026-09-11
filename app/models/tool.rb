@@ -11,6 +11,7 @@ class Tool
   # members, checkout approvers for this tool, and members with an active
   # checkout on it. See Tool#notes_visible_to? and ToolSerializer.
   field :notes, type: String
+  field :open, type: Boolean, default: false
   field :disabled, type: Boolean, default: false
   field :allow_pending, type: Boolean, default: false
   field :announce, type: Boolean, default: false
@@ -49,6 +50,21 @@ class Tool
     partial_filter_expression: { name: { '$type' => 'string' } }
   })
 
+  index({ shop_id: 1, name: 1, _id: 1, disabled: 1 }, collation: { locale: "en", strength: 2 })
+
+  def open
+    read_attribute(:open) == true
+  end
+
+  def checkout_request_error(member)
+    return "No checkout required" if open
+    eligible = member.status == "pending" ? allow_pending : (member.status == "activeMember" && member.active_unexpired?)
+    return "Your membership must first be activated and you must complete your Orientation checkout before requesting this Safety Checkout" unless eligible
+    return "A checkout record already exists for this tool" if ToolCheckout.where(member_id: member.id, tool_id: id).exists?
+    return "An open request already exists for this tool" if ToolCheckoutRequest.where(member_id: member.id, tool_id: id, status: "open").exists?
+    nil
+  end
+
   def disabled
     value = read_attribute(:disabled)
     value.nil? ? false : value
@@ -81,7 +97,7 @@ class Tool
   end
 
   def effective_reservation_prerequisite_ids
-    (Array(reservation_prerequisite_tool_ids).map(&:to_s) + [id.to_s]).reject(&:blank?).uniq
+    (Array(reservation_prerequisite_tool_ids).map(&:to_s) + (open ? [] : [id.to_s])).reject(&:blank?).uniq
   end
 
   def reservation_prerequisites

@@ -1,4 +1,6 @@
 class ToolsController < AuthenticationController
+  prepend_before_action { response.set_header("Cache-Control", "private, no-store") }
+
   def index
     unless current_member.status == 'pending' || current_member.active_unexpired?
       raise ::Error::Forbidden.new(
@@ -7,7 +9,7 @@ class ToolsController < AuthenticationController
     end
 
     excluded_tool_ids = ToolCheckout.where(member_id: current_member.id).pluck(:tool_id).map(&:to_s)
-    tools = Tool.where(:disabled.ne => true).where(:id.nin => excluded_tool_ids)
+    tools = Tool.where(:disabled.ne => true, :open.ne => true, :shop_id.in => Shop.where(:disabled.ne => true).pluck(:id)).where(:id.nin => excluded_tool_ids)
     tools = tools.where(allow_pending: true) if current_member.status == 'pending'
 
     render json: tools.order_by(name: :asc),

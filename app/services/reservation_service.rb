@@ -352,7 +352,8 @@ class ReservationService
         tools.flat_map(&:effective_reservation_prerequisite_ids).uniq
       end
       if member.status == 'pending'
-        prerequisite_ids -= tools.select(&:allow_pending).map { |tool| tool.id.to_s }
+        explicit_ids = attributes[:reservation_scope] == 'shop' ? Array(shop.reservation_prerequisite_tool_ids).map(&:to_s) : tools.flat_map { |tool| Array(tool.reservation_prerequisite_tool_ids).map(&:to_s) }
+        prerequisite_ids -= tools.select(&:allow_pending).map { |tool| tool.id.to_s } - explicit_ids
       end
       unless board_override
         checked_out_ids = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)

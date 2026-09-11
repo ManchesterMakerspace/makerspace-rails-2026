@@ -23,7 +23,8 @@ class ClientConfigController < ApplicationController
       firebase_project_id: firebase_project_id,
       firebase_auth_domain: firebase_auth_domain,
       firebase_auth_type: firebase_auth_type,
-      wiki_url: WikiUrlBuilder.base_url
+      wiki_url: WikiUrlBuilder.base_url,
+      app_domain: ENV["APP_DOMAIN"].to_s.strip
     }
 
     turnstile_site_key = ENV["TURNSTILE_SITE_KEY"].to_s.strip

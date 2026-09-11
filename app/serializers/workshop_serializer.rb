@@ -32,6 +32,7 @@ class WorkshopSerializer < ActiveModel::Serializer
         gdriveId: tool.gdrive_id,
         description: tool.description,
         disabled: tool.disabled?,
+        open: tool.open,
         reservable: tool.reservable,
         prerequisiteIds: Array(tool.prerequisite_ids).map(&:to_s),
         prerequisiteNames: tool.prerequisites.map(&:name),
@@ -42,7 +43,7 @@ class WorkshopSerializer < ActiveModel::Serializer
         checkout: checkout && checkout_details(checkout),
         checkoutRequest: request && checkout_request_details(request),
         checkoutRequestable: checkout.nil? && request.nil? &&
-          checkout_requestable?(tool) && !tool.disabled?,
+          checkout_requestable?(tool) && !tool.disabled? && !tool.open,
         reservationAvailable: tool_reservation_available?(tool),
         usersChannel: checkout&.active? ? tool.users_channel : nil,
         usersChannelDetails: checkout&.active? ?
@@ -185,7 +186,7 @@ class WorkshopSerializer < ActiveModel::Serializer
 
     required_ids = Array(required_ids).map(&:to_s)
     if pending_reservation_restrictions? && pending_tool&.allow_pending
-      required_ids -= [pending_tool.id.to_s]
+      required_ids -= [pending_tool.id.to_s] - Array(pending_tool.reservation_prerequisite_tool_ids).map(&:to_s)
     end
 
     (required_ids - checked_out_tool_ids).empty?
