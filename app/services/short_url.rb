@@ -115,11 +115,16 @@ class ShortUrl
     raise Unavailable
   end
 
-  def self.verify_indexes!
-    return if @indexes_verified
-    indexes = Shortcode.collection.indexes.to_a
+  def self.verify_indexes!(force: false)
+    return if @indexes_verified && !force
+    indexes = Shortcode.current_indexes
+    if indexes.empty?
+      # Create the collection with both unique indexes before its first mapping.
+      Shortcode.ensure_indexes!
+      indexes = Shortcode.current_indexes
+    end
     valid = %w[code target_url].all? do |field|
-      indexes.any? { |index| index["key"] == { field => 1 } && index["unique"] == true && !index["sparse"] && !index["partialFilterExpression"] }
+      indexes.any? { |index| Shortcode.full_unique_index?(index, field) }
     end
     unless valid
       Rails.logger.error("[ShortUrl] unique indexes missing; run rake shortcodes:ensure_indexes")

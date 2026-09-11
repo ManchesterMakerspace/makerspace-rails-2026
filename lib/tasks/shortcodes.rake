@@ -1,14 +1,12 @@
 namespace :shortcodes do
-  desc "Create and verify the unique indexes required before short URL allocation"
+  desc "Repair, create and verify the full unique indexes required for short URLs"
   task ensure_indexes: :environment do
-    Shortcode.create_indexes
-    ShortUrl.verify_indexes!
+    Shortcode.ensure_indexes!
+    ShortUrl.verify_indexes!(force: true)
     puts "Shortcode unique indexes verified"
   end
 end
 
-# Run after Mongoid finishes its normal index creation, so the deployment job
-# also verifies the indexes required for safe shortcode allocation.
-Rake::Task["db:mongoid:create_indexes"].enhance do
-  Rake::Task["shortcodes:ensure_indexes"].invoke
-end
+# Prerequisites run before Mongoid attempts to create same-named indexes with
+# incompatible options. An after-action cannot repair an IndexOptionsConflict.
+Rake::Task["db:mongoid:create_indexes"].enhance(["shortcodes:ensure_indexes"])

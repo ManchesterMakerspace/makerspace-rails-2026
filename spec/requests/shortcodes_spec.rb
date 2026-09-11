@@ -170,7 +170,7 @@ RSpec.describe "Short URLs", type: :request do
 
   it "refuses allocation before unique indexes are verified" do
     ShortUrl.instance_variable_set(:@indexes_verified, false)
-    allow(Shortcode).to receive(:collection).and_return(double(indexes: double(to_a: [])))
+    allow(Shortcode).to receive(:collection).and_return(double(indexes: double(to_a: [{ "key" => { "_id" => 1 }, "name" => "_id_" }])))
     expect { ShortUrl.allocate(path) }.to raise_error(ShortUrl::Unavailable)
     expect(cache).to be_empty
   ensure

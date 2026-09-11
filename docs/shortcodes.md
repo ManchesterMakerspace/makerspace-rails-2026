@@ -21,12 +21,18 @@ Before enabling allocation on a deployment, run:
 bundle exec rake db:mongoid:create_indexes
 ```
 
-The existing Mongoid index job now runs `shortcodes:ensure_indexes` after its
-normal index creation. The shortcode task can also be run independently.
+The Mongoid index job runs `shortcodes:ensure_indexes` as a prerequisite,
+before normal index creation can encounter incompatible same-named indexes.
+The standalone shortcode task checks for duplicate values, replaces incompatible
+partial/sparse/non-unique indexes, creates full unique indexes, and verifies
+them again even if this process previously verified the collection.
 It creates and verifies the separate unique `code` and `target_url` indexes
 in `shortcodes`. The release task `data:ensure_unique_indexes` also creates full unique indexes
 and replaces older partial or sparse shortcode indexes.
-Allocation refuses to proceed without those indexes. No resource backfill is
+On first use of an absent collection, allocation creates both indexes before
+persisting any mapping. An existing collection with incompatible indexes still
+requires the repair task; allocation refuses to proceed without full uniqueness.
+No resource backfill is
 required; mappings are created when requested. Preserve and back up this
 collection: mappings are permanent, immutable, and never recycled. Retain the
 public hostname for printed links (or keep it routing to the application).
