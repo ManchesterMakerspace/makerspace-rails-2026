@@ -86,7 +86,9 @@ and resource-manager users can generate shop labels from Tool Checkouts or Works
 Details; tool checkout approvers can generate labels for their permitted tools. Rental
 Copy Link falls back to a full URL and displays it for manual copying if needed;
 recovery feedback sits beside the Copy Link action. The action is disabled
-while pending, and changed selections ignore stale results. Email/Slack link generation,
+while its selected spot’s URL is preloading or copying. Clipboard writes run
+directly during the click, with no preceding network wait, and changed selections
+ignore stale preload results. Email/Slack link generation,
 password tokens, and TOTP QR payloads are outside this feature.
 
 Allocation collisions, missing indexes, and backend failures use `[ShortUrl]`
