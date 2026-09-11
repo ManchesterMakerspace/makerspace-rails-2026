@@ -34,6 +34,46 @@ RSpec.describe "Short URLs", type: :request do
     expect(response.headers["Cache-Control"]).to eq("no-store")
   end
 
+  it "stores only the path for absolute and relative targets" do
+    result = ShortUrl.allocate("https://members.example.org#{path}")
+    expect(Shortcode.find_by(code: result[:code]).target_url).to eq(path)
+    expect(cache["shortcodes:v1:#{result[:code]}"]).to eq(path)
+    expect(ShortUrl.allocate(path)).to eq(result)
+    expect(Shortcode.count).to eq(1)
+  end
+
+  it "rebuilds path targets using the current origin on warm and cold resolution" do
+    code = ShortUrl.allocate(path)[:code]
+    allow(ENV).to receive(:fetch).with("APP_DOMAIN").and_return("https://new.example.org:8443")
+    expect(Shortcode).not_to receive(:where)
+    expect(ShortUrl.resolve(code)).to eq("https://new.example.org:8443#{path}")
+    RSpec::Mocks.space.proxy_for(Shortcode).reset
+    cache.clear
+    expect(ShortUrl.resolve(code)).to eq("https://new.example.org:8443#{path}")
+    expect(cache["shortcodes:v1:#{code}"]).to eq(path)
+    expect(ShortUrl.allocate(path)).to eq(code: code, short_url: "HTTPS://NEW.EXAMPLE.ORG:8443/L#{code}")
+    expect(Shortcode.count).to eq(1)
+    get "/L#{code}"
+    expect(response.status).to eq(200)
+    expect(response.headers["Location"]).to be_nil
+  end
+
+  it "reuses legacy absolute Mongo mappings and caches their paths without changing printed codes" do
+    code = "23456789AB"
+    record = Shortcode.create!(code: code, target_url: "https://members.example.org#{path}")
+    expect(ShortUrl.resolve(code)).to eq("https://members.example.org#{path}")
+    expect(cache["shortcodes:v1:#{code}"]).to eq(path)
+    expect(ShortUrl.allocate(path)[:code]).to eq(code)
+    expect(Shortcode.count).to eq(1)
+    expect(record.reload.target_url).to eq("https://members.example.org#{path}")
+  end
+
+  it "continues reading valid legacy absolute cache entries without Mongo" do
+    cache["shortcodes:v1:23456789AB"] = "https://members.example.org#{path}"
+    expect(Shortcode).not_to receive(:where)
+    expect(ShortUrl.resolve("23456789AB")).to eq("https://members.example.org#{path}")
+  end
+
   it "resolves cache hits without Mongo and recovers from misses and malformed entries" do
     code = ShortUrl.allocate(path)[:code]
     expect(Shortcode).not_to receive(:where)
@@ -44,6 +84,7 @@ RSpec.describe "Short URLs", type: :request do
     code = ShortUrl.allocate(path)[:code]
     cache.clear
     expect(ShortUrl.resolve(code)).to end_with(path)
+    expect(cache["shortcodes:v1:#{code}"]).to eq(path)
     cache["shortcodes:v1:#{code}"] = "https://evil.test/"
     expect(ShortUrl.resolve(code)).to end_with(path)
     allow(REDIS).to receive(:get).and_raise(Redis::BaseError)
@@ -75,7 +116,7 @@ RSpec.describe "Short URLs", type: :request do
     results = targets.map { |target| Thread.new { ShortUrl.allocate(target) } }.map(&:value)
     expect(results.map { |r| r[:code] }.sort).to eq(%w[2222222222 2222222223])
     expect(Shortcode.count).to eq(2)
-    targets.each { |target| expect(ShortUrl.allocate(target)[:code]).to eq(Shortcode.find_by(target_url: ShortUrl.normalize(target)).code) }
+    targets.each { |target| expect(ShortUrl.allocate(target)[:code]).to eq(Shortcode.find_by(target_url: target).code) }
   end
 
   it "refuses allocation before unique indexes are verified" do

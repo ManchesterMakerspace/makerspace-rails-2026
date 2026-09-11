@@ -59,8 +59,11 @@ class ShortUrl
 
   def self.allocate(value)
     target = normalize(value)
+    stored_target = URI.parse(target).path
+    # Read legacy absolute mappings as well as the new origin-independent values.
+    equivalent_targets = [stored_target, target]
     verify_indexes!
-    existing = Shortcode.where(target_url: target).first
+    existing = Shortcode.where(:target_url.in => equivalent_targets).first
     return publish(existing) if existing
     number = Digest::SHA256.hexdigest(target).to_i(16) % SPACE
     SPACE.times do
@@ -68,16 +71,16 @@ class ShortUrl
       # Cache is advisory during allocation; Mongo uniquely owns every code.
       cache_target = cached(code)
       existing = Shortcode.where(code: code).first
-      if cache_target && cache_target != existing&.target_url
+      if cache_target && ![cache_target, URI.parse(cache_target).path].include?(existing&.target_url)
         Rails.logger.warn("[ShortUrl] stale cache during allocation code=#{code}")
       end
-      return publish(existing) if existing&.target_url == target
+      return publish(existing) if existing && equivalent_targets.include?(existing.target_url)
       unless existing
         begin
-          return publish(Shortcode.create!(code: code, target_url: target))
+          return publish(Shortcode.create!(code: code, target_url: stored_target))
         rescue Mongo::Error::OperationFailure => error
           raise unless error.code == 11000
-          existing = Shortcode.where(target_url: target).first
+          existing = Shortcode.where(:target_url.in => equivalent_targets).first
           return publish(existing) if existing
         end
       end
@@ -135,7 +138,7 @@ class ShortUrl
   end
 
   def self.cache(code, target)
-    REDIS.set("#{KEY_PREFIX}#{code}", target, ex: TTL)
+    REDIS.set("#{KEY_PREFIX}#{code}", URI.parse(normalize(target)).path, ex: TTL)
   rescue Redis::BaseError, IOError => error
     Rails.logger.warn("[ShortUrl] cache write failed: #{error.class}")
   end

@@ -22,9 +22,15 @@ and replaces older partial or sparse shortcode indexes.
 Allocation refuses to proceed without those indexes. No resource backfill is
 required; mappings are created when requested. Preserve and back up this
 collection: mappings are permanent, immutable, and never recycled. Retain the
-public hostname for printed links. Changing protocol/hostname creates distinct
-normalized targets; existing mappings are validated against the configured
-origin, so hostname moves require an explicit compatibility strategy.
+public hostname for printed links (or keep it routing to the application).
+New Mongo mappings and Redis writes store only the validated internal path.
+Resolution rebuilds the absolute URL with the current AppDomainUrl base URL;
+changing APP_DOMAIN reuses these path mappings and their codes. Hashing for a
+new allocation still uses the normalized absolute URL. Legacy absolute Mongo
+mappings remain immutable and are reused when they match the current origin;
+cache refills store their paths. Legacy absolute cache entries remain readable.
+No historical migration is performed. Absolute Mongo entries tied to an old
+origin need an explicit migration strategy before that origin is changed.
 
 ## API and routing
 
