@@ -5,6 +5,13 @@ uppercased, followed by `/L` and ten characters from
 `23456789ABCDEFGHIJKLMNOPQRSTUVWXYZ`. Only the short URL is uppercased; target
 paths keep their case. SHA-256 of the normalized absolute target URL supplies
 the base-34 candidate; collisions increment with carry and wraparound.
+If APP_DOMAIN is missing or blank, HTTP callers use a validated request
+host_with_port with the same protocol rules and log a warning. A configured
+APP_DOMAIN always takes precedence. Invalid authorities, localhost and loopback
+addresses cannot produce short URLs or QR labels; allocation returns an uncached
+503 when no usable origin is available. Non-HTTP callers need APP_DOMAIN.
+The resolved origin is passed explicitly through allocation and resolution;
+request hosts are never stored globally or in the path-only mappings.
 
 ## Deployment
 

@@ -34,6 +34,55 @@ RSpec.describe "Short URLs", type: :request do
     expect(response.headers["Cache-Control"]).to eq("no-store")
   end
 
+  [nil, "", " \t "].each do |domain|
+    it "uses the request authority when APP_DOMAIN is #{domain.inspect}" do
+      allow(ENV).to receive(:fetch).with("APP_DOMAIN").and_return(domain)
+      host! "www.example.com:8443"
+      sign_in create(:member)
+      expect(Rails.logger).to receive(:warn).with(/APP_DOMAIN missing or blank/).at_least(:once)
+      post "/api/shortcodes", params: { target_url: path }, as: :json
+      expect(response.status).to eq(200)
+      code = response.parsed_body.fetch("code")
+      expect(response.parsed_body["short_url"]).to eq("HTTPS://WWW.EXAMPLE.COM:8443/L#{code}")
+      expect(Shortcode.find_by(code: code).target_url).to eq(path)
+      expect(cache["shortcodes:v1:#{code}"]).to eq(path)
+      get "/L#{code}"
+      expect(response.status).to eq(200)
+      expect(response.headers["Location"]).to be_nil
+      cache.clear
+      get "/L#{code}"
+      expect(response.status).to eq(200)
+    end
+  end
+
+  it "uses APP_DOMAIN ahead of the client host" do
+    expect(ShortUrl.base_url(fallback_host: "other.example.org")).to eq("https://members.example.org")
+  end
+
+  it "rejects missing, malformed and local fallback authorities before allocation" do
+    allow(ENV).to receive(:fetch).with("APP_DOMAIN").and_return("")
+    [nil, "", "localhost", "LOCALHOST.:3000", "sub.localhost", "127.0.0.1:3000", "[::1]",
+     "[::ffff:127.0.0.1]", "0.0.0.0", "2130706433", "user@scan.example.org", "https://scan.example.org",
+     "scan.example.org/path", "scan.example.org?x=1", "scan.example.org#x", "scan.example.org:99999",
+     "scan.example.org\r\nHost: evil.org"].each do |host|
+      expect { ShortUrl.base_url(fallback_host: host) }.to raise_error(ShortUrl::Unavailable)
+    end
+    expect { ShortUrl.allocate(path) }.to raise_error(ShortUrl::Unavailable)
+    expect(Shortcode.count).to eq(0)
+    expect(cache).to be_empty
+  end
+
+  it "returns an uncached 503 instead of allocating on localhost" do
+    allow(ENV).to receive(:fetch).with("APP_DOMAIN").and_return("")
+    host! "localhost"
+    sign_in create(:member)
+    post "/api/shortcodes", params: { target_url: path }, as: :json
+    expect(response.status).to eq(503)
+    expect(response.headers["Cache-Control"]).to eq("private, no-store")
+    expect(Shortcode.count).to eq(0)
+    expect(cache).to be_empty
+  end
+
   it "stores only the path for absolute and relative targets" do
     result = ShortUrl.allocate("https://members.example.org#{path}")
     expect(Shortcode.find_by(code: result[:code]).target_url).to eq(path)

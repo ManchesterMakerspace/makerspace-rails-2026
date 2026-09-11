@@ -3,9 +3,10 @@ class ShortcodesController < AuthenticationController
   prepend_before_action { response.set_header("Cache-Control", "private, no-store") }
 
   def create
-    target = ShortUrl.normalize(params[:target_url])
+    origin = ShortUrl.base_url(fallback_host: request.host_with_port)
+    target = ShortUrl.normalize(params[:target_url], origin: origin)
     ShortUrl.visible!(target)
-    render json: ShortUrl.allocate(target)
+    render json: ShortUrl.allocate(target, origin: origin)
   rescue ShortUrl::InvalidTarget
     render json: { error: "Unsupported target URL" }, status: :unprocessable_entity
   rescue ShortUrl::Unavailable

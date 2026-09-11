@@ -42,9 +42,8 @@ class PublicCatalogController < ActionController::Base
   private
 
   def serve_qr(record, kind)
-    domain = ENV.fetch("APP_DOMAIN").to_s.strip
-    raise URI::InvalidComponentError if domain.blank?
-    url = ShortUrl.allocate("/api/#{kind}/#{record.id}/public.html")[:short_url]
+    origin = ShortUrl.base_url(fallback_host: request.host_with_port)
+    url = ShortUrl.allocate("/api/#{kind}/#{record.id}/public.html", origin: origin)[:short_url]
     digest = Digest::SHA256.hexdigest([TEMPLATE_VERSION, "qr", url].join("\n"))
     return unless fresh_public_response?(digest)
 

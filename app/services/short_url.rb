@@ -1,3 +1,5 @@
+require "ipaddr"
+
 class ShortUrl
   class InvalidTarget < StandardError; end
   class Unavailable < StandardError; end
@@ -11,14 +13,34 @@ class ShortUrl
   CHECKOUT_PATH = %r{\A/tools/([a-f0-9]{24})/request-checkout\z}
   RENTAL_PATH = %r{\A/rentals/spots/([a-f0-9]{24})\z}
 
-  def self.base_url
-    AppDomainUrl.base_url(ENV.fetch("APP_DOMAIN"), environment: Rails.env)
+  def self.base_url(fallback_host: nil)
+    domain = (ENV.fetch("APP_DOMAIN") { nil }).to_s.strip
+    fallback = domain.empty?
+    authority = fallback ? fallback_host.to_s.strip : AppDomainUrl.host(domain)
+    # Only an authority is accepted: never paths, credentials, queries or headers.
+    raise Unavailable unless authority.match?(%r{\A(?:[a-z0-9.-]+|\[[a-f0-9:]+\])(?::[0-9]+)?\z}i)
+    uri = URI.parse("https://#{authority}")
+    hostname = uri.hostname.downcase.delete_suffix(".")
+    raise Unavailable unless (1..65_535).cover?(uri.port)
+    raise Unavailable if hostname == "localhost" || hostname.end_with?(".localhost")
+    begin
+      address = IPAddr.new(hostname).native
+      raise Unavailable if address.to_i.zero? || IPAddr.new("127.0.0.0/8").include?(address) || address == IPAddr.new("::1")
+    rescue IPAddr::InvalidAddressError
+      # Reject ambiguous numeric hosts such as the integer form of loopback.
+      raise Unavailable if hostname.match?(/\A[0-9.]+\z/)
+      raise Unavailable unless hostname.split(".").all? { |label| label.match?(/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/) }
+    end
+    Rails.logger.warn("[ShortUrl] APP_DOMAIN missing or blank; using validated request host") if fallback
+    AppDomainUrl.base_url(authority, environment: Rails.env)
+  rescue URI::Error
+    raise Unavailable
   end
 
-  def self.normalize(value)
+  def self.normalize(value, origin: base_url)
     value = value.to_s
     uri = URI.parse(value)
-    base = URI.parse(base_url)
+    base = URI.parse(origin)
     if value.start_with?("/") && !value.start_with?("//")
       uri = URI.join(base.to_s, value)
     end
@@ -57,31 +79,31 @@ class ShortUrl
     result
   end
 
-  def self.allocate(value)
-    target = normalize(value)
+  def self.allocate(value, origin: base_url)
+    target = normalize(value, origin: origin)
     stored_target = URI.parse(target).path
     # Read legacy absolute mappings as well as the new origin-independent values.
     equivalent_targets = [stored_target, target]
     verify_indexes!
     existing = Shortcode.where(:target_url.in => equivalent_targets).first
-    return publish(existing) if existing
+    return publish(existing, origin: origin) if existing
     number = Digest::SHA256.hexdigest(target).to_i(16) % SPACE
     SPACE.times do
       code = encode(number)
       # Cache is advisory during allocation; Mongo uniquely owns every code.
-      cache_target = cached(code)
+      cache_target = cached(code, origin: origin)
       existing = Shortcode.where(code: code).first
       if cache_target && ![cache_target, URI.parse(cache_target).path].include?(existing&.target_url)
         Rails.logger.warn("[ShortUrl] stale cache during allocation code=#{code}")
       end
-      return publish(existing) if existing && equivalent_targets.include?(existing.target_url)
+      return publish(existing, origin: origin) if existing && equivalent_targets.include?(existing.target_url)
       unless existing
         begin
-          return publish(Shortcode.create!(code: code, target_url: stored_target))
+          return publish(Shortcode.create!(code: code, target_url: stored_target), origin: origin)
         rescue Mongo::Error::OperationFailure => error
           raise unless error.code == 11000
           existing = Shortcode.where(:target_url.in => equivalent_targets).first
-          return publish(existing) if existing
+          return publish(existing, origin: origin) if existing
         end
       end
       Rails.logger.info("[ShortUrl] allocation collision code=#{code}")
@@ -106,19 +128,19 @@ class ShortUrl
     @indexes_verified = true
   end
 
-  def self.publish(record)
-    cache(record.code, record.target_url)
-    { code: record.code, short_url: "#{base_url}/L#{record.code}".upcase }
+  def self.publish(record, origin: base_url)
+    cache(record.code, record.target_url, origin: origin)
+    { code: record.code, short_url: "#{origin}/L#{record.code}".upcase }
   end
 
-  def self.resolve(code)
+  def self.resolve(code, origin: base_url)
     return nil unless CODE.match?(code.to_s)
-    value = cached(code)
+    value = cached(code, origin: origin)
     return value if value
     record = Shortcode.where(code: code).only(:target_url).first
     return nil unless record
-    value = normalize(record.target_url)
-    cache(code, value)
+    value = normalize(record.target_url, origin: origin)
+    cache(code, value, origin: origin)
     value
   rescue InvalidTarget
     nil
@@ -127,9 +149,9 @@ class ShortUrl
     raise Unavailable
   end
 
-  def self.cached(code)
+  def self.cached(code, origin: base_url)
     value = REDIS.get("#{KEY_PREFIX}#{code}")
-    value.present? ? normalize(value) : nil
+    value.present? ? normalize(value, origin: origin) : nil
   rescue InvalidTarget
     nil
   rescue Redis::BaseError, IOError => error
@@ -137,8 +159,8 @@ class ShortUrl
     nil
   end
 
-  def self.cache(code, target)
-    REDIS.set("#{KEY_PREFIX}#{code}", URI.parse(normalize(target)).path, ex: TTL)
+  def self.cache(code, target, origin: base_url)
+    REDIS.set("#{KEY_PREFIX}#{code}", URI.parse(normalize(target, origin: origin)).path, ex: TTL)
   rescue Redis::BaseError, IOError => error
     Rails.logger.warn("[ShortUrl] cache write failed: #{error.class}")
   end

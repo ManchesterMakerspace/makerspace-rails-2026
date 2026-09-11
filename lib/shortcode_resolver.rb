@@ -9,7 +9,9 @@ class ShortcodeResolver
     return @app.call(env) unless (path.start_with?("/L") || path.match?(%r{\A/l[2-9A-Za-z]{10}\z}))
     return failure(404, "Not Found", env) unless %w[GET HEAD].include?(env["REQUEST_METHOD"])
     code = path.delete_prefix("/L")
-    target = ShortUrl.resolve(code)
+    return failure(404, "Not Found", env) unless ShortUrl::CODE.match?(code)
+    origin = ShortUrl.base_url(fallback_host: Rack::Request.new(env).host_with_port)
+    target = ShortUrl.resolve(code, origin: origin)
     return failure(404, "Not Found", env) unless target
 
     resolved = URI.parse(target).path
