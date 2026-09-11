@@ -122,6 +122,23 @@ RSpec.describe "Short URLs", type: :request do
     expect(cache).to be_empty
   end
 
+  %w[shop tool rental].each do |kind|
+    it "returns private 503 when #{kind} visibility storage fails" do
+      sign_in create(:member)
+      target = kind == "rental" ? "/rentals/spots/#{BSON::ObjectId.new}" : "/api/#{kind}/#{tool.id}/public.html"
+      if kind == "rental"
+        allow(RentalSpot).to receive(:where).and_raise(Mongo::Error.new("offline"))
+      else
+        allow(PublicCatalog).to receive(kind.to_sym).and_raise(Mongo::Error.new("offline"))
+      end
+      expect(ShortUrl).not_to receive(:allocate)
+      post "/api/shortcodes", params: { target_url: target }, as: :json
+      expect(response.status).to eq(503)
+      expect(response.parsed_body).to eq("error" => "Short URL unavailable")
+      expect(response.headers["Cache-Control"]).to eq("private, no-store")
+    end
+  end
+
   it "requires authentication and checks visibility on allocation" do
     post "/api/shortcodes", params: { target_url: path }, as: :json
     expect(response.status).to eq(401)

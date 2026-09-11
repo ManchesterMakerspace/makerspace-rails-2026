@@ -55,12 +55,16 @@ lookup. New mappings are persisted before cache publication. Cache hits do not
 read Mongo. No negative cache is used. Do not change the shared Redis eviction
 policy: other application keys include operational locks.
 
-Public SVGs and tool/rental QR dialogs encode the exact uppercase short URL,
+Public SVGs and shop/tool/rental QR dialogs encode the exact uppercase short URL,
 using alphanumeric QR encoding where supported. Existing error-correction
 settings remain. SVGs retain their separate 30-minute render cache and three-day
 HTTP lifetime. Old browser-cached SVGs can retain long links for three days.
 Rental Copy Link uses the same allocation service as its QR dialog. QR allocation failures show a warning and render a usable full-URL QR label,
-including PNG download and image copy. Rental
+including PNG download and image copy. Shop/tool fallback URLs use the configured
+HTTPS application domain, never the browser origin. If configuration is unavailable,
+the dialog reports an error instead of printing an internal hostname. Admin, board,
+and resource-manager users can generate shop labels from Tool Checkouts or Workshop
+Details; tool checkout approvers can generate labels for their permitted tools. Rental
 Copy Link falls back to a full URL and displays it for manual copying if needed;
 recovery feedback sits beside the Copy Link action. The action is disabled
 while pending, and changed selections ignore stale results. Email/Slack link generation,

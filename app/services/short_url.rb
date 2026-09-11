@@ -45,6 +45,9 @@ class ShortUrl
     else
       raise InvalidTarget
     end
+  rescue Mongo::Error => error
+    Rails.logger.error("[ShortUrl] visibility lookup failed: #{error.class}")
+    raise Unavailable
   end
 
   def self.encode(number)
