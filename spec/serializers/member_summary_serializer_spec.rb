@@ -38,28 +38,28 @@ RSpec.describe MemberSummarySerializer do
       member = create(:member, subscription_id: nil, expirationTime: nil)
       create(:settled_invoice, member: member, resource_class: 'member', resource_id: member.id)
 
-      expect(serialize(member)[:paid_pending_start]).to eq(true)
+      expect(serialize(member)[:paidPendingStart]).to eq(true)
     end
 
     it 'is false when there is no settled membership invoice' do
       member = create(:member, subscription_id: nil, expirationTime: nil)
       create(:invoice, member: member, resource_class: 'member', resource_id: member.id)
 
-      expect(serialize(member)[:paid_pending_start]).to eq(false)
+      expect(serialize(member)[:paidPendingStart]).to eq(false)
     end
 
     it 'is false once a subscription is attached, even with a settled invoice' do
       member = create(:member, subscription_id: 'sub_123', expirationTime: nil)
       create(:settled_invoice, member: member, resource_class: 'member', resource_id: member.id)
 
-      expect(serialize(member)[:paid_pending_start]).to eq(false)
+      expect(serialize(member)[:paidPendingStart]).to eq(false)
     end
 
     it 'is false once the member has an expiration, even with a settled invoice' do
       member = create(:member, subscription_id: nil, expirationTime: (Time.current + 1.year).to_i * 1000)
       create(:settled_invoice, member: member, resource_class: 'member', resource_id: member.id)
 
-      expect(serialize(member)[:paid_pending_start]).to eq(false)
+      expect(serialize(member)[:paidPendingStart]).to eq(false)
     end
   end
 end
