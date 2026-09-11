@@ -299,7 +299,7 @@ module Service
 
     def ensure_slack_invite_allowed!(member)
       if blocked_status?(member)
-        raise Error::NotAllowed.new('Slack invites are not allowed for revoked or inactive members')
+        raise Error::NotAllowed.new('Slack invites are not allowed for revoked, inactive, non-member, or expired members')
       end
     end
 
@@ -314,8 +314,18 @@ module Service
       end
     end
 
+    # Gates both the automatic hourly reconciliation (reconcile_all! /
+    # reconcile_slack_member) and manual invite actions from ever touching a
+    # member with no active membership. Originally only checked
+    # revoked/inactive status -- expiration was never checked at all here
+    # (unlike Google Drive's provisioning_eligible?, which already did), so a
+    # member sitting at status "activeMember" past their real expirationTime
+    # (status doesn't flip automatically on expiry) could still get a live
+    # Slack invite or promotion attempted.
     def blocked_status?(member)
-      %w[revoked inactive].include?(member.status)
+      return true if %w[revoked inactive nonMember].include?(member.status)
+
+      member.expirationTime.blank? || member.expirationTime <= (Time.current.to_i * 1000)
     end
 
     def matching_slack_user(member)
