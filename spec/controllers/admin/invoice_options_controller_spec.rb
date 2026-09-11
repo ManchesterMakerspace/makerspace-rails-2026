@@ -98,6 +98,56 @@ RSpec.describe Admin::InvoiceOptionsController, type: :controller do
         expect(response).to have_http_status(404)
       end
     end
+
+    context "when a rental type still references the option" do
+      it "blocks the delete with a conflict" do
+        RentalType.create!(display_name: "Storage Tote", invoice_option_id: invoice_option.id.to_s)
+
+        expect {
+          delete :destroy, params: { id: invoice_option.to_param }, format: :json
+        }.not_to change(InvoiceOption, :count)
+
+        expect(response).to have_http_status(409)
+      end
+
+      it "logs the blocked attempt to the audit log" do
+        RentalType.create!(display_name: "Storage Tote", invoice_option_id: invoice_option.id.to_s)
+
+        expect(::Service::AuditLogger).to receive(:log).with(
+          hash_including(event_type: 'invoice_option_delete_blocked')
+        )
+
+        delete :destroy, params: { id: invoice_option.to_param }, format: :json
+      end
+    end
+
+    context "when a member has an unsettled invoice on the option's plan" do
+      it "blocks the delete with a conflict" do
+        option = create(:invoice_option, plan_id: "plan_123")
+        create(:invoice, plan_id: "plan_123", settled_at: nil)
+
+        expect {
+          delete :destroy, params: { id: option.to_param }, format: :json
+        }.not_to change(InvoiceOption, :count)
+
+        expect(response).to have_http_status(409)
+      end
+    end
+
+    context "when the subscriber check itself raises an error" do
+      it "fails safe by blocking the delete, logs it, and alerts Slack" do
+        allow(controller).to receive(:in_use_by_subscribers?).and_raise(StandardError.new("connection reset"))
+
+        expect(::Service::ErrorReporter).to receive(:notify)
+        expect(::Service::SlackConnector).to receive(:send_slack_message)
+
+        expect {
+          delete :destroy, params: { id: invoice_option.to_param }, format: :json
+        }.not_to change(InvoiceOption, :count)
+
+        expect(response).to have_http_status(409)
+      end
+    end
   end
 
   describe "resource manager authorization" do
