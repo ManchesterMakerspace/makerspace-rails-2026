@@ -136,6 +136,7 @@ RSpec.describe Admin::InvoiceOptionsController, type: :controller do
 
     context "when the subscriber check itself raises an error" do
       it "fails safe by blocking the delete, logs it, and alerts Slack" do
+        invoice_option # Invoke here to create the IO
         allow(controller).to receive(:in_use_by_subscribers?).and_raise(StandardError.new("connection reset"))
 
         expect(::Service::ErrorReporter).to receive(:notify)
