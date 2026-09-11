@@ -24,4 +24,42 @@ RSpec.describe MemberSummarySerializer do
     expect(privileged.dig(:provisioning, :slack, :status)).to eq('unknown')
     expect(unprivileged).not_to have_key(:provisioning)
   end
+
+  describe '#paid_pending_start' do
+    def serialize(member)
+      ActiveModelSerializers::SerializableResource.new(
+        member,
+        serializer: described_class,
+        adapter: :attributes
+      ).as_json
+    end
+
+    it 'is true when a member has a settled membership invoice but no subscription or expiration' do
+      member = create(:member, subscription_id: nil, expirationTime: nil)
+      create(:settled_invoice, member: member, resource_class: 'member', resource_id: member.id)
+
+      expect(serialize(member)[:paid_pending_start]).to eq(true)
+    end
+
+    it 'is false when there is no settled membership invoice' do
+      member = create(:member, subscription_id: nil, expirationTime: nil)
+      create(:invoice, member: member, resource_class: 'member', resource_id: member.id)
+
+      expect(serialize(member)[:paid_pending_start]).to eq(false)
+    end
+
+    it 'is false once a subscription is attached, even with a settled invoice' do
+      member = create(:member, subscription_id: 'sub_123', expirationTime: nil)
+      create(:settled_invoice, member: member, resource_class: 'member', resource_id: member.id)
+
+      expect(serialize(member)[:paid_pending_start]).to eq(false)
+    end
+
+    it 'is false once the member has an expiration, even with a settled invoice' do
+      member = create(:member, subscription_id: nil, expirationTime: (Time.current + 1.year).to_i * 1000)
+      create(:settled_invoice, member: member, resource_class: 'member', resource_id: member.id)
+
+      expect(serialize(member)[:paid_pending_start]).to eq(false)
+    end
+  end
 end
