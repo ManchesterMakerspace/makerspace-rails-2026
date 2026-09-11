@@ -150,7 +150,10 @@ RSpec.describe "Short URLs", type: :request do
     get "/L#{code}"
     expect(response.status).to eq(200)
     expect(response.headers["Location"]).to be_nil
-    expect(Nokogiri::HTML(response.body).at_css('meta[name="shortcode-target"]')["content"]).to eq(rental)
+    html = Nokogiri::HTML(response.body)
+    expect(html.at_css('meta[name="shortcode-target"]')["content"]).to eq(rental)
+    expect(html.css("script").first["id"]).to eq("shortcode-routing")
+    expect(html.css("script").first.text).to include("history.replaceState")
     expect(response.headers["Cache-Control"]).to include("private", "no-store")
   end
 end

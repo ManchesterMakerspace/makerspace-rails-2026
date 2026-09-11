@@ -1,6 +1,13 @@
 require "rails_helper"
 
 RSpec.describe Service::ReservationSlackCanvas do
+  it "escapes reservation link labels without changing the calendar destination" do
+    reservation = double(title: "Build ](not a URL) [cabinet] | test\nnext", calendar_html_link: "https://calendar.google.com/calendar/event?eid=abc")
+    expect(described_class.send(:reservation_title, reservation)).to eq(
+      %q{[Build \]\(not a URL\) \[cabinet\] \| test next](https://calendar.google.com/calendar/event?eid=abc)}
+    )
+  end
+
   let(:zone) { ReservationService::ZONE }
   let(:member) do
     create(

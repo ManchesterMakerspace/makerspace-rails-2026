@@ -394,7 +394,7 @@ module Service
       end
 
       def reservation_title(reservation)
-        title = escape_table_cell(reservation.title)
+        title = escape_table_cell(escape_markdown(reservation.title))
         return title if reservation.calendar_html_link.blank?
 
         "[#{title}](#{reservation.calendar_html_link})"

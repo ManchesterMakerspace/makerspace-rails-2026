@@ -42,8 +42,9 @@ GET/HEAD shortcode requests are rewritten internally before Rails routing.
 No HTTP redirect expands the short URL; ordinary authentication redirects are
 preserved. Incoming query strings are discarded. Existing controllers enforce
 permissions and visibility. Public HTML keeps existing caching and cookie rules.
-React shells receive an escaped target metadata field, and replace browser
-history before mounting the router. Unknown codes return uncached generic 404s;
+React shells receive an escaped target metadata field. An inline Rails-owned
+script replaces browser history before the external JavaScript bundle loads,
+so shortcode routing does not depend on a particular React bundle version. Unknown codes return uncached generic 404s;
 storage failure without a cache hit returns an uncached 503.
 
 ## Cache and QR behavior
@@ -58,9 +59,11 @@ Public SVGs and tool/rental QR dialogs encode the exact uppercase short URL,
 using alphanumeric QR encoding where supported. Existing error-correction
 settings remain. SVGs retain their separate 30-minute render cache and three-day
 HTTP lifetime. Old browser-cached SVGs can retain long links for three days.
-Rental Copy Link uses the same allocation service as its QR dialog. QR allocation errors are shown without substituting long QR links. Rental
+Rental Copy Link uses the same allocation service as its QR dialog. QR allocation failures show a warning and render a usable full-URL QR label,
+including PNG download and image copy. Rental
 Copy Link falls back to a full URL and displays it for manual copying if needed;
-the action is disabled while pending, and changed selections ignore stale results. Email/Slack link generation,
+recovery feedback sits beside the Copy Link action. The action is disabled
+while pending, and changed selections ignore stale results. Email/Slack link generation,
 password tokens, and TOTP QR payloads are outside this feature.
 
 Allocation collisions, missing indexes, and backend failures use `[ShortUrl]`
