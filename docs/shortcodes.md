@@ -11,10 +11,12 @@ the base-34 candidate; collisions increment with carry and wraparound.
 Before enabling allocation on a deployment, run:
 
 ```
-bundle exec rake shortcodes:ensure_indexes
+bundle exec rake db:mongoid:create_indexes
 ```
 
-This creates and verifies the separate unique `code` and `target_url` indexes
+The existing Mongoid index job now runs `shortcodes:ensure_indexes` after its
+normal index creation. The shortcode task can also be run independently.
+It creates and verifies the separate unique `code` and `target_url` indexes
 in `shortcodes`. The general `data:ensure_unique_indexes` task also includes them.
 Allocation refuses to proceed without those indexes. No resource backfill is
 required; mappings are created when requested. Preserve and back up this

@@ -6,3 +6,9 @@ namespace :shortcodes do
     puts "Shortcode unique indexes verified"
   end
 end
+
+# Run after Mongoid finishes its normal index creation, so the deployment job
+# also verifies the indexes required for safe shortcode allocation.
+Rake::Task["db:mongoid:create_indexes"].enhance do
+  Rake::Task["shortcodes:ensure_indexes"].invoke
+end
