@@ -394,10 +394,17 @@ module Service
       end
 
       def reservation_title(reservation)
-        title = escape_table_cell(reservation.title)
+        title = safe_reservation_title(reservation.title)
         return title if reservation.calendar_html_link.blank?
 
         "[#{title}](#{reservation.calendar_html_link})"
+      end
+
+      # Canvas display only: never alter the saved title or Google Calendar text.
+      # Avoid link/table/code delimiters rather than relying on Slack escaping.
+      def safe_reservation_title(value)
+        value.to_s.gsub(/[^\p{L}\p{M}\p{N}\s.,:;!?'-]/u, " ")
+          .gsub(/[[:space:]]+/, " ").strip.presence || "Reservation"
       end
 
       def resource_names(reservation)

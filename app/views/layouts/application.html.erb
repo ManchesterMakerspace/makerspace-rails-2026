@@ -1,6 +1,17 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <% if request.env["shortcode.resolved_path"].present? %>
+    <meta name="shortcode-target" content="<%= request.env["shortcode.resolved_path"] %>">
+    <script id="shortcode-routing" nonce="<%= content_security_policy_nonce %>">
+      (function () {
+        var target = document.querySelector('meta[name="shortcode-target"]').content;
+        if (target.charAt(0) === '/' && target.charAt(1) !== '/') {
+          window.history.replaceState(window.history.state, '', target);
+        }
+      })();
+    </script>
+  <% end %>
   <title><%= (ENV['BT_ENV'] != 'production' || ENV['SLACK_ENV'] != 'production' || Rails.env != 'production' || ENV['RACK_ENV'] != 'production') ? 'DEV - ' : '' %>Makerspace Authorization</title>
   <%= favicon_link_tag asset_path('favicon.png'), :rel => 'icon', :type =>  'image/png' %>
   <%= favicon_link_tag asset_path('favicon.png'), :rel => 'apple-touch-icon', :type =>  'image/png' %>

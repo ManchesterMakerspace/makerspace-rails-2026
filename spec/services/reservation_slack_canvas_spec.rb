@@ -1,6 +1,24 @@
 require "rails_helper"
 
 RSpec.describe Service::ReservationSlackCanvas do
+  {
+    "Build ](not a URL) [cabinet] | test\nnext" => "Build not a URL cabinet test next",
+    'foo[]\\(){}}}}}))))]]]]' => 'foo',
+    '[]\\(){}}}}}))))]]]]' => 'Reservation',
+    "Café - Zoë's test, 2:30; ready?!" => "Café - Zoë's test, 2:30; ready?!",
+    "Cut *wood* <script> `test` & metal" => "Cut wood script test metal"
+  }.each do |original, safe|
+    it "uses safe canvas title characters for #{original.inspect}" do
+      reservation = double(title: original, calendar_html_link: "https://calendar.google.com/calendar/event?eid=abc")
+      expect(described_class.send(:reservation_title, reservation)).to eq(
+        "[#{safe}](https://calendar.google.com/calendar/event?eid=abc)"
+      )
+      expect(reservation.title).to eq(original)
+      allow(reservation).to receive(:calendar_html_link).and_return(nil)
+      expect(described_class.send(:reservation_title, reservation)).to eq(safe)
+    end
+  end
+
   let(:zone) { ReservationService::ZONE }
   let(:member) do
     create(

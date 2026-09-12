@@ -20,6 +20,32 @@ RSpec.describe 'data:ensure_unique_indexes' do
     task.reenable
   end
 
+  [nil, :partial, :sparse].each do |existing_kind|
+    it "creates full shortcode indexes from #{existing_kind || 'a clean collection'}" do
+      Shortcode.collection.drop
+      if existing_kind
+        %w[code target_url].each do |field|
+          options = { unique: true }
+          options[:partial_filter_expression] = { field => { '$type' => 'string' } } if existing_kind == :partial
+          options[:sparse] = true if existing_kind == :sparse
+          Shortcode.collection.indexes.create_one({ field => 1 }, options)
+        end
+      end
+      task.invoke
+      %w[code target_url].each do |field|
+        index = Shortcode.collection.indexes.to_a.find { |entry| entry['key'] == { field => 1 } }
+        expect(index['unique']).to eq(true)
+        expect(index).not_to have_key('partialFilterExpression')
+        expect(index['sparse']).not_to eq(true)
+      end
+      ShortUrl.instance_variable_set(:@indexes_verified, false)
+      expect { ShortUrl.verify_indexes! }.not_to raise_error
+      # Re-running the release task recognizes and retains the full indexes.
+      task.reenable
+      expect { task.invoke }.not_to raise_error
+    end
+  end
+
   it 'creates the unique index when the target collection does not exist' do
     expect(SlackUser.collection.database.collection_names).not_to include(SlackUser.collection_name)
 

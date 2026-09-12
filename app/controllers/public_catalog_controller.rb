@@ -42,20 +42,20 @@ class PublicCatalogController < ActionController::Base
   private
 
   def serve_qr(record, kind)
-    domain = ENV.fetch("APP_DOMAIN").to_s.strip
-    raise URI::InvalidComponentError if domain.blank?
-    url = "#{AppDomainUrl.base_url(domain, environment: Rails.env)}/api/#{kind}/#{record.id}/public.html"
+    origin = ShortUrl.base_url(fallback_host: request.host_with_port)
+    url = ShortUrl.allocate("/api/#{kind}/#{record.id}/public.html", origin: origin)[:short_url]
     digest = Digest::SHA256.hexdigest([TEMPLATE_VERSION, "qr", url].join("\n"))
     return unless fresh_public_response?(digest)
 
     svg = cached_render("public-qr/#{digest}") do
-      RQRCode::QRCode.new(url).as_svg(
+      mode = url.match?(/\A[0-9A-Z $%*+\-.\/:]+\z/) ? :alphanumeric : :byte_8bit
+      RQRCode::QRCode.new(url, mode: mode).as_svg(
         color: "000", fill: "fff", module_size: 6, offset: 24,
         standalone: true, use_path: true, viewbox: true
       )
     end
     render body: svg, content_type: "image/svg+xml"
-  rescue KeyError, URI::InvalidComponentError
+  rescue KeyError, URI::InvalidComponentError, ShortUrl::InvalidTarget, ShortUrl::Unavailable
     response.headers.delete("ETag")
     response.set_header("Cache-Control", "no-store")
     render plain: "Public URL unavailable", status: :service_unavailable
