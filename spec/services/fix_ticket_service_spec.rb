@@ -11,6 +11,17 @@ RSpec.describe FixTicketService do
   end
   let(:reporter) { member }
   let(:admin) { member(role: 'admin') }
+  it 'does not execute writes without transaction support and exposes an actionable error' do
+    session = double('session')
+    allow(FixTicket).to receive(:with_session).and_yield(session)
+    allow(session).to receive(:with_transaction).and_raise(
+      Mongo::Error::TransactionsNotSupported.new('Transactions are not supported for the cluster: standalone topology')
+    )
+    expect do
+      described_class.transaction(reporter.id) { raise 'Must not execute without a transaction' }
+    end.to raise_error(Error::ServiceUnavailable, /standalone topology/)
+    expect(reporter.reload.attributes['fix_ticket_write_revision']).to be_nil
+  end
   before do
     ActiveJob::Base.queue_adapter = :test
     allow(REDIS).to receive(:set).and_return(true)

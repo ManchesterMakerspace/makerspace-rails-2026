@@ -5162,6 +5162,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "MongoDB topology does not support atomic ticket writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
           }
         },
         "requestBody": {

@@ -13,6 +13,14 @@ class FixTicketService
           block.call
         end
       end
+    rescue Mongo::Error::TransactionsNotSupported => error
+      # Only this topology error is safe to expose verbatim. Do not turn other
+      # database errors into public responses or retry these writes nonatomically.
+      raise Error::ServiceUnavailable.new(
+        "Repair ticket changes are unavailable. Configure MongoDB as a replica set " \
+        "(a single-node replica set is sufficient for development/test) and update MLAB_URI. " \
+        "MongoDB: #{error.message}"
+      )
     end
     def capacity!(member)
       raise Error::Forbidden.new unless member&.fully_active_unexpired?

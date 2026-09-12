@@ -20,6 +20,20 @@ Run `fix_tickets:recover_deliveries` every five minutes if using an external sch
 
 ## Deployment order and staging
 
+### Local MongoDB transaction support
+
+A standalone `mongod` cannot execute multi-document transactions. Repair writes return HTTP 503 with a JSON `error` containing the full `TransactionsNotSupported` message and replica-set setup guidance; the portal displays this message and retains the form for retry. Other MongoDB exceptions are not exposed verbatim. There is no nontransactional fallback, because it could leave priorities, bounty publication, and the notification outbox partially saved.
+
+For a local test server, a single-node replica set is sufficient. Stop the existing test `mongod` cleanly, keep its existing data directory, and restart it with its existing options plus `--replSet rs0` (or add `replication.replSetName: rs0` to its MongoDB configuration). Do not start a second process on that directory. Initialize once from `mongosh`:
+
+```javascript
+rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] })
+```
+
+Wait until `db.hello().isWritablePrimary` returns `true`. For Rails running on the same host, set `MLAB_URI=mongodb://localhost:27017/makerspace_test?replicaSet=rs0`, restart Rails, and run `bundle exec rake fix_tickets:ensure_indexes`. Preserve your actual database name, credentials, and other URI options. If Rails or MongoDB runs in Docker, use a replica-set member hostname and port reachable from both MongoDB and Rails instead of `localhost`; the URI must use that reachable address too. Single-node configuration provides transactions, not failover redundancy.
+
+### Rollout
+
 1. Deploy additive Rails models, services, indexes, and jobs before exposing the portal and Slack entry points. Run `bundle exec rake fix_tickets:ensure_indexes` with the deployment database configuration.
 2. Purge managed/CDN caches for public shop and tool HTML/JSON. Their new responses require revalidation. Previously fresh browser responses can remain until their original three-day freshness expires. QR SVG caching stays separate.
 3. Deploy the portal assets, update Slack command/interactivity URLs from the manifest for the staging host, and verify signatures and workspace identity. Keep publication disabled initially.

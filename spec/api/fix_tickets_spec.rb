@@ -42,6 +42,19 @@ RSpec.describe 'Fix tickets', type: :request do
       }
       let(:submission) { { title: 'Drill', description: 'Failed switch', category: 'broken', submission_key: SecureRandom.uuid } }
       response('200', 'Created, or previously accepted idempotent submission') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test! }
+      response '503', 'MongoDB topology does not support atomic ticket writes' do
+        schema '$ref' => '#/components/schemas/FixError'
+        before do
+          allow(FixTicket).to receive(:with_session).and_raise(
+            Mongo::Error::TransactionsNotSupported.new('Transactions are not supported for the cluster: standalone topology')
+          )
+        end
+        run_test! do |response|
+          expect(JSON.parse(response.body)['error']).to include('single-node replica set', 'Transactions are not supported for the cluster: standalone topology')
+          expect(FixTicket.count).to eq(0)
+          expect(FixTicketEvent.count).to eq(0)
+        end
+      end
     end
   end
   path '/fix_tickets/catalog' do
@@ -73,6 +86,7 @@ RSpec.describe 'Fix tickets', type: :request do
       } }
       let(:update) { { note: 'Additional details' } }
       response('200', 'Updated; operation-specific staff/assignee/reporter authorization applies') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test! }
+      response('503', 'MongoDB topology does not support atomic ticket writes') { schema '$ref' => '#/components/schemas/FixError' }
     end
   end
   { notes: ['Append a note', { note: { type: :string } }], withdraw: ['Withdraw own nonterminal report', {}],
@@ -123,6 +137,9 @@ RSpec.describe 'Fix tickets', type: :request do
         end
         response '403', 'Caller lacks this action capability' do; schema '$ref' => '#/components/schemas/FixError'; end
         response '422', 'Validation, cap, revision, or lifecycle conflict' do; schema '$ref' => '#/components/schemas/FixError'; end
+        unless %i[reveal outage retry_delivery].include?(action)
+          response('503', 'MongoDB topology does not support atomic ticket writes') { schema '$ref' => '#/components/schemas/FixError' }
+        end
       end
     end
   end
