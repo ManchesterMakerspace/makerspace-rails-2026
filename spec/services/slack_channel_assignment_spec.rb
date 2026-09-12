@@ -90,6 +90,23 @@ RSpec.describe Service::SlackChannelAssignment do
         'announce_channel' => { id: 'G12345678', name: '#officers-private' }
       )
     end
+
+    it 'reports channel_not_found responses returned during admin channel resolution' do
+      admin_client = double('Slack admin client')
+      response = { ok: false, error: 'channel_not_found', api_key: 'secret-key' }
+      error = Slack::Web::Api::Errors::ChannelNotFound.new('channel_not_found', response)
+      allow(Service::SlackConnector).to receive(:find_channel_id).and_return(nil)
+      allow(Service::SlackConnector).to receive(:admin_client).and_return(admin_client)
+      allow(admin_client).to receive(:conversations_info).and_raise(error)
+      allow(Service::SlackConnector).to receive(:report_channel_not_found)
+
+      expect(described_class.resolve!(announce_channel: 'C12345678')).to eq({})
+      expect(Service::SlackConnector).to have_received(:report_channel_not_found).with(
+        'C12345678',
+        error,
+        operation: 'conversations.info admin channel resolution'
+      )
+    end
   end
 
   describe '.invite_bot_or_notify' do

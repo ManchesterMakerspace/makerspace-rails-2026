@@ -83,7 +83,11 @@ module Service
         break if cursor.blank?
       end
       nil
-    rescue Slack::Web::Api::Errors::ChannelNotFound
+    rescue Slack::Web::Api::Errors::ChannelNotFound => error
+      operation = Service::SlackChannelCache.channel_id?(channel_name) ?
+        'conversations.info admin channel resolution' :
+        'conversations.list admin channel resolution'
+      Service::SlackConnector.report_channel_not_found(channel_name, error, operation: operation)
       nil
     end
 
