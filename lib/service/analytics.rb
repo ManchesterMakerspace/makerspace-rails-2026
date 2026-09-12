@@ -17,6 +17,22 @@ module Service
         base.where(:startDate.gte => (Time.now - timeframe))
       end
 
+      # Members whose membership actually lapsed within the timeframe -- i.e.
+      # expirationTime has already passed (not merely scheduled to expire
+      # later this window). Deliberately not scoped to query_good_standing_members:
+      # a lost member may already have been flipped to inactive/revoked/nonMember
+      # by the time this runs, and that shouldn't hide them from this count.
+      # Known gap: a member revoked early (before their paid-through date)
+      # keeps their original future expirationTime, so they won't show up here
+      # until that stale date arrives -- accepted as rare enough not to matter.
+      def self.query_lost_members(timeframe = 1.month, base = query_not_landlord)
+        now_ms = Time.now.to_i * 1000
+        base.where(
+          :expirationTime.gte => ((Time.now - timeframe).to_i * 1000),
+          :expirationTime.lt  => now_ms
+        )
+      end
+
       # Members that are in good standing, do not have an expiration date, and have invoices pending settlement
       def self.query_membership_not_started(base = query_no_expiration)
         base.where({ :id.in => ::Service::Analytics::Invoices.query_settlement_pending.pluck(:member_id).uniq })
@@ -128,14 +144,49 @@ module Service
         end
       end
 
+      # Never generates a month whose start hasn't arrived yet (a wholly
+      # future month, e.g. from selecting the current year), and for the
+      # current, still-in-progress month, clamps an :end boundary to right
+      # now rather than that month's not-yet-reached end_of_month -- otherwise
+      # "active as of Sep 30" gets checked on Sep 12, wrongly excluding members
+      # who are active today but happen to expire before month-end.
+      # Members lost per calendar month, symmetric with New Members per Month
+      # (get_membership_per_month/member_growth) but keyed off expirationTime
+      # instead of startDate. Filters strictly on expirationTime < now (not
+      # just "falls within the month"), so a member who hasn't actually
+      # expired yet is never counted -- including for the current, still-in-
+      # progress month -- since they might still renew before it happens.
+      def self.lost_members_by_month(start_date:, end_date: Date.today, base: query_not_landlord)
+        effective_end_ms = [end_date.to_date.end_of_month.to_time, Time.now].min.to_i * 1000
+        start_ms = start_date.to_date.beginning_of_month.to_time.to_i * 1000
+        return [] if start_ms >= effective_end_ms
+
+        pipeline = [
+          { "$match" => base.selector.merge(
+            "expirationTime" => { "$gte" => start_ms, "$lt" => effective_end_ms }
+          ) },
+          { "$addFields" => { "expirationDate" => { "$toDate" => "$expirationTime" } } },
+          { "$group" => {
+            "_id" => { "year" => { "$year" => "$expirationDate" }, "month" => { "$month" => "$expirationDate" } },
+            "count" => { "$sum" => 1 }
+          } },
+          { "$sort" => { "_id.year" => 1, "_id.month" => 1 } }
+        ]
+
+        Member.collection.aggregate(pipeline).map do |r|
+          { month: format("%04d-%02d", r["_id"]["year"], r["_id"]["month"]), count: r["count"] }
+        end
+      end
+
       def self.month_boundaries(start_date, end_date, boundary)
         raise ArgumentError, "boundary must be :start or :end" unless %i[start end].include?(boundary)
 
         cursor = start_date.to_date.beginning_of_month
-        last_month = end_date.to_date.beginning_of_month
+        last_month = [end_date.to_date, Date.today].min.beginning_of_month
         boundaries = []
         while cursor <= last_month
-          boundary_time = (boundary == :start ? cursor : cursor.end_of_month).to_time
+          natural_boundary = (boundary == :start ? cursor : cursor.end_of_month).to_time
+          boundary_time = [natural_boundary, Time.now].min
           boundaries << {
             key: "month_#{cursor.strftime('%Y_%m')}",
             date: cursor.strftime("%Y-%m"),

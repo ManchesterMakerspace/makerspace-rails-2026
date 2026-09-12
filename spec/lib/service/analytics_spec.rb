@@ -31,6 +31,57 @@ RSpec.describe Service::Analytics do
         Mongoid::Criteria.new(Member), Date.new(2024, 1, 1)
       ).first).to eq([Date.new(2024, 1, 1), 4])
     end
+
+    it "never generates a wholly future month and clamps the current month's :end boundary to now" do
+      travel_to Time.utc(2024, 6, 15, 12, 0, 0) do
+        Member.collection.insert_many([
+          { status: "activeMember", firstname: "Still", lastname: "Active", startDate: Time.utc(2024, 1, 1), expirationTime: Time.utc(2024, 6, 20).to_i * 1000 }
+        ])
+
+        result = described_class.active_members_by_month(
+          start_date: Date.new(2024, 6, 1), end_date: Date.new(2024, 12, 31),
+          statuses: Member::ACTIVE_MEMBERSHIP_STATUSES
+        )
+
+        expect(result.map { |r| r[:date] }).to eq(["2024-06"])
+        expect(result).to eq([{ date: "2024-06", count: 1 }])
+      end
+    end
+  end
+
+  describe Service::Analytics::Members do
+    describe ".query_lost_members" do
+      it "only includes members whose expiration already passed within the timeframe" do
+        travel_to Time.utc(2024, 6, 15, 12, 0, 0) do
+          Member.collection.insert_many([
+            { status: "activeMember", firstname: "Recently", lastname: "Expired", expirationTime: 10.days.ago.to_i * 1000 },
+            { status: "activeMember", firstname: "Not", lastname: "YetExpired", expirationTime: 10.days.from_now.to_i * 1000 },
+            { status: "inactive", firstname: "LongAgo", lastname: "Expired", expirationTime: 40.days.ago.to_i * 1000 }
+          ])
+
+          expect(described_class.query_lost_members.pluck(:firstname)).to eq(["Recently"])
+        end
+      end
+    end
+
+    describe ".lost_members_by_month" do
+      it "buckets by the month expiration actually fell in, excluding not-yet-passed expirations" do
+        travel_to Time.utc(2024, 6, 15, 12, 0, 0) do
+          Member.collection.insert_many([
+            { status: "inactive", firstname: "Past", lastname: "Month", expirationTime: Time.utc(2024, 5, 10).to_i * 1000 },
+            { status: "activeMember", firstname: "Already", lastname: "ExpiredThisMonth", expirationTime: Time.utc(2024, 6, 10).to_i * 1000 },
+            { status: "activeMember", firstname: "NotYet", lastname: "ExpiredThisMonth", expirationTime: Time.utc(2024, 6, 20).to_i * 1000 }
+          ])
+
+          result = described_class.lost_members_by_month(start_date: Date.new(2024, 1, 1))
+
+          expect(result).to eq([
+            { month: "2024-05", count: 1 },
+            { month: "2024-06", count: 1 }
+          ])
+        end
+      end
+    end
   end
 
   describe Service::Analytics::Invoices do

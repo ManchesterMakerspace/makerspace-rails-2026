@@ -7,6 +7,7 @@ RSpec.describe Admin::AnalyticsController, type: :controller do
     sign_in create(:member, :admin)
     allow(Service::Analytics::Members).to receive(:query_total_members).and_return(double(count: 10))
     allow(Service::Analytics::Members).to receive(:query_new_members).and_return(double(count: 2))
+    allow(Service::Analytics::Members).to receive(:query_lost_members).and_return(double(count: 1))
     allow(Service::Analytics::Members).to receive(:query_braintree_members).and_return(double(count: 7))
     allow(Service::Analytics::Invoices).to receive(:query_past_due).and_return(double(count: 1))
     allow(Service::Analytics::Invoices).to receive(:query_refunds_pending).and_return(double(count: 3))
@@ -18,6 +19,26 @@ RSpec.describe Admin::AnalyticsController, type: :controller do
 
     expect(response).to have_http_status(:ok)
     expect(JSON.parse(response.body)['membersWithExpiringPaymentMethods']).to eq(4)
+  end
+
+  it 'includes the count of lost members' do
+    get :index, format: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body)['lostMembers']).to eq(1)
+  end
+
+  it 'uses the shared aggregation for lost members by month' do
+    rows = [{ month: '2024-01', count: 2 }, { month: '2024-02', count: 0 }]
+    expect(Service::Analytics::Members).to receive(:lost_members_by_month).with(
+      start_date: Date.new(2024, 1, 1),
+      end_date: Date.new(2024, 12, 31)
+    ).and_return(rows)
+
+    get :member_losses, params: { year: 2024 }, format: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body, symbolize_names: true)).to eq(rows)
   end
 
   it 'uses the shared aggregation for active members' do
