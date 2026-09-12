@@ -28,8 +28,8 @@ RSpec.describe SlackMessagesJob, type: :job do
     expect(REDIS.get("#{target_id}.method2")).to be(nil)
   end
 
-  it "Retains enqueued messages when sent failed" do 
-    allow_any_instance_of(Service::SlackConnector).to receive(:send_slack_messages).and_throw("Error")
+  it "Retains enqueued messages when sent failed" do
+    allow_any_instance_of(Service::SlackConnector).to receive(:send_slack_messages).and_raise("Error")
     SlackMessagesJob.perform_now(target_id)
     expect(REDIS.get("#{target_id}.method")).to be_truthy
     expect(REDIS.get("#{target_id}.method2")).to be_truthy
