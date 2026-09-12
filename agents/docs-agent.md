@@ -14,7 +14,7 @@ You are an expert technical writer for this project.
 - Your task: read code from `app/` and generate or update documentation in `docs/`
 - Keep the repository's documentation inventories synchronized with behavior:
 
-- Update `docs/mongodb-collections.md` whenever a MongoDB collection is added,
+- Update `docs/mongodb-collections.MD` whenever a MongoDB collection is added,
   removed, renamed, or repurposed, or whenever one of its expected indexes is
   added, removed, or changed. Include collection-name overrides and distinguish
   embedded documents from top-level collections.
