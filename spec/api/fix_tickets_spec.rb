@@ -30,9 +30,9 @@ RSpec.describe 'Fix tickets', type: :request do
       produces 'application/json'
       parameter name: :submission, in: :body, schema: {
         type: :object, required: %w[title description category submission_key], additionalProperties: false,
-        properties: { title: { type: :string, maxLength: 150 }, description: { type: :string, maxLength: 10000 },
+        properties: { title: { type: :string, maxLength: 150, pattern: FixTicket::SAFE_NAME_PATTERN }, description: { type: :string, maxLength: 10000 },
           category: { type: :string, enum: FixTicket::CATEGORIES }, submission_key: { type: :string },
-          shop_id: { type: :string, nullable: true }, tool_id: { type: :string, nullable: true }, uncatalogued_tool: { type: :string },
+          shop_id: { type: :string, nullable: true }, tool_id: { type: :string, nullable: true }, uncatalogued_tool: { type: :string, pattern: "(?:#{FixTicket::SAFE_NAME_PATTERN})|^$" },
           priority: { type: :integer, minimum: 1, maximum: 10, nullable: true }, i_broke_it: { type: :boolean }, i_can_fix_it: { type: :boolean }, public_read_only: { type: :boolean } }
       }
       let(:submission) { { title: 'Drill', description: 'Failed switch', category: 'broken', submission_key: SecureRandom.uuid } }
@@ -58,8 +58,8 @@ RSpec.describe 'Fix tickets', type: :request do
       consumes 'application/json'
       parameter name: :update, in: :body, schema: { type: :object, properties: {
         revision: { type: :integer }, status: { type: :string, enum: FixTicket::STATUSES }, confirmation: { type: :string, enum: FixTicket::CONFIRMATIONS },
-        note: { type: :string }, title: { type: :string }, description: { type: :string }, category: { type: :string },
-        shop_id: { type: :string, nullable: true }, tool_id: { type: :string, nullable: true }, uncatalogued_tool: { type: :string },
+        note: { type: :string }, title: { type: :string, maxLength: 150, pattern: FixTicket::SAFE_NAME_PATTERN }, description: { type: :string }, category: { type: :string },
+        shop_id: { type: :string, nullable: true }, tool_id: { type: :string, nullable: true }, uncatalogued_tool: { type: :string, pattern: "(?:#{FixTicket::SAFE_NAME_PATTERN})|^$" },
         public_read_only: { type: :boolean }, announce_to_slack: { type: :boolean }, announcement_note: { type: :string }, nominate_reward: { type: :boolean }
       } }
       let(:update) { { note: 'Additional details' } }

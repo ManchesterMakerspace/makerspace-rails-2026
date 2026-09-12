@@ -6,6 +6,10 @@ class FixTicket
   STATUSES = (ACTIVE + %w[resolved rejected withdrawn]).freeze
   CONFIRMATIONS = %w[unverified confirmed could_not_confirm].freeze
   CATEGORIES = %w[damaged broken missing other].freeze
+  # Single-line names: keep free-form discussion in descriptions and notes.
+  SAFE_NAME_PATTERN = '^[A-Za-z0-9 .,_()/\\-]+$'.freeze
+  SAFE_NAME = /\A[A-Za-z0-9 .,_()\/-]+\z/.freeze
+  SAFE_NAME_MESSAGE = 'may contain only ASCII letters, numbers, spaces, and . , _ ( ) / -'.freeze
   field :reporter_id, type: BSON::ObjectId
   field :title, type: String
   field :description, type: String
@@ -36,6 +40,9 @@ class FixTicket
   attr_readonly :reporter_id, :created_at, :submitted_priority, :submission_key
   validates :reporter_id, :title, :description, :submission_key, presence: true
   validates :title, length: { maximum: 150 }
+  validates :title, format: { with: SAFE_NAME, message: SAFE_NAME_MESSAGE }, if: -> { new_record? || title_changed? }
+  validates :uncatalogued_tool, format: { with: SAFE_NAME, message: SAFE_NAME_MESSAGE }, allow_blank: true,
+    if: -> { new_record? || uncatalogued_tool_changed? }
   validates :description, length: { maximum: 10000 }
   validates :category, inclusion: { in: CATEGORIES }
   validates :status, inclusion: { in: STATUSES }

@@ -27,3 +27,5 @@ Run `fix_tickets:recover_deliveries` every five minutes if using an external sch
 5. Test central root creation/deletion recovery, uncertain sends, destination changes, full notes, broadcasts, and DMs with staging members. Enable the production publication variable only after these checks pass.
 
 Local verification uses an isolated MongoDB replica set and mocked Slack. `spec/services/fix_ticket*_spec.rb`, `spec/services/tool_availability_spec.rb`, `spec/requests/fix_tickets_spec.rb`, and `spec/api/fix_tickets_spec.rb` cover the domain/API. Regenerate Swagger with `bundle exec rake rswag:specs:swaggerize`. In React, run `npm run typecheck`, `npm run build`, and `node scripts/check_fix_tickets.cjs` for the isolated browser fixture at 320, 600, 900, and 1440 px. Live workspace delivery and staging deployment are operational checks, not performed by these local tests.
+
+Ticket titles and ad-hoc tool names accept ASCII letters, digits, spaces, and `. , _ ( ) / -`. The API rejects other characters on creation or when these fields change. Existing names are not rewritten, and free-form descriptions and notes remain supported.

@@ -164,4 +164,13 @@ RSpec.describe FixTicketService do
     expect(ticket.bounty_assignee_ids).to be_empty
   end
 
+  it 'restricts report names on creation and editing, including Slack service calls' do
+    expect { report(reporter, title: 'Drill <script>') }.to raise_error(Error::UnprocessableEntity)
+    expect { report(reporter, uncatalogued_tool: 'Saw @channel') }.to raise_error(Error::UnprocessableEntity)
+    ticket = report(reporter, title: 'Drill-2 (bench), 1/4 in.', uncatalogued_tool: 'Drill_press / 2')
+    expect { described_class.update!(id: ticket.id, actor: admin, attributes: { title: 'Saw <img>' }) }.to raise_error(Mongoid::Errors::Validations)
+    expect { described_class.update!(id: ticket.id, actor: admin, attributes: { uncatalogued_tool: "Saw\nName" }) }.to raise_error(Mongoid::Errors::Validations)
+    expect(ticket.reload.title).to eq('Drill-2 (bench), 1/4 in.')
+  end
+
 end
