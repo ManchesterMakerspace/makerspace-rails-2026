@@ -28,6 +28,17 @@ module FixTicketBounty
     return super unless ticket_id
     release_ticket_claim(member) { super }
   end
+  def cancel!
+    return super unless ticket_id
+    ticket = FixTicket.find(ticket_id)
+    FixTicketService.transaction(ticket.reporter_id) do
+      reload
+      if %w[claimed pending].include?(status)
+        raise Error::Forbidden.new('Release or reject the linked bounty claim before cancelling it')
+      end
+      super
+    end
+  end
   private
   def release_ticket_claim(actor)
     ticket = FixTicket.find(ticket_id)

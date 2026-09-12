@@ -26,7 +26,17 @@ RSpec.describe FixSlack do
     allow(ENV).to receive(:[]).with('SLACK_TEAM_ID').and_return('T_EXPECTED')
     expect { described_class.member!({ 'team_id' => 'T_OTHER', 'user_id' => 'U_OTHER' }) }.to raise_error(Error::Forbidden)
   end
-  it 'clears a shop through the edit modal No shop choice' do
+  it 'initializes tool and assignee filters without losing their IDs' do
+    tool = create(:tool, shop: create(:shop))
+    query = { 'tool_id' => tool.id.to_s, 'assignee_id' => member.id.to_s }
+    view = described_class.filters(query)
+    %w[tool_id assignee_id].each do |key|
+      element = view[:blocks].find { |block| block[:block_id] == key }[:element]
+      expect(element[:initial_option][:value]).to eq(query[key])
+    end
+    expect(JSON.parse(view[:private_metadata])).to include(query)
+  end
+  it 'clears a shop through the edit modal No shop choice', requires_transactions: true do
     admin = create(:member, :admin, :current)
     ticket = FixTicketService.create!(actor: member, attributes: { title: 'Repair', description: 'Broken', category: 'broken', shop_id: create(:shop).id.to_s, submission_key: SecureRandom.uuid })
     allow(described_class).to receive(:member!).and_return(admin)

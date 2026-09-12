@@ -5947,6 +5947,34 @@
         }
       }
     },
+    "/admin/volunteer_tasks/{id}/cancel": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Cancel a volunteer task; linked claims must first be released or rejected",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "A claimed or pending ticket bounty must be released or rejected before cancellation"
+          }
+        }
+      }
+    },
     "/invoice_options/signup": {
       "get": {
         "summary": "Gets invoice options eligible for signup",

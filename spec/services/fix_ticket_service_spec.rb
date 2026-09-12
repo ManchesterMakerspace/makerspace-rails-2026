@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe FixTicketService do
+RSpec.describe FixTicketService, requires_transactions: true do
   def member(role: 'member', status: 'activeMember', expiry: 30.days.from_now.to_i * 1000)
     id = BSON::ObjectId.new
     Member.collection.insert_one(_id: id, firstname: 'Test', lastname: id.to_s, email: "#{id}@example.com", role: role, status: status, expirationTime: expiry, member_contract_signed_date: Date.current)
@@ -11,7 +11,7 @@ RSpec.describe FixTicketService do
   end
   let(:reporter) { member }
   let(:admin) { member(role: 'admin') }
-  it 'does not execute writes without transaction support and exposes an actionable error' do
+  it 'does not execute writes without transaction support and exposes an actionable error', requires_transactions: false do
     session = double('session')
     allow(FixTicket).to receive(:with_session).and_yield(session)
     allow(session).to receive(:with_transaction).and_raise(
@@ -112,15 +112,29 @@ RSpec.describe FixTicketService do
     expect(FixTicketQuery.call(reporter, { mode: 'mine', priority: '1' })[:tickets].first[:id]).to eq(one.id.to_s)
   end
   it 'publishes a linked bounty atomically and locks public visibility' do
-    ticket = report(reporter)
+    shop = create(:shop)
+    ticket = report(reporter, shop_id: shop.id.to_s)
     expect { described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: '' }) }.to raise_error(Mongoid::Errors::Validations)
+    expect(VolunteerSlackCanvasSyncJob).not_to have_been_enqueued
     expect(ticket.reload.public_read_only).to be(false)
-    described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
+    expect { described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 }) }.to have_enqueued_job(VolunteerSlackCanvasSyncJob).with(shop.id.to_s)
     expect(ticket.reload.bounty.ticket_id).to eq(ticket.id)
     expect(ticket.public_read_only).to be(true)
     expect { described_class.update!(id: ticket.id, actor: admin, attributes: { public_read_only: false }) }.to raise_error(Error::UnprocessableEntity)
-    described_class.withdraw!(id: ticket.id, actor: reporter)
+    expect { described_class.withdraw!(id: ticket.id, actor: reporter) }.to have_enqueued_job(VolunteerSlackCanvasSyncJob).with(shop.id.to_s)
     expect(ticket.bounty.reload.status).to eq('cancelled')
+  end
+  %w[claimed pending].each do |state|
+    it "requires claim cleanup before cancelling a #{state} linked bounty" do
+      ticket = report(reporter)
+      described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
+      task = ticket.reload.bounty
+      task.update!(status: state, claimed_by_id: reporter.id)
+      ticket.update!(bounty_assignee_ids: [reporter.id], assignee_ids: [reporter.id])
+      expect { task.cancel! }.to raise_error(Error::Forbidden, /Release or reject/)
+      expect(task.reload.status).to eq(state)
+      expect(ticket.reload.bounty_assignee_ids).to eq([reporter.id])
+    end
   end
   it 'serializes concurrent submissions at the cap' do
     SystemConfig.set('ticket_open_limit', '1')

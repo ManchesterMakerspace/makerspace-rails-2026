@@ -41,7 +41,7 @@ RSpec.describe 'Fix tickets', type: :request do
           priority: { type: :integer, minimum: 1, maximum: 10, nullable: true }, i_broke_it: { type: :boolean }, i_can_fix_it: { type: :boolean }, public_read_only: { type: :boolean } }
       }
       let(:submission) { { title: 'Drill', description: 'Failed switch', category: 'broken', submission_key: SecureRandom.uuid } }
-      response('200', 'Created, or previously accepted idempotent submission') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test! }
+      response('200', 'Created, or previously accepted idempotent submission') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test!(requires_transactions: true) }
       response '503', 'MongoDB topology does not support atomic ticket writes' do
         schema '$ref' => '#/components/schemas/FixError'
         before do
@@ -71,7 +71,7 @@ RSpec.describe 'Fix tickets', type: :request do
       tags 'Fix tickets'
       security [sessionAuth: []]
       produces 'application/json'
-      response('200', 'No reporter identity is included') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test! }
+      response('200', 'No reporter identity is included') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test!(requires_transactions: true) }
     end
     patch 'Update authorized ticket fields; priority is immutable' do
       tags 'Fix tickets'
@@ -85,7 +85,7 @@ RSpec.describe 'Fix tickets', type: :request do
         public_read_only: { type: :boolean }, announce_to_slack: { type: :boolean }, announcement_note: { type: :string }, nominate_reward: { type: :boolean }
       } }
       let(:update) { { note: 'Additional details' } }
-      response('200', 'Updated; operation-specific staff/assignee/reporter authorization applies') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test! }
+      response('200', 'Updated; operation-specific staff/assignee/reporter authorization applies') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test!(requires_transactions: true) }
       response('503', 'MongoDB topology does not support atomic ticket writes') { schema '$ref' => '#/components/schemas/FixError' }
     end
   end
@@ -133,7 +133,7 @@ RSpec.describe 'Fix tickets', type: :request do
             else {}
             end
           end
-          run_test!
+          run_test!(requires_transactions: true)
         end
         response '403', 'Caller lacks this action capability' do; schema '$ref' => '#/components/schemas/FixError'; end
         response '422', 'Validation, cap, revision, or lifecycle conflict' do; schema '$ref' => '#/components/schemas/FixError'; end
@@ -150,7 +150,7 @@ RSpec.describe 'Fix tickets', type: :request do
       security [sessionAuth: []]
       parameter name: :search, in: :query, required: false, type: :string
       produces 'application/json'
-      response('200', 'Up to fifty active unexpired members') { schema type: :array, items: { '$ref' => '#/components/schemas/FixPerson' }; let(:member) { create(:member, :admin, :current) }; run_test! }
+      response('200', 'Up to fifty active unexpired members') { schema type: :array, items: { '$ref' => '#/components/schemas/FixPerson' }; let(:member) { create(:member, :admin, :current) }; run_test!(requires_transactions: true) }
     end
   end
   path '/tools/{id}/outage' do
@@ -180,6 +180,29 @@ RSpec.describe 'Fix tickets', type: :request do
         schema '$ref' => '#/components/schemas/FixBountyDetail'
         let(:id) { VolunteerTask.create!(title: 'Repair drill', description: 'Replace switch', credit_value: 1, created_by_id: member.id).id.to_s }
         run_test!
+      end
+    end
+  end
+  path '/admin/volunteer_tasks/{id}/cancel' do
+    parameter name: :id, in: :path, type: :string
+    post 'Cancel a volunteer task; linked claims must first be released or rejected' do
+      tags 'Volunteer'
+      security [sessionAuth: []]
+      produces 'application/json'
+      response '403', 'A claimed or pending ticket bounty must be released or rejected before cancellation' do
+        let(:member) { create(:member, :admin, :current) }
+        let(:id) do
+          ticket = FixTicketService.create!(actor: member, attributes: { title: 'Repair', description: 'Broken', category: 'broken', submission_key: SecureRandom.uuid })
+          FixTicketService.bounty!(id: ticket.id, actor: member, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
+          task = ticket.reload.bounty
+          task.update!(status: 'claimed', claimed_by_id: member.id)
+          task.id.to_s
+        end
+        before do
+          allow_any_instance_of(Admin::VolunteerTasksController).to receive(:slack_alert)
+          allow_any_instance_of(Admin::VolunteerTasksController).to receive(:honeybadger_notify)
+        end
+        run_test!(requires_transactions: true)
       end
     end
   end

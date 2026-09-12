@@ -1,5 +1,5 @@
 require 'rails_helper'
-RSpec.describe 'Fix ticket API', type: :request do
+RSpec.describe 'Fix ticket API', type: :request, requires_transactions: true do
   let(:member) { create(:member, :current) }
   let(:admin) { create(:member, :current, :admin) }
   before do
@@ -60,7 +60,7 @@ RSpec.describe 'Fix ticket API', type: :request do
     get '/api/fix_tickets/catalog'
     expect(JSON.parse(response.body)['creationUnavailableReason']).to include('active, unexpired')
   end
-  it 'returns bounty capabilities for the viewer rather than the global task status' do
+  it 'returns bounty capabilities for the viewer rather than the global task status', requires_transactions: false do
     task = VolunteerTask.create!(title: 'Repair', description: 'Replace switch', credit_value: 1, created_by_id: admin.id)
     get "/api/volunteer/tasks/#{task.id}/detail"
     expect(JSON.parse(response.body)['capabilities']).to eq('canClaim' => true, 'canSubmitCompletion' => false)

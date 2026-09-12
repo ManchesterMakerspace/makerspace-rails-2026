@@ -89,8 +89,11 @@ class FixTicketService
       initial = FixTicket.where(id: parse_id(id)).first
       raise Error::NotFound.new unless initial
       result = nil
+      canvas_shop_id = nil
       transaction(initial.reporter_id) do
+        canvas_shop_id = nil
         result = FixTicket.find(initial.id)
+        previous_bounty = [result.bounty_id, result.bounty&.status]
         actor = Member.find(actor.id)
         policy = FixTicketPolicy.new(actor, result)
         raise Error::NotFound.new unless policy.read?
@@ -98,8 +101,11 @@ class FixTicketService
           raise Error::UnprocessableEntity.new('Ticket changed. Refresh before trying again.')
         end
         yield result, policy, actor
+        # Recomputed on each transaction retry; enqueue only after commit.
+        canvas_shop_id = result.shop_id if previous_bounty != [result.bounty_id, result.bounty&.reload&.status]
       end
       enqueue(result)
+      enqueue_canvas(canvas_shop_id) if canvas_shop_id
       result.reload
     end
     def update!(id:, actor:, attributes:)
@@ -255,6 +261,11 @@ class FixTicketService
       FixTicketDeliveryJob.perform_later(ticket.id.to_s)
     rescue StandardError => error
       Rails.logger.warn("Fix ticket delivery enqueue failed: #{error.class}")
+    end
+    def enqueue_canvas(shop_id)
+      VolunteerSlackCanvasSyncJob.perform_later(shop_id.to_s)
+    rescue StandardError => error
+      Rails.logger.warn("Fix ticket canvas enqueue failed: #{error.class}")
     end
   end
 end

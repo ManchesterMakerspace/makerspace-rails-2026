@@ -100,6 +100,8 @@ class FixSlack
       { type: 'button', text: plain(label), action_id: "fix_#{action}", value: data.to_json }
     end
     def filters(query)
+      tool = Tool.where(id: query['tool_id']).first if query['tool_id'].present?
+      assignee = Member.where(id: query['assignee_id']).first if query['assignee_id'].present?
       modal('fix_filters', [
         input('mode', 'List', value: query['mode'], options: %w[mine assigned queue public].map { |v| option(v, v) }),
         external('shop_id', 'Shop (clear for all)', selected: query['shop_id'].present? ? [option(query['shop_id'] == 'none' ? 'No shop' : Shop.where(id: query['shop_id']).first&.name || 'Shop', query['shop_id'])] : []),
@@ -107,7 +109,8 @@ class FixSlack
         input('statuses', 'Statuses', value: query['statuses'] || FixTicket::ACTIVE, multi: true, options: FixTicket::STATUSES.map { |v| option(v.tr('_', ' '), v) }),
         input('category', 'Category', optional: true, value: query['category'], options: [option('All categories', 'all')] + FixTicket::CATEGORIES.map { |v| option(v, v) }),
         input('confirmation', 'Confirmation', optional: true, value: query['confirmation'], options: [option('All confirmations', 'all')] + FixTicket::CONFIRMATIONS.map { |v| option(v.tr('_', ' '), v) }),
-        external('tool_id', 'Tool'), external('assignee_id', 'Assignee'),
+        external('tool_id', 'Tool', selected: query['tool_id'].present? ? [option(tool ? "#{tool.shop&.name}: #{tool.name}" : 'Former tool', query['tool_id'])] : []),
+        external('assignee_id', 'Assignee', selected: query['assignee_id'].present? ? [option(assignee&.fullname || 'Former member', query['assignee_id'])] : []),
         input('sort', 'Sort by', value: query['sort'] || 'priority', options: %w[priority created_at updated_at].map { |v| option(v.tr('_', ' '), v) }),
         input('direction', 'Direction', value: query['direction'] || 'asc', options: [option('Ascending', 'asc'), option('Descending', 'desc')])
       ], query, submit: 'Apply')

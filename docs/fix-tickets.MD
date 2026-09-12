@@ -12,6 +12,8 @@ Reporter identity is excluded by explicit presenters. Reveal is a separate admin
 
 ## Slack delivery
 
+Slack filter dialogs retain selected tool and assignee IDs when changing other filters. Shop-linked bounty creation and automatic cancellation refresh the volunteer canvas after commit. Direct cancellation of a claimed or pending linked bounty is blocked under the ticket transaction lock: release the claim or reject pending work first so claim-derived ticket access is removed by the existing cleanup flow.
+
 Configure the optional `SLACK_TICKETS_CHANNEL` only after testing the destination. Full ticket notes are visible to channel participants, including notes on otherwise private tickets. Human thread replies are not imported. Shop/tool announcements are independently opt-in and contain designated summaries only.
 
 Events and recipients are saved in the mutation transaction. Per-ticket delivery jobs preserve revision order; delivery receipts and pre-send intents are persisted without changing ticket timestamps. Uncertain sends reconcile Slack history by stable client message ID before resending. A history permission or network failure keeps the event pending rather than assuming deletion. Invite the bot to destination channels and grant the history scopes in the manifest. Thread reconciliation must be exercised against the workspace token in staging; missing history access must be resolved before enabling publication.
@@ -21,6 +23,8 @@ Run `fix_tickets:recover_deliveries` every five minutes if using an external sch
 ## Deployment order and staging
 
 ### Local MongoDB transaction support
+
+Specs needing real transactions are tagged `requires_transactions: true`. RSpec checks MongoDB topology and reports these examples as skipped/pending (non-fatal) on standalone servers. They run normally, with failures remaining fatal, on transaction-capable replica sets/sharded clusters. Nontransactional tests, including the transaction-unavailable error regression, still run everywhere. Connection/authentication errors are not converted into skips. To explicitly exclude this optional group, run `bundle exec rspec --tag ~requires_transactions`; use a replica-set CI run to retain concurrency/atomicity coverage.
 
 A standalone `mongod` cannot execute multi-document transactions. Repair writes return HTTP 503 with a JSON `error` containing the full `TransactionsNotSupported` message and replica-set setup guidance; the portal displays this message and retains the form for retry. Other MongoDB exceptions are not exposed verbatim. There is no nontransactional fallback, because it could leave priorities, bounty publication, and the notification outbox partially saved.
 
