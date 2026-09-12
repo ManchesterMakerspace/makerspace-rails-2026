@@ -1,4 +1,7 @@
 class ReservationSerializer < ActiveModel::Serializer
+  attribute :out_of_service_tool_names do
+    Tool.where(:id.in => object.tool_ids, out_of_service: true).pluck(:name)
+  end
   attributes :full_day, :id, :title, :member_id, :member_name, :shop_id, :shop_name,
              :reservation_scope, :tool_ids, :tool_names, :start_at, :end_at,
              :status, :approval_reasons, :decision_note, :decided_by_id,

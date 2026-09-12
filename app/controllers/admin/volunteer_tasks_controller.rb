@@ -40,6 +40,9 @@ class Admin::VolunteerTasksController < AdminOrRmController
       authorize_shop_assignment!(task_params[:shop_id])
     end
     previous_shop_id = @task.shop_id
+    if @task.ticket_id && (task_params.keys - %w[title description credit_value prerequisite_tool_ids]).any?
+      raise Error::UnprocessableEntity.new('Linked ticket bounties cannot change shop or lifecycle through generic edits')
+    end
     @task.update!(task_params)
     enqueue_canvas_sync(previous_shop_id)
     enqueue_canvas_sync(@task.shop_id) if @task.shop_id.to_s != previous_shop_id.to_s
@@ -98,6 +101,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
   def destroy
     raise ::Error::Forbidden.new unless is_admin? || is_board_member?
     shop_id = @task.shop_id
+    raise Error::UnprocessableEntity.new('Cancel linked bounties to preserve ticket history') if @task.ticket_id
     @task.destroy
     enqueue_canvas_sync(shop_id)
     render json: {}, status: :no_content

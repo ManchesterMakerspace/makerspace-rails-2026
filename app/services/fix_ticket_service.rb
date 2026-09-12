@@ -1,0 +1,250 @@
+class FixTicketService
+  CREATE_FIELDS = %w[title description category shop_id tool_id uncatalogued_tool priority public_read_only i_broke_it i_can_fix_it submission_key].freeze
+  STAFF_FIELDS = %w[title description category shop_id tool_id uncatalogued_tool public_read_only announce_to_slack announcement_note].freeze
+  class << self
+    def limit = [SystemConfig.get('ticket_open_limit').to_i.nonzero? || 10, 1].max
+    def count(member) = FixTicket.where(reporter_id: member.id, :status.in => FixTicket::ACTIVE).count
+    def transaction(member_id, &block)
+      # MongoDB transactions are required: never silently degrade atomic caps,
+      # priorities, bounty publication or the notification outbox to best effort.
+      FixTicket.with_session do |session|
+        session.with_transaction do
+          Member.collection.find(_id: member_id).update_one({ '$inc' => { 'fix_ticket_write_revision' => 1 } }, session: session)
+          block.call
+        end
+      end
+    end
+    def capacity!(member)
+      raise Error::Forbidden.new unless member&.fully_active_unexpired?
+      return if %w[admin board_member].include?(member.role)
+      n = count(member)
+      raise Error::UnprocessableEntity.new("You have #{n} open tickets (limit #{limit}). Withdraw or close tickets before adding another.") if n >= limit
+    end
+    def parse_id(value)
+      return nil if value.blank?
+      raise Error::UnprocessableEntity.new('Invalid record ID') unless BSON::ObjectId.legal?(value.to_s)
+      BSON::ObjectId.from_string(value.to_s)
+    end
+    def normalize(attributes)
+      values = attributes.to_h.stringify_keys
+      %w[shop_id tool_id].each { |key| values[key] = parse_id(values[key]) if values.key?(key) }
+      %w[title description uncatalogued_tool announcement_note].each { |key| values[key] = values[key].to_s.strip if values.key?(key) }
+      %w[public_read_only i_broke_it i_can_fix_it announce_to_slack].each do |key|
+        next unless values.key?(key)
+        raise Error::UnprocessableEntity.new("#{key} must be a boolean") unless [true, false].include?(values[key])
+      end
+      if values.key?('priority')
+        value = values['priority']
+        raise Error::UnprocessableEntity.new('Priority must be an integer from 1 to 10') unless value.blank? || value.to_s.match?(/\A(?:[1-9]|10)\z/)
+        values['priority'] = value.blank? ? nil : value.to_i
+      end
+      values
+    end
+    def validate_catalog!(ticket)
+      raise Error::UnprocessableEntity.new('Shop does not exist') if ticket.shop_id && !ticket.shop
+      if ticket.tool_id
+        raise Error::UnprocessableEntity.new('Choose a tool within the selected shop') unless ticket.tool && ticket.tool.shop_id == ticket.shop_id
+        raise Error::UnprocessableEntity.new('Choose a catalog tool or an uncatalogued name, not both') if ticket.uncatalogued_tool.present?
+      end
+    end
+    def create!(actor:, attributes:)
+      attrs = normalize(attributes)
+      raise Error::UnprocessableEntity.new('Unknown submission fields') if (attrs.keys - CREATE_FIELDS).any?
+      raise Error::UnprocessableEntity.new('Submission key is required') unless attrs['submission_key'].to_s.match?(/\A[\w-]{8,100}\z/)
+      result = nil
+      transaction(actor.id) do
+        member = Member.find(actor.id)
+        result = FixTicket.where(reporter_id: member.id, submission_key: attrs['submission_key']).first
+        next if result
+        capacity!(member)
+        result = FixTicket.new(attrs.merge('reporter_id' => member.id, 'submitted_priority' => attrs['priority']))
+        validate_catalog!(result)
+        result.valid? || raise(Error::UnprocessableEntity.new(result.errors.full_messages.join(', ')))
+        if result.priority
+          occupied = FixTicket.where(reporter_id: member.id, :status.in => FixTicket::ACTIVE, :priority.ne => nil).to_a.index_by(&:priority)
+          slot, chain = result.priority, []
+          while occupied[slot]
+            chain << occupied[slot]
+            slot += 1
+          end
+          chain.reverse_each do |other|
+            other.update!(priority: other.priority == 10 ? nil : other.priority + 1)
+          end
+        end
+        result.save!
+        event!(result, member, 'created')
+      end
+      enqueue(result)
+      result.reload
+    end
+    def mutate!(id:, actor:, revision: nil)
+      initial = FixTicket.where(id: parse_id(id)).first
+      raise Error::NotFound.new unless initial
+      result = nil
+      transaction(initial.reporter_id) do
+        result = FixTicket.find(initial.id)
+        actor = Member.find(actor.id)
+        policy = FixTicketPolicy.new(actor, result)
+        raise Error::NotFound.new unless policy.read?
+        if revision && result.revision != revision.to_i
+          raise Error::UnprocessableEntity.new('Ticket changed. Refresh before trying again.')
+        end
+        yield result, policy, actor
+      end
+      enqueue(result)
+      result.reload
+    end
+    def update!(id:, actor:, attributes:)
+      attrs = attributes.to_h.stringify_keys
+      revision = attrs.delete('revision')
+      note = attrs.delete('note').to_s.strip
+      nominate = attrs.delete('nominate_reward') == true
+      raise Error::UnprocessableEntity.new('Priority cannot be changed after submission') if attrs.key?('priority')
+      raise Error::UnprocessableEntity.new('Unknown update fields') if (attrs.keys - STAFF_FIELDS - %w[status confirmation]).any?
+      mutate!(id: id, actor: actor, revision: revision) do |ticket, policy, member|
+        raise Error::Forbidden.new if note.present? && !policy.note?
+        raise Error::UnprocessableEntity.new('Notes must be at most 10000 characters') if note.length > 10000
+        raise Error::Forbidden.new if (attrs.keys & STAFF_FIELDS).any? && !policy.staff?
+        raise Error::Forbidden.new if (attrs.keys & %w[status confirmation]).any? && !policy.change_status?
+        if attrs['public_read_only'] == false && ticket.public_locked?
+          raise Error::UnprocessableEntity.new('This ticket must stay public while its bounty is active')
+        end
+        previous = ticket.status
+        next_status = attrs['status'] || previous
+        raise Error::UnprocessableEntity.new('Reporter rewards require resolution') if nominate && next_status != 'resolved'
+        if next_status != previous
+          raise Error::UnprocessableEntity.new('Use Withdraw to withdraw your own report') if next_status == 'withdrawn'
+          if !ticket.active? && next_status != 'open'
+            raise Error::UnprocessableEntity.new('Reopen the ticket before changing its status')
+          end
+          if %w[resolved rejected].include?(next_status) || !ticket.active?
+            raise Error::UnprocessableEntity.new('A note is required') if note.blank?
+          end
+          if !ticket.active? && next_status == 'open'
+            capacity!(Member.find(ticket.reporter_id))
+          end
+          ticket.priority = nil unless FixTicket::ACTIVE.include?(next_status) && ticket.active?
+        end
+        if attrs['confirmation'] == 'could_not_confirm' && ticket.confirmation != 'could_not_confirm' && note.blank?
+          raise Error::UnprocessableEntity.new('A note is required when the issue could not be confirmed')
+        end
+        ticket.assign_attributes(normalize(attrs))
+        if (attrs.keys & %w[shop_id tool_id]).any?
+          raise Error::Forbidden.new unless FixTicketPolicy.new(member, ticket).staff?
+          raise Error::UnprocessableEntity.new('Cannot move a ticket with a linked bounty to another shop') if ticket.bounty && ticket.bounty.shop_id != ticket.shop_id
+        end
+        validate_catalog!(ticket)
+        changes = ticket.changes.except('reporter_id', 'updated_at')
+        ticket.save!
+        cancel_unclaimed_bounty!(ticket) unless ticket.active?
+        nominate_reward!(ticket, member) if nominate && next_status == 'resolved'
+        event!(ticket, member, 'updated', note: note.presence, changes: changes) if changes.any? || note.present? || nominate
+      end
+    end
+    def note!(id:, actor:, note:)
+      raise Error::UnprocessableEntity.new('A note of 1–10000 characters is required') unless note.to_s.strip.length.between?(1, 10000)
+      mutate!(id: id, actor: actor) do |ticket, policy, member|
+        raise Error::Forbidden.new unless policy.note?
+        event!(ticket, member, 'note', note: note.strip)
+      end
+    end
+    def withdraw!(id:, actor:)
+      mutate!(id: id, actor: actor) do |ticket, policy, member|
+        raise Error::Forbidden.new unless policy.reporter? && ticket.active?
+        previous = ticket.status
+        ticket.update!(status: 'withdrawn', priority: nil)
+        cancel_unclaimed_bounty!(ticket)
+        event!(ticket, member, 'updated', changes: { 'status' => [previous, 'withdrawn'] })
+      end
+    end
+    def assign!(id:, actor:, member_ids: nil, unassign_self: false)
+      mutate!(id: id, actor: actor) do |ticket, policy, member|
+        previous = ticket.assignee_ids.dup
+        if unassign_self
+          raise Error::Forbidden.new unless policy.assigned?
+          ticket.manual_assignee_ids -= [member.id]
+          ticket.bounty_assignee_ids -= [member.id]
+        else
+          raise Error::Forbidden.new unless policy.staff?
+          ids = Array(member_ids).map { |value| parse_id(value) }.compact.uniq
+          (ids - previous).each do |value|
+            raise Error::UnprocessableEntity.new('New assignees must be active, unexpired members') unless Member.where(id: value).first&.fully_active_unexpired?
+          end
+          ticket.manual_assignee_ids = ids
+          ticket.bounty_assignee_ids &= ids
+        end
+        ticket.assignee_ids = (ticket.manual_assignee_ids + ticket.bounty_assignee_ids).uniq
+        next unless ticket.changed?
+        ticket.save!
+        event!(ticket, member, 'assigned', changes: { 'assignees' => [names(previous), names(ticket.assignee_ids)] }, added: ticket.assignee_ids - previous)
+      end
+    end
+    def names(ids) = ids.map { |id| Member.where(id: id).first&.fullname || 'Former member' }
+    def cancel_unclaimed_bounty!(ticket)
+      task = ticket.bounty
+      task.update!(status: 'cancelled') if task&.status == 'available' && task.claimed_by_id.nil?
+    end
+    def bounty!(id:, actor:, attributes:)
+      mutate!(id: id, actor: actor) do |ticket, policy, member|
+        raise Error::Forbidden.new unless policy.bounty? && ticket.active?
+        next if ticket.bounty_id
+        attrs = attributes.to_h.symbolize_keys.slice(:title, :description, :credit_value, :prerequisite_tool_ids)
+        task = VolunteerTask.create!(attrs.merge(ticket_id: ticket.id, shop_id: ticket.shop_id, created_by_id: member.id, status: 'available'))
+        ticket.update!(bounty_id: task.id, public_read_only: true)
+        event!(ticket, member, 'bounty')
+      end
+    end
+    def nominate_reward!(ticket, member)
+      raise Error::Forbidden.new unless FixTicketPolicy.new(member, ticket).bounty? && ticket.reporter_id != member.id
+      return if ticket.reward_id
+      credit = VolunteerCredit.create!(member_id: ticket.reporter_id, issued_by_id: member.id, ticket_id: ticket.id,
+        description: 'Helpful tool report', credit_value: 1, status: 'pending')
+      ticket.update!(reward_id: credit.id)
+    end
+    def review_reward!(id:, actor:, approve:)
+      credit_id = nil
+      result = mutate!(id: id, actor: actor) do |ticket, policy, member|
+        credit = VolunteerCredit.where(id: ticket.reward_id).first
+        raise Error::Forbidden.new unless policy.bounty? && credit && member.id != ticket.reporter_id && member.id != credit.issued_by_id
+        next unless credit.status == 'pending'
+        credit.update!(status: approve ? 'approved' : 'rejected', issued_by_id: member.id)
+        credit_id = credit.id if approve
+        event!(ticket, member, 'reward', changes: { 'reward' => [ 'pending', credit.status ] })
+      end
+      if credit_id
+        credit = VolunteerCredit.find(credit_id)
+        credit.send(:notify_member_credit_awarded)
+        credit.send(:check_discount_threshold!)
+      end
+      result
+    end
+    def event!(ticket, actor, kind, note: nil, changes: {}, added: [])
+      ticket.inc(revision: 1)
+      ticket.set(updated_at: Time.current)
+      recipients = []
+      recipients << ticket.reporter_id if actor.id != ticket.reporter_id && (note.present? || (changes.keys & %w[status confirmation assignees announcement_note]).any?)
+      if kind == 'created' || note.present?
+        approver_rules = [{ shop_ids: ticket.shop_id.to_s }]
+        approver_rules << { tool_ids: ticket.tool_id.to_s } if ticket.tool_id
+        approver_member_ids = CheckoutApprover.any_of(*approver_rules).pluck(:member_id)
+        candidates = Member.any_of({ role: 'resource_manager', resource_manager_shop_ids: ticket.shop_id.to_s }, { :id.in => approver_member_ids })
+        candidates.each do |candidate|
+          next if candidate.id == actor.id
+          rm = candidate.manages_shop?(ticket.shop_id)
+          approver = FixTicketPolicy.new(candidate, ticket).approver
+          relevant = approver && (ticket.tool ? approver.can_approve_tool?(ticket.tool) : approver.can_approve_for_shop?(ticket.shop_id))
+          recipients << candidate.id if rm || relevant
+        end
+      end
+      recipients += added
+      recipients += [ticket.reporter_id] + ticket.assignee_ids if kind == 'bounty'
+      FixTicketEvent.create!(ticket_id: ticket.id, actor_id: actor.id, kind: kind, note: note,
+        field_changes: changes, revision: ticket.revision, recipients: recipients.uniq)
+    end
+    def enqueue(ticket)
+      FixTicketDeliveryJob.perform_later(ticket.id.to_s)
+    rescue StandardError => error
+      Rails.logger.warn("Fix ticket delivery enqueue failed: #{error.class}")
+    end
+  end
+end

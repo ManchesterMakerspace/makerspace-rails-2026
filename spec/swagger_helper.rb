@@ -486,6 +486,7 @@ RSpec.configure do |config|
             gdriveId: { type: :string, 'x-nullable': true },
             description: { type: :string, 'x-nullable': true },
             disabled: { type: :boolean },
+            outOfService: { type: :boolean, default: false },
             allowPending: { type: :boolean, default: false },
             effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } }
           },
@@ -496,6 +497,7 @@ RSpec.configure do |config|
     CheckoutApprover: {
       type: :object,
       properties: {
+        outOfServiceToolNames: { type: :array, items: { type: :string } },
         id: { type: :string },
         memberId: { type: :string },
         shopIds: { type: :array, items: { type: :string } },
@@ -508,6 +510,7 @@ RSpec.configure do |config|
     Reservation: {
       type: :object,
       properties: {
+        outOfServiceToolNames: { type: :array, items: { type: :string } },
         id: { type: :string },
         title: { type: :string },
         memberId: { type: :string },
@@ -641,6 +644,7 @@ RSpec.configure do |config|
     ReservationAgenda: {
       type: :object,
       properties: {
+        outOfService: { type: :boolean },
         shopName: { type: :string },
         toolName: { type: :string, 'x-nullable': true },
         generatedAt: { type: :string, format: 'date-time' },

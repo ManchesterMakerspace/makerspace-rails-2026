@@ -296,6 +296,9 @@ class ReservationService
       errors << "Reservation scope must be shop or tools" unless Reservation::SCOPES.include?(attributes[:reservation_scope])
       errors << "Select at least one tool" if attributes[:reservation_scope] == "tools" && attributes[:tool_ids].empty?
       errors << "One or more selected tools are invalid" if attributes[:reservation_scope] == "tools" && tools.length != attributes[:tool_ids].length
+      if tools.any?(&:out_of_service) && (reservation.nil? || reservation.start_at != attributes[:start_at] || reservation.end_at != attributes[:end_at] || (tools.select(&:out_of_service).map { |t| t.id.to_s } - Array(reservation.tool_ids).map(&:to_s)).any?)
+        errors << "A selected tool is out of service and cannot be reserved"
+      end
       errors << "The selected shop is not reservable" if attributes[:reservation_scope] == "shop" && (!shop.reservable || shop.disabled?)
       if attributes[:reservation_scope] == "tools" &&
           (shop.disabled? || tools.any? { |tool| !tool.reservable || tool.disabled? })

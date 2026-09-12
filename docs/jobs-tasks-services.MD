@@ -154,3 +154,9 @@ synchronous diagnostic invocation where one is useful.
   configuration before enabling scheduler entries. Failures are generally sent
   to the central error reporter and/or Slack logs channel, but per-record rescue
   behavior can allow a job to complete after partial failure.
+
+## Repair ticket delivery
+
+`FixTicketDeliveryJob` delivers each ticket's pending events in revision order under a renewable per-ticket Redis lease (`FixTicketDeliveryLease`). It creates/repairs central Slack roots, posts threaded/broadcast updates, optional shop summaries and recipient DMs. Stable per-event delivery IDs and persisted receipts support retries; failures do not roll back committed tickets. Retry policy: polynomial backoff, eight attempts.
+
+`FixTicketDeliveryRecoveryJob` runs every five minutes in config/schedule.rb; it re-enqueues tickets with undelivered events, including events whose original queue enqueue failed. External schedulers may run `bundle exec rake fix_tickets:recover_deliveries` every five minutes instead. `fix_tickets:ensure_indexes` is a one-time deployment task. FixTicketService owns transactional mutations/outbox creation; FixTicketPolicy owns scopes/capabilities; FixTicketDelivery owns notification content and routing.

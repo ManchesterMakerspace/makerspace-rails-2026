@@ -2,6 +2,8 @@
 
 # Configure sensitive parameters which will be filtered from the log file.
 Rails.application.config.filter_parameters += [
+  :reporter_id, :actor_id, :member_ids, :assignee_ids, :note, :description,
+  :announcement_note, :private_metadata, :payload,
   :password,
   :password_confirmation,
   :secret,

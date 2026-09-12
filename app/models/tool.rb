@@ -13,6 +13,8 @@ class Tool
   field :notes, type: String
   field :open, type: Boolean, default: false
   field :disabled, type: Boolean, default: false
+  # Independent of Hidden (disabled): unavailable tools remain in the catalog.
+  field :out_of_service, type: Boolean, default: false
   field :allow_pending, type: Boolean, default: false
   field :announce, type: Boolean, default: false
   field :announce_channel, type: String

@@ -19,6 +19,10 @@
 
 # Learn more: http://github.com/javan/whenever
 
+every 5.minutes do
+  runner 'FixTicketDeliveryRecoveryJob.perform_later'
+end
+
 every :day, at: '2am' do
   rake "db:backup"
 end

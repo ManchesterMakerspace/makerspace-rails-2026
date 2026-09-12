@@ -77,3 +77,7 @@ All rental templates above are conventional Action Mailer HTML views and are not
 ## Not email
 
 Several editable text templates registered beside the email templates—reservation reminders, volunteer-credit notices, member-review notices, and household-disbanded admin notices—are used to compose Slack messages. Their `DOC_*` variables and templates do not imply that Rails sends email for those events.
+
+## Repair tickets
+
+Tickets add no email notifications or email fallback. Ticket notifications are Slack DMs/channel messages. Reporter point nominations remain pending until independent approval; approval invokes existing volunteer-credit notification/accounting behavior with generic “Helpful tool report” text and no source-ticket identity mapping in shared messages.

@@ -1,4 +1,5 @@
 class VolunteerTask
+  prepend FixTicketBounty
   include Mongoid::Document
   include SanitizesUserInput
   include Mongoid::Timestamps
@@ -14,6 +15,7 @@ class VolunteerTask
 
   # Optional shop association
   field :shop_id,      type: BSON::ObjectId, default: nil
+  field :ticket_id, type: BSON::ObjectId
   field :prerequisite_tool_ids, type: Array, default: []
 
   # Lifecycle status

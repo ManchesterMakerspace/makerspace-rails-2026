@@ -1,4 +1,5 @@
 class CheckoutApproverSerializer < ActiveModel::Serializer
+  attribute(:out_of_service_tool_names) { object.tools.select(&:out_of_service).map(&:name) }
   attributes :id, :member_id, :shop_ids, :tool_ids
 
   attribute :member_name do

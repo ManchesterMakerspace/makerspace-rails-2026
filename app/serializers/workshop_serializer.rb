@@ -31,7 +31,7 @@ class WorkshopSerializer < ActiveModel::Serializer
         wikiUrl: tool.effective_wiki_url,
         gdriveId: tool.gdrive_id,
         description: tool.description,
-        disabled: tool.disabled?,
+        outOfService: !!tool.out_of_service, disabled: tool.disabled?,
         open: tool.open,
         reservable: tool.reservable,
         prerequisiteIds: Array(tool.prerequisite_ids).map(&:to_s),
@@ -107,7 +107,7 @@ class WorkshopSerializer < ActiveModel::Serializer
       )
       {
         id: task.id.to_s,
-        taskNumber: task.task_number,
+        taskNumber: task.task_number, ticketId: task.ticket_id&.to_s,
         title: task.title,
         description: task.description,
         creditValue: task.credit_value,
@@ -174,7 +174,7 @@ class WorkshopSerializer < ActiveModel::Serializer
 
   def tool_reservation_available?(tool)
     viewer_can_reserve? && !object.disabled? && !tool.disabled? &&
-      tool.reservable && pending_tool_allowed?(tool) &&
+      !tool.out_of_service && tool.reservable && pending_tool_allowed?(tool) &&
       reservation_requirements_met?(
         tool.effective_reservation_prerequisite_ids,
         pending_tool: tool

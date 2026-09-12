@@ -909,16 +909,6 @@
             "multipleOf": 0.5,
             "default": 8
           },
-          "reservationRequiresApproval": {
-            "type": "boolean",
-            "default": false
-          },
-          "reservationPrerequisiteToolIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
           "minimumAdvanceNoticeHours": {
             "type": "number",
             "minimum": 0,
@@ -959,6 +949,16 @@
               "required": [
                 "invoiceOptionId"
               ]
+            }
+          },
+          "reservationRequiresApproval": {
+            "type": "boolean",
+            "default": false
+          },
+          "reservationPrerequisiteToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         }
@@ -1063,6 +1063,10 @@
               "disabled": {
                 "type": "boolean"
               },
+              "outOfService": {
+                "type": "boolean",
+                "default": false
+              },
               "allowPending": {
                 "type": "boolean",
                 "default": false
@@ -1087,6 +1091,12 @@
       "CheckoutApprover": {
         "type": "object",
         "properties": {
+          "outOfServiceToolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "id": {
             "type": "string"
           },
@@ -1128,6 +1138,12 @@
       "Reservation": {
         "type": "object",
         "properties": {
+          "outOfServiceToolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "id": {
             "type": "string"
           },
@@ -1172,6 +1188,67 @@
           "endAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "fullDay": {
+            "type": "boolean",
+            "default": false
+          },
+          "invoice": {
+            "type": "string",
+            "nullable": true,
+            "description": "Attached invoice ID; included only for the owner or a manager."
+          },
+          "notifiedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Slack message timestamp (not a date-time); included only for the owner or a manager."
+          },
+          "feeSnapshot": {
+            "type": "array",
+            "description": "Saved fee line items; included only for the owner or a manager.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resourceId": {
+                  "type": "string"
+                },
+                "resourceName": {
+                  "type": "string"
+                },
+                "invoiceOptionId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "unitHours": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "units": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "unitAmount": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "amount": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "resourceId",
+                "resourceName",
+                "invoiceOptionId",
+                "name",
+                "unitHours",
+                "units",
+                "unitAmount",
+                "amount"
+              ]
+            }
           },
           "status": {
             "type": "string",
@@ -1238,67 +1315,6 @@
           "calendarSyncError": {
             "type": "string",
             "x-nullable": true
-          },
-          "fullDay": {
-            "type": "boolean",
-            "default": false
-          },
-          "invoice": {
-            "type": "string",
-            "nullable": true,
-            "description": "Attached invoice ID; included only for the owner or a manager."
-          },
-          "notifiedAt": {
-            "type": "string",
-            "nullable": true,
-            "description": "Slack message timestamp (not a date-time); included only for the owner or a manager."
-          },
-          "feeSnapshot": {
-            "type": "array",
-            "description": "Saved fee line items; included only for the owner or a manager.",
-            "items": {
-              "type": "object",
-              "properties": {
-                "resourceId": {
-                  "type": "string"
-                },
-                "resourceName": {
-                  "type": "string"
-                },
-                "invoiceOptionId": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "unitHours": {
-                  "type": "number",
-                  "minimum": 0
-                },
-                "units": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "unitAmount": {
-                  "type": "number",
-                  "minimum": 0
-                },
-                "amount": {
-                  "type": "number",
-                  "minimum": 0
-                }
-              },
-              "required": [
-                "resourceId",
-                "resourceName",
-                "invoiceOptionId",
-                "name",
-                "unitHours",
-                "units",
-                "unitAmount",
-                "amount"
-              ]
-            }
           }
         },
         "required": [
@@ -1381,11 +1397,6 @@
               ]
             }
           },
-          "maximumDurationHours": {
-            "type": "number",
-            "multipleOf": 0.5,
-            "minimum": 0
-          },
           "feeLines": {
             "type": "array",
             "description": "Itemized duration fees for the proposed reservation.",
@@ -1446,6 +1457,11 @@
             "type": "string",
             "nullable": true,
             "description": "Optional billing warning, such as overdue fee debt."
+          },
+          "maximumDurationHours": {
+            "type": "number",
+            "multipleOf": 0.5,
+            "minimum": 0
           }
         },
         "required": [
@@ -1521,6 +1537,9 @@
       "ReservationAgenda": {
         "type": "object",
         "properties": {
+          "outOfService": {
+            "type": "boolean"
+          },
           "shopName": {
             "type": "string"
           },
@@ -4296,6 +4315,774 @@
           },
           "401": {
             "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/fix_tickets": {
+      "get": {
+        "summary": "List authorized repair tickets",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "mine",
+                "assigned",
+                "queue",
+                "public"
+              ]
+            }
+          },
+          {
+            "name": "statuses",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "in_progress",
+                  "waiting_for_parts",
+                  "resolved",
+                  "rejected",
+                  "withdrawn"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirmation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "assignee_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scoped, filtered, sorted page; public-only readers require current membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "tickets",
+                    "total",
+                    "page",
+                    "pageSize"
+                  ],
+                  "properties": {
+                    "tickets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "pageSize": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Submit a report (activeMember and future expiration; cap enforced)",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Created, or previously accepted idempotent submission"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "description",
+                  "category",
+                  "submission_key"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 10000
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "damaged",
+                      "broken",
+                      "missing",
+                      "other"
+                    ]
+                  },
+                  "submission_key": {
+                    "type": "string"
+                  },
+                  "shop_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "tool_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "uncatalogued_tool": {
+                    "type": "string"
+                  },
+                  "priority": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "nullable": true
+                  },
+                  "i_broke_it": {
+                    "type": "boolean"
+                  },
+                  "i_can_fix_it": {
+                    "type": "boolean"
+                  },
+                  "public_read_only": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/catalog": {
+      "get": {
+        "summary": "Report catalog, creation capability, cap and current open count",
+        "tags": [
+          "Fix tickets"
+        ],
+        "responses": {
+          "200": {
+            "description": "Catalog and capabilities"
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read a ticket and redacted history",
+        "tags": [
+          "Fix tickets"
+        ],
+        "responses": {
+          "200": {
+            "description": "No reporter identity is included"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update authorized ticket fields; priority is immutable",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated; operation-specific staff/assignee/reporter authorization applies"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "in_progress",
+                      "waiting_for_parts",
+                      "resolved",
+                      "rejected",
+                      "withdrawn"
+                    ]
+                  },
+                  "confirmation": {
+                    "type": "string",
+                    "enum": [
+                      "unverified",
+                      "confirmed",
+                      "could_not_confirm"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string"
+                  },
+                  "shop_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "tool_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "uncatalogued_tool": {
+                    "type": "string"
+                  },
+                  "public_read_only": {
+                    "type": "boolean"
+                  },
+                  "announce_to_slack": {
+                    "type": "boolean"
+                  },
+                  "announcement_note": {
+                    "type": "string"
+                  },
+                  "nominate_reward": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/notes": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Append a note",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/withdraw": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Withdraw own nonterminal report",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/assignments": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Staff assignment or self-unassignment",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "member_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "unassign_self": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/bounty": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Admin/board/relevant RM: create bounty and publish ticket atomically",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "credit_value": {
+                    "type": "number"
+                  },
+                  "prerequisite_tool_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/reward": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Independent authorized reviewer: approve/reject pending reporter point",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/reveal": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Admin-only acknowledged reporter reveal; audited and no-store",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "acknowledged": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/outage": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Repair staff: independent tool availability",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "out_of_service": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/retry_delivery": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Repair staff: retry pending notifications",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/assignee_options": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Repair staff: search eligible assignees",
+        "tags": [
+          "Fix tickets"
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to fifty active unexpired members"
+          }
+        }
+      }
+    },
+    "/tools/{id}/outage": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Repair staff: change out-of-service independently of hidden",
+        "tags": [
+          "Tools"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Availability and affected reservations for review"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "out_of_service"
+                ],
+                "properties": {
+                  "out_of_service": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/volunteer/tasks/{id}/detail": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Authenticated bounty detail including optional source ticket_id",
+        "tags": [
+          "Volunteer"
+        ],
+        "responses": {
+          "200": {
+            "description": "Current member or authorized source-ticket viewer"
           }
         }
       }

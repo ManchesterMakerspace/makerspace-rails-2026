@@ -13,6 +13,7 @@ class Admin::SystemConfigsController < AdminController
 
   # Keys that can be updated as plain string values
   SETTING_KEYS = [
+    'ticket_open_limit',
     # Slack channels
     'slack_channel_treasurer',
     'slack_channel_rm',
@@ -87,6 +88,7 @@ class Admin::SystemConfigsController < AdminController
     }
 
     security = {
+      ticket_open_limit: FixTicketService.limit,
       devise_timeout_minutes: SystemConfig.get('devise_timeout_minutes') || '30',
     }
 
@@ -240,6 +242,12 @@ class Admin::SystemConfigsController < AdminController
   end
 
   def valid_setting_value?(key, value)
+    if key == 'ticket_open_limit'
+      raise Error::Forbidden.new unless current_member.role == 'admin'
+      return true if value.match?(/\A[1-9]\d*\z/)
+      render json: { error: 'ticket_open_limit must be a positive integer' }, status: :unprocessable_entity
+      return false
+    end
     return true unless key == 'devise_timeout_minutes'
 
     timeout_minutes = Integer(value)

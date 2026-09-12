@@ -12,7 +12,16 @@
     "bot_user": {
       "display_name": "MemberPortalBot",
       "always_online": false
-    }
+    },
+    "slash_commands": [
+      {
+        "command": "/fix",
+        "url": "https://YOUR_MEMBER_PORTAL_HOST/slack/commands/fix",
+        "description": "Report and manage tool repair tickets",
+        "usage_hint": "[new|mine|assigned|queue|public|ticket-id]",
+        "should_escape": false
+      }
+    ]
   },
   "oauth_config": {
     "scopes": {
@@ -32,7 +41,12 @@
         "pins:write",
         "team:read",
         "users:read",
-        "users:read.email"
+        "users:read.email",
+        "channels:history",
+        "groups:history",
+        "im:history",
+        "mpim:history",
+        "im:write"
       ]
     }
   },
@@ -46,6 +60,10 @@
     },
     "org_deploy_enabled": false,
     "socket_mode_enabled": false,
-    "token_rotation_enabled": false
+    "token_rotation_enabled": false,
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://YOUR_MEMBER_PORTAL_HOST/slack/interactions"
+    }
   }
 }

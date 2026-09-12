@@ -9,6 +9,8 @@ class VolunteerCredit
   field :member_id,     type: BSON::ObjectId
   field :issued_by_id,  type: BSON::ObjectId
   field :task_id,       type: BSON::ObjectId, default: nil
+  # Restricted provenance: never expose this mapping through general credit APIs.
+  field :ticket_id, type: BSON::ObjectId
 
   # Credit details
   field :description,   type: String
