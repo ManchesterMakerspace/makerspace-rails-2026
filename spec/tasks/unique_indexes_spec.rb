@@ -102,34 +102,46 @@ RSpec.describe 'data:ensure_unique_indexes' do
     end
   end
 
-  it 'creates and recognizes a case-insensitive unique tool-name index' do
+  it 'creates and recognizes a case-insensitive unique tool-name index scoped per shop' do
     Tool.delete_all
+    shop_a_id = BSON::ObjectId.new
+    shop_b_id = BSON::ObjectId.new
 
     expect { task.invoke }.not_to raise_error
 
     tool_name_index = Tool.collection.indexes.to_a.find do |index|
-      index.fetch('key', {}).keys == ['name']
+      index.fetch('key', {}).keys == ['shop_id', 'name']
     end
     expect(tool_name_index).to include('unique' => true)
     expect(tool_name_index.fetch('collation')).to include('locale' => 'en', 'strength' => 2)
 
-    Tool.collection.insert_one(name: 'Lathe')
+    Tool.collection.insert_one(shop_id: shop_a_id, name: 'Hand Tools')
+
+    # Same name, different shop -- allowed, this is the whole point of the change
     expect do
-      Tool.collection.insert_one(name: 'lathe')
+      Tool.collection.insert_one(shop_id: shop_b_id, name: 'Hand Tools')
+    end.not_to raise_error
+
+    # Same name, same shop, different case -- still rejected
+    expect do
+      Tool.collection.insert_one(shop_id: shop_a_id, name: 'hand tools')
     end.to raise_error(Mongo::Error::OperationFailure, /duplicate key/i)
   end
 
-  it 'rejects tool names that differ only by case before creating the index' do
+  it 'rejects tool names that differ only by case within the same shop before creating the index' do
     Tool.delete_all
-    existing_index = Tool.collection.indexes.to_a.find do |index|
-      index.fetch('key', {}).keys == ['name']
+    Tool.collection.indexes.to_a.each do |index|
+      keys = index.fetch('key', {}).keys
+      next unless keys == ['name'] || keys == ['shop_id', 'name']
+
+      Tool.collection.indexes.drop_one(index.fetch('name'))
     end
-    Tool.collection.indexes.drop_one(existing_index.fetch('name')) if existing_index
-    Tool.collection.insert_many([{ name: 'Lathe' }, { name: 'lathe' }])
+    shop_id = BSON::ObjectId.new
+    Tool.collection.insert_many([{ shop_id: shop_id, name: 'Lathe' }, { shop_id: shop_id, name: 'lathe' }])
 
     expect { task.invoke }.to raise_error(
       RuntimeError,
-      /Cannot create unique index on tools.name.*Lathe.*records/i
+      /Cannot create unique index on tools\.\(shop_id, name\).*Lathe.*records/i
     )
   ensure
     Tool.collection.delete_many({})

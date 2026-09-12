@@ -4,9 +4,10 @@ class SlackCheckoutRequestJob < ApplicationJob
   MAX_TOOL_LIST = 40
 
   def perform(params)
-    response_url    = params['response_url']
+    response_url     = params['response_url']
+    channel_name     = params['channel_name']
     invoker_slack_id = params['user_id']
-    tool_name       = params['tool_name'].to_s.strip.presence
+    tool_name        = params['tool_name'].to_s.strip.presence
 
     invoker = find_member(invoker_slack_id)
     if invoker.nil?
@@ -19,11 +20,18 @@ class SlackCheckoutRequestJob < ApplicationJob
       return
     end
 
-    return list_eligible_tools(response_url, invoker) if tool_name.nil?
+    shop = Shop.find_by(slack_channel: Service::SlackChannelCache.normalize_name(channel_name)) || Shop.find_by(slack_channel: channel_name)
+    unless shop
+      post_response(response_url, :ephemeral, "No shop is configured for ##{channel_name}. Run `/checkout request` from a shop channel.")
+      return
+    end
 
-    tool = Tool.where(:disabled.ne => true).find_by(name: /#{Regexp.escape(tool_name)}/i)
+    return list_eligible_tools(response_url, invoker, shop) if tool_name.nil?
+
+    tool = Tool.where(shop_id: shop.id, :disabled.ne => true).find_by(name: /#{Regexp.escape(tool_name)}/i)
     unless tool
-      post_response(response_url, :ephemeral, "No eligible tool matching '#{tool_name}'. Run `/checkout request` with no arguments to see eligible tools.")
+      tool_list = Tool.where(shop_id: shop.id, :disabled.ne => true).pluck(:name).join(', ')
+      post_response(response_url, :ephemeral, "No eligible tool matching '#{tool_name}' in #{shop.name}. Available: #{tool_list.presence || 'none'}")
       return
     end
 
@@ -62,10 +70,10 @@ class SlackCheckoutRequestJob < ApplicationJob
     end
   end
 
-  def list_eligible_tools(response_url, invoker)
-    tools = Tool.where(:disabled.ne => true).order_by(name: :asc).select { |tool| eligible?(invoker, tool) }.first(MAX_TOOL_LIST)
+  def list_eligible_tools(response_url, invoker, shop)
+    tools = Tool.where(shop_id: shop.id, :disabled.ne => true).order_by(name: :asc).select { |tool| eligible?(invoker, tool) }.first(MAX_TOOL_LIST)
     if tools.empty?
-      post_response(response_url, :ephemeral, "No eligible tools found. Your membership must be active (or, if pending, the tool must allow pending members) before requesting a checkout.")
+      post_response(response_url, :ephemeral, "No eligible tools found in #{shop.name}. Your membership must be active (or, if pending, the tool must allow pending members) before requesting a checkout.")
       return
     end
 
