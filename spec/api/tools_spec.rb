@@ -255,7 +255,7 @@ RSpec.describe 'Tools API', type: :request do
       expect(JSON.parse(response.body)['allowPending']).to be(true)
     end
 
-    it 'requires tool names to be unique across shops' do
+    it 'allows the same tool name in a different shop -- uniqueness is scoped per shop, not global' do
       other_shop = create(:shop, name: 'Facilities')
 
       post '/api/admin/tools', params: {
@@ -263,8 +263,9 @@ RSpec.describe 'Tools API', type: :request do
         shop_id: other_shop.id.to_s
       }
 
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(Tool.where(name: visible_tool.name).count).to eq(1)
+      expect(response).to have_http_status(:ok)
+      expect(Tool.where(name: visible_tool.name, shop_id: other_shop.id)).to exist
+      expect(Tool.where(name: visible_tool.name).count).to eq(2)
     end
   end
 

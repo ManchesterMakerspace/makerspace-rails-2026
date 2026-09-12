@@ -82,12 +82,13 @@ RSpec.describe SlackCheckoutRequestJob do
 
   it 'only matches tools in the shop the command was run from, even with a duplicate name in another shop' do
     other_shop = create(:shop, slack_channel: 'textile-arts')
-    create(:tool, shop: other_shop, name: tool.name)
+    other_tool = create(:tool, shop: other_shop, name: tool.name)
 
     expect {
       perform(tool.name)
     }.to change { ToolCheckoutRequest.where(member_id: member.id, tool_id: tool.id, status: 'open').count }.by(1)
-     .and not_change { ToolCheckoutRequest.where(tool_id: Tool.where(shop: other_shop).pluck(:id)).count }
+
+    expect(ToolCheckoutRequest.where(tool_id: other_tool.id).count).to eq(0)
   end
 
   it 'only lists eligible tools from the shop the command was run from' do
