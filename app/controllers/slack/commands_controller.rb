@@ -7,8 +7,8 @@
 # All processing is deferred to jobs to avoid the timeout.
 #
 # Commands:
-#   /checkout @member tool-name   — tool checkout (SlackCheckoutJob)
-#   /checkout request [tool-name] — member self-service request/notes resend (SlackCheckoutRequestJob)
+#   /checkout @member tool-name   — tool checkout, current shop channel (SlackCheckoutJob)
+#   /checkout request [tool-name] — member self-service request/notes resend, current shop channel (SlackCheckoutRequestJob)
 #   /reserve                       — reserve a shop/tool in the current shop channel
 #   /volunteer <subcommand>       — volunteer credits/tasks (SlackVolunteerJob)
 #

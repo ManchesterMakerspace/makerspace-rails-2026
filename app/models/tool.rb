@@ -36,7 +36,10 @@ class Tool
   after_destroy :enqueue_checkout_canvas_sync_after_destroy
 
   validates :name, presence: true
-  validates :name, uniqueness: { case_sensitive: false }
+  # Scoped per shop, not global -- a common name like "Hand Tools" is allowed
+  # to exist once per shop. Slack lookups that resolve a tool by name (see
+  # SlackCheckoutRequestJob) are shop-scoped too, so this can't go ambiguous.
+  validates :name, uniqueness: { case_sensitive: false, scope: :shop_id }
   validates :shop, presence: true
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :reservation_horizon_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
@@ -44,7 +47,7 @@ class Tool
   validate :reservation_duration_uses_half_hours
   validate :reservation_prerequisites_belong_to_shop
 
-  index({ name: 1 }, {
+  index({ shop_id: 1, name: 1 }, {
     unique: true,
     collation: { locale: 'en', strength: 2 },
     partial_filter_expression: { name: { '$type' => 'string' } }

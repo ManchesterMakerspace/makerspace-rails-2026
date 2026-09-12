@@ -17,7 +17,6 @@ namespace :data do
     targets = [
       [Shortcode, :code, nil],
       [Shortcode, :target_url, nil],
-      [Tool, :name, { locale: 'en', strength: 2 }],
       [Shop, :name, { locale: 'en', strength: 2 }],
       [Card, :uid, nil],
       [Group, :groupName, nil],
@@ -124,6 +123,73 @@ namespace :data do
         index_options
       )
       puts "#{model.collection_name}.#{field}: unique index enabled"
+    end
+
+    # Tool names only need to be unique within a shop, not globally, so a
+    # common name (e.g. "Hand Tools") can exist once per shop -- handled
+    # separately from the single-field `targets` loop above since it's a
+    # compound (shop_id, name) key.
+    tool_collation = { locale: 'en', strength: 2 }
+    tool_duplicate_pipeline = [
+      { '$group' => { '_id' => { 'shop_id' => '$shop_id', 'name' => '$name' }, 'count' => { '$sum' => 1 } } },
+      { '$match' => { 'count' => { '$gt' => 1 } } }
+    ]
+    tool_duplicates = Tool.collection.aggregate(tool_duplicate_pipeline, collation: tool_collation).to_a
+    non_nil_tool_duplicates = tool_duplicates.reject { |entry| entry['_id']['name'].nil? }
+    if non_nil_tool_duplicates.any?
+      summary = non_nil_tool_duplicates.map { |entry| "#{entry['_id'].inspect} (#{entry['count']} records)" }.join(', ')
+      raise "Cannot create unique index on tools.(shop_id, name): #{summary}"
+    end
+
+    puts tool_duplicates.any? ? "tools.(shop_id, name): duplicate nil/missing values found; using the model's partial unique index" : "tools.(shop_id, name): no duplicate values found"
+
+    existing_tool_indexes = begin
+      Tool.collection.indexes.to_a
+    rescue Mongo::Error::OperationFailure => error
+      raise unless error.code == 26 # NamespaceNotFound: collection has not been created yet
+
+      []
+    end
+
+    matching_tool_indexes = existing_tool_indexes.select do |index|
+      (index['key'] || index[:key] || {}).keys.map(&:to_s) == %w[shop_id name]
+    end
+    existing_unique_tool_index = matching_tool_indexes.find do |index|
+      next false unless (index['unique'] || index[:unique]) == true
+
+      index_collation = index['collation'] || index[:collation] || {}
+      index_collation['locale'].to_s == tool_collation[:locale] && index_collation['strength'].to_i == tool_collation[:strength]
+    end
+
+    if existing_unique_tool_index
+      index_name = existing_unique_tool_index['name'] || existing_unique_tool_index[:name]
+      puts "tools.(shop_id, name): compatible unique index already enabled (#{index_name})"
+    else
+      matching_tool_indexes.each do |index|
+        index_name = index['name'] || index[:name]
+        puts "tools.(shop_id, name): replacing incompatible index #{index_name.inspect}"
+        Tool.collection.indexes.drop_one(index_name)
+      end
+
+      # Drop the old global name-only unique index if it's still around from
+      # before this was scoped per-shop -- otherwise it keeps enforcing
+      # global uniqueness alongside the new compound one.
+      legacy_tool_name_index = existing_tool_indexes.find do |index|
+        (index['key'] || index[:key] || {}).keys.map(&:to_s) == ['name'] && (index['unique'] || index[:unique]) == true
+      end
+      if legacy_tool_name_index
+        index_name = legacy_tool_name_index['name'] || legacy_tool_name_index[:name]
+        puts "tools.name: dropping legacy global unique index #{index_name.inspect}"
+        Tool.collection.indexes.drop_one(index_name)
+      end
+
+      Tool.collection.indexes.create_one(
+        { shop_id: 1, name: 1 },
+        unique: true,
+        collation: tool_collation,
+        partial_filter_expression: { name: { '$type' => 'string' } }
+      )
+      puts "tools.(shop_id, name): unique index enabled"
     end
 
     member_index_collections.each do |collection_name|

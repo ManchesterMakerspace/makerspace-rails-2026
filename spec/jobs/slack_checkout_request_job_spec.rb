@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe SlackCheckoutRequestJob do
-  let(:shop) { create(:shop) }
+  let(:shop) { create(:shop, slack_channel: 'woodshop') }
   let(:member) { create(:member, :current) }
   let(:tool) { create(:tool, shop: shop, notes: 'Combo: 4-5-6') }
   let!(:slack_user) { SlackUser.create!(member: member, slack_id: 'U123', slack_email: member.email) }
@@ -18,8 +18,8 @@ RSpec.describe SlackCheckoutRequestJob do
     end
   end
 
-  def perform(tool_name)
-    described_class.perform_now('response_url' => 'https://example.test/response', 'user_id' => 'U123', 'tool_name' => tool_name)
+  def perform(tool_name, channel_name: shop.slack_channel)
+    described_class.perform_now('response_url' => 'https://example.test/response', 'user_id' => 'U123', 'tool_name' => tool_name, 'channel_name' => channel_name)
   end
 
   it 'rejects open tools without creating requests' do
@@ -72,5 +72,32 @@ RSpec.describe SlackCheckoutRequestJob do
     described_class.perform_now('response_url' => 'https://example.test/response', 'user_id' => 'UNLINKED', 'tool_name' => nil)
 
     expect(posted_bodies.last['text']).to include('Link your Slack account')
+  end
+
+  it 'rejects the command when run from a channel with no matching shop' do
+    perform(tool.name, channel_name: 'not-a-shop-channel')
+
+    expect(posted_bodies.last['text']).to include('No shop is configured')
+  end
+
+  it 'only matches tools in the shop the command was run from, even with a duplicate name in another shop' do
+    other_shop = create(:shop, slack_channel: 'textile-arts')
+    create(:tool, shop: other_shop, name: tool.name)
+
+    expect {
+      perform(tool.name)
+    }.to change { ToolCheckoutRequest.where(member_id: member.id, tool_id: tool.id, status: 'open').count }.by(1)
+     .and not_change { ToolCheckoutRequest.where(tool_id: Tool.where(shop: other_shop).pluck(:id)).count }
+  end
+
+  it 'only lists eligible tools from the shop the command was run from' do
+    other_shop = create(:shop, slack_channel: 'textile-arts')
+    other_tool = create(:tool, shop: other_shop, name: 'Only In Other Shop')
+    tool_name = tool.name
+
+    perform(nil)
+
+    expect(posted_bodies.last['text']).to include(tool_name)
+    expect(posted_bodies.last['text']).not_to include(other_tool.name)
   end
 end
