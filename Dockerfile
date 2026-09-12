@@ -10,6 +10,17 @@ WORKDIR /react
 
 RUN git clone --branch ${REACT_BRANCH} ${REACT_REPO_URL} .
 
+# Async bundles must have deployment-specific URLs.  The Rails entrypoint is
+# fingerprinted by Sprockets, but webpack loads its lazy route bundles directly
+# from /assets; stable chunk names can therefore mix modules from two releases
+# in a browser or CDN cache.
+RUN sed -i \
+      -e 's/makerspace-react\.\[name\]\.js/makerspace-react.[name].[contenthash].js/g' \
+      -e 's/makerspace-react\.\[name\]\.css/makerspace-react.[name].[contenthash].css/g' \
+      prod.config.js && \
+    grep -Fq 'chunkFilename: "makerspace-react.[name].[contenthash].js"' prod.config.js && \
+    grep -Fq 'chunkFilename: `makerspace-react.[name].[contenthash].css`' prod.config.js
+
 RUN yarn install --ignore-engines && PORT=3000 yarn build
 
 # Build backend
