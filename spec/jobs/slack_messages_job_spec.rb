@@ -13,8 +13,15 @@ RSpec.describe SlackMessagesJob, type: :job do
     Service::SlackConnector.enque_message("Message3", nil, "#{target_id}.method2")
   end
 
-  after(:each) do 
+  after(:each) do
     REDIS.flushall
+    # SlackMessagesJob has retry_on StandardError -- once a stubbed failure
+    # actually raises (as it should), that enqueues a real retry job into
+    # ActiveJob::TestHelper's in-memory test queue. Left uncleared, it leaks
+    # into whichever later example next calls perform_enqueued_jobs (that
+    # drains the whole queue, not just what it itself enqueued), causing an
+    # extra, unexpected job execution against that example's own state.
+    clear_enqueued_jobs
   end
 
   it "Dispatches slack messages from Redis cache by request_id" do
@@ -28,8 +35,8 @@ RSpec.describe SlackMessagesJob, type: :job do
     expect(REDIS.get("#{target_id}.method2")).to be(nil)
   end
 
-  it "Retains enqueued messages when sent failed" do 
-    allow_any_instance_of(Service::SlackConnector).to receive(:send_slack_messages).and_throw("Error")
+  it "Retains enqueued messages when sent failed" do
+    allow_any_instance_of(Service::SlackConnector).to receive(:send_slack_messages).and_raise("Error")
     SlackMessagesJob.perform_now(target_id)
     expect(REDIS.get("#{target_id}.method")).to be_truthy
     expect(REDIS.get("#{target_id}.method2")).to be_truthy
