@@ -1,11 +1,12 @@
 class Admin::AnalyticsController < AdminController
 
   # GET /api/admin/analytics
-  # Summary counts — existing endpoint, unchanged.
+  # Summary counts.
   def index
     analytics = {
       total_members:      Service::Analytics::Members.query_total_members.count,
       new_members:        Service::Analytics::Members.query_new_members.count,
+      lost_members:       Service::Analytics::Members.query_lost_members.count,
       subscribed_members: Service::Analytics::Members.query_braintree_members.count,
       members_with_expiring_payment_methods: Service::CardExpirationCheck.expiring_member_count,
       past_due_invoices:  Service::Analytics::Invoices.query_past_due.count,
@@ -68,6 +69,29 @@ class Admin::AnalyticsController < AdminController
     end
 
     render json: data
+  end
+
+  # GET /api/admin/analytics/member_losses
+  # Members lost (expirationTime already passed) grouped by month -- the
+  # month a membership actually lapsed, not merely when it was due to.
+  #
+  # Params:
+  #   year (integer, optional) — filter to a single calendar year
+  #   start_date (YYYY-MM-DD, optional) — lower bound (defaults to 2016-08-01)
+  #   end_date   (YYYY-MM-DD, optional) — upper bound (defaults to today)
+  #
+  # Response: [{ month: "2024-01", count: 3 }, ...]
+  def member_losses
+    if params[:year].present?
+      year       = params[:year].to_i
+      start_date = Date.new(year, 1, 1)
+      end_date   = Date.new(year, 12, 31)
+    else
+      start_date = parse_date_param(:start_date, default: Date.parse('2016-08-01'))
+      end_date   = parse_date_param(:end_date,   default: Date.today)
+    end
+
+    render json: Service::Analytics::Members.lost_members_by_month(start_date: start_date, end_date: end_date)
   end
 
   # GET /api/admin/analytics/active_members

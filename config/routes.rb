@@ -231,6 +231,7 @@ Rails.application.routes.draw do
         resources :analytics, only: [:index] do
           collection do
             get :member_growth
+            get :member_losses
             get :active_members
             get :volunteer_summary
           end

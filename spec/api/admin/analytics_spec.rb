@@ -16,6 +16,7 @@ describe 'Analytics API', type: :request do
           properties: {
             totalMembers: { type: :number },
             newMembers: { type: :number },
+            lostMembers: { type: :number },
             subscribedMembers: { type: :number },
             pastDueInvoices: { type: :number },
             refundsPending: { type: :number },
