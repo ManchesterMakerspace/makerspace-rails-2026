@@ -44,18 +44,17 @@ module Service
 
       return channel_id if channel_id.present?
 
-      admin_channel_id = find_channel_id_with_admin(channel_name)
+      admin_channel_id = begin
+        find_channel_id_with_admin(channel_name)
+      rescue Slack::Web::Api::Errors::ChannelNotFound
+        raise
+      rescue
+        report_deferred_channel_not_found(channel_name, bot_channel_not_found)
+        raise
+      end
       return admin_channel_id if admin_channel_id.present?
 
-      if bot_channel_not_found
-        operation = Service::SlackChannelCache.channel_id?(channel_name) ?
-          'conversations.info' : 'conversations.list'
-        Service::SlackConnector.report_channel_not_found(
-          channel_name,
-          bot_channel_not_found,
-          operation: operation
-        )
-      end
+      report_deferred_channel_not_found(channel_name, bot_channel_not_found)
       nil
     rescue Slack::Web::Api::Errors::ChannelNotFound => error
       operation = Service::SlackChannelCache.channel_id?(channel_name) ?
@@ -63,6 +62,14 @@ module Service
         'conversations.list admin channel resolution'
       Service::SlackConnector.report_channel_not_found(channel_name, error, operation: operation)
       nil
+    end
+
+    def self.report_deferred_channel_not_found(channel_name, error)
+      return unless error
+
+      operation = Service::SlackChannelCache.channel_id?(channel_name) ?
+        'conversations.info' : 'conversations.list'
+      Service::SlackConnector.report_channel_not_found(channel_name, error, operation: operation)
     end
 
     def self.find_channel_id_with_admin(channel_name)
@@ -217,6 +224,6 @@ module Service
 
     private_class_method :find_channel_id, :find_channel_id_with_admin, :bot_in_channel?,
       :invite_bot_with_admin, :notify_actor,
-      :report_unresolved_channels, :display_name
+      :report_unresolved_channels, :report_deferred_channel_not_found, :display_name
   end
 end

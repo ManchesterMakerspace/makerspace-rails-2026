@@ -113,6 +113,28 @@ RSpec.describe Service::SlackChannelAssignment do
       )
     end
 
+    it 'reports the deferred bot response before handling an admin rate-limit error' do
+      bot_error = Slack::Web::Api::Errors::ChannelNotFound.new(
+        'channel_not_found',
+        { ok: false, error: 'channel_not_found' }
+      )
+      admin_error = Slack::Web::Api::Errors::TooManyRequestsError.new(
+        double(headers: { 'retry-after' => '1' })
+      )
+      allow(Service::SlackConnector).to receive(:find_channel_id).and_raise(bot_error)
+      allow(described_class).to receive(:find_channel_id_with_admin).and_raise(admin_error)
+      allow(Service::SlackConnector).to receive(:report_channel_not_found)
+
+      expect do
+        described_class.resolve!(announce_channel: '#missing-private')
+      end.to raise_error(admin_error)
+      expect(Service::SlackConnector).to have_received(:report_channel_not_found).with(
+        '#missing-private',
+        bot_error,
+        operation: 'conversations.list'
+      )
+    end
+
     it 'reports channel_not_found responses returned during admin channel resolution' do
       admin_client = double('Slack admin client')
       response = { ok: false, error: 'channel_not_found', api_key: 'secret-key' }
