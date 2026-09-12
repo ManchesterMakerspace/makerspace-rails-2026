@@ -18,6 +18,7 @@ module Service
 
         resolved[field.to_s] = { id: channel_id, name: name }
       rescue Slack::Web::Api::Errors::SlackError => error
+        bot_channel_not_found = error if error.is_a?(Slack::Web::Api::Errors::ChannelNotFound)
         Rails.logger.warn(
           "[SlackChannelAssignment] resolution failed field=#{field} " \
           "channel=#{name.inspect} error=#{error.class}"
@@ -32,7 +33,10 @@ module Service
     def self.find_channel_id(channel_name)
       bot_channel_not_found = nil
       channel_id = begin
-        Service::SlackConnector.find_channel_id(channel_name, defer_channel_not_found: true)
+        Service::SlackConnector.find_channel_id(
+          channel_name,
+          on_channel_not_found: ->(error) { bot_channel_not_found = error }
+        )
       rescue Slack::Web::Api::Errors::SlackError => error
         bot_channel_not_found = error if error.is_a?(Slack::Web::Api::Errors::ChannelNotFound)
         Rails.logger.warn(

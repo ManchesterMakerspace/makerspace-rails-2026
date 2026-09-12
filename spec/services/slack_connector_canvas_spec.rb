@@ -207,4 +207,22 @@ RSpec.describe Service::SlackConnector do
       }
     )
   end
+
+  it "defers channel_not_found diagnostics to a caller that has a fallback" do
+    response = { ok: false, error: "channel_not_found" }
+    error = Slack::Web::Api::Errors::ChannelNotFound.new("channel_not_found", response)
+    captured_error = nil
+    allow(Service::SlackChannelCache).to receive(:fetch).and_return(nil)
+    allow(client).to receive(:conversations_info).and_raise(error)
+    allow(described_class).to receive(:report_channel_not_found)
+
+    result = described_class.find_channel_id(
+      "C12345678",
+      on_channel_not_found: ->(caught_error) { captured_error = caught_error }
+    )
+
+    expect(result).to be_nil
+    expect(captured_error).to be(error)
+    expect(described_class).not_to have_received(:report_channel_not_found)
+  end
 end

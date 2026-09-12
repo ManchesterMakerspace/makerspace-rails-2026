@@ -8,7 +8,7 @@ RSpec.describe Service::SlackChannelAssignment do
 
     it 'resolves normalized channel names through the cache-aware connector' do
       allow(Service::SlackConnector).to receive(:find_channel_id)
-        .with('#wood-shop', defer_channel_not_found: true).and_return('C12345678')
+        .with('#wood-shop', on_channel_not_found: kind_of(Proc)).and_return('C12345678')
 
       expect(described_class.resolve!(users_channel: '  #Wood-Shop ')).to eq(
         'users_channel' => { id: 'C12345678', name: '#wood-shop' }
@@ -38,9 +38,9 @@ RSpec.describe Service::SlackChannelAssignment do
 
     it 'resolves the channels it can and skips the ones it cannot, in a single call' do
       allow(Service::SlackConnector).to receive(:find_channel_id)
-        .with('#wood-shop', defer_channel_not_found: true).and_return('C12345678')
+        .with('#wood-shop', on_channel_not_found: kind_of(Proc)).and_return('C12345678')
       allow(Service::SlackConnector).to receive(:find_channel_id)
-        .with('#missing-channel', defer_channel_not_found: true).and_return(nil)
+        .with('#missing-channel', on_channel_not_found: kind_of(Proc)).and_return(nil)
       allow(Service::SlackConnector).to receive(:send_slack_message)
 
       result = described_class.resolve!(
@@ -59,7 +59,7 @@ RSpec.describe Service::SlackChannelAssignment do
         response_metadata: double(next_cursor: '')
       )
       allow(Service::SlackConnector).to receive(:find_channel_id)
-        .with('#officers-private', defer_channel_not_found: true).and_return(nil)
+        .with('#officers-private', on_channel_not_found: kind_of(Proc)).and_return(nil)
       allow(Service::SlackConnector).to receive(:admin_client)
         .with('conversations.list').and_return(admin_client)
       expect(admin_client).to receive(:conversations_list).with(
@@ -84,8 +84,10 @@ RSpec.describe Service::SlackChannelAssignment do
         'channel_not_found',
         { ok: false, error: 'channel_not_found' }
       )
-      allow(Service::SlackConnector).to receive(:find_channel_id)
-        .and_raise(error)
+      allow(Service::SlackConnector).to receive(:find_channel_id) do |_, on_channel_not_found:|
+        on_channel_not_found.call(error)
+        nil
+      end
       allow(Service::SlackConnector).to receive(:admin_client)
         .with('conversations.list').and_return(admin_client)
       allow(admin_client).to receive(:conversations_list).and_return(response)
@@ -102,7 +104,10 @@ RSpec.describe Service::SlackChannelAssignment do
         'channel_not_found',
         { ok: false, error: 'channel_not_found' }
       )
-      allow(Service::SlackConnector).to receive(:find_channel_id).and_raise(error)
+      allow(Service::SlackConnector).to receive(:find_channel_id) do |_, on_channel_not_found:|
+        on_channel_not_found.call(error)
+        nil
+      end
       allow(Service::SlackConnector).to receive(:report_channel_not_found)
 
       expect(described_class.resolve!(announce_channel: '#missing-private')).to eq({})
@@ -121,7 +126,10 @@ RSpec.describe Service::SlackChannelAssignment do
       admin_error = Slack::Web::Api::Errors::TooManyRequestsError.new(
         double(headers: { 'retry-after' => '1' })
       )
-      allow(Service::SlackConnector).to receive(:find_channel_id).and_raise(bot_error)
+      allow(Service::SlackConnector).to receive(:find_channel_id) do |_, on_channel_not_found:|
+        on_channel_not_found.call(bot_error)
+        nil
+      end
       allow(described_class).to receive(:find_channel_id_with_admin).and_raise(admin_error)
       allow(Service::SlackConnector).to receive(:report_channel_not_found)
 
