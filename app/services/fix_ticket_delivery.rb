@@ -1,4 +1,5 @@
 class FixTicketDelivery
+  CENTRAL_FIELDS = %w[status confirmation assignees announcement_note].freeze
   class << self
     def client
       Thread.current[:fix_delivery_lease]&.call
@@ -12,7 +13,7 @@ class FixTicketDelivery
     def call(ticket, event)
       text = "Ticket #{ticket.id}: #{escape(ticket.title)}\n"
       text += event.kind == 'created' ? 'A report was opened.' : "#{escape(FixTicketPresenter.member_label(event.actor_id, ticket))}: #{event.kind}"
-      event.field_changes.each { |key, pair| text += "\n#{escape(key.tr('_', ' '))}: #{escape(Array(pair).last)}" }
+      event.field_changes.slice(*CENTRAL_FIELDS).each { |key, pair| text += "\n#{escape(key.tr('_', ' '))}: #{escape(Array(pair).last)}" }
       text += "\n#{escape(event.note)}" if event.note.present?
       if event.kind == 'bounty'
         link = ShortUrl.allocate("/volunteer/tasks/#{ticket.bounty_id}", origin: ShortUrl.base_url)[:short_url]
@@ -20,7 +21,7 @@ class FixTicketDelivery
       end
       text += "\n#{url(ticket)}"
       central = ENV['SLACK_TICKETS_CHANNEL'].to_s.strip
-      if central.present? && event.central_enabled && event.kind != 'reward'
+      if central.present? && event.central_enabled && (%w[created assigned note bounty].include?(event.kind) || (event.kind == 'updated' && (event.note.present? || (event.field_changes.keys & CENTRAL_FIELDS).any?)))
         channel = Service::SlackConnector.resolved_channel_id(central)
         team = ENV['SLACK_TEAM_ID'].presence || Service::SlackConnector.slack_team_id.to_s
         root = root!(ticket, event, channel, team)

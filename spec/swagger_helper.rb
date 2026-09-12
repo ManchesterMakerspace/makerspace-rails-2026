@@ -1,3 +1,4 @@
+require_relative 'support/fix_ticket_api_schemas'
 require 'rails_helper'
 
 RSpec.configure do |config|
@@ -497,6 +498,7 @@ RSpec.configure do |config|
     CheckoutApprover: {
       type: :object,
       properties: {
+        tools: { type: :array, items: { type: :object, required: %w[id name shopId outOfService], properties: { id: { type: :string }, name: { type: :string }, shopId: { type: :string }, outOfService: { type: :boolean } } } },
         outOfServiceToolNames: { type: :array, items: { type: :string } },
         id: { type: :string },
         memberId: { type: :string },
@@ -673,11 +675,12 @@ RSpec.configure do |config|
               status: { type: :string, enum: %w[pending unpaid approved] },
               reservationScope: { type: :string, enum: %w[shop tools] },
               toolNames: { type: :array, items: { type: :string } },
+              outOfServiceToolNames: { type: :array, items: { type: :string } },
               inProgress: { type: :boolean }
             },
             required: [
               :title, :memberName, :startAt, :endAt, :status,
-              :reservationScope, :toolNames, :inProgress
+              :reservationScope, :toolNames, :outOfServiceToolNames, :inProgress
             ]
           }
         }
@@ -1029,6 +1032,8 @@ RSpec.configure do |config|
   }
 
 
+  definitions.merge!(FixTicketApiSchemas::SCHEMAS)
+
   config.openapi_specs = {
     'v1/swagger.json' => {
       openapi: '3.0.3',
@@ -1040,6 +1045,12 @@ RSpec.configure do |config|
         { url: '/api', description: 'API base path' }
       ],
       components: {
+        securitySchemes: {
+          sessionAuth: {
+            type: :apiKey, in: :cookie, name: '_member-interface_session',
+            description: 'Devise session cookie from portal sign-in. Mutations also require the existing X-XSRF-TOKEN CSRF header.'
+          }
+        },
         schemas: {
           MemberStatus: {
             type: :string,

@@ -21,11 +21,15 @@ class FixTicketsController < ApplicationController
     shops = privileged ? Shop.all : Shop.where(:disabled.ne => true)
     tools = Tool.where(:shop_id.in => shops.pluck(:id))
     tools = tools.where(:disabled.ne => true) unless privileged
+    eligible = current_member.fully_active_unexpired?
+    open_count = FixTicketService.count(current_member)
+    can_create = eligible && (privileged || open_count < FixTicketService.limit)
+    reason = !eligible ? 'Reporting requires active, unexpired membership.' : (!can_create ? "You have reached the open-ticket limit (#{FixTicketService.limit}). Withdraw or close a report before submitting another." : nil)
     render json: { shops: shops.map { |s| { id: s.id.to_s, name: s.name } },
       tools: tools.map { |t| { id: t.id.to_s, name: t.name, shopId: t.shop_id.to_s, outOfService: !!t.out_of_service } },
       assignees: Member.where(:id.in => FixTicketPolicy.new(current_member).scope.distinct(:assignee_ids)).order_by(lastname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } },
-      canCreate: current_member.fully_active_unexpired? && (privileged || FixTicketService.count(current_member) < FixTicketService.limit),
-      openCount: FixTicketService.count(current_member), openLimit: privileged ? nil : FixTicketService.limit,
+      canCreate: can_create, creationUnavailableReason: reason,
+      openCount: open_count, openLimit: privileged ? nil : FixTicketService.limit,
       centralSlackEnabled: ENV['SLACK_TICKETS_CHANNEL'].present? }
   end
   def show

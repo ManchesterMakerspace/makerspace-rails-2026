@@ -11,6 +11,14 @@
     }
   ],
   "components": {
+    "securitySchemes": {
+      "sessionAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "_member-interface_session",
+        "description": "Devise session cookie from portal sign-in. Mutations also require the existing X-XSRF-TOKEN CSRF header."
+      }
+    },
     "schemas": {
       "MemberStatus": {
         "type": "string",
@@ -1091,6 +1099,32 @@
       "CheckoutApprover": {
         "type": "object",
         "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "shopId",
+                "outOfService"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "shopId": {
+                  "type": "string"
+                },
+                "outOfService": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
           "outOfServiceToolNames": {
             "type": "array",
             "items": {
@@ -1624,6 +1658,12 @@
                     "type": "string"
                   }
                 },
+                "outOfServiceToolNames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
                 "inProgress": {
                   "type": "boolean"
                 }
@@ -1636,6 +1676,7 @@
                 "status",
                 "reservationScope",
                 "toolNames",
+                "outOfServiceToolNames",
                 "inProgress"
               ]
             }
@@ -2223,6 +2264,635 @@
           "memberName",
           "memberId",
           "paymentMethodDetails"
+        ]
+      },
+      "FixPerson": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "FixTicketCapabilities": {
+        "type": "object",
+        "properties": {
+          "canRead": {
+            "type": "boolean"
+          },
+          "canAddNote": {
+            "type": "boolean"
+          },
+          "canChangeStatus": {
+            "type": "boolean"
+          },
+          "canManage": {
+            "type": "boolean"
+          },
+          "canManageVisibility": {
+            "type": "boolean"
+          },
+          "publicLocked": {
+            "type": "boolean"
+          },
+          "canWithdraw": {
+            "type": "boolean"
+          },
+          "canUnassign": {
+            "type": "boolean"
+          },
+          "canCreateBounty": {
+            "type": "boolean"
+          },
+          "canNominateReward": {
+            "type": "boolean"
+          },
+          "canReviewReward": {
+            "type": "boolean"
+          },
+          "canReveal": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "canRead",
+          "canAddNote",
+          "canChangeStatus",
+          "canManage",
+          "canManageVisibility",
+          "publicLocked",
+          "canWithdraw",
+          "canUnassign",
+          "canCreateBounty",
+          "canNominateReward",
+          "canReviewReward",
+          "canReveal"
+        ]
+      },
+      "FixTicket": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "damaged",
+              "broken",
+              "missing",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_progress",
+              "waiting_for_parts",
+              "resolved",
+              "rejected",
+              "withdrawn"
+            ]
+          },
+          "confirmation": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "confirmed",
+              "could_not_confirm"
+            ]
+          },
+          "priority": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 10
+          },
+          "submittedPriority": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 10
+          },
+          "shopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopName": {
+            "type": "string",
+            "nullable": true
+          },
+          "toolId": {
+            "type": "string",
+            "nullable": true
+          },
+          "toolName": {
+            "type": "string",
+            "nullable": true
+          },
+          "toolHidden": {
+            "type": "boolean"
+          },
+          "outOfService": {
+            "type": "boolean"
+          },
+          "uncataloguedTool": {
+            "type": "string",
+            "nullable": true
+          },
+          "publicReadOnly": {
+            "type": "boolean"
+          },
+          "iBrokeIt": {
+            "type": "boolean"
+          },
+          "iCanFixIt": {
+            "type": "boolean"
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixPerson"
+            }
+          },
+          "announceToSlack": {
+            "type": "boolean"
+          },
+          "announcementNote": {
+            "type": "string"
+          },
+          "bountyId": {
+            "type": "string",
+            "nullable": true
+          },
+          "bountyUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "rewardStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/FixTicketCapabilities"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "title",
+          "description",
+          "category",
+          "status",
+          "confirmation",
+          "priority",
+          "submittedPriority",
+          "shopId",
+          "shopName",
+          "toolId",
+          "toolName",
+          "toolHidden",
+          "outOfService",
+          "uncataloguedTool",
+          "publicReadOnly",
+          "iBrokeIt",
+          "iCanFixIt",
+          "assignees",
+          "announceToSlack",
+          "announcementNote",
+          "bountyId",
+          "bountyUrl",
+          "rewardStatus",
+          "revision",
+          "createdAt",
+          "updatedAt",
+          "capabilities"
+        ]
+      },
+      "FixTicketEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "changes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {}
+            },
+            "description": "Redacted before/after values for changed fields; no reporter identity."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "actor",
+          "note",
+          "changes",
+          "createdAt"
+        ]
+      },
+      "FixTicketDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/FixTicket"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "events": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FixTicketEvent"
+                }
+              },
+              "deliveryFailed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "events",
+              "deliveryFailed"
+            ]
+          }
+        ]
+      },
+      "FixTicketPage": {
+        "type": "object",
+        "properties": {
+          "tickets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixTicket"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tickets",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "FixTicketCatalog": {
+        "type": "object",
+        "properties": {
+          "shops": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "shopId": {
+                  "type": "string"
+                },
+                "outOfService": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "shopId",
+                "outOfService"
+              ]
+            }
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "canCreate": {
+            "type": "boolean"
+          },
+          "creationUnavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "openCount": {
+            "type": "integer"
+          },
+          "openLimit": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1
+          },
+          "centralSlackEnabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "shops",
+          "tools",
+          "assignees",
+          "canCreate",
+          "creationUnavailableReason",
+          "openCount",
+          "openLimit",
+          "centralSlackEnabled"
+        ]
+      },
+      "FixReporterReveal": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "FixOutageResult": {
+        "type": "object",
+        "properties": {
+          "outOfService": {
+            "type": "boolean"
+          },
+          "affectedCount": {
+            "type": "integer"
+          },
+          "affectedReservations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "startAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "endAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "startAt",
+                "endAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "outOfService",
+          "affectedCount",
+          "affectedReservations"
+        ]
+      },
+      "FixDeliveryQueued": {
+        "type": "object",
+        "properties": {
+          "queued": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "queued"
+        ]
+      },
+      "FixError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "FixBountyDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "creditValue": {
+            "type": "number"
+          },
+          "ticketId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopName": {
+            "type": "string",
+            "nullable": true
+          },
+          "taskNumber": {
+            "type": "integer"
+          },
+          "prerequisiteToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prerequisiteToolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "claimedById": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdById": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "verifiedById": {
+            "type": "string",
+            "nullable": true
+          },
+          "verifiedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentTaskId": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "days": {
+            "type": "integer",
+            "nullable": true
+          },
+          "nextAvailable": {
+            "type": "string",
+            "nullable": true
+          },
+          "rejectionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "isChildTask": {
+            "type": "boolean"
+          },
+          "isCoolingDown": {
+            "type": "boolean"
+          },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "canClaim": {
+                "type": "boolean"
+              },
+              "canSubmitCompletion": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "canClaim",
+              "canSubmitCompletion"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "status",
+          "creditValue",
+          "ticketId",
+          "capabilities"
         ]
       }
     }
@@ -4325,6 +4995,11 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "mode",
@@ -4449,30 +5124,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "required": [
-                    "tickets",
-                    "total",
-                    "page",
-                    "pageSize"
-                  ],
-                  "properties": {
-                    "tickets": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    },
-                    "total": {
-                      "type": "integer"
-                    },
-                    "page": {
-                      "type": "integer"
-                    },
-                    "pageSize": {
-                      "type": "integer"
-                    }
-                  }
+                  "$ref": "#/components/schemas/FixTicketPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A signed-in member session is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
                 }
               }
             }
@@ -4484,10 +5146,22 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Created, or previously accepted idempotent submission"
+            "description": "Created, or previously accepted idempotent submission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -4564,9 +5238,21 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Catalog and capabilities"
+            "description": "Catalog and capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketCatalog"
+                }
+              }
+            }
           }
         }
       }
@@ -4587,9 +5273,21 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "No reporter identity is included"
+            "description": "No reporter identity is included",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
           }
         }
       },
@@ -4598,10 +5296,22 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Updated; operation-specific staff/assignee/reporter authorization applies"
+            "description": "Updated; operation-specific staff/assignee/reporter authorization applies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -4693,10 +5403,22 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Action accepted; authorization and lifecycle validated server-side"
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -4731,10 +5453,22 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Action accepted; authorization and lifecycle validated server-side"
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -4765,10 +5499,22 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Action accepted; authorization and lifecycle validated server-side"
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -4809,10 +5555,22 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Action accepted; authorization and lifecycle validated server-side"
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -4859,10 +5617,22 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Action accepted; authorization and lifecycle validated server-side"
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -4901,10 +5671,22 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Action accepted; authorization and lifecycle validated server-side"
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixReporterReveal"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -4939,10 +5721,22 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Action accepted; authorization and lifecycle validated server-side"
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixOutageResult"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -4977,10 +5771,22 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Action accepted; authorization and lifecycle validated server-side"
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixDeliveryQueued"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -5011,6 +5817,11 @@
         "tags": [
           "Fix tickets"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "search",
@@ -5023,7 +5834,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Up to fifty active unexpired members"
+            "description": "Up to fifty active unexpired members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FixPerson"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -5044,10 +5865,22 @@
         "tags": [
           "Tools"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Availability and affected reservations for review"
+            "description": "Availability and affected reservations for review",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixOutageResult"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -5085,9 +5918,21 @@
         "tags": [
           "Volunteer"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Current member or authorized source-ticket viewer"
+            "description": "Current member or authorized source-ticket viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixBountyDetail"
+                }
+              }
+            }
           }
         }
       }
@@ -6137,6 +6982,211 @@
                 "schema": {
                   "type": "string"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/system_configs": {
+      "get": {
+        "summary": "Read portal configuration (admin or board)",
+        "tags": [
+          "System configuration"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Configuration including the effective open-ticket limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "flags",
+                    "jobs",
+                    "slack",
+                    "volunteer",
+                    "totp",
+                    "security",
+                    "reservation",
+                    "job_schedule"
+                  ],
+                  "properties": {
+                    "flags": {
+                      "type": "object"
+                    },
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "slack": {
+                      "type": "object"
+                    },
+                    "volunteer": {
+                      "type": "object"
+                    },
+                    "totp": {
+                      "type": "object"
+                    },
+                    "reservation": {
+                      "type": "object"
+                    },
+                    "job_schedule": {
+                      "type": "object"
+                    },
+                    "security": {
+                      "type": "object",
+                      "required": [
+                        "ticket_open_limit",
+                        "devise_timeout_minutes"
+                      ],
+                      "properties": {
+                        "ticket_open_limit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 10,
+                          "description": "Maximum nonterminal reports per reporter; current admin/board reporters are exempt. Only admins can change this setting."
+                        },
+                        "devise_timeout_minutes": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/system_configs/update_setting": {
+      "put": {
+        "summary": "Update a string setting; ticket_open_limit requires an admin and a positive integer",
+        "tags": [
+          "System configuration"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Saved setting as a string",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid setting value"
+          },
+          "403": {
+            "description": "Only admins may change ticket_open_limit"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "key",
+                  "value"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "enum": [
+                      "ticket_open_limit",
+                      "slack_channel_treasurer",
+                      "slack_channel_rm",
+                      "slack_channel_admin",
+                      "slack_channel_logs",
+                      "volunteer_pending_slack_channel",
+                      "volunteer_credits_per_discount",
+                      "volunteer_max_discounts_per_year",
+                      "volunteer_discount_id",
+                      "volunteer_task_max_credit",
+                      "volunteer_bounty_token",
+                      "volunteer_rolling_days",
+                      "volunteer_leaderboard_top",
+                      "reservation_token",
+                      "devise_timeout_minutes",
+                      "channel_cache_refresh_day",
+                      "card_expiration_check_day",
+                      "garbage_collect_day"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "description": "String setting value. For ticket_open_limit, use a positive integer such as \"10\"; zero, negatives, and fractions are rejected."
+                  }
+                },
+                "oneOf": [
+                  {
+                    "properties": {
+                      "key": {
+                        "enum": [
+                          "ticket_open_limit"
+                        ]
+                      },
+                      "value": {
+                        "type": "string",
+                        "pattern": "^[1-9][0-9]*$"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "key": {
+                        "enum": [
+                          "slack_channel_treasurer",
+                          "slack_channel_rm",
+                          "slack_channel_admin",
+                          "slack_channel_logs",
+                          "volunteer_pending_slack_channel",
+                          "volunteer_credits_per_discount",
+                          "volunteer_max_discounts_per_year",
+                          "volunteer_discount_id",
+                          "volunteer_task_max_credit",
+                          "volunteer_bounty_token",
+                          "volunteer_rolling_days",
+                          "volunteer_leaderboard_top",
+                          "reservation_token",
+                          "devise_timeout_minutes",
+                          "channel_cache_refresh_day",
+                          "card_expiration_check_day",
+                          "garbage_collect_day"
+                        ]
+                      }
+                    }
+                  }
+                ]
               }
             }
           }

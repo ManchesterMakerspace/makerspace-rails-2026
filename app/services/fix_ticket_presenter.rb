@@ -25,7 +25,7 @@ class FixTicketPresenter
         { id: event.id.to_s, kind: event.kind, note: event.note, changes: event.field_changes,
           actor: member_label(event.actor_id, ticket), createdAt: event.created_at }
       end
-      result[:deliveryFailed] = policy.staff? && FixTicketEvent.where(ticket_id: ticket.id, :delivery_error.ne => nil).exists?
+      result[:deliveryFailed] = !!policy.staff? && FixTicketEvent.where(ticket_id: ticket.id, :delivery_error.ne => nil).exists?
     end
     result
   end

@@ -53,4 +53,20 @@ RSpec.describe FixTicketDelivery do
     described_class.call(ticket, event)
   end
 
+  it 'does not publish unrelated updates or create a root for them' do
+    event.set(kind: 'updated', note: nil, field_changes: { 'description' => ['old', 'Private repair details'], 'public_read_only' => [true, false] })
+    expect(client).not_to receive(:chat_postMessage)
+    expect(client).not_to receive(:chat_getPermalink)
+    described_class.call(ticket, event)
+    expect(ticket.reload.slack_ticket_ts).to be_nil
+  end
+  it 'includes approved activity but omits unrelated fields from mixed updates' do
+    event.set(kind: 'updated', note: 'A new discussion note', field_changes: { 'status' => ['open', 'in_progress'], 'description' => ['old', 'Private repair details'], 'category' => ['broken', 'missing'] })
+    allow(client).to receive(:chat_postMessage).and_return({ 'ts' => '100.001', 'channel' => 'C1234567890' })
+    described_class.call(ticket, event)
+    expect(client).to have_received(:chat_postMessage).with(hash_including(thread_ts: '100.001', text: include('in_progress', 'A new discussion note')))
+    expect(client).not_to have_received(:chat_postMessage).with(hash_including(text: include('Private repair details')))
+    expect(client).not_to have_received(:chat_postMessage).with(hash_including(text: include('category:')))
+  end
+
 end

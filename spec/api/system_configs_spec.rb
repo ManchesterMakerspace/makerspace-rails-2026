@@ -1,0 +1,71 @@
+require 'swagger_helper'
+
+RSpec.describe 'System configuration', type: :request do
+  let(:member) { create(:member, :admin, :current) }
+  before do
+    ActiveJob::Base.queue_adapter = :test
+    allow(Service::SlackChannelCache).to receive(:status).and_return({})
+    allow(Service::AuditLogger).to receive(:log)
+    allow_any_instance_of(Admin::SystemConfigsController).to receive(:slack_alert)
+    sign_in member
+  end
+
+  path '/admin/system_configs' do
+    get 'Read portal configuration (admin or board)' do
+      tags 'System configuration'
+      security [sessionAuth: []]
+      produces 'application/json'
+      response '200', 'Configuration including the effective open-ticket limit' do
+        schema type: :object, required: %w[flags jobs slack volunteer totp security reservation job_schedule], properties: {
+          flags: { type: :object }, jobs: { type: :array, items: { type: :object } },
+          slack: { type: :object }, volunteer: { type: :object }, totp: { type: :object },
+          reservation: { type: :object }, job_schedule: { type: :object },
+          security: { type: :object, required: %w[ticket_open_limit devise_timeout_minutes], properties: {
+            ticket_open_limit: { type: :integer, minimum: 1, default: 10, description: 'Maximum nonterminal reports per reporter; current admin/board reporters are exempt. Only admins can change this setting.' },
+            devise_timeout_minutes: { type: :string }
+          } }
+        }
+        run_test! { |response| expect(JSON.parse(response.body).dig('security', 'ticket_open_limit')).to eq(10) }
+        context 'with a configured cap' do
+          before { SystemConfig.set('ticket_open_limit', '12') }
+          run_test! { |response| expect(JSON.parse(response.body).dig('security', 'ticket_open_limit')).to eq(12) }
+        end
+      end
+    end
+  end
+
+  path '/admin/system_configs/update_setting' do
+    put 'Update a string setting; ticket_open_limit requires an admin and a positive integer' do
+      tags 'System configuration'
+      security [sessionAuth: []]
+      consumes 'application/json'
+      produces 'application/json'
+      parameter name: :setting, in: :body, schema: {
+        type: :object, required: %w[key value], properties: {
+          key: { type: :string, enum: Admin::SystemConfigsController::SETTING_KEYS },
+          value: { type: :string, description: 'String setting value. For ticket_open_limit, use a positive integer such as "10"; zero, negatives, and fractions are rejected.' }
+        },
+        oneOf: [
+          { properties: { key: { enum: ['ticket_open_limit'] }, value: { type: :string, pattern: '^[1-9][0-9]*$' } } },
+          { properties: { key: { enum: Admin::SystemConfigsController::SETTING_KEYS - ['ticket_open_limit'] } } }
+        ]
+      }
+      let(:setting) { { key: 'ticket_open_limit', value: '12' } }
+      response '200', 'Saved setting as a string' do
+        schema type: :object, required: %w[key value], properties: { key: { type: :string }, value: { type: :string } }
+        run_test! do |response|
+          expect(JSON.parse(response.body)).to include('key' => 'ticket_open_limit', 'value' => '12')
+          expect(SystemConfig.get('ticket_open_limit')).to eq('12')
+        end
+      end
+      response '422', 'Invalid setting value' do
+        let(:setting) { { key: 'ticket_open_limit', value: '0' } }
+        run_test! { expect(SystemConfig.get('ticket_open_limit')).to be_nil }
+      end
+      response '403', 'Only admins may change ticket_open_limit' do
+        let(:member) { create(:member, :current, role: 'board_member') }
+        run_test! { expect(SystemConfig.get('ticket_open_limit')).to be_nil }
+      end
+    end
+  end
+end

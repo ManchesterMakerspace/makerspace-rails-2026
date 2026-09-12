@@ -9,6 +9,7 @@ module FixTicketBounty
       reload
       ticket.reload
       raise Error::Forbidden.new unless ticket.active?
+      raise Error::Forbidden.new('Required tool checkouts are missing') unless missing_prerequisite_tool_ids(member).empty?
       result = super
       previous = ticket.assignee_ids
       ticket.bounty_assignee_ids = (ticket.bounty_assignee_ids + [member.id]).uniq

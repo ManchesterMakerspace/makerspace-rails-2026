@@ -156,6 +156,7 @@ RSpec.describe FixTicketService do
     allow(task).to receive(:notify_member_task_released)
     task.claim!(volunteer)
     expect(ticket.reload.bounty_assignee_ids).to include(volunteer.id)
+    described_class.assign!(id: ticket.id, actor: admin, member_ids: [volunteer.id])
     described_class.withdraw!(id: ticket.id, actor: reporter)
     expect(task.reload.status).to eq('claimed')
     task.release!(admin, 'Cannot complete')
@@ -171,6 +172,41 @@ RSpec.describe FixTicketService do
     expect { described_class.update!(id: ticket.id, actor: admin, attributes: { title: 'Saw <img>' }) }.to raise_error(Mongoid::Errors::Validations)
     expect { described_class.update!(id: ticket.id, actor: admin, attributes: { uncatalogued_tool: "Saw\nName" }) }.to raise_error(Mongoid::Errors::Validations)
     expect(ticket.reload.title).to eq('Drill-2 (bench), 1/4 in.')
+  end
+
+  %w[admin board_member resource_manager].each do |role|
+    it "requires actual prerequisite checkouts for a #{role} claiming a ticket bounty" do
+      tool = create(:tool, shop: create(:shop))
+      ticket = report(reporter, shop_id: tool.shop_id.to_s)
+      described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1, prerequisite_tool_ids: [tool.id.to_s] })
+      task = ticket.reload.bounty
+      claimant = member(role: role)
+      expect(task.eligible_for?(claimant)).to be(true) # Ordinary bounties retain the existing exemption.
+      expect { task.claim!(claimant) }.to raise_error(Error::Forbidden)
+      expect(task.reload.status).to eq('available')
+      expect(ticket.reload.assignee_ids).not_to include(claimant.id)
+      create(:tool_checkout, member: claimant, tool: tool)
+      task.claim!(claimant)
+      expect(task.reload.claimed_by_id).to eq(claimant.id)
+      expect(ticket.reload.bounty_assignee_ids).to include(claimant.id)
+    end
+  end
+
+  it 'does not turn a bounty claimant into a manual assignee when staff edits the effective list' do
+    ticket = report(reporter)
+    claimant, helper = member, member
+    described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
+    task = ticket.reload.bounty
+    allow(task).to receive(:enqueue_volunteer_canvas_sync)
+    allow(task).to receive(:notify_member_task_released)
+    task.claim!(claimant)
+    described_class.assign!(id: ticket.id, actor: admin, member_ids: [claimant.id, helper.id])
+    expect(ticket.reload.manual_assignee_ids).to eq([helper.id])
+    expect(ticket.bounty_assignee_ids).to eq([claimant.id])
+    task.release!(admin, 'Unable to finish')
+    expect(ticket.reload.assignee_ids).to eq([helper.id])
+    expect(FixTicketPolicy.new(claimant, ticket).note?).to be(false)
+    expect(FixTicketPolicy.new(claimant, ticket).change_status?).to be(false)
   end
 
 end

@@ -199,6 +199,7 @@ class FixSlack
       when 'fix_filters'
         return { response_action: 'update', view: list(member, form.reject { |_, v| v == 'all' }.merge('page' => 0)) }
       when 'fix_edit'
+        %w[shop_id tool_id].each { |key| form[key] = nil if form[key] == 'none' }
         form['announce_to_slack'] = form['announce_to_slack'] == 'true'
         FixTicketService.update!(id: data['id'], actor: member, attributes: form.merge('revision' => data['revision']))
       when 'fix_note' then FixTicketService.note!(id: data['id'], actor: member, note: form['note'])

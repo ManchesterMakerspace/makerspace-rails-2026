@@ -49,4 +49,27 @@ RSpec.describe 'Fix ticket API', type: :request do
     get '/api/fix_tickets', params: { mode: 'public', statuses: ['resolved', 'rejected'] }
     expect(JSON.parse(response.body)['total']).to eq(0)
   end
+  it 'explains creation eligibility when capped or expired' do
+    SystemConfig.set('ticket_open_limit', '1')
+    submit
+    get '/api/fix_tickets/catalog'
+    body = JSON.parse(response.body)
+    expect(body['canCreate']).to be(false)
+    expect(body['creationUnavailableReason']).to include('limit')
+    member.set(expirationTime: 1.day.ago.to_i * 1000)
+    get '/api/fix_tickets/catalog'
+    expect(JSON.parse(response.body)['creationUnavailableReason']).to include('active, unexpired')
+  end
+  it 'returns bounty capabilities for the viewer rather than the global task status' do
+    task = VolunteerTask.create!(title: 'Repair', description: 'Replace switch', credit_value: 1, created_by_id: admin.id)
+    get "/api/volunteer/tasks/#{task.id}/detail"
+    expect(JSON.parse(response.body)['capabilities']).to eq('canClaim' => true, 'canSubmitCompletion' => false)
+    task.set(status: 'claimed', claimed_by_id: admin.id)
+    get "/api/volunteer/tasks/#{task.id}/detail"
+    expect(JSON.parse(response.body)['capabilities']).to eq('canClaim' => false, 'canSubmitCompletion' => false)
+    sign_in admin
+    get "/api/volunteer/tasks/#{task.id}/detail"
+    expect(JSON.parse(response.body)['capabilities']['canSubmitCompletion']).to be(true)
+  end
+
 end

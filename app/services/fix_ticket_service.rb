@@ -170,7 +170,9 @@ class FixTicketService
           (ids - previous).each do |value|
             raise Error::UnprocessableEntity.new('New assignees must be active, unexpired members') unless Member.where(id: value).first&.fully_active_unexpired?
           end
-          ticket.manual_assignee_ids = ids
+          # Retain explicit manual grants, but do not promote existing claim-only
+          # access to a manual grant when staff submits the effective list.
+          ticket.manual_assignee_ids = (ticket.manual_assignee_ids & ids) | (ids - ticket.bounty_assignee_ids)
           ticket.bounty_assignee_ids &= ids
         end
         ticket.assignee_ids = (ticket.manual_assignee_ids + ticket.bounty_assignee_ids).uniq
