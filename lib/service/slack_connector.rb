@@ -117,7 +117,7 @@ module Service
       end
     end
 
-    def self.find_channel_id(channel_name)
+    def self.find_channel_id(channel_name, defer_channel_not_found: false)
       # The normalize_name function forces channel_name into either C0123456789 form or '#human-readable' form
       requested = Service::SlackChannelCache.normalize_name(channel_name)
       return if requested.blank?
@@ -155,6 +155,8 @@ module Service
       end
       nil
     rescue Slack::Web::Api::Errors::ChannelNotFound => error
+      raise if defer_channel_not_found
+
       report_channel_not_found(requested, error, operation: operation)
       nil
     end

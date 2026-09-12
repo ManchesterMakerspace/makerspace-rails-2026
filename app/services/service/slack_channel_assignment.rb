@@ -30,9 +30,11 @@ module Service
     end
 
     def self.find_channel_id(channel_name)
+      bot_channel_not_found = nil
       channel_id = begin
-        Service::SlackConnector.find_channel_id(channel_name)
+        Service::SlackConnector.find_channel_id(channel_name, defer_channel_not_found: true)
       rescue Slack::Web::Api::Errors::SlackError => error
+        bot_channel_not_found = error if error.is_a?(Slack::Web::Api::Errors::ChannelNotFound)
         Rails.logger.warn(
           "[SlackChannelAssignment] bot channel resolution failed " \
           "channel=#{channel_name.inspect} error=#{error.class}; retrying with admin token"
@@ -40,7 +42,27 @@ module Service
         nil
       end
 
-      channel_id.presence || find_channel_id_with_admin(channel_name)
+      return channel_id if channel_id.present?
+
+      admin_channel_id = find_channel_id_with_admin(channel_name)
+      return admin_channel_id if admin_channel_id.present?
+
+      if bot_channel_not_found
+        operation = Service::SlackChannelCache.channel_id?(channel_name) ?
+          'conversations.info' : 'conversations.list'
+        Service::SlackConnector.report_channel_not_found(
+          channel_name,
+          bot_channel_not_found,
+          operation: operation
+        )
+      end
+      nil
+    rescue Slack::Web::Api::Errors::ChannelNotFound => error
+      operation = Service::SlackChannelCache.channel_id?(channel_name) ?
+        'conversations.info admin channel resolution' :
+        'conversations.list admin channel resolution'
+      Service::SlackConnector.report_channel_not_found(channel_name, error, operation: operation)
+      nil
     end
 
     def self.find_channel_id_with_admin(channel_name)
@@ -82,12 +104,6 @@ module Service
         cursor = response.response_metadata&.next_cursor.to_s
         break if cursor.blank?
       end
-      nil
-    rescue Slack::Web::Api::Errors::ChannelNotFound => error
-      operation = Service::SlackChannelCache.channel_id?(channel_name) ?
-        'conversations.info admin channel resolution' :
-        'conversations.list admin channel resolution'
-      Service::SlackConnector.report_channel_not_found(channel_name, error, operation: operation)
       nil
     end
 
