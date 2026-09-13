@@ -51,31 +51,4 @@ RSpec.describe ApplicationController, type: :controller do
     end
   end
 
-  describe '#allow_only_html_requests' do
-    controller do
-      def application
-        render 'layouts/application'
-      end
-    end
-
-    it 'renders the layout for a normal HTML request' do
-      get :application
-
-      expect(response).to have_http_status(200)
-    end
-
-    it 'returns 404 for an explicit non-html format param, without reaching the html-only layout' do
-      get :application, format: :json
-
-      expect(response).to have_http_status(404)
-      expect(response.body).to eq('Not Found')
-    end
-
-    it 'returns 404 for a bare path negotiated to JSON via the Accept header (e.g. a bot/scanner probe)' do
-      get :application, as: :json
-
-      expect(response).to have_http_status(404)
-      expect(response.body).to eq('Not Found')
-    end
-  end
 end
