@@ -1,4 +1,7 @@
 class ShopSerializer < ActiveModel::Serializer
+  attribute :resource_managers do
+    Member.where(role: 'resource_manager', resource_manager_shop_ids: object.id.to_s).map { |m| { id: m.id.to_s, name: m.fullname } }
+  end
   attributes :id, :name, :wiki_url, :gdrive_id, :slack_channel, :disabled, :reservable,
              :max_concurrent_reservations, :reservation_horizon_days,
              :minimum_advance_notice_hours, :prohibit_same_day_reservations, :reservation_full_day, :duration_fees, :max_reservation_duration_hours, :reservation_requires_approval,

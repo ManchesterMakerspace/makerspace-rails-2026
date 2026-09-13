@@ -27,6 +27,25 @@ module FixTicketApiSchemas
     capabilities: ref.call('FixTicketCapabilities')
   }
   SCHEMAS = {
+    ShopWrite: { type: :object, properties: {
+      name: string, wiki_url: nullable_string, gdrive_id: nullable_string, slack_channel: nullable_string,
+      disabled: boolean, reservable: boolean, color_id: string, floor_name: nullable_string, capacity: integer,
+      resource_manager_ids: { type: :array, items: string, description: 'Admin/board only. Replace Resource Manager assignments; omit to preserve, [] to clear. IDs must belong to members with the Resource Manager role.' },
+      max_concurrent_reservations: integer, reservation_horizon_days: integer, minimum_advance_notice_hours: { type: :number },
+      prohibit_same_day_reservations: boolean, reservation_full_day: boolean, max_reservation_duration_hours: { type: :number },
+      reservation_requires_approval: boolean, reservation_prerequisite_tool_ids: array.call(string),
+      duration_fees: array.call({ type: :object, properties: { invoice_option_id: string, minimum_hours: { type: :number }, maximum_hours: { type: :number, nullable: true }, full_day: boolean } }) } },
+    ToolCheckout: object.call({ id: string, memberId: string, toolId: string, outOfService: boolean,
+      checkedOutAt: timestamp, revokedAt: { type: :string, format: 'date-time', nullable: true },
+      revocationReason: nullable_string, signedOffVia: nullable_string, approvedById: nullable_string,
+      toolName: nullable_string, shopName: nullable_string, shopId: nullable_string, shopWikiUrl: nullable_string,
+      memberName: nullable_string, memberEmail: nullable_string, approvedByName: nullable_string, active: boolean,
+      toolNotes: nullable_string }, %i[id memberId toolId outOfService active]),
+    ToolCheckoutRequest: object.call({ id: string, memberId: string, toolId: string, outOfService: boolean,
+      memberName: nullable_string, memberEmail: nullable_string, memberStatus: nullable_string,
+      toolName: nullable_string, shopId: nullable_string, shopName: nullable_string, note: nullable_string,
+      requestDate: timestamp, status: string, messageId: nullable_string, checkedOutId: nullable_string,
+      memberSlackUrl: nullable_string }, %i[id memberId toolId outOfService status]),
     FixPerson: person,
     FixTicketCapabilities: object.call(capabilities),
     FixTicket: object.call(ticket),

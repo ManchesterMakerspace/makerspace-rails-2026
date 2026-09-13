@@ -457,6 +457,7 @@ RSpec.configure do |config|
         {
           type: :object,
           properties: {
+            resourceManagers: { type: :array, items: { '$ref' => '#/components/schemas/FixPerson' } },
             id: { type: :string },
             name: { type: :string },
             wikiUrl: { type: :string, format: :uri },

@@ -185,7 +185,9 @@ Rails.application.routes.draw do
         resources :invoice_options, only: [:create, :update, :destroy]
 
         # Tool checkout management
-        resources :shops, only: [:index, :create, :update, :destroy]
+        resources :shops, only: [:index, :create, :update, :destroy] do
+          get :resource_manager_options, on: :collection
+        end
         get 'google_calendar/colors', to: 'google_calendar#colors'
         resources :tools, only: [:index, :create, :update, :destroy] do
           member do

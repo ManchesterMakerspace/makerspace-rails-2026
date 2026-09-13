@@ -73,7 +73,8 @@ RSpec.describe 'Fix tickets', type: :request do
       produces 'application/json'
       response('200', 'No reporter identity is included') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test!(requires_transactions: true) }
     end
-    patch 'Update authorized ticket fields; priority is immutable' do
+    %i[patch put].each do |verb|
+    public_send(verb, 'Update authorized ticket fields; priority is immutable') do
       tags 'Fix tickets'
       security [sessionAuth: []]
       consumes 'application/json'
@@ -87,6 +88,7 @@ RSpec.describe 'Fix tickets', type: :request do
       let(:update) { { note: 'Additional details' } }
       response('200', 'Updated; operation-specific staff/assignee/reporter authorization applies') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test!(requires_transactions: true) }
       response('503', 'MongoDB topology does not support atomic ticket writes') { schema '$ref' => '#/components/schemas/FixError' }
+    end
     end
   end
   { notes: ['Append a note', { note: { type: :string } }], withdraw: ['Withdraw own nonterminal report', {}],
@@ -218,11 +220,32 @@ RSpec.describe 'Fix tickets', type: :request do
       end
     end
   end
-  path '/slack/commands/fix', servers: [{ url: '/' }] do
-    post 'Open Fix tickets; Slack signature, workspace and linked member required' do
+  path '/slack/commands/fix' do
+    post 'Open Fix tickets; Slack signature, workspace and linked member required', operation: { servers: [{ url: '/' }] } do
       tags 'Slack'
       consumes 'application/x-www-form-urlencoded'
-      response('200', 'Private response; opens an authorized modal') {}
+      produces 'application/json'
+      parameter name: :'X-Slack-Request-Timestamp', in: :header, required: true, schema: { type: :string }
+      parameter name: :'X-Slack-Signature', in: :header, required: true, schema: { type: :string }
+      parameter name: :payload, in: :body, required: true, schema: { type: :object,
+        required: %w[team_id user_id trigger_id], properties: { text: { type: :string }, team_id: { type: :string }, user_id: { type: :string }, trigger_id: { type: :string } } }
+      response('200', 'Private response; opens an authorized modal') do
+        schema type: :object, properties: { response_type: { type: :string }, text: { type: :string } }, required: %w[response_type text]
+        let(:'X-Slack-Request-Timestamp') { Time.now.to_i.to_s }
+        let(:'X-Slack-Signature') { 'signature-tested-in-slack-request-specs' }
+        let(:team_id) { 'T_TEST' }
+        let(:user_id) { 'U_TEST' }
+        let(:trigger_id) { 'trigger' }
+        before do
+          allow_any_instance_of(Slack::FixController).to receive(:verify_slack_signature)
+          allow(FixSlack).to receive(:member!).and_return(member)
+          allow(Service::SlackConnector).to receive(:open_modal)
+        end
+        it 'returns an ephemeral response from the root Slack route' do |example|
+          post '/slack/commands/fix', params: { team_id: team_id, user_id: user_id, trigger_id: trigger_id }
+          assert_response_matches_metadata(example.metadata)
+        end
+      end
     end
   end
 end

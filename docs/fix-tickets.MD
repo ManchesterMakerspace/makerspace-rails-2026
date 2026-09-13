@@ -1,5 +1,9 @@
 # Repair tickets and independent availability
 
+The portal's Default View uses `mode=all`, combining all tickets the current viewer may read (with the existing nonterminal status filter initially selected). Priority, Created, and Last update table headers toggle server-side sorting, reset the page, and preserve the other filters in the URL.
+
+Admins and board members can assign or remove existing Resource Managers while creating/editing a shop in Workshops or Tool Checkouts. `resource_manager_ids` on shop writes replaces this shop's assignments, without changing their roles or other shop assignments; omitted values preserve assignments. The admin-only/board-only options endpoint lists members with the Resource Manager role. Shop responses include `resourceManagers`, and assignment changes are audited.
+
 Successful portal submissions return to the default ticket list, clearing URL filters and pagination and refreshing results. Every terminal transition (resolved, rejected, or withdrawn) stores the closer's member ObjectId in `FixTicket.closed_by_id` and creates a `ticket_closed` audit record in the same transaction. Audit failure rolls back the closure. Reopening clears the current closure attribution; prior audit records remain. Responses expose nullable `closedBy` only when someone other than the reporter closed the ticket. Reporter closures remain labeled Reporter in ordinary audit views, without their identity or request metadata. Legacy tickets without attribution show no closer.
 
 The portal entry is `/fix-tickets`. `/fix new`, `mine`, `assigned`, `queue`, `public`, and a ticket ObjectId open private Slack modals. Both clients use the same service authorization and transitions. Ticket list queries are server-paginated and scoped before filtering.

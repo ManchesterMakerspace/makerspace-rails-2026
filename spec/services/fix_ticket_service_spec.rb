@@ -206,6 +206,21 @@ RSpec.describe FixTicketService, requires_transactions: true do
     expect(FixTicketPresenter.ticket(ticket, reviewer, detail: true).to_json).not_to include(reporter.id.to_s)
   end
 
+  it 'does not enqueue claim canvas sync when ticket assignment writes roll back' do
+    ticket = report(reporter)
+    described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
+    task = ticket.reload.bounty
+    claimant = member
+    allow(task).to receive(:enqueue_volunteer_canvas_sync)
+    allow(described_class).to receive(:event!).and_raise('Assignment failed')
+    expect { task.claim!(claimant) }.to raise_error('Assignment failed')
+    expect(task.reload.status).to eq('available')
+    expect(task).not_to have_received(:enqueue_volunteer_canvas_sync)
+    allow(described_class).to receive(:event!).and_call_original
+    task.claim!(claimant)
+    expect(task).to have_received(:enqueue_volunteer_canvas_sync).with(struck_task_id: task.id).once
+    expect(ticket.reload.assignee_ids).to include(claimant.id)
+  end
   it 'preserves manual assignments when a bounty claim is released after ticket closure' do
     ticket = report(reporter)
     volunteer = member

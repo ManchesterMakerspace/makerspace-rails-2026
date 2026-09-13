@@ -181,7 +181,7 @@ class VolunteerTask
   # Reusable:   creates a child task; member may not have an existing child for this parent.
   # Repeatable: creates a child task; same member may claim multiple times.
   # Recurring:  creates a child task; respects next_available cooldown; sets parent claimed_at + status + next_available.
-  def claim!(member)
+  def claim!(member, sync_canvas: true)
     raise Error::Forbidden.new unless member.status == "activeMember"
     raise Error::Forbidden.new unless eligible_for?(member)
 
@@ -219,7 +219,7 @@ class VolunteerTask
       raise Error::Forbidden.new
     end
 
-    enqueue_volunteer_canvas_sync(struck_task_id: child_task? ? parent_task_id : id)
+    enqueue_volunteer_canvas_sync(struck_task_id: child_task? ? parent_task_id : id) if sync_canvas
     result
   end
 

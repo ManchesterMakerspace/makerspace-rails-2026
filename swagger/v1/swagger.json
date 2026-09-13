@@ -979,6 +979,12 @@
           {
             "type": "object",
             "properties": {
+              "resourceManagers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FixPerson"
+                }
+              },
               "id": {
                 "type": "string"
               },
@@ -2264,6 +2270,248 @@
           "memberName",
           "memberId",
           "paymentMethodDetails"
+        ]
+      },
+      "ShopWrite": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "wiki_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "gdrive_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "slack_channel": {
+            "type": "string",
+            "nullable": true
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "reservable": {
+            "type": "boolean"
+          },
+          "color_id": {
+            "type": "string"
+          },
+          "floor_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "capacity": {
+            "type": "integer"
+          },
+          "resource_manager_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Admin/board only. Replace Resource Manager assignments; omit to preserve, [] to clear. IDs must belong to members with the Resource Manager role."
+          },
+          "max_concurrent_reservations": {
+            "type": "integer"
+          },
+          "reservation_horizon_days": {
+            "type": "integer"
+          },
+          "minimum_advance_notice_hours": {
+            "type": "number"
+          },
+          "prohibit_same_day_reservations": {
+            "type": "boolean"
+          },
+          "reservation_full_day": {
+            "type": "boolean"
+          },
+          "max_reservation_duration_hours": {
+            "type": "number"
+          },
+          "reservation_requires_approval": {
+            "type": "boolean"
+          },
+          "reservation_prerequisite_tool_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "duration_fees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "invoice_option_id": {
+                  "type": "string"
+                },
+                "minimum_hours": {
+                  "type": "number"
+                },
+                "maximum_hours": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "full_day": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ToolCheckout": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "toolId": {
+            "type": "string"
+          },
+          "outOfService": {
+            "type": "boolean"
+          },
+          "checkedOutAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revocationReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "signedOffVia": {
+            "type": "string",
+            "nullable": true
+          },
+          "approvedById": {
+            "type": "string",
+            "nullable": true
+          },
+          "toolName": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopName": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopWikiUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberName": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "approvedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "toolNotes": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "memberId",
+          "toolId",
+          "outOfService",
+          "active"
+        ]
+      },
+      "ToolCheckoutRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "toolId": {
+            "type": "string"
+          },
+          "outOfService": {
+            "type": "boolean"
+          },
+          "memberName": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "toolName": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopName": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string",
+            "nullable": true
+          },
+          "checkedOutId": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberSlackUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "memberId",
+          "toolId",
+          "outOfService",
+          "status"
         ]
       },
       "FixPerson": {
@@ -4941,6 +5189,363 @@
         }
       }
     },
+    "/tool_checkouts": {
+      "get": {
+        "summary": "List authorized ToolCheckout records with tool availability",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolCheckout"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tool_checkouts": {
+      "get": {
+        "summary": "List authorized ToolCheckout records with tool availability",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolCheckout"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Grant a checkout",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Granted checkout and unmet prerequisite names",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ToolCheckout"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "unmet_prerequisites": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "member_id",
+                  "tool_id"
+                ],
+                "properties": {
+                  "member_id": {
+                    "type": "string"
+                  },
+                  "tool_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_checkout_requests": {
+      "get": {
+        "summary": "List authorized ToolCheckoutRequest records with tool availability",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolCheckoutRequest"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Request tool checkout training",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Created request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCheckoutRequest"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "tool_id"
+                ],
+                "properties": {
+                  "tool_id": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tool_checkout_requests": {
+      "get": {
+        "summary": "List authorized ToolCheckoutRequest records with tool availability",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolCheckoutRequest"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tool_checkouts/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "delete": {
+        "summary": "Revoke a checkout",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Revoked checkout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCheckout"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "revocation_reason"
+                ],
+                "properties": {
+                  "revocation_reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_checkout_requests/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Edit own open checkout request note",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCheckoutRequest"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Edit own open checkout request note",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCheckoutRequest"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/client_error_handler": {
       "post": {
         "summary": "Sends a slack message",
@@ -5467,6 +6072,101 @@
         }
       },
       "patch": {
+        "summary": "Update authorized ticket fields; priority is immutable",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated; operation-specific staff/assignee/reporter authorization applies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "in_progress",
+                      "waiting_for_parts",
+                      "resolved",
+                      "rejected",
+                      "withdrawn"
+                    ]
+                  },
+                  "confirmation": {
+                    "type": "string",
+                    "enum": [
+                      "unverified",
+                      "confirmed",
+                      "could_not_confirm"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 150,
+                    "pattern": "^[A-Za-z0-9 .,_()/\\-]+$"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string"
+                  },
+                  "shop_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "tool_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "uncatalogued_tool": {
+                    "type": "string",
+                    "pattern": "(?:^[A-Za-z0-9 .,_()/\\-]+$)|^$"
+                  },
+                  "public_read_only": {
+                    "type": "boolean"
+                  },
+                  "announce_to_slack": {
+                    "type": "boolean"
+                  },
+                  "announcement_note": {
+                    "type": "string"
+                  },
+                  "nominate_reward": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
         "summary": "Update authorized ticket fields; priority is immutable",
         "tags": [
           "Fix tickets"
@@ -6172,6 +6872,90 @@
               }
             }
           }
+        }
+      }
+    },
+    "/slack/commands/fix": {
+      "post": {
+        "summary": "Open Fix tickets; Slack signature, workspace and linked member required",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Slack"
+        ],
+        "parameters": [
+          {
+            "name": "X-Slack-Request-Timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Slack-Signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private response; opens an authorized modal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "response_type": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "response_type",
+                    "text"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "team_id",
+                  "user_id",
+                  "trigger_id"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "team_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "trigger_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -7220,6 +8004,210 @@
                 "schema": {
                   "type": "string"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/shops/resource_manager_options": {
+      "get": {
+        "summary": "List members with the Resource Manager role for shop assignment (admin/board only)",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource Manager choices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FixPerson"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only admin or board may assign Resource Managers"
+          }
+        }
+      }
+    },
+    "/shops": {
+      "get": {
+        "summary": "List visible shops including Resource Managers",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Visible shops",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Shop"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/shops": {
+      "get": {
+        "summary": "List managed shops including current Resource Managers",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Managed shops",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Shop"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create shop with optional Resource Manager assignments (admin/board)",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Created shop",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shop"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShopWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/shops/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Update shop; only admin/board may replace Resource Managers",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated shop",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shop"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Resource Managers cannot change their own assignments"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShopWrite"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update shop; only admin/board may replace Resource Managers",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated shop",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shop"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Resource Managers cannot change their own assignments"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShopWrite"
               }
             }
           }

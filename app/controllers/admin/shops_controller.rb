@@ -1,7 +1,11 @@
 class Admin::ShopsController < ApplicationController
   before_action :authenticate_member!
   before_action :authorize_index, only: [:index]
-  before_action :authorize_create_destroy, only: [:create, :destroy]
+  before_action :authorize_create_destroy, only: [:create, :destroy, :resource_manager_options]
+
+  def resource_manager_options
+    render json: Member.where(role: 'resource_manager').order_by(firstname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } }
+  end
   before_action :find_shop, only: [:update, :destroy]
   before_action :authorize_update, only: [:update]
 
@@ -16,10 +20,12 @@ class Admin::ShopsController < ApplicationController
   end
 
   def create
+    manager_ids = resource_manager_ids_param
     attributes = shop_params
     resolved_channels = resolve_changed_slack_channels(attributes, nil, current_member)
     shop = Shop.new(attributes)
     shop.save!
+    assign_resource_managers(shop, manager_ids)
     Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
     GoogleResourceSyncJob.perform_later("Shop", shop.id.to_s)
 
@@ -36,10 +42,12 @@ class Admin::ShopsController < ApplicationController
   end
 
   def update
+    manager_ids = resource_manager_ids_param
     attributes = shop_params
     resolved_channels = resolve_changed_slack_channels(attributes, @shop, current_member)
     before = @shop.attributes.dup
     @shop.update_attributes!(attributes)
+    assign_resource_managers(@shop, manager_ids)
     Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
     shop_sync_needed = @shop.resource_email.blank? ||
       %w[name reservable color_id].any? { |field| @shop.previous_changes.key?(field) }
@@ -105,6 +113,31 @@ class Admin::ShopsController < ApplicationController
   end
 
   private
+
+  def resource_manager_ids_param
+    return nil unless params.key?(:resource_manager_ids)
+    raise ::Error::Forbidden.new unless is_admin? || is_board_member?
+    ids = params[:resource_manager_ids]
+    unless ids.is_a?(Array) && ids.all? { |id| BSON::ObjectId.legal?(id.to_s) }
+      raise ::Error::UnprocessableEntity.new('Choose valid Resource Managers')
+    end
+    ids = ids.map(&:to_s).uniq
+    unless Member.where(role: 'resource_manager', :id.in => ids).count == ids.length
+      raise ::Error::UnprocessableEntity.new('Selected members must have the Resource Manager role')
+    end
+    ids
+  end
+
+  def assign_resource_managers(shop, ids)
+    return if ids.nil?
+    previous = Member.where(role: 'resource_manager', resource_manager_shop_ids: shop.id.to_s).pluck(:id).map(&:to_s)
+    Member.where(role: 'resource_manager', :id.in => ids - previous).each { |m| m.add_to_set(resource_manager_shop_ids: shop.id.to_s) }
+    Member.where(role: 'resource_manager', :id.in => previous - ids).each { |m| m.pull(resource_manager_shop_ids: shop.id.to_s) }
+    return if previous.sort == ids.sort
+    ::Service::AuditLogger.log(log_type: 'portal', event_type: 'shop_resource_managers_changed',
+      resource_type: 'Shop', resource_id: shop.id, actor: current_member,
+      field_changes: { 'resource_manager_ids' => [previous, ids] })
+  end
 
   def shop_params
     params.permit(

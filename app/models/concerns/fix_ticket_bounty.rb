@@ -11,7 +11,7 @@ module FixTicketBounty
       raise Error::Forbidden.new unless ticket.active?
       raise Error::Forbidden.new('The reporter cannot claim this repair bounty') if ticket.reporter_id == member.id
       raise Error::Forbidden.new('Required tool checkouts are missing') unless missing_prerequisite_tool_ids(member).empty?
-      result = super
+      result = super(member, sync_canvas: false)
       previous = ticket.assignee_ids
       ticket.bounty_assignee_ids = (ticket.bounty_assignee_ids + [member.id]).uniq
       ticket.assignee_ids = (ticket.manual_assignee_ids + ticket.bounty_assignee_ids).uniq
@@ -19,6 +19,7 @@ module FixTicketBounty
       FixTicketService.event!(ticket, member, 'assigned', changes: { 'assignees' => [FixTicketService.names(previous), FixTicketService.names(ticket.assignee_ids)] }, added: [member.id] - previous)
     end
     FixTicketService.enqueue(ticket)
+    enqueue_volunteer_canvas_sync(struck_task_id: id)
     result
   end
   def release!(member, reason)
