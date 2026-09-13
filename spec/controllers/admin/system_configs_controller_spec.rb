@@ -106,6 +106,18 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
         refresh_on_miss: false
       )
     end
+
+    it "defaults the new-members channel to new_members and allows it to be updated" do
+      get :index, format: :json
+      expect(JSON.parse(response.body).dig("slack", "slack_channel_new_members")).to eq("new_members")
+
+      put :update_setting,
+          params: { key: "slack_channel_new_members", value: "#new-members-2" },
+          format: :json
+
+      expect(response).to have_http_status(200)
+      expect(SystemConfig.get("slack_channel_new_members")).to eq("new-members-2")
+    end
   end
 
   describe "PUT #update_setting — devise_timeout_minutes" do

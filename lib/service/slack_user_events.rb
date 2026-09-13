@@ -180,7 +180,7 @@ module Service
       name = user['real_name'].presence || user.dig('profile', 'real_name').presence || user['name']
       message = "Welcome to the makerspace #{name}! (<@#{user['id']}>)\n" \
         'This is a good channel to introduce yourself and ask questions.'
-      channel = ENV.fetch('SLACK_NEW_MEMBERS_CHANNEL', 'new-members')
+      channel = Service::SlackConnector.new_members_channel
       Service::SlackConnector.send_slack_message(message, channel)
     end
 
