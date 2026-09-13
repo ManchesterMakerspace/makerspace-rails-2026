@@ -29,7 +29,8 @@ class Admin::ShopsController < ApplicationController
       resource_type:  'Shop',
       resource_id:    shop.id,
       actor:          current_member,
-      after_snapshot: shop.attributes
+      after_snapshot: shop.attributes,
+      message_details: "shop: #{shop.name}"
     )
 
     render json: shop, serializer: ShopSerializer, adapter: :attributes
@@ -60,7 +61,8 @@ class Admin::ShopsController < ApplicationController
       actor:           current_member,
       field_changes:   @shop.previous_changes,
       before_snapshot: before,
-      after_snapshot:  @shop.attributes
+      after_snapshot:  @shop.attributes,
+      message_details: "shop: #{@shop.name}"
     )
 
     render json: @shop, serializer: ShopSerializer, adapter: :attributes
@@ -98,7 +100,8 @@ class Admin::ShopsController < ApplicationController
       resource_id:     before['_id'],
       actor:           current_member,
       before_snapshot: before,
-      after_snapshot:  {}
+      after_snapshot:  {},
+      message_details: "shop: #{before['name']}"
     )
 
     render json: {}, status: 204

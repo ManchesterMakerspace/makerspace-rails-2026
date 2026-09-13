@@ -28,7 +28,7 @@ class Admin::Billing::TransactionsController < Admin::BillingController
       actor:           current_member,
       subject:         invoice&.member,
       after_snapshot:  { transaction_id: params[:id] },
-      message_details: invoice ? "$#{invoice.amount} — #{invoice.description}" : "No invoice found for transaction #{params[:id]}",
+      message_details: invoice ? "Braintree invoice ID: #{invoice.id}, resource class: #{invoice.resource_class} — $#{invoice.amount} — #{invoice.description}" : "No invoice found for transaction #{params[:id]}",
       slack_channel:   ::Service::SlackConnector.logs_channel
     )
 

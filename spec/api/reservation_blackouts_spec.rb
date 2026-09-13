@@ -37,7 +37,8 @@ RSpec.describe "Reservation blackout API", type: :request do
       "title" => "Open House",
       "shopId" => shop.id.to_s
     )
-    expect(AuditLog.where(event_type: "reservation_blackout_created").exists?).to be(true)
+    audit_log = AuditLog.where(event_type: "reservation_blackout_created").last
+    expect(audit_log.slack_message).to include("shop: #{shop.name}")
     expect(ReservationSlackCanvasSyncJob).to have_been_enqueued
   end
 

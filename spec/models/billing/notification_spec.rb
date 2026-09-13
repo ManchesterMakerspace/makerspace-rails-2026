@@ -233,6 +233,10 @@ RSpec.describe BraintreeService::Notification, type: :model do
 
       audit_log = AuditLog.find_by(event_type: "invoice_settled", resource_id: invoice.id)
       expect(audit_log).to be_present
+      expect(audit_log.slack_message).to include(
+        "Braintree invoice ID: #{invoice.id}",
+        "resource class: #{invoice.resource_class}"
+      )
       expect(audit_log.after_snapshot.dig("incomingPayment", "status")).to eq(transaction.status)
       expect(audit_log.after_snapshot.dig("incomingPayment", "amount")).to eq(transaction.amount.to_f)
       expect(audit_log.after_snapshot.dig("incomingPayment", "memberId")).to eq(member.id.to_s)
