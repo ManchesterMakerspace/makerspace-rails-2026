@@ -16,6 +16,23 @@ RSpec.describe Service::Analytics do
       ])
     end
 
+    it "computes all summary counters with one faceted aggregation" do
+      travel_to january_end do
+        Member.collection.insert_many([
+          { status: "activeMember", firstname: "New", lastname: "Subscriber", startDate: 1.day.ago, expirationTime: 1.month.from_now.to_i * 1000, subscription: true },
+          { status: "inactive", firstname: "Recently", lastname: "Lost", startDate: 1.year.ago, expirationTime: 1.day.ago.to_i * 1000 },
+          { status: "activeMember", firstname: "Landlord", lastname: "Ignored", startDate: 1.day.ago, expirationTime: 1.month.from_now.to_i * 1000 }
+        ])
+
+        expect(described_class.summary_counts).to eq(
+          total_members: described_class.query_total_members.count,
+          new_members: described_class.query_new_members.count,
+          lost_members: described_class.query_lost_members.count,
+          subscribed_members: described_class.query_braintree_members.count
+        )
+      end
+    end
+
     it "includes members starting or expiring exactly at month end and zero-fills empty months" do
       expect(described_class.active_members_by_month(
         start_date: Date.new(2024, 1, 1), end_date: Date.new(2024, 2, 29),
@@ -126,6 +143,16 @@ RSpec.describe Service::Analytics do
       ])
 
       expect(described_class.query_refunds_pending.pluck(:amount)).to eq([50.0])
+    end
+
+    it "computes invoice summary counters in one aggregation" do
+      member = create(:member, expirationTime: 1.month.from_now.to_i * 1000)
+      Invoice.collection.insert_many([
+        { member_id: member.id, due_date: 1.day.ago, settled_at: nil, transaction_id: nil },
+        { member_id: member.id, due_date: 1.day.from_now, refunded: false, refund_requested: Time.current }
+      ])
+
+      expect(described_class.summary_counts).to eq(past_due_invoices: 1, refunds_pending: 1)
     end
   end
 

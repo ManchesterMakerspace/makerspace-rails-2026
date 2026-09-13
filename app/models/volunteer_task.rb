@@ -62,6 +62,7 @@ class VolunteerTask
   before_create :assign_task_number
 
   index({ status: 1 })
+  index({ status: 1, completed_at: 1 })
   index({ claimed_by_id: 1 })
   index({ parent_task_id: 1 })
   index({ shop_id: 1 })
