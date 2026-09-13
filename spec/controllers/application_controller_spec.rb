@@ -50,4 +50,5 @@ RSpec.describe ApplicationController, type: :controller do
       expect(controller.send(:translated_file_lookup_locations)).not_to include(a_string_matching('secret.txt'))
     end
   end
+
 end
