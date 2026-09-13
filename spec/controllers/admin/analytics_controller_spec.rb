@@ -5,12 +5,12 @@ RSpec.describe Admin::AnalyticsController, type: :controller do
 
   before do
     sign_in create(:member, :admin)
-    allow(Service::Analytics::Members).to receive(:query_total_members).and_return(double(count: 10))
-    allow(Service::Analytics::Members).to receive(:query_new_members).and_return(double(count: 2))
-    allow(Service::Analytics::Members).to receive(:query_lost_members).and_return(double(count: 1))
-    allow(Service::Analytics::Members).to receive(:query_braintree_members).and_return(double(count: 7))
-    allow(Service::Analytics::Invoices).to receive(:query_past_due).and_return(double(count: 1))
-    allow(Service::Analytics::Invoices).to receive(:query_refunds_pending).and_return(double(count: 3))
+    allow(Service::Analytics::Members).to receive(:summary_counts).and_return(
+      total_members: 10, new_members: 2, lost_members: 1, subscribed_members: 7
+    )
+    allow(Service::Analytics::Invoices).to receive(:summary_counts).and_return(
+      past_due_invoices: 1, refunds_pending: 3
+    )
     allow(Service::CardExpirationCheck).to receive(:expiring_member_count).and_return(4)
   end
 
