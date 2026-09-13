@@ -229,10 +229,7 @@ module Service
       end
 
       def resource_manager_lines(shop)
-        managers = Member.where(
-          role: "resource_manager",
-          :resource_manager_shop_ids.in => [shop.id.to_s]
-        ).to_a.sort_by do |member|
+        managers = Member.tagged_resource_managers_for_shop(shop.id).to_a.sort_by do |member|
           [member.lastname.to_s.downcase, member.firstname.to_s.downcase]
         end
         return ["- _No resource managers are currently assigned._"] if managers.empty?
