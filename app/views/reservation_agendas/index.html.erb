@@ -32,11 +32,12 @@
         <% common_query[:token] = params[:token] if params[:token].present? %>
         <a href="/reservations/agenda?<%= common_query.to_query %>">Entire shop</a>
         <% @agenda_tools.each do |tool| %>
-          <a href="/reservations/agenda?<%= common_query.merge(tool: tool.name).to_query %>"><%= tool.name %></a>
+          <a href="/reservations/agenda?<%= common_query.merge(tool: tool.name).to_query %>"><%= tool.name %><% if tool.out_of_service %> — Out of service<% end %></a>
         <% end %>
       </nav>
     </details>
     <h1><%= @agenda[:toolName].present? ? "#{@agenda[:shopName]}: #{@agenda[:toolName]}" : @agenda[:shopName] %></h1>
+    <% if @agenda[:outOfService] %><p role="status"><strong>Out of service</strong> — Do not use this tool.</p><% end %>
     <% if @agenda[:toolName].present? && @agenda[:upNext].present? %>
       <% next_name = @agenda[:upNext][:slackUsername].present? ? "@#{@agenda[:upNext][:slackUsername]}" : @agenda[:upNext][:memberName] %>
       <h2>Up Next <%= next_name %> at <%= Time.iso8601(@agenda[:upNext][:startAt]).in_time_zone(ReservationService::ZONE).strftime("%H:%M") %></h2>
@@ -59,7 +60,7 @@
               <td><%= reservation[:title] %></td>
               <td><%= reservation[:memberName] %></td>
               <td><%= reservation[:slackUsername].present? ? "@#{reservation[:slackUsername]}" : "—" %></td>
-              <td><%= reservation[:reservationScope] == "shop" ? "Entire shop" : reservation[:toolNames].join(", ") %></td>
+              <td><%= reservation[:reservationScope] == "shop" ? "Entire shop" : reservation[:toolNames].join(", ") %><% if reservation[:outOfServiceToolNames].present? %><br><strong>Out of service:</strong> <%= reservation[:outOfServiceToolNames].join(", ") %><% end %></td>
               <td class="<%= reservation[:inProgress] ? 'progress' : '' %>"><%= reservation[:inProgress] ? "In progress · " : "" %><%= reservation[:status].titleize %></td>
             </tr>
           <% end %>

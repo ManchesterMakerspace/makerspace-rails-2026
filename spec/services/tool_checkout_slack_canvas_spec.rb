@@ -3,6 +3,17 @@ require "rails_helper"
 RSpec.describe Service::ToolCheckoutSlackCanvas do
   let(:shop) { create(:shop, name: "Wood Shop", slack_channel: "woodshop") }
 
+  it 'refreshes availability warnings independently of Hidden' do
+    shop.set(checkout_canvas_id: 'FCHECKOUTS')
+    tool = create(:tool, shop: shop)
+    expect { tool.update!(out_of_service: true) }.to have_enqueued_job(ToolCheckoutSlackCanvasSyncJob).with(shop.id.to_s)
+    expect(described_class.canvas_markdown(shop)).to include('Out of service - do not use.')
+    tool.update!(disabled: true)
+    expect(described_class.canvas_markdown(shop)).not_to include('Out of service - do not use.')
+    tool.update!(out_of_service: false)
+    expect(tool.reload.disabled).to be(true)
+  end
+
   before do
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:eval).and_return(1)

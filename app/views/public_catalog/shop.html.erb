@@ -5,6 +5,7 @@
   <% page[:tools].each do |tool| %>
     <li>
       <%= link_to tool[:name], "/tool/#{tool[:id]}/public.html" %>
+      <% if tool[:out_of_service] %><span class="status">Out of service — do not use</span><% end %>
       <% if tool[:open] %><span class="status">No checkout required</span><% end %>
     </li>
   <% end %>

@@ -1,5 +1,6 @@
 class VolunteerTaskSerializer < ActiveModel::Serializer
   attributes :id,
+             :ticket_id,
              :task_number,
              :title,
              :description,

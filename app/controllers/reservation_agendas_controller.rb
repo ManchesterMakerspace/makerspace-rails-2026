@@ -31,6 +31,7 @@ class ReservationAgendasController < ApplicationController
     agenda = {
       shopName: @shop.name,
       toolName: @tool&.name,
+      outOfService: !!@tool&.out_of_service,
       generatedAt: now.iso8601,
       windowStart: now.iso8601,
       windowEnd: window_end.iso8601,
@@ -95,6 +96,7 @@ class ReservationAgendasController < ApplicationController
       status: reservation.status,
       reservationScope: reservation.reservation_scope,
       toolNames: reservation.tools.map(&:name),
+      outOfServiceToolNames: reservation.tools.select(&:out_of_service).map(&:name),
       inProgress: reservation.start_at <= now && reservation.end_at > now
     }
   end

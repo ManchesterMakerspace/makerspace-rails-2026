@@ -1,4 +1,5 @@
 class VolunteerTask
+  prepend FixTicketBounty
   include Mongoid::Document
   include SanitizesUserInput
   include Mongoid::Timestamps
@@ -14,6 +15,7 @@ class VolunteerTask
 
   # Optional shop association
   field :shop_id,      type: BSON::ObjectId, default: nil
+  field :ticket_id, type: BSON::ObjectId
   field :prerequisite_tool_ids, type: Array, default: []
 
   # Lifecycle status
@@ -52,6 +54,9 @@ class VolunteerTask
   validates :title,        presence: true
   validates :description,  presence: true
   validates :credit_value, numericality: { greater_than: 0 }
+  validate do
+    errors.add(:credit_value, 'must be finite') if credit_value && !credit_value.finite?
+  end
   validates_inclusion_of :status, in: VALID_STATUSES
   validates :days, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
 
@@ -86,6 +91,10 @@ class VolunteerTask
   def self.max_credit_value
     (SystemConfig.get('volunteer_task_max_credit') ||
       ENV.fetch('VOLUNTEER_TASK_MAX_CREDIT', 2.0)).to_f
+  end
+
+  def self.ticket_bounty_max_credit
+    (SystemConfig.get('ticket_bounty_max_credit') || '2.0').to_f
   end
 
   def self.find_by_number(number)
@@ -172,7 +181,7 @@ class VolunteerTask
   # Reusable:   creates a child task; member may not have an existing child for this parent.
   # Repeatable: creates a child task; same member may claim multiple times.
   # Recurring:  creates a child task; respects next_available cooldown; sets parent claimed_at + status + next_available.
-  def claim!(member)
+  def claim!(member, sync_canvas: true)
     raise Error::Forbidden.new unless member.status == "activeMember"
     raise Error::Forbidden.new unless eligible_for?(member)
 
@@ -210,7 +219,7 @@ class VolunteerTask
       raise Error::Forbidden.new
     end
 
-    enqueue_volunteer_canvas_sync(struck_task_id: child_task? ? parent_task_id : id)
+    enqueue_volunteer_canvas_sync(struck_task_id: child_task? ? parent_task_id : id) if sync_canvas
     result
   end
 
@@ -240,7 +249,7 @@ class VolunteerTask
   end
 
   # Release a claimed task back to available (or deny a child task).
-  def release!(admin, reason)
+  def release!(admin, reason, notify: true)
     raise Error::Forbidden.new unless status == 'claimed'
     raise Error::Forbidden.new if admin.id == claimed_by_id
 
@@ -257,12 +266,14 @@ class VolunteerTask
       )
     end
 
-    notify_member_task_released(former_claimant_id, reason)
-    enqueue_volunteer_canvas_sync
+    if notify
+      notify_member_task_released(former_claimant_id, reason)
+      enqueue_volunteer_canvas_sync
+    end
   end
 
   # Reject a pending task (or deny a child task).
-  def reject_pending!(admin, reason)
+  def reject_pending!(admin, reason, notify: true)
     raise Error::Forbidden.new unless status == 'pending'
     raise Error::Forbidden.new if admin.id == claimed_by_id
 
@@ -280,8 +291,10 @@ class VolunteerTask
       )
     end
 
-    notify_member_task_rejected(former_claimant_id, reason)
-    enqueue_volunteer_canvas_sync
+    if notify
+      notify_member_task_rejected(former_claimant_id, reason)
+      enqueue_volunteer_canvas_sync
+    end
   end
 
   def cancel!
@@ -322,7 +335,7 @@ class VolunteerTask
   end
 
   def credit_value_within_max
-    max = VolunteerTask.max_credit_value
+    max = ticket_id ? VolunteerTask.ticket_bounty_max_credit : VolunteerTask.max_credit_value
     if credit_value && credit_value > max
       errors.add(:credit_value, "cannot exceed #{max} credits (current maximum). Contact an admin to increase the limit.")
     end

@@ -1,5 +1,5 @@
 class ToolSerializer < ActiveModel::Serializer
-  attributes :open, :id, :name, :wiki_url, :gdrive_id, :description, :disabled,
+  attributes :open, :id, :name, :wiki_url, :gdrive_id, :description, :disabled, :out_of_service,
              :allow_pending, :announce,
              :announce_channel, :users_channel, :shop_id, :prerequisite_ids,
              :reservable, :max_concurrent_reservations, :reservation_horizon_days,

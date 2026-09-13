@@ -1,5 +1,6 @@
 <h1><% if page[:wiki_url] %><%= link_to page[:name], page[:wiki_url] %><% else %><%= page[:name] %><% end %></h1>
 <p class="description"><%= page[:description] %></p>
+<% if page[:out_of_service] %><p class="status" role="status">Out of service — do not use this tool.</p><% end %>
 <p><%= link_to page[:shop][:name], "/shop/#{page[:shop][:id]}/public.html" %></p>
 <% if page[:open] %>
   <p class="status">No checkout required</p>

@@ -135,3 +135,11 @@ fallback can use the repository template when retrieval fails.
 
 Comment-only environment examples are intentionally excluded because
 executable code does not retrieve them.
+
+## Repair ticket channel
+
+| Variable | Secret | Required/default | Behavior |
+| --- | --- | --- | --- |
+| `SLACK_TICKETS_CHANNEL` | No | Optional; blank disables central publication | Channel ID or name for every new ticket and threaded updates, including full notes. Bounties broadcast replies. Independent of public visibility and per-ticket shop announcements. Bot must be able to post/read its messages. Existing `SLACK_ENV` development redirection applies. |
+
+`ticket_open_limit` is a positive-integer SystemConfig setting, default 10, editable only by admins; it is not an environment variable. /fix always requires SLACK_SIGNING_SECRET, including development.

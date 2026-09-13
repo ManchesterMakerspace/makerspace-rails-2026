@@ -99,6 +99,12 @@ rental, so a run can finish even when some rentals were not changed.
 
 ## Supporting services
 
+`ReservationSlackCanvasMemberAccessJob` synchronizes a member's current Slack
+canvas access for the supplied shops. Member edits enqueue it when RM shop
+access changes. Shop-side RM assignment edits also enqueue it once per added
+or removed member, after saving the assignment, for that shop only. Unchanged
+or omitted assignments do not enqueue access synchronization.
+
 Recurring jobs should normally be invoked through their job or Rake entry
 point, because wrappers provide status tracking and error reporting. The table
 below identifies the service that performs each recurring workflow and gives a
@@ -154,3 +160,21 @@ synchronous diagnostic invocation where one is useful.
   configuration before enabling scheduler entries. Failures are generally sent
   to the central error reporter and/or Slack logs channel, but per-record rescue
   behavior can allow a job to complete after partial failure.
+
+## Repair ticket delivery
+
+`FixTicketDeliveryJob` delivers each ticket's pending events in revision order under a renewable per-ticket Redis lease (`FixTicketDeliveryLease`). It creates/repairs central Slack roots, posts threaded/broadcast updates, optional shop summaries and recipient DMs. Stable per-event delivery IDs and persisted receipts support retries; failures do not roll back committed tickets. Retry policy: polynomial backoff, eight attempts. A MongoDB reservation (delivery_job_id and delivery_job_until on the ticket) admits only one queued/running/retrying job chain per ticket. Enqueue failure, success, or exhausted retries release it by matching job ID. Every enqueue and running lease heartbeat renews the reservation for 24 hours beyond the current/scheduled time; an abandoned reservation can then be replaced, and stale job IDs stop without spawning retries. Events arriving during delivery are rechecked after release. Reservation writes never advance the ticket update timestamp.
+
+`FixTicketDeliveryRecoveryJob` runs every ten minutes in config/schedule.rb; it re-enqueues tickets with undelivered events, including events whose original queue enqueue failed. External schedulers may run `bundle exec rake fix_tickets:recover_deliveries` every ten minutes instead. `fix_tickets:ensure_indexes` is a one-time deployment task. FixTicketService owns transactional mutations/outbox creation; FixTicketPolicy owns scopes/capabilities; FixTicketDelivery owns notification content and routing.
+
+Central repair-ticket delivery allowlists status, confirmation, assignments, and announcement-note changes plus new discussion notes/bounties. Unrelated field updates do not create central replies or roots.
+
+FixTicketService maps MongoDB `TransactionsNotSupported` to an actionable HTTP 503 error; it never retries ticket writes outside a transaction. Local single-node replica-set setup is documented in `fix-tickets.MD`.
+
+Ticket mutations enqueue `VolunteerSlackCanvasSyncJob` for the linked shop after commit when creating a bounty or cancelling an available bounty through ticket closure/withdrawal. Rolled-back mutations do not enqueue canvas updates.
+
+Linked bounty release/rejection defers its claimant Slack notification and `VolunteerSlackCanvasSyncJob` until after assignment and event writes commit; transaction aborts/retries do not publish those effects.
+
+Linked bounty claims also suppress the superclass canvas enqueue inside the transaction. One canvas sync (with the claimed task ID struck) is enqueued only after the claim, assignment, and event writes commit; aborted claims enqueue none.
+
+Checkout canvas catalog synchronization includes out_of_service changes. Visible unavailable tools show an Out of service - do not use warning; Hidden remains independent.

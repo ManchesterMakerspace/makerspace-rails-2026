@@ -33,13 +33,13 @@ RSpec.describe "Public catalog", type: :request do
 
   it "projects public JSON and escapes public HTML without cookies" do
     get "/tools/#{tool.id}/public"
-    expect(response.parsed_body.keys).to match_array(%w[id name description open wiki_url shop])
+    expect(response.parsed_body.keys).to match_array(%w[id name description open out_of_service wiki_url shop])
     get "/tools/#{tool.id}/public.html"
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("&lt;script&gt;", "&lt;b&gt;Unsafe HTML&lt;/b&gt;", "Request checkout")
     expect(response.body).not_to include("SECRET", "INTERNAL", "csrf")
     expect(response.headers["Set-Cookie"]).to be_nil
-    expect(response.headers["Cache-Control"].split(", ")).to match_array(%w[public max-age=259200 s-maxage=259200])
+    expect(response.headers["Cache-Control"].split(", ")).to match_array(%w[public max-age=0 s-maxage=0 must-revalidate])
   end
 
   it "lists visible tools alphabetically, including open tools" do

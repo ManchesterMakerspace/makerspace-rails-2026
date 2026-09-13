@@ -11,6 +11,14 @@
     }
   ],
   "components": {
+    "securitySchemes": {
+      "sessionAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "_member-interface_session",
+        "description": "Devise session cookie from portal sign-in. Mutations also require the existing X-XSRF-TOKEN CSRF header."
+      }
+    },
     "schemas": {
       "MemberStatus": {
         "type": "string",
@@ -909,16 +917,6 @@
             "multipleOf": 0.5,
             "default": 8
           },
-          "reservationRequiresApproval": {
-            "type": "boolean",
-            "default": false
-          },
-          "reservationPrerequisiteToolIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
           "minimumAdvanceNoticeHours": {
             "type": "number",
             "minimum": 0,
@@ -960,6 +958,16 @@
                 "invoiceOptionId"
               ]
             }
+          },
+          "reservationRequiresApproval": {
+            "type": "boolean",
+            "default": false
+          },
+          "reservationPrerequisiteToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -971,6 +979,12 @@
           {
             "type": "object",
             "properties": {
+              "resourceManagers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FixPerson"
+                }
+              },
               "id": {
                 "type": "string"
               },
@@ -1063,6 +1077,10 @@
               "disabled": {
                 "type": "boolean"
               },
+              "outOfService": {
+                "type": "boolean",
+                "default": false
+              },
               "allowPending": {
                 "type": "boolean",
                 "default": false
@@ -1087,6 +1105,38 @@
       "CheckoutApprover": {
         "type": "object",
         "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "shopId",
+                "outOfService"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "shopId": {
+                  "type": "string"
+                },
+                "outOfService": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "outOfServiceToolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "id": {
             "type": "string"
           },
@@ -1128,6 +1178,12 @@
       "Reservation": {
         "type": "object",
         "properties": {
+          "outOfServiceToolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "id": {
             "type": "string"
           },
@@ -1172,6 +1228,67 @@
           "endAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "fullDay": {
+            "type": "boolean",
+            "default": false
+          },
+          "invoice": {
+            "type": "string",
+            "nullable": true,
+            "description": "Attached invoice ID; included only for the owner or a manager."
+          },
+          "notifiedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Slack message timestamp (not a date-time); included only for the owner or a manager."
+          },
+          "feeSnapshot": {
+            "type": "array",
+            "description": "Saved fee line items; included only for the owner or a manager.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resourceId": {
+                  "type": "string"
+                },
+                "resourceName": {
+                  "type": "string"
+                },
+                "invoiceOptionId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "unitHours": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "units": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "unitAmount": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "amount": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "resourceId",
+                "resourceName",
+                "invoiceOptionId",
+                "name",
+                "unitHours",
+                "units",
+                "unitAmount",
+                "amount"
+              ]
+            }
           },
           "status": {
             "type": "string",
@@ -1238,67 +1355,6 @@
           "calendarSyncError": {
             "type": "string",
             "x-nullable": true
-          },
-          "fullDay": {
-            "type": "boolean",
-            "default": false
-          },
-          "invoice": {
-            "type": "string",
-            "nullable": true,
-            "description": "Attached invoice ID; included only for the owner or a manager."
-          },
-          "notifiedAt": {
-            "type": "string",
-            "nullable": true,
-            "description": "Slack message timestamp (not a date-time); included only for the owner or a manager."
-          },
-          "feeSnapshot": {
-            "type": "array",
-            "description": "Saved fee line items; included only for the owner or a manager.",
-            "items": {
-              "type": "object",
-              "properties": {
-                "resourceId": {
-                  "type": "string"
-                },
-                "resourceName": {
-                  "type": "string"
-                },
-                "invoiceOptionId": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "unitHours": {
-                  "type": "number",
-                  "minimum": 0
-                },
-                "units": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "unitAmount": {
-                  "type": "number",
-                  "minimum": 0
-                },
-                "amount": {
-                  "type": "number",
-                  "minimum": 0
-                }
-              },
-              "required": [
-                "resourceId",
-                "resourceName",
-                "invoiceOptionId",
-                "name",
-                "unitHours",
-                "units",
-                "unitAmount",
-                "amount"
-              ]
-            }
           }
         },
         "required": [
@@ -1381,11 +1437,6 @@
               ]
             }
           },
-          "maximumDurationHours": {
-            "type": "number",
-            "multipleOf": 0.5,
-            "minimum": 0
-          },
           "feeLines": {
             "type": "array",
             "description": "Itemized duration fees for the proposed reservation.",
@@ -1446,6 +1497,11 @@
             "type": "string",
             "nullable": true,
             "description": "Optional billing warning, such as overdue fee debt."
+          },
+          "maximumDurationHours": {
+            "type": "number",
+            "multipleOf": 0.5,
+            "minimum": 0
           }
         },
         "required": [
@@ -1521,6 +1577,9 @@
       "ReservationAgenda": {
         "type": "object",
         "properties": {
+          "outOfService": {
+            "type": "boolean"
+          },
           "shopName": {
             "type": "string"
           },
@@ -1605,6 +1664,12 @@
                     "type": "string"
                   }
                 },
+                "outOfServiceToolNames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
                 "inProgress": {
                   "type": "boolean"
                 }
@@ -1617,6 +1682,7 @@
                 "status",
                 "reservationScope",
                 "toolNames",
+                "outOfServiceToolNames",
                 "inProgress"
               ]
             }
@@ -2204,6 +2270,1482 @@
           "memberName",
           "memberId",
           "paymentMethodDetails"
+        ]
+      },
+      "VolunteerTaskWrite": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "credit_value": {
+            "type": "number",
+            "exclusiveMinimum": true,
+            "minimum": 0,
+            "description": "Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited."
+          },
+          "shop_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "claimed",
+              "pending",
+              "completed",
+              "cancelled",
+              "denied",
+              "reusable",
+              "repeatable",
+              "recurring"
+            ]
+          },
+          "days": {
+            "type": "integer",
+            "nullable": true
+          },
+          "prerequisite_tool_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FixTicketUpdate": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_progress",
+              "waiting_for_parts",
+              "resolved",
+              "rejected",
+              "withdrawn"
+            ]
+          },
+          "confirmation": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "confirmed",
+              "could_not_confirm"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "Nonblank notes require at least two non-whitespace characters. State transitions may require a note."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 150,
+            "pattern": "^[A-Za-z0-9 .,_()/\\-]+$"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "shop_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "tool_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "uncatalogued_tool": {
+            "type": "string",
+            "pattern": "(?:^[A-Za-z0-9 .,_()/\\-]+$)|^$"
+          },
+          "public_read_only": {
+            "type": "boolean"
+          },
+          "announce_to_slack": {
+            "type": "boolean"
+          },
+          "announcement_note": {
+            "type": "string"
+          },
+          "nominate_reward": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FixSlackInteractionPayload": {
+        "type": "object",
+        "required": [
+          "type",
+          "team",
+          "user"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "block_suggestion",
+              "block_actions",
+              "view_submission"
+            ]
+          },
+          "team": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "action_id": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action_id": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action_id",
+                "value"
+              ]
+            }
+          },
+          "view": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "callback_id": {
+                "type": "string"
+              },
+              "private_metadata": {
+                "type": "string",
+                "description": "JSON-encoded ticket ID, revision, query or submission key."
+              },
+              "state": {
+                "type": "object",
+                "properties": {
+                  "values": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "description": "Block IDs map to action IDs and value, selected_option or selected_options."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "FixSlackInteractionResponse": {
+        "anyOf": [
+          {
+            "type": "object",
+            "maxProperties": 0
+          },
+          {
+            "type": "object",
+            "properties": {
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "plain_text"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "text"
+                      ]
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "value"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "options"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "response_action": {
+                "type": "string",
+                "enum": [
+                  "update"
+                ]
+              },
+              "view": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "title",
+                  "blocks"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "modal"
+                    ]
+                  },
+                  "title": {
+                    "type": "object"
+                  },
+                  "callback_id": {
+                    "type": "string"
+                  },
+                  "private_metadata": {
+                    "type": "string"
+                  },
+                  "blocks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "response_action",
+              "view"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "response_action": {
+                "type": "string",
+                "enum": [
+                  "errors"
+                ]
+              },
+              "errors": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "response_action",
+              "errors"
+            ]
+          }
+        ]
+      },
+      "CheckoutApproverWrite": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string"
+          },
+          "shop_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tool_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PublicCatalogShop": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "wiki_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "open": {
+                  "type": "boolean"
+                },
+                "out_of_service": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "open",
+                "out_of_service"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "wiki_url",
+          "tools"
+        ]
+      },
+      "PublicCatalogTool": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "open": {
+            "type": "boolean"
+          },
+          "out_of_service": {
+            "type": "boolean"
+          },
+          "wiki_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "shop": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "wiki_url": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "wiki_url"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "open",
+          "out_of_service",
+          "wiki_url",
+          "shop"
+        ]
+      },
+      "ShopWrite": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "wiki_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "gdrive_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "slack_channel": {
+            "type": "string",
+            "nullable": true
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "reservable": {
+            "type": "boolean"
+          },
+          "color_id": {
+            "type": "string"
+          },
+          "floor_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "capacity": {
+            "type": "integer"
+          },
+          "resource_manager_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Admin/board only. Replace Resource Manager assignments; omit to preserve, [] to clear. IDs must belong to Resource Managers, Admins, or Board members; their roles are preserved."
+          },
+          "max_concurrent_reservations": {
+            "type": "integer"
+          },
+          "reservation_horizon_days": {
+            "type": "integer"
+          },
+          "minimum_advance_notice_hours": {
+            "type": "number"
+          },
+          "prohibit_same_day_reservations": {
+            "type": "boolean"
+          },
+          "reservation_full_day": {
+            "type": "boolean"
+          },
+          "max_reservation_duration_hours": {
+            "type": "number"
+          },
+          "reservation_requires_approval": {
+            "type": "boolean"
+          },
+          "reservation_prerequisite_tool_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "duration_fees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "invoice_option_id": {
+                  "type": "string"
+                },
+                "minimum_hours": {
+                  "type": "number"
+                },
+                "maximum_hours": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "full_day": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ToolCheckout": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "toolId": {
+            "type": "string"
+          },
+          "outOfService": {
+            "type": "boolean"
+          },
+          "checkedOutAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revocationReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "signedOffVia": {
+            "type": "string",
+            "nullable": true
+          },
+          "approvedById": {
+            "type": "string",
+            "nullable": true
+          },
+          "toolName": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopName": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopWikiUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberName": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "approvedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "toolNotes": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "memberId",
+          "toolId",
+          "outOfService",
+          "active"
+        ]
+      },
+      "ToolCheckoutRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "toolId": {
+            "type": "string"
+          },
+          "outOfService": {
+            "type": "boolean"
+          },
+          "memberName": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "toolName": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopName": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string",
+            "nullable": true
+          },
+          "checkedOutId": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberSlackUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "memberId",
+          "toolId",
+          "outOfService",
+          "status"
+        ]
+      },
+      "FixPerson": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "FixTicketCapabilities": {
+        "type": "object",
+        "properties": {
+          "canRead": {
+            "type": "boolean"
+          },
+          "canAddNote": {
+            "type": "boolean"
+          },
+          "canChangeStatus": {
+            "type": "boolean"
+          },
+          "canManage": {
+            "type": "boolean"
+          },
+          "canManageVisibility": {
+            "type": "boolean"
+          },
+          "publicLocked": {
+            "type": "boolean"
+          },
+          "canWithdraw": {
+            "type": "boolean"
+          },
+          "canUnassign": {
+            "type": "boolean"
+          },
+          "canCreateBounty": {
+            "type": "boolean"
+          },
+          "canNominateReward": {
+            "type": "boolean"
+          },
+          "canReviewReward": {
+            "type": "boolean"
+          },
+          "canReveal": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "canRead",
+          "canAddNote",
+          "canChangeStatus",
+          "canManage",
+          "canManageVisibility",
+          "publicLocked",
+          "canWithdraw",
+          "canUnassign",
+          "canCreateBounty",
+          "canNominateReward",
+          "canReviewReward",
+          "canReveal"
+        ]
+      },
+      "FixTicket": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "closedBy": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "nullable": true,
+            "description": "Closer identity only for closed tickets closed by someone other than the reporter; otherwise null."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "damaged",
+              "broken",
+              "missing",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_progress",
+              "waiting_for_parts",
+              "resolved",
+              "rejected",
+              "withdrawn"
+            ]
+          },
+          "confirmation": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "confirmed",
+              "could_not_confirm"
+            ]
+          },
+          "priority": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 10
+          },
+          "submittedPriority": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 10
+          },
+          "shopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopName": {
+            "type": "string",
+            "nullable": true
+          },
+          "toolId": {
+            "type": "string",
+            "nullable": true
+          },
+          "toolName": {
+            "type": "string",
+            "nullable": true
+          },
+          "toolHidden": {
+            "type": "boolean"
+          },
+          "outOfService": {
+            "type": "boolean"
+          },
+          "uncataloguedTool": {
+            "type": "string",
+            "nullable": true
+          },
+          "publicReadOnly": {
+            "type": "boolean"
+          },
+          "iBrokeIt": {
+            "type": "boolean"
+          },
+          "iCanFixIt": {
+            "type": "boolean"
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixPerson"
+            }
+          },
+          "announceToSlack": {
+            "type": "boolean"
+          },
+          "announcementNote": {
+            "type": "string"
+          },
+          "bountyId": {
+            "type": "string",
+            "nullable": true
+          },
+          "bountyUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "rewardStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/FixTicketCapabilities"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "title",
+          "description",
+          "closedBy",
+          "category",
+          "status",
+          "confirmation",
+          "priority",
+          "submittedPriority",
+          "shopId",
+          "shopName",
+          "toolId",
+          "toolName",
+          "toolHidden",
+          "outOfService",
+          "uncataloguedTool",
+          "publicReadOnly",
+          "iBrokeIt",
+          "iCanFixIt",
+          "assignees",
+          "announceToSlack",
+          "announcementNote",
+          "bountyId",
+          "bountyUrl",
+          "rewardStatus",
+          "revision",
+          "createdAt",
+          "updatedAt",
+          "capabilities"
+        ]
+      },
+      "FixTicketEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "changes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {}
+            },
+            "description": "Redacted before/after values; assignment-name deltas omitted and assignment actors neutralized to avoid identifying the reporter."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "actor",
+          "note",
+          "changes",
+          "createdAt"
+        ]
+      },
+      "FixTicketDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/FixTicket"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "events": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FixTicketEvent"
+                }
+              },
+              "deliveryFailed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "events",
+              "deliveryFailed"
+            ]
+          }
+        ]
+      },
+      "FixTicketPage": {
+        "type": "object",
+        "properties": {
+          "tickets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixTicket"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tickets",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "FixTicketCatalog": {
+        "type": "object",
+        "properties": {
+          "shops": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "shopId": {
+                  "type": "string"
+                },
+                "outOfService": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "shopId",
+                "outOfService"
+              ]
+            }
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "canCreate": {
+            "type": "boolean"
+          },
+          "creationUnavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "openCount": {
+            "type": "integer"
+          },
+          "bountyMaxCredit": {
+            "type": "number",
+            "minimum": 0.5,
+            "default": 2,
+            "description": "Configured maximum credits when converting a ticket to a bounty."
+          },
+          "openLimit": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1
+          },
+          "centralSlackEnabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "shops",
+          "tools",
+          "assignees",
+          "canCreate",
+          "creationUnavailableReason",
+          "openCount",
+          "bountyMaxCredit",
+          "openLimit",
+          "centralSlackEnabled"
+        ]
+      },
+      "FixReporterReveal": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "FixOutageResult": {
+        "type": "object",
+        "properties": {
+          "outOfService": {
+            "type": "boolean"
+          },
+          "affectedCount": {
+            "type": "integer"
+          },
+          "affectedReservations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "startAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "endAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "startAt",
+                "endAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "outOfService",
+          "affectedCount",
+          "affectedReservations"
+        ]
+      },
+      "FixDeliveryQueued": {
+        "type": "object",
+        "properties": {
+          "queued": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "queued"
+        ]
+      },
+      "FixError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "FixBountyDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "creditValue": {
+            "type": "number"
+          },
+          "ticketId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopName": {
+            "type": "string",
+            "nullable": true
+          },
+          "taskNumber": {
+            "type": "integer"
+          },
+          "prerequisiteToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prerequisiteToolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "claimedById": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdById": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "verifiedById": {
+            "type": "string",
+            "nullable": true
+          },
+          "verifiedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentTaskId": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "days": {
+            "type": "integer",
+            "nullable": true
+          },
+          "nextAvailable": {
+            "type": "string",
+            "nullable": true
+          },
+          "rejectionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "isChildTask": {
+            "type": "boolean"
+          },
+          "isCoolingDown": {
+            "type": "boolean"
+          },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "canClaim": {
+                "type": "boolean"
+              },
+              "canSubmitCompletion": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "canClaim",
+              "canSubmitCompletion"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "status",
+          "creditValue",
+          "ticketId",
+          "capabilities"
+        ]
+      },
+      "VolunteerTask": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "creditValue": {
+            "type": "number"
+          },
+          "ticketId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shopName": {
+            "type": "string",
+            "nullable": true
+          },
+          "taskNumber": {
+            "type": "integer"
+          },
+          "prerequisiteToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prerequisiteToolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "claimedById": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdById": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "verifiedById": {
+            "type": "string",
+            "nullable": true
+          },
+          "verifiedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentTaskId": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "days": {
+            "type": "integer",
+            "nullable": true
+          },
+          "nextAvailable": {
+            "type": "string",
+            "nullable": true
+          },
+          "rejectionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "isChildTask": {
+            "type": "boolean"
+          },
+          "isCoolingDown": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "status",
+          "creditValue",
+          "ticketId",
+          "shopId",
+          "shopName",
+          "taskNumber",
+          "prerequisiteToolIds",
+          "prerequisiteToolNames",
+          "claimedById",
+          "claimedByName",
+          "createdById",
+          "createdByName",
+          "verifiedById",
+          "verifiedByName",
+          "parentTaskId",
+          "claimedAt",
+          "completedAt",
+          "createdAt",
+          "updatedAt",
+          "days",
+          "nextAvailable",
+          "rejectionReason",
+          "isChildTask",
+          "isCoolingDown"
         ]
       }
     }
@@ -4087,6 +5629,521 @@
         }
       }
     },
+    "/admin/checkout_approvers": {
+      "get": {
+        "summary": "List checkout approvers including per-tool availability",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approvers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CheckoutApprover"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create or extend an approver scope (admin/board)",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Saved approver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutApprover"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin or board membership required"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutApproverWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/checkout_approvers/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Replace supplied approver fields (admin/board)",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated approver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutApprover"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutApproverWrite"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Replace supplied approver fields (admin/board)",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated approver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutApprover"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutApproverWrite"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an approver (admin/board)",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/tool_checkouts": {
+      "get": {
+        "summary": "List authorized ToolCheckout records with tool availability",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolCheckout"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tool_checkouts": {
+      "get": {
+        "summary": "List authorized ToolCheckout records with tool availability",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolCheckout"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Grant a checkout",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Granted checkout and unmet prerequisite names",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ToolCheckout"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "unmet_prerequisites": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "member_id",
+                  "tool_id"
+                ],
+                "properties": {
+                  "member_id": {
+                    "type": "string"
+                  },
+                  "tool_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_checkout_requests": {
+      "get": {
+        "summary": "List authorized ToolCheckoutRequest records with tool availability",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolCheckoutRequest"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Request tool checkout training",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Created request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCheckoutRequest"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "tool_id"
+                ],
+                "properties": {
+                  "tool_id": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tool_checkout_requests": {
+      "get": {
+        "summary": "List authorized ToolCheckoutRequest records with tool availability",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolCheckoutRequest"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tool_checkouts/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "delete": {
+        "summary": "Revoke a checkout",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Revoked checkout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCheckout"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "revocation_reason"
+                ],
+                "properties": {
+                  "revocation_reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_checkout_requests/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Edit own open checkout request note",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCheckoutRequest"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Edit own open checkout request note",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCheckoutRequest"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/client_error_handler": {
       "post": {
         "summary": "Sends a slack message",
@@ -4297,6 +6354,1106 @@
           "401": {
             "description": "Unauthorized"
           }
+        }
+      }
+    },
+    "/fix_tickets": {
+      "get": {
+        "summary": "List authorized repair tickets",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "mine",
+                "assigned",
+                "queue",
+                "public"
+              ]
+            }
+          },
+          {
+            "name": "statuses",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "in_progress",
+                  "waiting_for_parts",
+                  "resolved",
+                  "rejected",
+                  "withdrawn"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirmation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "assignee_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scoped, filtered, sorted page; public-only readers require current membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A signed-in member session is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Submit a report (activeMember and future expiration; cap and catalog visibility enforced)",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Created, or previously accepted idempotent submission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "MongoDB topology does not support atomic ticket writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "description",
+                  "category",
+                  "submission_key"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 150,
+                    "pattern": "^[A-Za-z0-9 .,_()/\\-]+$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 10000
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "damaged",
+                      "broken",
+                      "missing",
+                      "other"
+                    ]
+                  },
+                  "submission_key": {
+                    "type": "string"
+                  },
+                  "shop_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "tool_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "uncatalogued_tool": {
+                    "type": "string",
+                    "pattern": "(?:^[A-Za-z0-9 .,_()/\\-]+$)|^$"
+                  },
+                  "priority": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "nullable": true
+                  },
+                  "i_broke_it": {
+                    "type": "boolean"
+                  },
+                  "i_can_fix_it": {
+                    "type": "boolean"
+                  },
+                  "public_read_only": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/catalog": {
+      "get": {
+        "summary": "Report catalog, creation capability, cap and current open count",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Catalog and capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read a ticket and redacted history",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "No reporter identity is included",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update authorized ticket fields; priority is immutable",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated; operation-specific staff/assignee/reporter authorization applies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FixTicketUpdate"
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update authorized ticket fields; priority is immutable",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated; operation-specific staff/assignee/reporter authorization applies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FixTicketUpdate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/notes": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Append a note",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation, cap, revision, or lifecycle conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 10000,
+                    "pattern": "\\S[\\s\\S]*\\S",
+                    "description": "Requires at least two non-whitespace characters."
+                  }
+                },
+                "required": [
+                  "note"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/withdraw": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Withdraw own nonterminal report",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/assignments": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Staff assignment or self-unassignment",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "member_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "unassign_self": {
+                    "type": "boolean"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/bounty": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Admin/board/relevant RM: create bounty and publish ticket atomically",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "credit_value": {
+                    "type": "number"
+                  },
+                  "prerequisite_tool_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/reward": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Independent authorized reviewer: approve/reject pending reporter point",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ]
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/reveal": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Admin-only acknowledged reporter reveal; audit records ticket ID/title and acting admin, excluding reporter identity; no-store",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixReporterReveal"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity is withheld when the reveal audit cannot be saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "acknowledged": {
+                    "type": "boolean"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/outage": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Repair staff: independent tool availability",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixOutageResult"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "out_of_service": {
+                    "type": "boolean"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/retry_delivery": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Repair staff: retry pending notifications",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Action accepted; authorization and lifecycle validated server-side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixDeliveryQueued"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fix_tickets/{id}/assignee_options": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Repair staff: search eligible assignees",
+        "tags": [
+          "Fix tickets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to fifty active unexpired members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FixPerson"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/{id}/outage": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Repair staff: change out-of-service independently of hidden",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Availability and affected reservations for review",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixOutageResult"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "out_of_service"
+                ],
+                "properties": {
+                  "out_of_service": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/volunteer/tasks/{id}/detail": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Authenticated bounty detail including optional source ticket_id",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current member or authorized source-ticket viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixBountyDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/volunteer_tasks/{id}/cancel": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Apply authorized volunteer task lifecycle action",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "A claimed or pending ticket bounty must be released or rejected before cancellation"
+          },
+          "200": {
+            "description": "Task after action, including nullable ticketId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolunteerTask"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/slack/commands/fix": {
+      "post": {
+        "summary": "Open Fix tickets; Slack signature, workspace and linked member required",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Slack"
+        ],
+        "parameters": [
+          {
+            "name": "X-Slack-Request-Timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Slack-Signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private response; opens an authorized modal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "response_type": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "response_type",
+                    "text"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "team_id",
+                  "user_id",
+                  "trigger_id"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "team_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "trigger_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -4875,6 +8032,1008 @@
         }
       }
     },
+    "/shop/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/shop/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/api/shop/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/api/shop/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/shops/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/shops/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/tool/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/tool/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/api/tool/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/api/tool/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/tools/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/tools/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
     "/members/sign_in": {
       "post": {
         "summary": "Signs in user",
@@ -5344,6 +9503,1256 @@
               "text/html": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/shops/resource_manager_options": {
+      "get": {
+        "summary": "List Resource Managers, Admins and Board members for shop assignment (admin/board only)",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource Manager choices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FixPerson"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only admin or board may assign Resource Managers"
+          }
+        }
+      }
+    },
+    "/shops": {
+      "get": {
+        "summary": "List visible shops including Resource Managers",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Visible shops",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Shop"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/shops": {
+      "get": {
+        "summary": "List managed shops including current Resource Managers",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Managed shops",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Shop"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create shop with optional Resource Manager assignments (admin/board)",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Created shop",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shop"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShopWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/shops/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Update shop; only admin/board may replace Resource Managers",
+        "tags": [
+          "Shops"
+        ],
+        "description": "Changed Resource Manager assignments enqueue Slack canvas access synchronization for each added or removed member.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated shop",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shop"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Resource Managers cannot change their own assignments"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShopWrite"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update shop; only admin/board may replace Resource Managers",
+        "tags": [
+          "Shops"
+        ],
+        "description": "Changed Resource Manager assignments enqueue Slack canvas access synchronization for each added or removed member.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated shop",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shop"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Resource Managers cannot change their own assignments"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShopWrite"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete catalog resource unless referenced by a repair ticket",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "409": {
+            "description": "Repair ticket reference prevents deletion, including closed tickets and force deletion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/slack/interactions": {
+      "post": {
+        "summary": "Signed Slack interactions including Fix suggestions, buttons, and modal submissions",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Slack"
+        ],
+        "security": [],
+        "description": "Requires a valid Slack HMAC signature and timestamp within five minutes. Fix interactions also validate workspace and linked member, then recheck action permissions. payload is a JSON-encoded FixSlackInteractionPayload. Assignee-filter suggestions are restricted to members assigned to tickets the caller can view; staff assignment searches still require ticket management rights and current candidate membership. Suggestions return options; buttons acknowledge with {} and update the Slack view; modal submissions return update/view or errors keyed by block ID. Existing non-Fix interactions remain supported.",
+        "parameters": [
+          {
+            "name": "X-Slack-Request-Timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Slack-Signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Options, acknowledgment, updated modal, or block validation errors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixSlackInteractionResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid/missing signature, expired timestamp, or missing signing secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "payload"
+                ],
+                "properties": {
+                  "payload": {
+                    "type": "string",
+                    "description": "JSON encoding of #/components/schemas/FixSlackInteractionPayload",
+                    "example": "{\"type\":\"block_suggestion\",\"action_id\":\"fix_search_shop_id\",\"value\":\"Wood\",\"team\":{\"id\":\"T123\"},\"user\":{\"id\":\"U123\"}}"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/admin/system_configs": {
+      "get": {
+        "summary": "Read portal configuration (admin or board)",
+        "tags": [
+          "System configuration"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Configuration including the effective open-ticket limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "flags",
+                    "jobs",
+                    "slack",
+                    "volunteer",
+                    "totp",
+                    "security",
+                    "reservation",
+                    "job_schedule"
+                  ],
+                  "properties": {
+                    "flags": {
+                      "type": "object"
+                    },
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "slack": {
+                      "type": "object"
+                    },
+                    "volunteer": {
+                      "type": "object",
+                      "required": [
+                        "ticket_bounty_max_credit"
+                      ],
+                      "properties": {
+                        "ticket_bounty_max_credit": {
+                          "type": "string",
+                          "default": "2.0",
+                          "description": "Maximum credits for creating a bounty from a repair ticket. Finite number at least 0.5; changes are audited."
+                        }
+                      }
+                    },
+                    "totp": {
+                      "type": "object"
+                    },
+                    "reservation": {
+                      "type": "object"
+                    },
+                    "job_schedule": {
+                      "type": "object"
+                    },
+                    "security": {
+                      "type": "object",
+                      "required": [
+                        "ticket_open_limit",
+                        "devise_timeout_minutes"
+                      ],
+                      "properties": {
+                        "ticket_open_limit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 10,
+                          "description": "Maximum nonterminal reports per reporter; current admin/board reporters are exempt. Only admins can change this setting."
+                        },
+                        "devise_timeout_minutes": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/system_configs/update_setting": {
+      "put": {
+        "summary": "Update a string setting; ticket_open_limit requires an admin and a positive integer",
+        "tags": [
+          "System configuration"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Saved setting as a string",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid setting value"
+          },
+          "403": {
+            "description": "Only admins may change ticket_open_limit"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "key",
+                  "value"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "enum": [
+                      "ticket_open_limit",
+                      "slack_channel_treasurer",
+                      "slack_channel_rm",
+                      "slack_channel_admin",
+                      "slack_channel_logs",
+                      "volunteer_pending_slack_channel",
+                      "volunteer_credits_per_discount",
+                      "volunteer_max_discounts_per_year",
+                      "volunteer_discount_id",
+                      "volunteer_task_max_credit",
+                      "ticket_bounty_max_credit",
+                      "volunteer_bounty_token",
+                      "volunteer_rolling_days",
+                      "volunteer_leaderboard_top",
+                      "reservation_token",
+                      "devise_timeout_minutes",
+                      "channel_cache_refresh_day",
+                      "card_expiration_check_day",
+                      "garbage_collect_day"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "description": "String setting value. For ticket_open_limit, use a positive integer such as \"10\"; zero, negatives, and fractions are rejected."
+                  }
+                },
+                "oneOf": [
+                  {
+                    "properties": {
+                      "key": {
+                        "enum": [
+                          "ticket_open_limit"
+                        ]
+                      },
+                      "value": {
+                        "type": "string",
+                        "pattern": "^[1-9][0-9]*$"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "key": {
+                        "enum": [
+                          "slack_channel_treasurer",
+                          "slack_channel_rm",
+                          "slack_channel_admin",
+                          "slack_channel_logs",
+                          "volunteer_pending_slack_channel",
+                          "volunteer_credits_per_discount",
+                          "volunteer_max_discounts_per_year",
+                          "volunteer_discount_id",
+                          "volunteer_task_max_credit",
+                          "ticket_bounty_max_credit",
+                          "volunteer_bounty_token",
+                          "volunteer_rolling_days",
+                          "volunteer_leaderboard_top",
+                          "reservation_token",
+                          "devise_timeout_minutes",
+                          "channel_cache_refresh_day",
+                          "card_expiration_check_day",
+                          "garbage_collect_day"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tools": {
+      "post": {
+        "summary": "Create a tool with a name unique within its shop",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "422": {
+            "description": "Another tool in the same shop already has this name"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Unique within the shop, ignoring case."
+                  },
+                  "shop_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tools/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "delete": {
+        "summary": "Delete catalog resource unless referenced by a repair ticket",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "409": {
+            "description": "Repair ticket reference prevents deletion, including closed tickets and force deletion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update tool; ticket references prevent moving shops",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "409": {
+            "description": "Repair ticket reference prevents shop move",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Another tool in the same shop already has this name"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shop_id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Unique within the shop, ignoring case; the existing tool is excluded when editing."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update tool; ticket references prevent moving shops",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "409": {
+            "description": "Repair ticket reference prevents shop move",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Another tool in the same shop already has this name"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shop_id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Unique within the shop, ignoring case; the existing tool is excluded when editing."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/volunteer/tasks": {
+      "get": {
+        "summary": "List volunteer tasks including nullable source ticketId",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task array; ticketId identifies the independently authorized source ticket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VolunteerTask"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/volunteer/tasks/my_claims": {
+      "get": {
+        "summary": "List volunteer tasks including nullable source ticketId",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task array; ticketId identifies the independently authorized source ticket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VolunteerTask"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/volunteer_tasks": {
+      "get": {
+        "summary": "List volunteer tasks including nullable source ticketId",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parent_task_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parents_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "children_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task array; ticketId identifies the independently authorized source ticket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VolunteerTask"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Save a volunteer task",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Saved task with nullable ticketId (source linkage is not generically editable)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolunteerTask"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolunteerTaskWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/volunteer_tasks/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Save a volunteer task",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "403": {
+            "description": "Only admin and board may change linked bounty credits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Saved task with nullable ticketId (source linkage is not generically editable)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolunteerTask"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolunteerTaskWrite"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Save a volunteer task",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "403": {
+            "description": "Only admin and board may change linked bounty credits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Saved task with nullable ticketId (source linkage is not generically editable)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolunteerTask"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolunteerTaskWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/volunteer/tasks/{id}/claim": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Apply authorized volunteer task lifecycle action",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Task after action, including nullable ticketId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolunteerTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unavailable claim, including a reporter claiming their own repair bounty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/volunteer/tasks/{id}/complete": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Apply authorized volunteer task lifecycle action",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Task after action, including nullable ticketId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolunteerTask"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/volunteer_tasks/{id}/complete": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Apply authorized volunteer task lifecycle action",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Task after action, including nullable ticketId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolunteerTask"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/volunteer_tasks/{id}/release": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Apply authorized volunteer task lifecycle action",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Task after action, including nullable ticketId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolunteerTask"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/volunteer_tasks/{id}/reject_pending": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Apply authorized volunteer task lifecycle action",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Task after action, including nullable ticketId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolunteerTask"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/volunteer_tasks/{id}/reset_cooldown": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Apply authorized volunteer task lifecycle action",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Task after action, including nullable ticketId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolunteerTask"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
                 }
               }
             }

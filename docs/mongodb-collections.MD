@@ -77,3 +77,11 @@ is embedded inside `earned_membership__report` documents.
 The table describes the indexes expected from model declarations, not a live
 database inspection. After changing an index declaration, update this file and
 use the repository's Mongoid index deployment process for each environment.
+
+## Repair tickets
+
+- `fix_tickets`: reporter identity (restricted), report fields, current/submitted priority, status/confirmation, member ObjectId assignments/provenance, visibility, bounty/reward references, revision and business timestamps. Slack root ts/channel/team and delivery_job_id/delivery_job_until (the queued/retrying chain reservation) are operational fields and do not advance updated_at.
+- `fix_ticket_events`: append-only redacted-output event history and transactional notification outbox. actor_id and recipients are restricted; field_changes contains publishable changes. Delivery receipts/errors are internal.
+- `fix_ticket_reveals`: admin-only privacy access audit; intentionally separate from board-readable audit_logs.
+
+Existing tools gain out_of_service (false for legacy documents), independent of disabled/Hidden. volunteer_tasks gain optional ticket_id. volunteer_credits gain restricted ticket_id for reporter rewards. members gain an internal fix_ticket_write_revision used to serialize concurrent cap/priority writes. Run `bundle exec rake fix_tickets:ensure_indexes` before enabling tickets. MongoDB replica-set transactions are required; unsupported deployments fail closed.

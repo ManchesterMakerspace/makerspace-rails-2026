@@ -1,5 +1,5 @@
 class ToolCatalogSerializer < ActiveModel::Serializer
-  attributes :open, :id, :name, :description, :shop_id, :shop_name, :prerequisite_ids,
+  attributes :open, :id, :name, :description, :shop_id, :shop_name, :prerequisite_ids, :out_of_service,
              :prerequisite_names, :unmet_prerequisite_ids,
              :unmet_prerequisite_names, :requestable, :allow_pending
 
