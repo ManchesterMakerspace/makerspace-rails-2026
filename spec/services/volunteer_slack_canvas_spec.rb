@@ -104,4 +104,13 @@ RSpec.describe Service::VolunteerSlackCanvas do
     expect(Service::SlackConnector).to have_received(:replace_canvas)
       .with("FEXISTING", a_string_matching(/~.*Sweep floor.*~/))
   end
+
+  it "does not crash when the struck task no longer exists (Mongoid raise_not_found_error is false)" do
+    shop.update!(volunteer_canvas_id: "FEXISTING")
+    missing_task_id = BSON::ObjectId.new.to_s
+
+    expect {
+      described_class.sync!(shop, struck_task_id: missing_task_id)
+    }.not_to raise_error
+  end
 end
