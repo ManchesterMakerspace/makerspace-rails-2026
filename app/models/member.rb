@@ -136,10 +136,21 @@ class Member
     write_attribute(:groupName, value.present? ? value.to_s : nil)
   end
 
+  # groupName predates the household feature and was also used for a
+  # separate, older concept -- a free-text organizational/partner-group
+  # label (see field comment above) -- so a present groupName that isn't
+  # this member's own id is NOT reliably a household reference. Verifying
+  # a real primary member actually exists at that id is what distinguishes
+  # an actual secondary from a member still carrying one of those old
+  # labels (e.g. "Autodesk", "GSWT") -- those look identical to a stale
+  # secondary reference under the old id.present? && id != self.id check,
+  # which is what caused non-household members to see household-member
+  # messaging in their self-service portal.
   def household_role
     return nil unless groupName.present?
     return :primary if self.id.to_s == groupName.to_s
-    :secondary
+    return :secondary if Member.where(id: groupName).exists?
+    nil
   end
 
   def direct_notifications_suppressed?
