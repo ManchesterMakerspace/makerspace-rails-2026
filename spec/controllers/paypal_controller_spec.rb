@@ -23,10 +23,8 @@ RSpec.describe PaypalController, type: :controller do
     context "with valid params" do
       before(:each) do
         member
-        REDIS.flushall
-        sleep(5.seconds)
         allow(::PayPal::SDK::Core::API::IPN).to receive(:valid?).and_return(true)
-      end 
+      end
       it "creates a new Paypal" do
         expect {
           post :notify, params: valid_attributes, format: :json
