@@ -40,11 +40,12 @@ class DocumentUploadJob < ApplicationJob
         "[DocumentUploadJob] Expected document already exists; skipping duplicate Drive upload " \
         "resource=#{resource.class.name}(#{resource.id}) document_type=#{document_type.inspect}"
       )
-      ::Service::GoogleDrive.generate_document_string(
-        document_type.to_sym,
-        overloads.merge(member: member),
-        base64_signature
-      )
+      # Read back the exact bytes already confirmed present, rather than
+      # re-rendering from current model/clock state -- a fresh render here
+      # isn't guaranteed to match what's archived (e.g. if the retry crosses
+      # midnight, the signed-date in a re-rendered PDF would differ from the
+      # one actually on file for this legal document).
+      File.binread(::Service::GoogleDrive.get_document(resource, document_type).path)
     else
       upload_document(
         document_type,

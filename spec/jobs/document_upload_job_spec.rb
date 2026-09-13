@@ -36,9 +36,14 @@ RSpec.describe DocumentUploadJob, type: :job do
       member = create(:member, member_contract_signed_date: Date.new(2026, 9, 13))
       job = described_class.new
       job.executions = 2
+      downloaded = Tempfile.new('existing-doc')
+      downloaded.binmode
+      downloaded.write('existing-pdf-bytes')
+      downloaded.rewind
       allow(Service::GoogleDrive).to receive(:document_uploaded?).and_return(true)
       allow(Service::GoogleDrive).to receive(:upload_document)
-      allow(Service::GoogleDrive).to receive(:generate_document_string).and_return('pdf-bytes')
+      allow(Service::GoogleDrive).to receive(:generate_document_string)
+      allow(Service::GoogleDrive).to receive(:get_document).and_return(downloaded)
       allow(Rails.logger).to receive(:info)
 
       job.perform('signature-data', 'member_contract', member.id.as_json)
@@ -49,13 +54,18 @@ RSpec.describe DocumentUploadJob, type: :job do
         upload_attempt_id: job.job_id
       ).twice
       expect(Service::GoogleDrive).not_to have_received(:upload_document)
-      expect(Service::GoogleDrive).to have_received(:generate_document_string).with(
-        :member_contract,
-        { member: member },
-        'signature-data'
-      )
+      # Reads back the file already confirmed present instead of
+      # re-rendering, so the email attaches exactly what's archived.
+      expect(Service::GoogleDrive).to have_received(:get_document).with(member, 'member_contract')
+      expect(Service::GoogleDrive).not_to have_received(:generate_document_string)
       expect(Rails.logger).to have_received(:info).with(a_string_including('skipping duplicate Drive upload'))
-      expect(MemberMailer).to have_received(:send_document).with('member_contract', member.id.as_json, 'pdf-bytes')
+      expect(MemberMailer).to have_received(:send_document).with(
+        'member_contract',
+        member.id.as_json,
+        'existing-pdf-bytes'
+      )
+    ensure
+      downloaded.close!
     end
 
     it 'uploads on retry when only an earlier signing attempt has the same filename' do
