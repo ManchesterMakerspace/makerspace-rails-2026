@@ -43,6 +43,11 @@ RSpec.describe DocumentUploadJob, type: :job do
 
       job.perform('signature-data', 'member_contract', member.id.as_json)
 
+      expect(Service::GoogleDrive).to have_received(:document_uploaded?).with(
+        member,
+        'member_contract',
+        upload_attempt_id: job.job_id
+      ).twice
       expect(Service::GoogleDrive).not_to have_received(:upload_document)
       expect(Service::GoogleDrive).to have_received(:generate_document_string).with(
         :member_contract,
@@ -51,6 +56,29 @@ RSpec.describe DocumentUploadJob, type: :job do
       )
       expect(Rails.logger).to have_received(:info).with(a_string_including('skipping duplicate Drive upload'))
       expect(MemberMailer).to have_received(:send_document).with('member_contract', member.id.as_json, 'pdf-bytes')
+    end
+
+    it 'uploads on retry when only an earlier signing attempt has the same filename' do
+      member = create(:member, member_contract_signed_date: Date.new(2026, 9, 13))
+      job = described_class.new
+      job.executions = 2
+      allow(Service::GoogleDrive).to receive(:document_uploaded?).and_return(false, true)
+      allow(Service::GoogleDrive).to receive(:upload_document).and_return('new-pdf-bytes')
+
+      job.perform('new-signature-data', 'member_contract', member.id.as_json)
+
+      expect(Service::GoogleDrive).to have_received(:upload_document).with(
+        'member_contract',
+        member,
+        {},
+        'new-signature-data',
+        upload_attempt_id: job.job_id
+      )
+      expect(MemberMailer).to have_received(:send_document).with(
+        'member_contract',
+        member.id.as_json,
+        'new-pdf-bytes'
+      )
     end
 
     it 'raises when the upload reports success but the file cannot be found afterward' do
@@ -71,7 +99,8 @@ RSpec.describe DocumentUploadJob, type: :job do
           "resource=Member(#{member.id})",
           'document_type="member_contract"',
           "expected_filename=#{expected_filename.inspect}",
-          'folder_id="member-contract-folder-id"'
+          'folder_id="member-contract-folder-id"',
+          'upload_attempt_id="'
         )
       )
 

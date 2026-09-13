@@ -29,7 +29,10 @@ filename, and destination folder ID that were used for the unsuccessful
 lookup. Before uploading, the job checks for the expected file in the
 destination folder. If it is already present (for example, when a successful
 upload is retried after delayed Drive search indexing), the job does not upload
-a duplicate; it re-renders the PDF only for the signed-document email.
+a duplicate; it re-renders the PDF only for the signed-document email. This
+retry check uses the Active Job ID stored in the Drive file's application
+properties, rather than filename alone, so a contract signed earlier on the
+same date cannot be mistaken for the current signing attempt.
 
 ## Admin-triggerable recurring jobs
 

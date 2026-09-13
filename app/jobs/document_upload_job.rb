@@ -31,7 +31,11 @@ class DocumentUploadJob < ApplicationJob
       "member=#{member.fullname.inspect} document_type=#{document_type.inspect}"
     )
 
-    document = if executions > 1 && ::Service::GoogleDrive.document_uploaded?(resource, document_type)
+    document = if executions > 1 && ::Service::GoogleDrive.document_uploaded?(
+      resource,
+      document_type,
+      upload_attempt_id: job_id
+    )
       Rails.logger.info(
         "[DocumentUploadJob] Expected document already exists; skipping duplicate Drive upload " \
         "resource=#{resource.class.name}(#{resource.id}) document_type=#{document_type.inspect}"
@@ -42,9 +46,15 @@ class DocumentUploadJob < ApplicationJob
         base64_signature
       )
     else
-      upload_document(document_type, member, overloads, base64_signature)
+      upload_document(
+        document_type,
+        member,
+        overloads,
+        base64_signature,
+        upload_attempt_id: job_id
+      )
     end
-    verify_uploaded!(resource, document_type)
+    verify_uploaded!(resource, document_type, upload_attempt_id: job_id)
     MemberMailer.send_document(document_type, member.id.as_json, document).deliver_later
   end
 
@@ -65,8 +75,12 @@ class DocumentUploadJob < ApplicationJob
   # get_document will later look (e.g. a misconfigured destination folder).
   # Confirming it's really there turns that into a normal, detectable
   # failure instead of a silent one.
-  def verify_uploaded!(resource, document_type)
-    return if ::Service::GoogleDrive.document_uploaded?(resource, document_type)
+  def verify_uploaded!(resource, document_type, upload_attempt_id:)
+    return if ::Service::GoogleDrive.document_uploaded?(
+      resource,
+      document_type,
+      upload_attempt_id: upload_attempt_id
+    )
 
     member = resource.kind_of?(Member) ? resource : resource.member
     expected_filename = ::Service::GoogleDrive.expected_document_filename(resource, document_type)
@@ -76,7 +90,7 @@ class DocumentUploadJob < ApplicationJob
       "Upload appeared to succeed but the file could not be found in Drive afterward " \
       "(member=#{member.fullname.inspect}, resource=#{resource.class.name}(#{resource.id}), " \
       "document_type=#{document_type.inspect}, expected_filename=#{expected_filename.inspect}, " \
-      "folder_id=#{folder_id.inspect})"
+      "folder_id=#{folder_id.inspect}, upload_attempt_id=#{upload_attempt_id.inspect})"
     )
   end
 
