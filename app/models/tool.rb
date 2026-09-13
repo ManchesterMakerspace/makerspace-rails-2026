@@ -41,7 +41,7 @@ class Tool
   # Scoped per shop, not global -- a common name like "Hand Tools" is allowed
   # to exist once per shop. Slack lookups that resolve a tool by name (see
   # SlackCheckoutRequestJob) are shop-scoped too, so this can't go ambiguous.
-  validates :name, uniqueness: { case_sensitive: false, scope: :shop_id }
+  validates :name, uniqueness: { case_sensitive: false, scope: :shop_id, message: 'already exists in this shop' }
   validates :shop, presence: true
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :reservation_horizon_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }

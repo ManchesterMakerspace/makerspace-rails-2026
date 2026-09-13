@@ -36,7 +36,7 @@ Configure the optional `SLACK_TICKETS_CHANNEL` only after testing the destinatio
 
 Events and recipients are saved in the mutation transaction. Per-ticket delivery jobs preserve revision order; delivery receipts and pre-send intents are persisted without changing ticket timestamps. Uncertain sends reconcile Slack history by stable client message ID before resending. A history permission or network failure keeps the event pending rather than assuming deletion. Invite the bot to destination channels and grant the history scopes in the manifest. Thread reconciliation must be exercised against the workspace token in staging; missing history access must be resolved before enabling publication.
 
-Run `fix_tickets:recover_deliveries` every five minutes if using an external scheduler. `config/schedule.rb` includes the equivalent scheduled job. Disabling the central variable stops pending central sends; events created while disabled are not backfilled. Existing roots retain string timestamps, resolved channel IDs, and workspace IDs; a destination change establishes a new root on the next eligible event.
+Run `fix_tickets:recover_deliveries` every ten minutes if using an external scheduler. `config/schedule.rb` includes the equivalent scheduled job. Disabling the central variable stops pending central sends; events created while disabled are not backfilled. Existing roots retain string timestamps, resolved channel IDs, and workspace IDs; a destination change establishes a new root on the next eligible event.
 
 ## Deployment order and staging
 

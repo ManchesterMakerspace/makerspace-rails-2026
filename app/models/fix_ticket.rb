@@ -38,6 +38,9 @@ class FixTicket
   field :slack_ticket_ts, type: String
   field :slack_ticket_channel_id, type: String
   field :slack_ticket_team_id, type: String
+  # Notification bookkeeping; updated directly without changing updated_at.
+  field :delivery_job_id, type: String
+  field :delivery_job_until, type: Time
 
   attr_readonly :reporter_id, :created_at, :submitted_priority, :submission_key
   validates :reporter_id, :title, :description, :submission_key, presence: true

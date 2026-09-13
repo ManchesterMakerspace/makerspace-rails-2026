@@ -26,6 +26,17 @@ RSpec.describe FixSlack do
     allow(ENV).to receive(:[]).with('SLACK_TEAM_ID').and_return('T_EXPECTED')
     expect { described_class.member!({ 'team_id' => 'T_OTHER', 'user_id' => 'U_OTHER' }) }.to raise_error(Error::Forbidden)
   end
+  it 'limits assignee filter suggestions to visible ticket participants, including expired assignees' do
+    visible = create(:member, :current, firstname: 'Visible')
+    expired = create(:member, :expired, firstname: 'Former')
+    outsider = create(:member, :current, firstname: 'Unrelated')
+    create(:fix_ticket, reporter_id: member.id, assignee_ids: [visible.id, expired.id])
+    create(:fix_ticket, reporter_id: outsider.id, assignee_ids: [outsider.id])
+    payload = { 'action_id' => 'fix_search_assignee_id', 'value' => '' }
+    expect(described_class.options(member, payload)[:options].map { |o| o[:value] }).to contain_exactly(visible.id.to_s, expired.id.to_s)
+    expect(described_class.options(member, payload.merge('value' => 'Unrelated'))[:options]).to be_empty
+    expect(described_class.options(member, payload.merge('value' => 'Vis'))[:options].map { |o| o[:value] }).to eq([visible.id.to_s])
+  end
   it 'initializes tool and assignee filters without losing their IDs' do
     tool = create(:tool, shop: create(:shop))
     query = { 'tool_id' => tool.id.to_s, 'assignee_id' => member.id.to_s }

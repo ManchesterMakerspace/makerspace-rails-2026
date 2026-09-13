@@ -4,11 +4,14 @@ class FixTicketDeliveryLease
   TTL = 120
   RENEW = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('EXPIRE', KEYS[1], ARGV[2]) else return 0 end".freeze
   RELEASE = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end".freeze
-  def self.with(ticket_id)
+  def self.with(ticket_id, check_owner: nil)
     key, token = "fix-ticket-delivery:#{ticket_id}", SecureRandom.uuid
     raise Error::Conflict.new('Delivery already running') unless REDIS.set(key, token, nx: true, ex: TTL)
     owned = true
-    check = -> { raise Error::Conflict.new('Delivery lease lost') unless owned && REDIS.eval(RENEW, keys: [key], argv: [token, TTL]).to_i == 1 }
+    check = -> do
+      raise Error::Conflict.new('Delivery lease lost') unless owned && REDIS.eval(RENEW, keys: [key], argv: [token, TTL]).to_i == 1
+      check_owner&.call
+    end
     mutex, wake = Mutex.new, ConditionVariable.new
     stopped = false
     heartbeat = Thread.new do
@@ -24,6 +27,7 @@ class FixTicketDeliveryLease
       end
     end
     Thread.current[:fix_delivery_lease] = check
+    check.call
     yield
   ensure
     Thread.current[:fix_delivery_lease] = nil

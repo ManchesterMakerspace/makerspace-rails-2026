@@ -131,8 +131,14 @@ class Admin::ShopsController < ApplicationController
   def assign_resource_managers(shop, ids)
     return if ids.nil?
     previous = Member.shop_resource_manager_candidates.where(resource_manager_shop_ids: shop.id.to_s).pluck(:id).map(&:to_s)
-    Member.shop_resource_manager_candidates.where(:id.in => ids - previous).each { |m| m.add_to_set(resource_manager_shop_ids: shop.id.to_s) }
-    Member.shop_resource_manager_candidates.where(:id.in => previous - ids).each { |m| m.pull(resource_manager_shop_ids: shop.id.to_s) }
+    Member.shop_resource_manager_candidates.where(:id.in => ids - previous).each do |member|
+      member.add_to_set(resource_manager_shop_ids: shop.id.to_s)
+      ReservationSlackCanvasMemberAccessJob.perform_later(member.id.to_s, [shop.id.to_s])
+    end
+    Member.shop_resource_manager_candidates.where(:id.in => previous - ids).each do |member|
+      member.pull(resource_manager_shop_ids: shop.id.to_s)
+      ReservationSlackCanvasMemberAccessJob.perform_later(member.id.to_s, [shop.id.to_s])
+    end
     return if previous.sort == ids.sort
     ::Service::AuditLogger.log(log_type: 'portal', event_type: 'shop_resource_managers_changed',
       resource_type: 'Shop', resource_id: shop.id, actor: current_member,

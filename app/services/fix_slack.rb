@@ -47,8 +47,12 @@ class FixSlack
           ticket = FixTicket.find(data['id'])
           raise Error::Forbidden.new unless FixTicketPolicy.new(member, ticket).staff?
         end
-        Member.where(status: 'activeMember', :expirationTime.gt => Time.current.to_i * 1000)
-          .any_of({ firstname: /#{term}/i }, { lastname: /#{term}/i }).limit(100).map { |m| option(m.fullname, m.id) }
+        members = if field == 'assignee_id'
+          Member.where(:id.in => FixTicketPolicy.new(member).scope.distinct(:assignee_ids))
+        else
+          Member.where(status: 'activeMember', :expirationTime.gt => Time.current.to_i * 1000)
+        end
+        members.any_of({ firstname: /#{term}/i }, { lastname: /#{term}/i }).limit(100).map { |m| option(m.fullname, m.id) }
       else []
       end
       { options: rows }

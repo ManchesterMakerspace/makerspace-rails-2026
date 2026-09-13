@@ -80,7 +80,7 @@ use the repository's Mongoid index deployment process for each environment.
 
 ## Repair tickets
 
-- `fix_tickets`: reporter identity (restricted), report fields, current/submitted priority, status/confirmation, member ObjectId assignments/provenance, visibility, bounty/reward references, revision and business timestamps. Slack root ts/channel/team are operational fields and do not advance updated_at.
+- `fix_tickets`: reporter identity (restricted), report fields, current/submitted priority, status/confirmation, member ObjectId assignments/provenance, visibility, bounty/reward references, revision and business timestamps. Slack root ts/channel/team and delivery_job_id/delivery_job_until (the queued/retrying chain reservation) are operational fields and do not advance updated_at.
 - `fix_ticket_events`: append-only redacted-output event history and transactional notification outbox. actor_id and recipients are restricted; field_changes contains publishable changes. Delivery receipts/errors are internal.
 - `fix_ticket_reveals`: admin-only privacy access audit; intentionally separate from board-readable audit_logs.
 

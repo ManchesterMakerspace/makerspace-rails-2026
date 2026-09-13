@@ -70,6 +70,7 @@ RSpec.describe 'Shop Resource Manager assignments', type: :request do
     %i[put patch].each do |verb|
       public_send(verb, 'Update shop; only admin/board may replace Resource Managers') do
         tags 'Shops'
+        description 'Changed Resource Manager assignments enqueue Slack canvas access synchronization for each added or removed member.'
         security [sessionAuth: []]
         consumes 'application/json'
         produces 'application/json'
@@ -91,6 +92,30 @@ RSpec.describe 'Shop Resource Manager assignments', type: :request do
         end
       end
     end
+  end
+
+  it 'synchronizes canvas access only for added and removed managers' do
+    other_shop = create(:shop)
+    removed = create(:member, :board_member, :current, resource_manager_shop_ids: [shop.id.to_s, other_shop.id.to_s])
+    retained = create(:member, :admin, :current, resource_manager_shop_ids: [shop.id.to_s])
+    manager
+    ActiveJob::Base.queue_adapter.enqueued_jobs.clear
+
+    put "/api/admin/shops/#{shop.id}", params: { resource_manager_ids: [manager.id.to_s, retained.id.to_s, manager.id.to_s] }, as: :json
+    expect(response).to have_http_status(:ok)
+    jobs = ActiveJob::Base.queue_adapter.enqueued_jobs.select { |job| job[:job] == ReservationSlackCanvasMemberAccessJob }
+    expect(jobs.map { |job| job[:args] }).to contain_exactly(
+      [manager.id.to_s, [shop.id.to_s]], [removed.id.to_s, [shop.id.to_s]]
+    )
+    expect(manager.reload.resource_manager_shop_ids).to include(shop.id.to_s)
+    expect(removed.reload.resource_manager_shop_ids).to eq([other_shop.id.to_s])
+
+    ActiveJob::Base.queue_adapter.enqueued_jobs.clear
+    put "/api/admin/shops/#{shop.id}", params: { resource_manager_ids: [retained.id.to_s, manager.id.to_s] }, as: :json
+    expect(response).to have_http_status(:ok)
+    put "/api/admin/shops/#{shop.id}", params: { name: 'Renamed shop' }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(ActiveJob::Base.queue_adapter.enqueued_jobs.select { |job| job[:job] == ReservationSlackCanvasMemberAccessJob }).to be_empty
   end
 
   it 'removes only this shop, preserves other shops, and leaves assignments alone when omitted' do

@@ -3,7 +3,7 @@ namespace :fix_tickets do
   task ensure_indexes: :environment do
     [FixTicket, FixTicketEvent, FixTicketReveal].each(&:create_indexes)
   end
-  desc 'Recover pending repair-ticket notifications; run every five minutes'
+  desc 'Recover pending repair-ticket notifications; run every ten minutes'
   task recover_deliveries: :environment do
     FixTicketDeliveryRecoveryJob.perform_now
   end

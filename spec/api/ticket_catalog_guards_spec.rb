@@ -9,6 +9,21 @@ RSpec.describe 'Repair ticket catalog references', type: :request do
     sign_in member
     allow(REDIS).to receive(:set)
   end
+  path '/admin/tools' do
+    post 'Create a tool with a name unique within its shop' do
+      tags 'Tools'
+      security [sessionAuth: []]
+      consumes 'application/json'
+      produces 'application/json'
+      parameter name: :body, in: :body, schema: { type: :object, properties: {
+        name: { type: :string, description: 'Unique within the shop, ignoring case.' }, shop_id: { type: :string }
+      } }
+      let(:body) { { name: tool.name, shop_id: shop.id.to_s } }
+      response '422', 'Another tool in the same shop already has this name' do
+        run_test! { |response| expect(response.body).to include('already exists in this shop') }
+      end
+    end
+  end
   %w[/admin/tools/{id} /admin/shops/{id}].each do |endpoint|
     path endpoint do
       parameter name: :id, in: :path, type: :string
@@ -34,11 +49,19 @@ RSpec.describe 'Repair ticket catalog references', type: :request do
         security [sessionAuth: []]
         consumes 'application/json'
         produces 'application/json'
-        parameter name: :body, in: :body, schema: { type: :object, properties: { shop_id: { type: :string } } }
+        parameter name: :body, in: :body, schema: { type: :object, properties: { shop_id: { type: :string }, name: { type: :string, description: 'Unique within the shop, ignoring case; the existing tool is excluded when editing.' } } }
         let(:body) { { shop_id: create(:shop).id.to_s } }
         response '409', 'Repair ticket reference prevents shop move' do
           schema '$ref' => '#/components/schemas/FixError'
           run_test! { expect(tool.reload.shop_id).to eq(shop.id) }
+        end
+        response '422', 'Another tool in the same shop already has this name' do
+          let(:other) { create(:tool, shop: shop, disabled: true) }
+          let(:body) { { name: other.name } }
+          run_test! do |response|
+            expect(response.body).to include('already exists in this shop')
+            expect(tool.reload.name).not_to eq(other.name)
+          end
         end
       end
     end

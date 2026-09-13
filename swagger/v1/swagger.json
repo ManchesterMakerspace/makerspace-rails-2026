@@ -9646,6 +9646,7 @@
         "tags": [
           "Shops"
         ],
+        "description": "Changed Resource Manager assignments enqueue Slack canvas access synchronization for each added or removed member.",
         "security": [
           {
             "sessionAuth": []
@@ -9682,6 +9683,7 @@
         "tags": [
           "Shops"
         ],
+        "description": "Changed Resource Manager assignments enqueue Slack canvas access synchronization for each added or removed member.",
         "security": [
           {
             "sessionAuth": []
@@ -9749,7 +9751,7 @@
           "Slack"
         ],
         "security": [],
-        "description": "Requires a valid Slack HMAC signature and timestamp within five minutes. Fix interactions also validate workspace and linked member, then recheck action permissions. payload is a JSON-encoded FixSlackInteractionPayload. Suggestions return options; buttons acknowledge with {} and update the Slack view; modal submissions return update/view or errors keyed by block ID. Existing non-Fix interactions remain supported.",
+        "description": "Requires a valid Slack HMAC signature and timestamp within five minutes. Fix interactions also validate workspace and linked member, then recheck action permissions. payload is a JSON-encoded FixSlackInteractionPayload. Assignee-filter suggestions are restricted to members assigned to tickets the caller can view; staff assignment searches still require ticket management rights and current candidate membership. Suggestions return options; buttons acknowledge with {} and update the Slack view; modal submissions return update/view or errors keyed by block ID. Existing non-Fix interactions remain supported.",
         "parameters": [
           {
             "name": "X-Slack-Request-Timestamp",
@@ -10037,6 +10039,43 @@
         }
       }
     },
+    "/admin/tools": {
+      "post": {
+        "summary": "Create a tool with a name unique within its shop",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "422": {
+            "description": "Another tool in the same shop already has this name"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Unique within the shop, ignoring case."
+                  },
+                  "shop_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/tools/{id}": {
       "parameters": [
         {
@@ -10092,6 +10131,9 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Another tool in the same shop already has this name"
           }
         },
         "requestBody": {
@@ -10102,6 +10144,10 @@
                 "properties": {
                   "shop_id": {
                     "type": "string"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Unique within the shop, ignoring case; the existing tool is excluded when editing."
                   }
                 }
               }
@@ -10130,6 +10176,9 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Another tool in the same shop already has this name"
           }
         },
         "requestBody": {
@@ -10140,6 +10189,10 @@
                 "properties": {
                   "shop_id": {
                     "type": "string"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Unique within the shop, ignoring case; the existing tool is excluded when editing."
                   }
                 }
               }
