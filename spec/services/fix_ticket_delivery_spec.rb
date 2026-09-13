@@ -13,11 +13,21 @@ RSpec.describe FixTicketDelivery do
     allow(ShortUrl).to receive(:base_url).and_return('https://portal.example.com')
   end
   it 'creates a root then posts a full escaped note with its thread_ts' do
-    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'C1234567890', thread_ts: nil)).ordered.and_return({ 'ts' => '100.001', 'channel' => 'C1234567890' })
-    expect(client).to receive(:chat_postMessage).with(hash_including(thread_ts: '100.001', text: include('Switch &lt;@USER&gt; failed'), reply_broadcast: false)).ordered.and_return({ 'ts' => '100.002', 'channel' => 'C1234567890' })
+    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'C1234567890', thread_ts: nil, text: include("Ticket ##{ticket.id}:"))).ordered.and_return({ 'ts' => '100.001', 'channel' => 'C1234567890' })
+    expect(client).to receive(:chat_postMessage).with(hash_including(thread_ts: '100.001', text: include("Ticket ##{ticket.id}:", 'Switch &lt;@USER&gt; failed'), reply_broadcast: false)).ordered.and_return({ 'ts' => '100.002', 'channel' => 'C1234567890' })
     described_class.call(ticket, event)
     expect(ticket.reload.slack_ticket_ts).to eq('100.001')
     expect(event.reload.completed_at).to be_present
+  end
+  it 'includes the ticket number in recipient DMs' do
+    allow(Service::MemberProvisioning).to receive(:invite_slack)
+    reporter.save!
+    SlackUser.create!(member_id: reporter.id, slack_id: 'U123')
+    event.set(recipients: [reporter.id], central_enabled: false)
+    allow(Service::SlackConnector).to receive(:safe_channel).with('U123').and_return('U123')
+    expect(client).to receive(:conversations_open).with(users: 'U123').and_return({ 'channel' => { 'id' => 'D123' } })
+    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'D123', text: include("Ticket ##{ticket.id}:"))).and_return({ 'ts' => '100.001', 'channel' => 'D123' })
+    described_class.call(ticket, event)
   end
   it 'redacts legacy assignment deltas and reporter attribution before Slack publication' do
     event.set(kind: 'assigned', note: nil, field_changes: { 'assignees' => [[reporter.fullname], []] })

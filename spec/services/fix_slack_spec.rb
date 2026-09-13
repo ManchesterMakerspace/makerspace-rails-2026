@@ -2,6 +2,7 @@ require 'rails_helper'
 RSpec.describe FixSlack do
   let(:member) { create(:member, :current) }
   before do
+    allow(Service::MemberProvisioning).to receive(:invite_slack)
     ActiveJob::Base.queue_adapter = :test
     allow(ShortUrl).to receive(:base_url).and_return('https://portal.example.com')
     allow(REDIS).to receive(:set).and_return(true)
@@ -25,6 +26,59 @@ RSpec.describe FixSlack do
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with('SLACK_TEAM_ID').and_return('T_EXPECTED')
     expect { described_class.member!({ 'team_id' => 'T_OTHER', 'user_id' => 'U_OTHER' }) }.to raise_error(Error::Forbidden)
+  end
+  it 'prefills the channel shop and keeps it as the list and new-report filter' do
+    shop = create(:shop, slack_channel: 'woodshop')
+    expect(described_class.channel_shop(member, { 'channel_id' => 'C123', 'channel_name' => 'woodshop' })).to eq(shop)
+    shop.set(slack_channel: 'C123')
+    expect(described_class.channel_shop(member, { 'channel_id' => 'C123' })).to eq(shop)
+    expect(described_class.channel_shop(member, { 'channel_id' => 'C_OTHER' })).to be_nil
+    view = described_class.command_view(member, 'new', shop: shop)
+    expect(view[:blocks].find { |b| b[:block_id] == 'shop_id' }[:element][:initial_option][:value]).to eq(shop.id.to_s)
+    expect(JSON.parse(view[:private_metadata]).dig('query', 'shop_id')).to eq(shop.id.to_s)
+    expect(view[:blocks].select { |b| b[:type] == 'input' }).to all(include(:label, :hint))
+    list = described_class.command_view(member, '', shop: shop)
+    expect(JSON.parse(list[:private_metadata])).to include('shop_id' => shop.id.to_s, 'mode' => 'all')
+  end
+
+  it 'shows all readable open tickets privately, with optional channel shop scope' do
+    shop = create(:shop, name: 'Woodworking')
+    tool = create(:tool, shop: shop)
+    outsider = create(:member, :current)
+    CheckoutApprover.create!(member_id: member.id, tool_ids: [tool.id.to_s])
+    own = create(:fix_ticket, reporter_id: member.id, shop_id: shop.id)
+    public_ticket = create(:fix_ticket, reporter_id: outsider.id, public_read_only: true)
+    scoped = create(:fix_ticket, reporter_id: outsider.id, tool_id: tool.id, shop_id: shop.id)
+    create(:fix_ticket, reporter_id: outsider.id)
+    create(:fix_ticket, reporter_id: member.id, status: 'resolved')
+    result = described_class.command_view(member, 'show')
+    expect(result[:response_type]).to eq('ephemeral')
+    ids = result[:blocks].flat_map { |b| Array(b[:elements]) }.select { |e| e[:action_id] == 'fix_view' }.map { |e| JSON.parse(e[:value])['id'] }
+    expect(ids).to contain_exactly(own.id.to_s, public_ticket.id.to_s, scoped.id.to_s)
+    expect(result[:blocks].to_json).to include("##{own.id}:")
+    local = described_class.command_view(member, 'show', shop: shop)
+    expect(local[:text]).to start_with('Tickets in Woodworking:')
+    expect(local[:blocks].to_json).not_to include("##{public_ticket.id}:")
+    detail = described_class.command_view(member, "##{own.id}")
+    expect(detail[:blocks].to_json).to include("##{own.id}:", "/fix-tickets/#{own.id}")
+  end
+
+  it 'paginates private show results and rechecks access for subsequent pages' do
+    create_list(:fix_ticket, 11, reporter_id: member.id)
+    result = described_class.command_view(member, 'show')
+    next_button = result[:blocks].last[:elements].find { |e| e[:text][:text] == 'Next' }
+    expect(next_button[:action_id]).to eq('fix_show_page')
+    client = double('Slack')
+    allow(Service::SlackConnector).to receive(:client).and_return(client)
+    allow(described_class).to receive(:member!).and_return(member)
+    expect(client).to receive(:chat_postEphemeral).with(hash_including(channel: 'C123', user: 'U123', text: include('page 2')))
+    described_class.interaction({ 'type' => 'block_actions', 'channel' => { 'id' => 'C123' }, 'user' => { 'id' => 'U123' }, 'actions' => [{ 'action_id' => 'fix_show_page', 'value' => next_button[:value] }] })
+  end
+  it 'opens a detail modal from a private message button' do
+    ticket = create(:fix_ticket, reporter_id: member.id)
+    allow(described_class).to receive(:member!).and_return(member)
+    expect(Service::SlackConnector).to receive(:open_modal).with('trigger', hash_including(callback_id: 'fix_detail'))
+    described_class.interaction({ 'type' => 'block_actions', 'trigger_id' => 'trigger', 'actions' => [{ 'action_id' => 'fix_view', 'value' => { id: ticket.id.to_s }.to_json }] })
   end
   it 'limits assignee filter suggestions to visible ticket participants, including expired assignees' do
     visible = create(:member, :current, firstname: 'Visible')

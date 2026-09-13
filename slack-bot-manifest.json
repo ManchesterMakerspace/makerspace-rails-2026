@@ -36,7 +36,14 @@
         "command": "/fix",
         "url": "https://YOUR_MEMBER_PORTAL_HOST/slack/commands/fix",
         "description": "Report and manage tool repair tickets",
-        "usage_hint": "[new|mine|assigned|queue|public|ticket-id]",
+        "usage_hint": "[new|show|mine|assigned|queue|public|#ticket-number]",
+        "should_escape": false
+      },
+      {
+        "command": "/fix-tickets",
+        "url": "https://YOUR_MEMBER_PORTAL_HOST/slack/commands/fix",
+        "description": "Report problems or show open repair tickets",
+        "usage_hint": "[new|show|mine|assigned|queue|public|#ticket-number]",
         "should_escape": false
       }
     ]

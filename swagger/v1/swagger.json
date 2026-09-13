@@ -3028,7 +3028,8 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "String form of the integer _id allocated by Ticket.pull; legacy ObjectId tickets remain supported."
           },
           "reference": {
             "type": "string"
@@ -3493,7 +3494,8 @@
           },
           "ticketId": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Source repair ticket ID as a string: integer sequence for new tickets, ObjectId for legacy tickets."
           },
           "shopId": {
             "type": "string",
@@ -3628,7 +3630,8 @@
           },
           "ticketId": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Source repair ticket ID as a string: integer sequence for new tickets, ObjectId for legacy tickets."
           },
           "shopId": {
             "type": "string",
@@ -7381,6 +7384,7 @@
             "url": "/"
           }
         ],
+        "description": "Handles /fix and /fix-tickets. new prefills a matching shop channel; other lists default to that shop filter. show returns an ephemeral, paginated list of all authorized open tickets (including public and approver scope), prefixed Tickets in SHOP NAME: in a shop channel. Ticket numbers accept an optional # prefix. Modal input blocks include persistent labels and hints.",
         "tags": [
           "Slack"
         ],
@@ -7411,10 +7415,20 @@
                   "type": "object",
                   "properties": {
                     "response_type": {
-                      "type": "string"
+                      "type": "string",
+                      "enum": [
+                        "ephemeral"
+                      ]
                     },
                     "text": {
                       "type": "string"
+                    },
+                    "blocks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      },
+                      "description": "Private show results with ticket numbers and pagination actions."
                     }
                   },
                   "required": [
@@ -7438,6 +7452,19 @@
                 ],
                 "properties": {
                   "text": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "string",
+                    "enum": [
+                      "/fix",
+                      "/fix-tickets"
+                    ]
+                  },
+                  "channel_id": {
+                    "type": "string"
+                  },
+                  "channel_name": {
                     "type": "string"
                   },
                   "team_id": {
@@ -9971,6 +9998,7 @@
                       "slack_channel_rm",
                       "slack_channel_admin",
                       "slack_channel_logs",
+                      "slack_channel_new_members",
                       "volunteer_pending_slack_channel",
                       "volunteer_credits_per_discount",
                       "volunteer_max_discounts_per_year",
@@ -10014,6 +10042,7 @@
                           "slack_channel_rm",
                           "slack_channel_admin",
                           "slack_channel_logs",
+                          "slack_channel_new_members",
                           "volunteer_pending_slack_channel",
                           "volunteer_credits_per_discount",
                           "volunteer_max_discounts_per_year",

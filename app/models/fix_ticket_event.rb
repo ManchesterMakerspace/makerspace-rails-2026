@@ -1,7 +1,7 @@
 # Actor identities are internal. All output goes through FixTicketPresenter.
 class FixTicketEvent
   include Mongoid::Document
-  field :ticket_id, type: BSON::ObjectId
+  field :ticket_id, type: FixTicketId
   field :actor_id, type: BSON::ObjectId
   field :kind, type: String
   field :note, type: String

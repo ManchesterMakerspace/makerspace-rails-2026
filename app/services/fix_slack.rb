@@ -1,4 +1,27 @@
 class FixSlack
+  INPUT_HINTS = {
+    'title' => 'Give the problem a short, descriptive title.',
+    'description' => 'Describe the problem and where to find it. Free text may identify you.',
+    'category' => 'Choose the kind of problem, or clear a filter to include every category.',
+    'shop_id' => 'Choose the workshop, No shop, or clear a filter to include all shops.',
+    'tool_id' => 'Search for a catalog tool. On new reports, its shop takes precedence.',
+    'uncatalogued_tool' => 'For a tool outside the catalog, enter its name instead of selecting a tool.',
+    'priority' => '1 is highest. New report priorities shift your existing tickets; leave blank for no priority.',
+    'i_broke_it' => 'Indicate whether you caused the damage.',
+    'i_can_fix_it' => 'Indicate whether you can help repair the problem.',
+    'public_read_only' => 'Public tickets and their full history are readable by active, unexpired members.',
+    'mode' => 'All includes every ticket you have permission to view.',
+    'statuses' => 'Select the repair states to include in the list.',
+    'status' => 'Choose a repair state. Closed tickets must reopen to Open.',
+    'confirmation' => 'Record whether the problem could be verified. Could not confirm requires a note.',
+    'assignee_id' => 'Filter by an assignee on tickets you can view.',
+    'member_ids' => 'Select active, unexpired members to assign to this ticket.',
+    'sort' => 'Choose the field used to order matching tickets.',
+    'direction' => 'Ascending puts smaller or older values first.',
+    'note' => 'Enter at least two non-whitespace characters. Notes are shared to central Slack when configured.',
+    'announcement_note' => 'This designated summary may be published to the shop or tool channel.',
+    'announce_to_slack' => 'Enable persistent shop/tool announcements using the designated summary.'
+  }.freeze
   class << self
     def member!(payload)
       team = payload['team_id'] || payload.dig('team', 'id')
@@ -26,12 +49,12 @@ class FixSlack
           element[:initial_value] = value.to_s
         end
       end
-      { type: 'input', block_id: id, label: plain(label), optional: optional, element: element }
+      { type: 'input', block_id: id, label: plain(label), hint: plain(INPUT_HINTS.fetch(id, label)), optional: optional, element: element }
     end
     def external(id, label, selected: [], multi: false)
       element = { type: multi ? 'multi_external_select' : 'external_select', action_id: "fix_search_#{id}", min_query_length: 0 }
       element[multi ? :initial_options : :initial_option] = multi ? selected : selected.first if selected.any?
-      { type: 'input', block_id: id, label: plain(label), optional: true, element: element }
+      { type: 'input', block_id: id, label: plain(label), hint: plain(INPUT_HINTS.fetch(id, label)), optional: true, element: element }
     end
     def options(member, payload)
       field = payload['action_id'].to_s.delete_prefix('fix_search_')
@@ -61,43 +84,58 @@ class FixSlack
       input(id, label, value: value.to_s, options: [option('No', 'false'), option('Yes', 'true')])
     end
     def modal(callback, blocks, metadata = {}, submit: 'Save')
+      ticket_id = metadata[:id] || metadata['id']
+      blocks = [text_block("Ticket ##{ticket_id.to_s.delete_prefix('#')}")] + blocks if ticket_id
       view = { type: 'modal', callback_id: callback, title: plain('Fix tickets'), close: plain('Close'),
         private_metadata: metadata.to_json, blocks: blocks }
       view[:submit] = plain(submit) if submit
       view
     end
-    def command_view(member, text)
-      command = text.split.first
-      return new_view(member) if command == 'new'
-      return detail(member, command) if BSON::ObjectId.legal?(command.to_s)
-      list(member, { 'mode' => %w[mine assigned queue public].include?(command) ? command : 'mine' })
+    def channel_shop(member, payload)
+      channel_id = payload['channel_id'] || payload.dig('channel', 'id')
+      name = (payload['channel_name'] || payload.dig('channel', 'name')).to_s.delete_prefix('#')
+      channels = [channel_id.presence, name.presence, name.present? ? "##{name}" : nil].compact
+      FixTicketService.catalog_shops(member).where(:slack_channel.in => channels).first if channels.any?
     end
-    def new_view(member)
+    def command_view(member, text, shop: nil)
+      command = text.split.first
+      query = { 'mode' => %w[all mine assigned queue public].include?(command) ? command : 'all' }
+      query['shop_id'] = shop.id.to_s if shop
+      return new_view(member, query) if command == 'new'
+      return detail(member, command, query) if command.to_s.match?(/\A#?[1-9][0-9]*\z/) || BSON::ObjectId.legal?(command.to_s)
+      list(member, query, ephemeral: command == 'show')
+    end
+    def new_view(member, query = {})
       FixTicketService.capacity!(member)
+      shop = FixTicketService.catalog_shops(member).where(id: query['shop_id']).first if query['shop_id'].present? && query['shop_id'] != 'none'
       blocks = [text_block('Your identity is hidden except after an admin privacy acknowledgment. Text may identify you. When configured, full notes are shared in the central tickets channel.'),
         input('title', 'Title'), input('description', 'Description', multi: true),
         input('category', 'Category', options: FixTicket::CATEGORIES.map { |v| option(v.capitalize, v) }),
-        external('shop_id', 'Shop (optional)'),
+        external('shop_id', 'Shop (optional)', selected: shop ? [option(shop.name, shop.id)] : []),
         external('tool_id', 'Tool (optional; selects its shop)'),
         input('uncatalogued_tool', 'Uncatalogued tool name', optional: true),
         input('priority', 'Priority (1 highest; shifts your existing priorities)', optional: true, options: (1..10).map { |n| option(n, n) }),
         yes_no('i_broke_it', 'I broke it'), yes_no('i_can_fix_it', 'I can fix it!'),
         yes_no('public_read_only', 'Public read-only: current members can read all notes')]
-      modal('fix_new', blocks, { submission_key: SecureRandom.uuid }, submit: 'Submit report')
+      modal('fix_new', blocks, { submission_key: SecureRandom.uuid, query: query }, submit: 'Submit report')
     end
-    def list(member, query)
+    def list(member, query, ephemeral: false)
       query = query.stringify_keys.merge('page_size' => 10)
       result = FixTicketQuery.call(member, query)
-      blocks = [text_block("#{query['mode']}: #{result[:total]} tickets · page #{result[:page] + 1}"),
-        { type: 'actions', elements: [button('New report', 'new'), button('Filters / sort', 'filters', query)] }]
+      shop = Shop.where(id: query['shop_id']).first if query['shop_id'].present? && query['shop_id'] != 'none'
+      heading = "#{shop ? "Tickets in #{shop.name}:" : 'Tickets:'} #{result[:total]} · page #{result[:page] + 1}"
+      blocks = [text_block(heading),
+        { type: 'actions', elements: [button('New report', 'new', query), button('Filters / sort', 'filters', query)] }]
       result[:tickets].each do |t|
-        blocks << text_block("#{t[:title]} · #{t[:status]} · Priority #{t[:priority] || '—'}\nCreated #{t[:createdAt]} · Updated #{t[:updatedAt]}")
+        blocks << text_block("##{t[:id]}: #{t[:title]} · #{t[:status]} · Priority #{t[:priority] || '—'}\nCreated #{t[:createdAt]} · Updated #{t[:updatedAt]}")
         blocks << { type: 'actions', elements: [button('View ticket', 'view', { id: t[:id], query: query })] }
       end
       pages = []
-      pages << button('Previous', 'page', query.merge('page' => result[:page] - 1)) if result[:page] > 0
-      pages << button('Next', 'page', query.merge('page' => result[:page] + 1)) if (result[:page] + 1) * 10 < result[:total]
+      page_action = ephemeral ? 'show_page' : 'page'
+      pages << button('Previous', page_action, query.merge('page' => result[:page] - 1)) if result[:page] > 0
+      pages << button('Next', page_action, query.merge('page' => result[:page] + 1)) if (result[:page] + 1) * 10 < result[:total]
       blocks << { type: 'actions', elements: pages } if pages.any?
+      return { response_type: 'ephemeral', text: FixTicketDelivery.escape(heading), blocks: blocks } if ephemeral
       modal('fix_list', blocks, query, submit: nil)
     end
     def button(label, action, data = {})
@@ -107,7 +145,7 @@ class FixSlack
       tool = Tool.where(id: query['tool_id']).first if query['tool_id'].present?
       assignee = Member.where(id: query['assignee_id']).first if query['assignee_id'].present?
       modal('fix_filters', [
-        input('mode', 'List', value: query['mode'], options: %w[mine assigned queue public].map { |v| option(v, v) }),
+        input('mode', 'List', value: query['mode'] || 'all', options: %w[all mine assigned queue public].map { |v| option(v, v) }),
         external('shop_id', 'Shop (clear for all)', selected: query['shop_id'].present? ? [option(query['shop_id'] == 'none' ? 'No shop' : Shop.where(id: query['shop_id']).first&.name || 'Shop', query['shop_id'])] : []),
         input('priority', 'Priority', value: query['priority'], options: [option('All priorities', 'all'), option('Unprioritized', 'none')] + (1..10).map { |n| option(n, n) }),
         input('statuses', 'Statuses', value: query['statuses'] || FixTicket::ACTIVE, multi: true, options: FixTicket::STATUSES.map { |v| option(v.tr('_', ' '), v) }),
@@ -120,10 +158,11 @@ class FixSlack
       ], query, submit: 'Apply')
     end
     def detail(member, id, query = {})
-      ticket = FixTicket.where(id: FixTicketService.parse_id(id)).first
+      ticket = FixTicket.where(id: FixTicketId.mongoize(id)).first
       raise Error::NotFound.new unless ticket
+      id = ticket.id.to_s
       t = FixTicketPresenter.ticket(ticket, member, detail: true)
-      blocks = [text_block("#{t[:title]}\n#{t[:description]}\n#{t[:status]} · #{t[:confirmation]} · Priority #{t[:priority] || '—'}\n#{t[:outOfService] ? 'Tool out of service' : ''}\nCreated #{t[:createdAt]} · Updated #{t[:updatedAt]}"),
+      blocks = [text_block("##{t[:id]}: #{t[:title]}\n#{t[:description]}\n#{t[:status]} · #{t[:confirmation]} · Priority #{t[:priority] || '—'}\n#{t[:outOfService] ? 'Tool out of service' : ''}\nCreated #{t[:createdAt]} · Updated #{t[:updatedAt]}"),
         text_block("Assignees: #{t[:assignees].map { |a| a[:name] }.join(', ')}\n#{ShortUrl.base_url}/fix-tickets/#{id}")]
       blocks << text_block("Bounty: #{ShortUrl.base_url}#{t[:bountyUrl]}") if t[:bountyUrl]
       # The complete ticket history is available in the linked portal.
@@ -148,6 +187,13 @@ class FixSlack
         value['value'] || value.dig('selected_option', 'value') || value['selected_options']&.map { |o| o['value'] }
       end
     end
+    def present_view(payload, view)
+      if payload.dig('view', 'id')
+        Service::SlackConnector.client.views_update(view_id: payload.dig('view', 'id'), view: view)
+      else
+        Service::SlackConnector.open_modal(payload['trigger_id'], view)
+      end
+    end
     def interaction(payload)
       member = member!(payload)
       return options(member, payload) if payload['type'] == 'block_suggestion'
@@ -156,7 +202,12 @@ class FixSlack
         data = JSON.parse(action['value'])
         type = action['action_id'].delete_prefix('fix_')
         view = case type
-        when 'new' then new_view(member)
+        when 'new' then new_view(member, data)
+        when 'show_page'
+          message = list(member, data, ephemeral: true)
+          Service::SlackConnector.client.chat_postEphemeral(channel: payload.dig('channel', 'id'), user: payload.dig('user', 'id'),
+            text: message[:text], blocks: message[:blocks], parse: 'none', link_names: false)
+          return {}
         when 'view' then detail(member, data['id'], data['query'] || {})
         when 'page' then list(member, data)
         when 'filters' then filters(data)
@@ -190,8 +241,7 @@ class FixSlack
           choices = ticket.assignee_ids.map { |id| option(Member.find(id).fullname, id) }
           modal('fix_assign', [external('member_ids', 'Assignees', selected: choices, multi: true)], data)
         end
-        client = Service::SlackConnector.client
-        client.views_update(view_id: payload.dig('view', 'id'), view: view) if view
+        present_view(payload, view) if view
         return {}
       end
       data, form = JSON.parse(payload.dig('view', 'private_metadata') || '{}'), values(payload)
@@ -220,7 +270,7 @@ class FixSlack
         key = payload.dig('view', 'state', 'values')&.keys&.first || 'title'
         { response_action: 'errors', errors: { key => error.message.first(150) } }
       else
-        Service::SlackConnector.client.views_update(view_id: payload.dig('view', 'id'), view: modal('fix_error', [text_block(error.message)], {}, submit: nil))
+        present_view(payload, modal('fix_error', [text_block(error.message)], {}, submit: nil))
         {}
       end
     end

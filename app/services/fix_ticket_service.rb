@@ -100,7 +100,7 @@ class FixTicketService
       result.reload
     end
     def mutate!(id:, actor:, revision: nil)
-      initial = FixTicket.where(id: parse_id(id)).first
+      initial = FixTicket.where(id: FixTicketId.mongoize(id)).first
       raise Error::NotFound.new unless initial
       result = nil
       canvas_shop_id = nil
@@ -130,7 +130,7 @@ class FixTicketService
               actor_name: reporter_closed ? 'Reporter' : actor.fullname,
               field_changes: { 'status' => [previous_status, result.status] },
               after_snapshot: { 'title' => result.title },
-              slack_message: "Ticket #{result.id}: #{result.title} closed as #{result.status}")
+              slack_message: "Ticket ##{result.id}: #{result.title} closed as #{result.status}")
           end
         end
         # Recomputed on each transaction retry; enqueue only after commit.

@@ -11,7 +11,7 @@ module FixTicketApiSchemas
   person = object.call({ id: string, name: string })
   capabilities = %w[canRead canAddNote canChangeStatus canManage canManageVisibility publicLocked canWithdraw canUnassign canCreateBounty canNominateReward canReviewReward canReveal].to_h { |key| [key, boolean] }
   ticket = {
-    id: string, reference: string, title: string, description: string,
+    id: string.merge(description: 'String form of the integer _id allocated by Ticket.pull; legacy ObjectId tickets remain supported.'), reference: string, title: string, description: string,
     closedBy: person.merge(nullable: true, description: 'Closer identity only for closed tickets closed by someone other than the reporter; otherwise null.'),
     category: { type: :string, enum: %w[damaged broken missing other] },
     status: { type: :string, enum: %w[open in_progress waiting_for_parts resolved rejected withdrawn] },
@@ -90,7 +90,7 @@ module FixTicketApiSchemas
     FixDeliveryQueued: object.call({ queued: boolean }),
     FixError: { type: :object, properties: { error: string, message: string } },
     FixBountyDetail: object.call({ id: string, title: string, description: string, status: string, creditValue: { type: :number },
-      ticketId: nullable_string, shopId: nullable_string, shopName: nullable_string, taskNumber: integer,
+      ticketId: nullable_string.merge(description: 'Source repair ticket ID as a string: integer sequence for new tickets, ObjectId for legacy tickets.'), shopId: nullable_string, shopName: nullable_string, taskNumber: integer,
       prerequisiteToolIds: array.call(string), prerequisiteToolNames: array.call(string),
       claimedById: nullable_string, claimedByName: nullable_string, createdById: nullable_string, createdByName: nullable_string,
       verifiedById: nullable_string, verifiedByName: nullable_string, parentTaskId: nullable_string,

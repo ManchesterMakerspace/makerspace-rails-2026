@@ -15,7 +15,7 @@ class VolunteerTask
 
   # Optional shop association
   field :shop_id,      type: BSON::ObjectId, default: nil
-  field :ticket_id, type: BSON::ObjectId
+  field :ticket_id, type: FixTicketId
   field :prerequisite_tool_ids, type: Array, default: []
 
   # Lifecycle status

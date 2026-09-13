@@ -27,7 +27,7 @@ class FixTicketDeliveryJob < ApplicationJob
 
   private
 
-  def ticket_selector = { _id: FixTicketService.parse_id(arguments.first) }
+  def ticket_selector = { _id: FixTicketId.mongoize(arguments.first) }
   def chain_selector = ticket_selector.merge(delivery_job_id: job_id)
   def chain_deadline = [Time.current, scheduled_at || Time.current].max + CHAIN_TTL
   def claim_delivery_chain

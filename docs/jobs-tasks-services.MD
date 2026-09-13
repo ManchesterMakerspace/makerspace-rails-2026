@@ -99,6 +99,10 @@ rental, so a run can finish even when some rentals were not changed.
 
 ## Supporting services
 
+Repair ticket delivery jobs accept integer sequence IDs (including their string
+form in queued arguments) and legacy ObjectId ticket IDs. Their persisted queue
+reservation and recovery behavior is unchanged.
+
 `ReservationSlackCanvasMemberAccessJob` synchronizes a member's current Slack
 canvas access for the supplied shops. Member edits enqueue it when RM shop
 access changes. Shop-side RM assignment edits also enqueue it once per added

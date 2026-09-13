@@ -1,4 +1,5 @@
 class VolunteerTaskSerializer < ActiveModel::Serializer
+  def ticket_id = object.ticket_id&.to_s
   attributes :id,
              :ticket_id,
              :task_number,

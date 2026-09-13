@@ -73,7 +73,7 @@ class FixTicketsController < ApplicationController
     audit = Service::AuditLogger.log(log_type: 'portal', event_type: 'ticket_reporter_revealed',
       resource_type: 'FixTicket', resource_id: ticket.id, actor: current_member,
       after_snapshot: { ticket_id: ticket.id.to_s, title: ticket.title },
-      message_details: "Ticket #{ticket.id}: #{ticket.title}")
+      message_details: "Ticket ##{ticket.id}: #{ticket.title}")
     raise Error::ServiceUnavailable.new('Unable to audit this reveal. Please retry.') unless audit
     member = Member.where(id: ticket.reporter_id).first
     render json: { name: member&.fullname || 'Former member', id: member&.id&.to_s }
@@ -90,7 +90,7 @@ class FixTicketsController < ApplicationController
   end
   private
   def find_ticket
-    ticket = FixTicket.where(id: FixTicketService.parse_id(params[:id])).first
+    ticket = FixTicket.where(id: FixTicketId.mongoize(params[:id])).first
     raise Error::NotFound.new unless ticket && FixTicketPolicy.new(current_member, ticket).read?
     ticket
   end

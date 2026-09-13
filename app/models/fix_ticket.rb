@@ -1,5 +1,6 @@
 class FixTicket
   include Mongoid::Document
+  field :_id, type: FixTicketId, default: -> { Ticket.pull }
   # Private attribution; the presenter only exposes non-reporter closers.
   field :closed_by_id, type: BSON::ObjectId
   include Mongoid::Timestamps

@@ -8,10 +8,10 @@ class FixTicketDelivery
     def escape(text) = text.to_s.gsub('&', '&amp;').gsub('<', '&lt;').gsub('>', '&gt;')
     def url(ticket) = "#{ShortUrl.base_url}/fix-tickets/#{ticket.id}"
     def summary(ticket)
-      "Ticket #{ticket.id}: #{escape(ticket.title)}\n#{ticket.status.tr('_', ' ')} · #{ticket.confirmation.tr('_', ' ')}\n#{escape(ticket.shop&.name)} #{escape(ticket.tool&.name || ticket.uncatalogued_tool)}\n#{url(ticket)}"
+      "Ticket ##{ticket.id}: #{escape(ticket.title)}\n#{ticket.status.tr('_', ' ')} · #{ticket.confirmation.tr('_', ' ')}\n#{escape(ticket.shop&.name)} #{escape(ticket.tool&.name || ticket.uncatalogued_tool)}\n#{url(ticket)}"
     end
     def call(ticket, event)
-      text = "Ticket #{ticket.id}: #{escape(ticket.title)}\n"
+      text = "Ticket ##{ticket.id}: #{escape(ticket.title)}\n"
       text += event.kind == 'created' ? 'A report was opened.' : "#{escape(FixTicketPresenter.event_actor(event, ticket))}: #{event.kind}"
       FixTicketPresenter.event_changes(event).slice(*CENTRAL_FIELDS).each { |key, pair| text += "\n#{escape(key.tr('_', ' '))}: #{escape(Array(pair).last)}" }
       text += "\n#{escape(event.note)}" if event.note.present?

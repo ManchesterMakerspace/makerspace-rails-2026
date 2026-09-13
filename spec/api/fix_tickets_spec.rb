@@ -218,15 +218,16 @@ RSpec.describe 'Fix tickets', type: :request do
   end
   path '/slack/commands/fix' do
     post 'Open Fix tickets; Slack signature, workspace and linked member required', operation: { servers: [{ url: '/' }] } do
+      description 'Handles /fix and /fix-tickets. new prefills a matching shop channel; other lists default to that shop filter. show returns an ephemeral, paginated list of all authorized open tickets (including public and approver scope), prefixed Tickets in SHOP NAME: in a shop channel. Ticket numbers accept an optional # prefix. Modal input blocks include persistent labels and hints.'
       tags 'Slack'
       consumes 'application/x-www-form-urlencoded'
       produces 'application/json'
       parameter name: :'X-Slack-Request-Timestamp', in: :header, required: true, schema: { type: :string }
       parameter name: :'X-Slack-Signature', in: :header, required: true, schema: { type: :string }
       parameter name: :payload, in: :body, required: true, schema: { type: :object,
-        required: %w[team_id user_id trigger_id], properties: { text: { type: :string }, team_id: { type: :string }, user_id: { type: :string }, trigger_id: { type: :string } } }
+        required: %w[team_id user_id trigger_id], properties: { text: { type: :string }, command: { type: :string, enum: ['/fix', '/fix-tickets'] }, channel_id: { type: :string }, channel_name: { type: :string }, team_id: { type: :string }, user_id: { type: :string }, trigger_id: { type: :string } } }
       response('200', 'Private response; opens an authorized modal') do
-        schema type: :object, properties: { response_type: { type: :string }, text: { type: :string } }, required: %w[response_type text]
+        schema type: :object, properties: { response_type: { type: :string, enum: ['ephemeral'] }, text: { type: :string }, blocks: { type: :array, items: { type: :object }, description: 'Private show results with ticket numbers and pagination actions.' } }, required: %w[response_type text]
         let(:'X-Slack-Request-Timestamp') { Time.now.to_i.to_s }
         let(:'X-Slack-Signature') { 'signature-tested-in-slack-request-specs' }
         let(:team_id) { 'T_TEST' }
@@ -240,6 +241,15 @@ RSpec.describe 'Fix tickets', type: :request do
         it 'returns an ephemeral response from the root Slack route' do |example|
           post '/slack/commands/fix', params: { team_id: team_id, user_id: user_id, trigger_id: trigger_id }
           assert_response_matches_metadata(example.metadata)
+        end
+        it 'returns show results privately without opening a modal' do |example|
+          shop = create(:shop, name: 'Woodworking', slack_channel: 'woodworking')
+          ticket = create(:fix_ticket, reporter_id: member.id, shop_id: shop.id)
+          post '/slack/commands/fix', params: { command: '/fix-tickets', text: 'show', team_id: team_id, user_id: user_id, trigger_id: trigger_id, channel_id: 'C_WOOD', channel_name: 'woodworking' }
+          assert_response_matches_metadata(example.metadata)
+          expect(JSON.parse(response.body)['text']).to start_with('Tickets in Woodworking:')
+          expect(response.body).to include("##{ticket.id}:")
+          expect(Service::SlackConnector).not_to have_received(:open_modal)
         end
       end
     end

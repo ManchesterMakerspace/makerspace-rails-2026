@@ -1,5 +1,22 @@
 # Repair tickets and independent availability
 
+New repair tickets use the integer returned by `Ticket.pull` (the `tickets`
+counter sequence) as `_id`. Portal/API links retain string representations;
+ticket details, Slack posts and DMs display `#<id>`. Existing ObjectId tickets
+and their event/bounty/reward references remain readable without renumbering.
+Deploy the mixed-ID backend before the frontend; do not reset the counter in
+an existing deployment. Sequence numbers need not be gap-free.
+
+Both `/fix` and `/fix-tickets` use `/slack/commands/fix`. Apply the updated Slack
+manifest to register the alias. A matching shop channel name or ID prefills new
+reports and the list filter. Input blocks have persistent labels and hints.
+`/fix-tickets show` returns an ephemeral list of all authorized nonterminal
+tickets, including public tickets, the member's reports, assignments, and
+approver scope. In a shop channel it restricts the results and prefixes them
+with `Tickets in <SHOP NAME>:`. Pages contain ten tickets; Next/Previous send
+another private page and recheck permissions. Detail and form buttons open
+authorized modals. No ticket list is posted publicly by this command.
+
 Creation validates catalog visibility inside the reporter transaction. Hidden shops/tools are available only to admins/board or the RM managing their shop, consistently in portal catalogs and Slack suggestions. Ordinary reports may still reference visible out-of-service tools or uncatalogued tools. Existing scoped staff ticket edits remain available.
 
 Assignment events use a neutral Member actor and omit assignee-name deltas in history and Slack delivery, including older stored events. New events omit those deltas at write time. Current assignee lists remain visible; no event labels a named assignee as the reporter. Already delivered Slack messages are not rewritten. Ordinary task claim capabilities retain privileged prerequisite exemptions; linked repair bounties always require prerequisites.
