@@ -100,9 +100,7 @@ class WorkshopSerializer < ActiveModel::Serializer
         next if hidden_or_missing_prerequisite
       end
 
-      eligible = viewer.status == "activeMember" && (
-        global_privilege? || missing_ids.empty?
-      )
+      eligible = task.eligible_for?(viewer)
       {
         id: task.id.to_s,
         taskNumber: task.task_number, ticketId: task.ticket_id&.to_s,

@@ -11317,7 +11317,17 @@
             }
           },
           "422": {
-            "description": "Unavailable claim, including a reporter claiming their own repair bounty",
+            "description": "Task is no longer available to claim",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ineligible claimant, including the reporter of a linked repair ticket",
             "content": {
               "application/json": {
                 "schema": {

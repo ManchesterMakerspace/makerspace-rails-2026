@@ -117,3 +117,5 @@ Linked bounty feeds use the same eligibility predicate as claims: current member
 a different reporter, and all prerequisites. Ordinary privileged task exemptions remain.
 Outage transitions emit `tool_availability_changed` audits with actor, tool ID, and
 old/new boolean values after the update succeeds; no-op requests emit no audit.
+
+Workshop bounty eligibility and Slack volunteer task listings use the same claim predicate as the member task feed. The Slack reservation picker excludes out-of-service tools, while server validation still protects against outages occurring after the modal opens.

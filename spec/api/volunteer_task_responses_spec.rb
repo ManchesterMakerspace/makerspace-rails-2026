@@ -3,7 +3,7 @@ require 'swagger_helper'
 RSpec.describe 'Generic volunteer task responses', type: :request do
   let(:member) { create(:member, :admin, :current) }
   let(:claimant) { create(:member, :current) }
-  let(:ticket_id) { BSON::ObjectId.new }
+  let(:ticket_id) { create(:fix_ticket, reporter_id: claimant.id).id }
   let(:task) { VolunteerTask.create!(title: 'Repair', description: 'Replace switch', created_by_id: member.id, ticket_id: ticket_id) }
   let(:id) { task.id.to_s }
   before do
@@ -34,7 +34,11 @@ RSpec.describe 'Generic volunteer task responses', type: :request do
             task
             task.update!(status: 'claimed', claimed_by_id: member.id) if endpoint.end_with?('my_claims')
           end
-          run_test! { |response| expect(JSON.parse(response.body).first['ticketId']).to eq(ticket_id.to_s) }
+          run_test! do |response|
+            expect(JSON.parse(response.body)).to include(
+              hash_including('id' => task.id.to_s, 'ticketId' => ticket_id.to_s)
+            )
+          end
         end
       end
     end
@@ -104,10 +108,15 @@ RSpec.describe 'Generic volunteer task responses', type: :request do
           run_test! { |response| expect(JSON.parse(response.body)).to have_key('ticketId') }
         end
         if endpoint == '/volunteer/tasks/{id}/claim'
-          response '422', 'Unavailable claim, including a reporter claiming their own repair bounty' do
+          response '422', 'Task is no longer available to claim' do
+            schema '$ref' => '#/components/schemas/FixError'
+            before { task.set(status: 'claimed', claimed_by_id: claimant.id) }
+            run_test!
+          end
+          response '403', 'Ineligible claimant, including the reporter of a linked repair ticket' do
             schema '$ref' => '#/components/schemas/FixError'
             let(:ticket_id) { FixTicket.create!(reporter_id: member.id, title: 'Broken', description: 'Switch failed', category: 'broken', submission_key: SecureRandom.uuid).id }
-            run_test!(requires_transactions: true) do
+            run_test! do
               expect(task.reload.status).to eq('available')
               expect(FixTicket.find(ticket_id).assignee_ids).to be_empty
             end
