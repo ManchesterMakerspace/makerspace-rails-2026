@@ -169,8 +169,8 @@ module Service
       end
     end
 
-    def get_document(resource, document_name)
-      ::Service::GoogleDrive.get_document(resource, document_name)
+    def get_document(resource, document_name, upload_attempt_id: nil)
+      ::Service::GoogleDrive.get_document(resource, document_name, upload_attempt_id: upload_attempt_id)
     end
 
     # Filename the archived copy of a signed document is expected to have,
@@ -216,10 +216,10 @@ module Service
       !find_document_file(resource, document_name, upload_attempt_id: upload_attempt_id).nil?
     end
 
-    def self.get_document(resource, document_name)
+    def self.get_document(resource, document_name, upload_attempt_id: nil)
       raise ::Error::NotFound.new() if expected_document_filename(resource, document_name).nil?
 
-      first_match = find_document_file(resource, document_name)
+      first_match = find_document_file(resource, document_name, upload_attempt_id: upload_attempt_id)
       raise ::Error::NotFound.new() if first_match.nil?
 
       file = Tempfile.new(["#{document_name}_download", ".pdf"], encoding: "ASCII-8BIT")

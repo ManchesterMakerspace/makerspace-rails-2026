@@ -55,8 +55,15 @@ RSpec.describe DocumentUploadJob, type: :job do
       ).twice
       expect(Service::GoogleDrive).not_to have_received(:upload_document)
       # Reads back the file already confirmed present instead of
-      # re-rendering, so the email attaches exactly what's archived.
-      expect(Service::GoogleDrive).to have_received(:get_document).with(member, 'member_contract')
+      # re-rendering, so the email attaches exactly what's archived --
+      # scoped to this attempt's own tag, same as the precheck above, so an
+      # earlier same-day signing's file (same filename) can't be fetched by
+      # mistake.
+      expect(Service::GoogleDrive).to have_received(:get_document).with(
+        member,
+        'member_contract',
+        upload_attempt_id: job.job_id
+      )
       expect(Service::GoogleDrive).not_to have_received(:generate_document_string)
       expect(Rails.logger).to have_received(:info).with(a_string_including('skipping duplicate Drive upload'))
       expect(MemberMailer).to have_received(:send_document).with(

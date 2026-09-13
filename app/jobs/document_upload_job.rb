@@ -45,7 +45,9 @@ class DocumentUploadJob < ApplicationJob
       # isn't guaranteed to match what's archived (e.g. if the retry crosses
       # midnight, the signed-date in a re-rendered PDF would differ from the
       # one actually on file for this legal document).
-      File.binread(::Service::GoogleDrive.get_document(resource, document_type).path)
+      File.binread(
+        ::Service::GoogleDrive.get_document(resource, document_type, upload_attempt_id: job_id).path
+      )
     else
       upload_document(
         document_type,

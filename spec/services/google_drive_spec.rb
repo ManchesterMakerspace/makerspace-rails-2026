@@ -144,5 +144,25 @@ RSpec.describe Service::GoogleDrive do
 
       expect(File.read(result.path)).to eq('pdf-bytes')
     end
+
+    # Without this, a retry's email could attach an EARLIER same-day
+    # signing's file instead of the one just verified for this attempt --
+    # the download must be scoped the same way the precheck already is.
+    it 'restricts the download to the file tagged by the given upload attempt' do
+      member = create(:member, member_contract_signed_date: Date.new(2020, 7, 18))
+      matched_file = double(id: 'file-1', web_content_link: 'link')
+      drive = double(list_files: double(files: [matched_file]))
+      allow(drive).to receive(:get_file) { |_id, download_dest:| download_dest.write('pdf-bytes'); download_dest.flush; download_dest }
+      allow(described_class).to receive(:load_gdrive).and_return(drive)
+
+      described_class.get_document(member, 'member_contract', upload_attempt_id: 'current-job-id')
+
+      expect(drive).to have_received(:list_files).with(
+        q: a_string_including(
+          "appProperties has { key='document_upload_job_id' and value='current-job-id' }"
+        ),
+        fields: 'files(id, web_content_link)'
+      )
+    end
   end
 end
