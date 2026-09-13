@@ -5,6 +5,8 @@ RSpec.describe 'Signed Fix interactions', type: :request do
   let(:secret) { 'isolated-interaction-test-secret' }
   let(:identity) { { team: { id: 'T_TEST' }, user: { id: 'U_TEST' } } }
   before do
+    # Fixture creation must not provision Slack users, even when invites are enabled.
+    allow(Service::MemberProvisioning).to receive(:invite_slack)
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with('SLACK_SIGNING_SECRET').and_return(secret)
     allow(FixSlack).to receive(:member!).and_return(member)
