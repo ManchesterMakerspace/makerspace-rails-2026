@@ -4,6 +4,12 @@ class DocumentUploadJob < ApplicationJob
 
   queue_as :slack
 
+  # Active Job normally includes every argument in its automatic
+  # "Performing" log entry. The first argument to this job is an entire
+  # base64-encoded signature, so keep all arguments out of that entry and log
+  # the useful, non-sensitive context ourselves in #perform.
+  self.log_arguments = false
+
   # Fires only once retries are exhausted, for ANY StandardError -- not just
   # Error::Google::Upload. The narrower rescue this replaced meant an upload
   # to a misconfigured destination folder, a PDF-generation bug, or
@@ -19,8 +25,45 @@ class DocumentUploadJob < ApplicationJob
     resource, member, _on_fail = resolve_resource(document_type, resource_id)
     overloads = document_type == "rental_agreement" ? { rental: resource } : {}
 
-    document = upload_document(document_type, member, overloads, base64_signature)
-    verify_uploaded!(resource, document_type)
+    Rails.logger.info(
+      "[DocumentUploadJob] Uploading document " \
+      "resource=#{resource.class.name}(#{resource.id}) " \
+      "member=#{member.fullname.inspect} document_type=#{document_type.inspect}"
+    )
+
+    document = if executions > 1 && ::Service::GoogleDrive.document_uploaded?(
+      resource,
+      document_type,
+      upload_attempt_id: job_id
+    )
+      Rails.logger.info(
+        "[DocumentUploadJob] Expected document already exists; skipping duplicate Drive upload " \
+        "resource=#{resource.class.name}(#{resource.id}) document_type=#{document_type.inspect}"
+      )
+      # Read back the exact bytes already confirmed present, rather than
+      # re-rendering from current model/clock state -- a fresh render here
+      # isn't guaranteed to match what's archived (e.g. if the retry crosses
+      # midnight, the signed-date in a re-rendered PDF would differ from the
+      # one actually on file for this legal document).
+      downloaded_file = ::Service::GoogleDrive.get_document(resource, document_type, upload_attempt_id: job_id)
+      begin
+        File.binread(downloaded_file.path)
+      ensure
+        # get_document hands back an open Tempfile -- this runs in a
+        # long-lived queue worker, so leaving cleanup to GC would let
+        # repeated retries accumulate temp files and file descriptors.
+        downloaded_file.close!
+      end
+    else
+      upload_document(
+        document_type,
+        member,
+        overloads,
+        base64_signature,
+        upload_attempt_id: job_id
+      )
+    end
+    verify_uploaded!(resource, document_type, upload_attempt_id: job_id)
     MemberMailer.send_document(document_type, member.id.as_json, document).deliver_later
   end
 
@@ -41,9 +84,23 @@ class DocumentUploadJob < ApplicationJob
   # get_document will later look (e.g. a misconfigured destination folder).
   # Confirming it's really there turns that into a normal, detectable
   # failure instead of a silent one.
-  def verify_uploaded!(resource, document_type)
-    return if ::Service::GoogleDrive.document_uploaded?(resource, document_type)
-    raise Error::Google::Upload.new("Upload appeared to succeed but the file could not be found in Drive afterward")
+  def verify_uploaded!(resource, document_type, upload_attempt_id:)
+    return if ::Service::GoogleDrive.document_uploaded?(
+      resource,
+      document_type,
+      upload_attempt_id: upload_attempt_id
+    )
+
+    member = resource.kind_of?(Member) ? resource : resource.member
+    expected_filename = ::Service::GoogleDrive.expected_document_filename(resource, document_type)
+    folder_id = ::Service::GoogleDrive.get_templates().dig(document_type.to_sym, :folder_id)
+
+    raise Error::Google::Upload.new(
+      "Upload appeared to succeed but the file could not be found in Drive afterward " \
+      "(member=#{member.fullname.inspect}, resource=#{resource.class.name}(#{resource.id}), " \
+      "document_type=#{document_type.inspect}, expected_filename=#{expected_filename.inspect}, " \
+      "folder_id=#{folder_id.inspect}, upload_attempt_id=#{upload_attempt_id.inspect})"
+    )
   end
 
   # Alerts Slack, writes a durable audit log entry, and rolls back the
