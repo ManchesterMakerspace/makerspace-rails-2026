@@ -38,9 +38,9 @@ class FixSlack
       term = Regexp.escape(payload['value'].to_s.first(100))
       rows = case field
       when 'tool_id'
-        Tool.where(:disabled.ne => true, name: /#{term}/i).order_by(name: :asc).limit(100).map { |t| option("#{t.shop&.name}: #{t.name}", t.id) }
+        FixTicketService.catalog_tools(member).where(name: /#{term}/i).order_by(name: :asc).limit(100).map { |t| option("#{t.shop&.name}: #{t.name}", t.id) }
       when 'shop_id'
-        [option('No shop', 'none')] + Shop.where(:disabled.ne => true, name: /#{term}/i).order_by(name: :asc).limit(99).map { |s| option(s.name, s.id) }
+        [option('No shop', 'none')] + FixTicketService.catalog_shops(member).where(name: /#{term}/i).order_by(name: :asc).limit(99).map { |s| option(s.name, s.id) }
       when 'member_ids', 'assignee_id'
         data = JSON.parse(payload.dig('view', 'private_metadata') || '{}')
         if field == 'member_ids'

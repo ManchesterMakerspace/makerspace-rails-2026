@@ -28,7 +28,7 @@ RSpec.describe 'Fix tickets', type: :request do
         run_test!
       end
     end
-    post 'Submit a report (activeMember and future expiration; cap enforced)' do
+    post 'Submit a report (activeMember and future expiration; cap and catalog visibility enforced)' do
       tags 'Fix tickets'
       security [sessionAuth: []]
       consumes 'application/json'
@@ -81,7 +81,7 @@ RSpec.describe 'Fix tickets', type: :request do
       produces 'application/json'
       parameter name: :update, in: :body, schema: { type: :object, properties: {
         revision: { type: :integer }, status: { type: :string, enum: FixTicket::STATUSES }, confirmation: { type: :string, enum: FixTicket::CONFIRMATIONS },
-        note: { type: :string }, title: { type: :string, maxLength: 150, pattern: FixTicket::SAFE_NAME_PATTERN }, description: { type: :string }, category: { type: :string },
+        note: { type: :string, maxLength: 10000, description: 'Nonblank notes require at least two non-whitespace characters. State transitions may require a note.' }, title: { type: :string, maxLength: 150, pattern: FixTicket::SAFE_NAME_PATTERN }, description: { type: :string }, category: { type: :string },
         shop_id: { type: :string, nullable: true }, tool_id: { type: :string, nullable: true }, uncatalogued_tool: { type: :string, pattern: "(?:#{FixTicket::SAFE_NAME_PATTERN})|^$" },
         public_read_only: { type: :boolean }, announce_to_slack: { type: :boolean }, announcement_note: { type: :string }, nominate_reward: { type: :boolean }
       } }
@@ -91,7 +91,7 @@ RSpec.describe 'Fix tickets', type: :request do
     end
     end
   end
-  { notes: ['Append a note', { note: { type: :string } }], withdraw: ['Withdraw own nonterminal report', {}],
+  { notes: ['Append a note', { note: { type: :string, minLength: 2, maxLength: 10000, pattern: '\\S[\\s\\S]*\\S', description: 'Requires at least two non-whitespace characters.' } }], withdraw: ['Withdraw own nonterminal report', {}],
     assignments: ['Staff assignment or self-unassignment', { member_ids: { type: :array, items: { type: :string } }, unassign_self: { type: :boolean } }],
     bounty: ['Admin/board/relevant RM: create bounty and publish ticket atomically', { title: { type: :string }, description: { type: :string }, credit_value: { type: :number }, prerequisite_tool_ids: { type: :array, items: { type: :string } } }],
     reward: ['Independent authorized reviewer: approve/reject pending reporter point', { decision: { type: :string, enum: %w[approve reject] } }],
@@ -104,7 +104,7 @@ RSpec.describe 'Fix tickets', type: :request do
         tags 'Fix tickets'
         security [sessionAuth: []]
         consumes 'application/json'
-        parameter name: :body, in: :body, schema: { type: :object, properties: properties }
+        parameter name: :body, in: :body, schema: { type: :object, properties: properties, required: action == :notes ? ['note'] : [] }
         produces 'application/json'
         response '200', 'Action accepted; authorization and lifecycle validated server-side' do
           schema '$ref' => "#/components/schemas/#{ { reveal: 'FixReporterReveal', outage: 'FixOutageResult', retry_delivery: 'FixDeliveryQueued' }.fetch(action, 'FixTicketDetail') }"
@@ -138,7 +138,13 @@ RSpec.describe 'Fix tickets', type: :request do
           run_test!(requires_transactions: true)
         end
         response '403', 'Caller lacks this action capability' do; schema '$ref' => '#/components/schemas/FixError'; end
-        response '422', 'Validation, cap, revision, or lifecycle conflict' do; schema '$ref' => '#/components/schemas/FixError'; end
+        response '422', 'Validation, cap, revision, or lifecycle conflict' do
+          schema '$ref' => '#/components/schemas/FixError'
+          if action == :notes
+            let(:body) { { note: ' a ' } }
+            run_test!(requires_transactions: true)
+          end
+        end
         unless %i[reveal outage retry_delivery].include?(action)
           response('503', 'MongoDB topology does not support atomic ticket writes') { schema '$ref' => '#/components/schemas/FixError' }
         end

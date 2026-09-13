@@ -1,5 +1,11 @@
 # Repair tickets and independent availability
 
+Creation validates catalog visibility inside the reporter transaction. Hidden shops/tools are available only to admins/board or the RM managing their shop, consistently in portal catalogs and Slack suggestions. Ordinary reports may still reference visible out-of-service tools or uncatalogued tools. Existing scoped staff ticket edits remain available.
+
+Assignment events use a neutral Member actor and omit assignee-name deltas in history and Slack delivery, including older stored events. New events omit those deltas at write time. Current assignee lists remain visible; no event labels a named assignee as the reporter. Already delivered Slack messages are not rewritten. Ordinary task claim capabilities retain privileged prerequisite exemptions; linked repair bounties always require prerequisites.
+
+Discussion notes require at least two non-whitespace characters and at most 10000 characters. The portal disables confirmation until valid; the shared service enforces the same rule for portal, Slack, and API submissions, including nonblank notes attached to state changes.
+
 The portal's Default View uses `mode=all`, combining all tickets the current viewer may read (with the existing nonterminal status filter initially selected). Priority, Created, and Last update table headers toggle server-side sorting, reset the page, and preserve the other filters in the URL.
 
 Admins and board members can assign or remove existing Resource Managers while creating/editing a shop in Workshops or Tool Checkouts. `resource_manager_ids` on shop writes replaces this shop's assignments, without changing their roles or other shop assignments; omitted values preserve assignments. The admin-only/board-only options endpoint lists members with the Resource Manager role. Shop responses include `resourceManagers`, and assignment changes are audited.

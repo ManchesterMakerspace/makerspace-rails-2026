@@ -19,6 +19,14 @@ RSpec.describe FixTicketDelivery do
     expect(ticket.reload.slack_ticket_ts).to eq('100.001')
     expect(event.reload.completed_at).to be_present
   end
+  it 'redacts legacy assignment deltas and reporter attribution before Slack publication' do
+    event.set(kind: 'assigned', note: nil, field_changes: { 'assignees' => [[reporter.fullname], []] })
+    allow(client).to receive(:chat_postMessage).and_return({ 'ts' => '100.001', 'channel' => 'C1234567890' })
+    described_class.call(ticket, event)
+    expect(client).to have_received(:chat_postMessage).with(hash_including(thread_ts: '100.001', text: include('Member: assigned')))
+    expect(client).not_to have_received(:chat_postMessage).with(hash_including(text: include(reporter.fullname)))
+    expect(client).not_to have_received(:chat_postMessage).with(hash_including(text: include('Reporter: assigned')))
+  end
   it 'replaces a deleted root and broadcasts a new bounty in its thread' do
     ticket.set(slack_ticket_ts: '90.001', slack_ticket_channel_id: 'C1234567890', slack_ticket_team_id: 'T_TEST', bounty_id: BSON::ObjectId.new)
     event.set(kind: 'bounty', note: nil)

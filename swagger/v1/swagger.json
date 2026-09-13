@@ -2272,6 +2272,334 @@
           "paymentMethodDetails"
         ]
       },
+      "FixSlackInteractionPayload": {
+        "type": "object",
+        "required": [
+          "type",
+          "team",
+          "user"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "block_suggestion",
+              "block_actions",
+              "view_submission"
+            ]
+          },
+          "team": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "action_id": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action_id": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action_id",
+                "value"
+              ]
+            }
+          },
+          "view": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "callback_id": {
+                "type": "string"
+              },
+              "private_metadata": {
+                "type": "string",
+                "description": "JSON-encoded ticket ID, revision, query or submission key."
+              },
+              "state": {
+                "type": "object",
+                "properties": {
+                  "values": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "description": "Block IDs map to action IDs and value, selected_option or selected_options."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "FixSlackInteractionResponse": {
+        "anyOf": [
+          {
+            "type": "object",
+            "maxProperties": 0
+          },
+          {
+            "type": "object",
+            "properties": {
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "plain_text"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "text"
+                      ]
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "value"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "options"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "response_action": {
+                "type": "string",
+                "enum": [
+                  "update"
+                ]
+              },
+              "view": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "title",
+                  "blocks"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "modal"
+                    ]
+                  },
+                  "title": {
+                    "type": "object"
+                  },
+                  "callback_id": {
+                    "type": "string"
+                  },
+                  "private_metadata": {
+                    "type": "string"
+                  },
+                  "blocks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "response_action",
+              "view"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "response_action": {
+                "type": "string",
+                "enum": [
+                  "errors"
+                ]
+              },
+              "errors": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "response_action",
+              "errors"
+            ]
+          }
+        ]
+      },
+      "CheckoutApproverWrite": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string"
+          },
+          "shop_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tool_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PublicCatalogShop": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "wiki_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "open": {
+                  "type": "boolean"
+                },
+                "out_of_service": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "open",
+                "out_of_service"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "wiki_url",
+          "tools"
+        ]
+      },
+      "PublicCatalogTool": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "open": {
+            "type": "boolean"
+          },
+          "out_of_service": {
+            "type": "boolean"
+          },
+          "wiki_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "shop": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "wiki_url": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "wiki_url"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "open",
+          "out_of_service",
+          "wiki_url",
+          "shop"
+        ]
+      },
       "ShopWrite": {
         "type": "object",
         "properties": {
@@ -2786,7 +3114,7 @@
               "type": "array",
               "items": {}
             },
-            "description": "Redacted before/after values for changed fields; no reporter identity."
+            "description": "Redacted before/after values; assignment-name deltas omitted and assignment actors neutralized to avoid identifying the reporter."
           },
           "createdAt": {
             "type": "string",
@@ -5189,6 +5517,164 @@
         }
       }
     },
+    "/admin/checkout_approvers": {
+      "get": {
+        "summary": "List checkout approvers including per-tool availability",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approvers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CheckoutApprover"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create or extend an approver scope (admin/board)",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Saved approver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutApprover"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin or board membership required"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutApproverWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/checkout_approvers/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Replace supplied approver fields (admin/board)",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated approver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutApprover"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutApproverWrite"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Replace supplied approver fields (admin/board)",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated approver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutApprover"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutApproverWrite"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an approver (admin/board)",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
     "/tool_checkouts": {
       "get": {
         "summary": "List authorized ToolCheckout records with tool availability",
@@ -5912,7 +6398,7 @@
         }
       },
       "post": {
-        "summary": "Submit a report (activeMember and future expiration; cap enforced)",
+        "summary": "Submit a report (activeMember and future expiration; cap and catalog visibility enforced)",
         "tags": [
           "Fix tickets"
         ],
@@ -6123,7 +6609,9 @@
                     ]
                   },
                   "note": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 10000,
+                    "description": "Nonblank notes require at least two non-whitespace characters. State transitions may require a note."
                   },
                   "title": {
                     "type": "string",
@@ -6218,7 +6706,9 @@
                     ]
                   },
                   "note": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 10000,
+                    "description": "Nonblank notes require at least two non-whitespace characters. State transitions may require a note."
                   },
                   "title": {
                     "type": "string",
@@ -6294,6 +6784,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation, cap, revision, or lifecycle conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -6303,9 +6803,16 @@
                 "type": "object",
                 "properties": {
                   "note": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 10000,
+                    "pattern": "\\S[\\s\\S]*\\S",
+                    "description": "Requires at least two non-whitespace characters."
                   }
-                }
+                },
+                "required": [
+                  "note"
+                ]
               }
             }
           }
@@ -6351,7 +6858,8 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {}
+                "properties": {},
+                "required": []
               }
             }
           }
@@ -6407,7 +6915,8 @@
                   "unassign_self": {
                     "type": "boolean"
                   }
-                }
+                },
+                "required": []
               }
             }
           }
@@ -6469,7 +6978,8 @@
                       "type": "string"
                     }
                   }
-                }
+                },
+                "required": []
               }
             }
           }
@@ -6523,7 +7033,8 @@
                       "reject"
                     ]
                   }
-                }
+                },
+                "required": []
               }
             }
           }
@@ -6583,7 +7094,8 @@
                   "acknowledged": {
                     "type": "boolean"
                   }
-                }
+                },
+                "required": []
               }
             }
           }
@@ -6633,7 +7145,8 @@
                   "out_of_service": {
                     "type": "boolean"
                   }
-                }
+                },
+                "required": []
               }
             }
           }
@@ -6679,7 +7192,8 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {}
+                "properties": {},
+                "required": []
               }
             }
           }
@@ -7534,6 +8048,1008 @@
         }
       }
     },
+    "/shop/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/shop/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/api/shop/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/api/shop/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/shops/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/shops/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public shop catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogShop"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/tool/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/tool/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/api/tool/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/api/tool/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/tools/{id}/public": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/tools/{id}/public.{format}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public tool catalog (also accepts .json, .html, .svg suffixes)",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Public catalog"
+        ],
+        "security": [],
+        "description": "No authentication. Singular routes default to HTML; plural aliases default to JSON. Use a .json suffix for JSON; query parameters do not override route format defaults. Hidden tools/shops return a generic 404. HTML and JSON revalidate; stable QR SVG responses retain three-day caching.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html",
+                "svg"
+              ]
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public projection, page, or QR SVG",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "JSON/HTML: public, max-age=0, s-maxage=0, must-revalidate; SVG: public, max-age=259200, s-maxage=259200"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Representation digest including tool availability for HTML/JSON."
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogTool"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged representation for a matching ETag"
+          },
+          "404": {
+            "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
     "/members/sign_in": {
       "post": {
         "summary": "Signs in user",
@@ -8211,6 +9727,89 @@
               }
             }
           }
+        }
+      }
+    },
+    "/slack/interactions": {
+      "post": {
+        "summary": "Signed Slack interactions including Fix suggestions, buttons, and modal submissions",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Slack"
+        ],
+        "security": [],
+        "description": "Requires a valid Slack HMAC signature and timestamp within five minutes. Fix interactions also validate workspace and linked member, then recheck action permissions. payload is a JSON-encoded FixSlackInteractionPayload. Suggestions return options; buttons acknowledge with {} and update the Slack view; modal submissions return update/view or errors keyed by block ID. Existing non-Fix interactions remain supported.",
+        "parameters": [
+          {
+            "name": "X-Slack-Request-Timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Slack-Signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Options, acknowledgment, updated modal, or block validation errors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixSlackInteractionResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid/missing signature, expired timestamp, or missing signing secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "payload"
+                ],
+                "properties": {
+                  "payload": {
+                    "type": "string",
+                    "description": "JSON encoding of #/components/schemas/FixSlackInteractionPayload",
+                    "example": "{\"type\":\"block_suggestion\",\"action_id\":\"fix_search_shop_id\",\"value\":\"Wood\",\"team\":{\"id\":\"T123\"},\"user\":{\"id\":\"U123\"}}"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     },

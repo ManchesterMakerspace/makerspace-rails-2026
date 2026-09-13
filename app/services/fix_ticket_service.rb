@@ -55,6 +55,17 @@ class FixTicketService
         raise Error::UnprocessableEntity.new('Choose a catalog tool or an uncatalogued name, not both') if ticket.uncatalogued_tool.present?
       end
     end
+    def catalog_shops(member)
+      return Shop.all if %w[admin board_member].include?(member.role)
+      managed = member.role == 'resource_manager' ? Array(member.resource_manager_shop_ids) : []
+      Shop.any_of({ :disabled.ne => true }, { :id.in => managed })
+    end
+    def catalog_tools(member)
+      tools = Tool.where(:shop_id.in => catalog_shops(member).pluck(:id))
+      return tools if %w[admin board_member].include?(member.role)
+      managed = member.role == 'resource_manager' ? Array(member.resource_manager_shop_ids) : []
+      tools.any_of({ :disabled.ne => true }, { :shop_id.in => managed })
+    end
     def create!(actor:, attributes:)
       attrs = normalize(attributes)
       raise Error::UnprocessableEntity.new('Unknown submission fields') if (attrs.keys - CREATE_FIELDS).any?
@@ -67,6 +78,9 @@ class FixTicketService
         capacity!(member)
         result = FixTicket.new(attrs.merge('reporter_id' => member.id, 'submitted_priority' => attrs['priority']))
         validate_catalog!(result)
+        unless %w[admin board_member].include?(member.role) || member.manages_shop?(result.shop_id)
+          raise Error::Forbidden.new('Catalog resource is unavailable') if result.shop&.disabled? || result.tool&.disabled?
+        end
         result.valid? || raise(Error::UnprocessableEntity.new(result.errors.full_messages.join(', ')))
         if result.priority
           occupied = FixTicket.where(reporter_id: member.id, :status.in => FixTicket::ACTIVE, :priority.ne => nil).to_a.index_by(&:priority)
@@ -130,6 +144,7 @@ class FixTicketService
       attrs = attributes.to_h.stringify_keys
       revision = attrs.delete('revision')
       note = attrs.delete('note').to_s.strip
+      validate_note!(note) if note.present?
       nominate = attrs.delete('nominate_reward') == true
       raise Error::UnprocessableEntity.new('Priority cannot be changed after submission') if attrs.key?('priority')
       raise Error::UnprocessableEntity.new('Unknown update fields') if (attrs.keys - STAFF_FIELDS - %w[status confirmation]).any?
@@ -174,10 +189,16 @@ class FixTicketService
       end
     end
     def note!(id:, actor:, note:)
-      raise Error::UnprocessableEntity.new('A note of 1–10000 characters is required') unless note.to_s.strip.length.between?(1, 10000)
+      validate_note!(note)
       mutate!(id: id, actor: actor) do |ticket, policy, member|
         raise Error::Forbidden.new unless policy.note?
         event!(ticket, member, 'note', note: note.strip)
+      end
+    end
+    def validate_note!(note)
+      text = note.to_s.strip
+      unless text.gsub(/[[:space:]\uFEFF]/, '').length >= 2 && text.length <= 10000
+        raise Error::UnprocessableEntity.new('A note requires at least 2 non-whitespace characters and at most 10000 characters')
       end
     end
     def withdraw!(id:, actor:)
@@ -274,7 +295,7 @@ class FixTicketService
       recipients += added
       recipients += [ticket.reporter_id] + ticket.assignee_ids if kind == 'bounty'
       FixTicketEvent.create!(ticket_id: ticket.id, actor_id: actor.id, kind: kind, note: note,
-        field_changes: changes, revision: ticket.revision, recipients: recipients.uniq)
+        field_changes: kind == 'assigned' ? changes.except('assignees') : changes, revision: ticket.revision, recipients: recipients.uniq)
     end
     def enqueue(ticket)
       FixTicketDeliveryJob.perform_later(ticket.id.to_s)

@@ -1,4 +1,13 @@
 class FixTicketPresenter
+  # Assignment deltas and reporter attribution together identify a self-unassigning
+  # reporter. Use the same neutral representation for every assignment event,
+  # including historical events and queued deliveries. Current assignees stay visible.
+  def self.event_actor(event, ticket)
+    event.kind == 'assigned' ? 'Member' : member_label(event.actor_id, ticket)
+  end
+  def self.event_changes(event)
+    event.kind == 'assigned' ? event.field_changes.except('assignees') : event.field_changes
+  end
   def self.member_label(id, ticket)
     id.to_s == ticket.reporter_id.to_s ? 'Reporter' : (Member.where(id: id).first&.fullname || 'Former member')
   end
@@ -25,8 +34,8 @@ class FixTicketPresenter
     result[:assignees] = ticket.assignee_ids.map { |id| { id: id.to_s, name: Member.where(id: id).first&.fullname || 'Former member' } }
     if detail
       result[:events] = FixTicketEvent.where(ticket_id: ticket.id).order_by(revision: :asc).map do |event|
-        { id: event.id.to_s, kind: event.kind, note: event.note, changes: event.field_changes,
-          actor: member_label(event.actor_id, ticket), createdAt: event.created_at }
+        { id: event.id.to_s, kind: event.kind, note: event.note, changes: event_changes(event),
+          actor: event_actor(event, ticket), createdAt: event.created_at }
       end
       result[:deliveryFailed] = !!policy.staff? && FixTicketEvent.where(ticket_id: ticket.id, :delivery_error.ne => nil).exists?
     end

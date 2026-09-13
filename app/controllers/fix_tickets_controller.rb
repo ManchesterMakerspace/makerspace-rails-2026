@@ -18,9 +18,8 @@ class FixTicketsController < ApplicationController
   end
   def catalog
     privileged = %w[admin board_member].include?(current_member.role)
-    shops = privileged ? Shop.all : Shop.where(:disabled.ne => true)
-    tools = Tool.where(:shop_id.in => shops.pluck(:id))
-    tools = tools.where(:disabled.ne => true) unless privileged
+    shops = FixTicketService.catalog_shops(current_member)
+    tools = FixTicketService.catalog_tools(current_member)
     eligible = current_member.fully_active_unexpired?
     open_count = FixTicketService.count(current_member)
     can_create = eligible && (privileged || open_count < FixTicketService.limit)

@@ -12,8 +12,8 @@ class FixTicketDelivery
     end
     def call(ticket, event)
       text = "Ticket #{ticket.id}: #{escape(ticket.title)}\n"
-      text += event.kind == 'created' ? 'A report was opened.' : "#{escape(FixTicketPresenter.member_label(event.actor_id, ticket))}: #{event.kind}"
-      event.field_changes.slice(*CENTRAL_FIELDS).each { |key, pair| text += "\n#{escape(key.tr('_', ' '))}: #{escape(Array(pair).last)}" }
+      text += event.kind == 'created' ? 'A report was opened.' : "#{escape(FixTicketPresenter.event_actor(event, ticket))}: #{event.kind}"
+      FixTicketPresenter.event_changes(event).slice(*CENTRAL_FIELDS).each { |key, pair| text += "\n#{escape(key.tr('_', ' '))}: #{escape(Array(pair).last)}" }
       text += "\n#{escape(event.note)}" if event.note.present?
       if event.kind == 'bounty'
         link = ShortUrl.allocate("/volunteer/tasks/#{ticket.bounty_id}", origin: ShortUrl.base_url)[:short_url]

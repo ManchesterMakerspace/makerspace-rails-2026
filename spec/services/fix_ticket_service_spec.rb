@@ -11,6 +11,52 @@ RSpec.describe FixTicketService, requires_transactions: true do
   end
   let(:reporter) { member }
   let(:admin) { member(role: 'admin') }
+  it 'rejects hidden catalog resources for ordinary reporters while preserving scoped management' do
+    shop = Shop.create!(name: 'Private workshop')
+    tool = Tool.create!(name: 'Private drill', shop: shop, disabled: true)
+    attrs = { shop_id: shop.id.to_s, tool_id: tool.id.to_s, public_read_only: true }
+    expect { report(reporter, **attrs) }.to raise_error(Error::Forbidden)
+    expect(FixTicket.count).to eq(0)
+    expect(FixTicketEvent.count).to eq(0)
+    tool.update!(disabled: false, out_of_service: true)
+    expect(report(reporter, **attrs)).to be_persisted
+    shop.update!(disabled: true)
+    expect { report(reporter, **attrs) }.to raise_error(Error::Forbidden)
+    expect { report(reporter, shop_id: shop.id.to_s, uncatalogued_tool: 'Bench') }.to raise_error(Error::Forbidden)
+    expect(FixTicketService.catalog_tools(reporter).pluck(:id)).not_to include(tool.id)
+    expect(FixSlack.options(reporter, { 'action_id' => 'fix_search_tool_id', 'value' => 'Private' })[:options]).to be_empty
+    manager = member(role: 'resource_manager')
+    manager.set(resource_manager_shop_ids: [shop.id.to_s])
+    [admin, member(role: 'board_member'), manager].each do |staff|
+      tool.update!(disabled: true)
+      expect(report(staff, **attrs)).to be_persisted
+      expect(FixTicketService.catalog_tools(staff).pluck(:id)).to include(tool.id)
+    end
+    expect { report(member(role: 'resource_manager'), **attrs) }.to raise_error(Error::Forbidden)
+  end
+  it 'redacts reporter self-unassignment in stored and historical presentation' do
+    ticket = report(reporter)
+    described_class.assign!(id: ticket.id, actor: admin, member_ids: [reporter.id])
+    described_class.assign!(id: ticket.id, actor: reporter, unassign_self: true)
+    event = FixTicketEvent.where(ticket_id: ticket.id, kind: 'assigned').order_by(revision: :desc).first
+    expect(event.field_changes).not_to have_key('assignees')
+    # Old persisted deltas must be safe too, including queued Slack delivery.
+    event.set(field_changes: { 'assignees' => [[reporter.fullname], []] })
+    history = FixTicketPresenter.ticket(ticket.reload, admin, detail: true)[:events]
+    expect(history.to_json).not_to include(reporter.fullname, reporter.id.to_s)
+    expect(history.select { |e| e[:kind] == 'assigned' }.map { |e| e[:actor] }.uniq).to eq(['Member'])
+  end
+  it 'requires two non-whitespace characters for discussion notes without creating invalid events' do
+    ticket = report(reporter)
+    revision = ticket.revision
+    ['', ' ', 'a', " a\n\t ", "\u00a0a\u00a0", '😀'].each do |note|
+      expect { described_class.note!(id: ticket.id, actor: reporter, note: note) }.to raise_error(Error::UnprocessableEntity)
+      expect(ticket.reload.revision).to eq(revision)
+    end
+    expect { described_class.update!(id: ticket.id, actor: admin, attributes: { status: 'resolved', note: ' a ' }) }.to raise_error(Error::UnprocessableEntity)
+    described_class.note!(id: ticket.id, actor: reporter, note: ' a b ')
+    expect(FixTicketEvent.where(ticket_id: ticket.id, kind: 'note').pluck(:note)).to eq(['a b'])
+  end
   it 'does not execute writes without transaction support and exposes an actionable error', requires_transactions: false do
     session = double('session')
     allow(FixTicket).to receive(:with_session).and_yield(session)

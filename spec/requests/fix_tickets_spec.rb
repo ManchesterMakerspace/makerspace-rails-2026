@@ -66,6 +66,21 @@ RSpec.describe 'Fix ticket API', type: :request, requires_transactions: true do
     get '/api/fix_tickets/catalog'
     expect(JSON.parse(response.body)['creationUnavailableReason']).to include('active, unexpired')
   end
+  it 'preserves ordinary privileged prerequisite exemptions but requires linked bounty prerequisites', requires_transactions: false do
+    tool = create(:tool, shop: create(:shop))
+    task = VolunteerTask.create!(title: 'Repair', description: 'Replace switch', credit_value: 1, shop_id: tool.shop_id, prerequisite_tool_ids: [tool.id], created_by_id: admin.id)
+    %w[admin board_member resource_manager].each do |role|
+      viewer = create(:member, :current, role: role)
+      sign_in viewer
+      get "/api/volunteer/tasks/#{task.id}/detail"
+      expect(JSON.parse(response.body)['capabilities']['canClaim']).to eq(task.eligible_for?(viewer))
+    end
+    ticket = FixTicket.create!(reporter_id: member.id, title: 'Repair', description: 'Broken', category: 'broken', submission_key: SecureRandom.uuid)
+    task.set(ticket_id: ticket.id)
+    sign_in admin
+    get "/api/volunteer/tasks/#{task.id}/detail"
+    expect(JSON.parse(response.body)['capabilities']['canClaim']).to eq(false)
+  end
   it 'returns bounty capabilities for the viewer rather than the global task status', requires_transactions: false do
     task = VolunteerTask.create!(title: 'Repair', description: 'Replace switch', credit_value: 1, created_by_id: admin.id)
     get "/api/volunteer/tasks/#{task.id}/detail"
