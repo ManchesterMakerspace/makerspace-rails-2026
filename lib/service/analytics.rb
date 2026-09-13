@@ -3,6 +3,38 @@ require "csv"
 module Service
   module Analytics
     module Members
+      # Compute all dashboard member counters in one pass over the collection.
+      # The predicates mirror the public query helpers below while sharing one
+      # timestamp, so all counters describe the same instant.
+      def self.summary_counts(now: Time.now)
+        base = query_not_landlord
+        timeframe_start = now - 1.month
+        now_ms = now.to_i * 1000
+        active_status = { "status" => { "$in" => Member::ACTIVE_MEMBERSHIP_STATUSES } }
+
+        facets = {
+          "total_members" => count_facet(active_status.merge("expirationTime" => { "$gte" => now_ms })),
+          "new_members" => count_facet(active_status.merge("startDate" => { "$gte" => timeframe_start })),
+          "lost_members" => [
+            { "$match" => {
+              "expirationTime" => { "$gte" => timeframe_start.to_i * 1000, "$lt" => now_ms }
+            } },
+            { "$count" => "count" }
+          ],
+          "subscribed_members" => count_facet(active_status.merge(
+            "expirationTime" => { "$gte" => now_ms },
+            "$or" => [{ "subscription_id" => { "$ne" => nil } }, { "subscription" => true }]
+          ))
+        }
+
+        result = Member.collection.aggregate([
+          { "$match" => base.selector },
+          { "$facet" => facets }
+        ]).first || {}
+
+        facets.keys.to_h { |key| [key.to_sym, facet_count(result, key)] }
+      end
+
       def self.query_not_landlord(base = Mongoid::Criteria.new(Member))
         base.where(:firstname.ne => "Landlord", :lastname.ne => "Fob")
       end
@@ -197,7 +229,16 @@ module Service
         end
         boundaries
       end
+
+      def self.count_facet(match)
+        [{ "$match" => match }, { "$count" => "count" }]
+      end
+
+      def self.facet_count(result, key)
+        result.fetch(key, []).first&.fetch("count", 0) || 0
+      end
       private_class_method :month_boundaries
+      private_class_method :count_facet, :facet_count
     end
 
     module Rentals
@@ -223,6 +264,44 @@ module Service
     end
 
     module Invoices
+      def self.summary_counts
+        result = Invoice.collection.aggregate([
+          { "$facet" => {
+            "past_due_invoices" => [
+              { "$match" => query_past_due_conditions },
+              { "$lookup" => {
+                "from" => Member.collection.name,
+                "localField" => "member_id",
+                "foreignField" => "_id",
+                "as" => "member"
+              } },
+              { "$match" => {
+                "member" => { "$elemMatch" => {
+                  "firstname" => { "$ne" => "Landlord" },
+                  "lastname" => { "$ne" => "Fob" },
+                  "status" => { "$in" => Member::ACTIVE_MEMBERSHIP_STATUSES },
+                  "expirationTime" => { "$gte" => Time.now.to_i * 1000 }
+                } }
+              } },
+              { "$count" => "count" }
+            ],
+            "refunds_pending" => [
+              { "$match" => query_refunds_pending.selector },
+              { "$count" => "count" }
+            ]
+          } }
+        ]).first || {}
+
+        %w[past_due_invoices refunds_pending].to_h do |key|
+          [key.to_sym, result.fetch(key, []).first&.fetch("count", 0) || 0]
+        end
+      end
+
+      def self.query_past_due_conditions
+        { "due_date" => { "$lt" => Time.now }, "settled_at" => nil, "transaction_id" => nil }
+      end
+      private_class_method :query_past_due_conditions
+
       RENTAL_CATEGORIES = {
         "Shelf" => ["Rental-Monthly-Small-back-shop-shelf-subscription", "rental-quarterly-recurring-back-shop-shelf-subscription", "rental-monthly-non-recurring-back-shop-shelf"],
         "Locker" => ["rental-quarterly-recurring-locker-subscription"],

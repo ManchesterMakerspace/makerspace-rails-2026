@@ -3,15 +3,11 @@ class Admin::AnalyticsController < AdminController
   # GET /api/admin/analytics
   # Summary counts.
   def index
-    analytics = {
-      total_members:      Service::Analytics::Members.query_total_members.count,
-      new_members:        Service::Analytics::Members.query_new_members.count,
-      lost_members:       Service::Analytics::Members.query_lost_members.count,
-      subscribed_members: Service::Analytics::Members.query_braintree_members.count,
+    analytics = Service::Analytics::Members.summary_counts.merge(
+      Service::Analytics::Invoices.summary_counts
+    ).merge(
       members_with_expiring_payment_methods: Service::CardExpirationCheck.expiring_member_count,
-      past_due_invoices:  Service::Analytics::Invoices.query_past_due.count,
-      refunds_pending:    Service::Analytics::Invoices.query_refunds_pending.count,
-    }
+    )
     render json: analytics.deep_transform_keys! { |k| k.to_s.camelize(:lower) }
   end
 
@@ -148,27 +144,56 @@ class Admin::AnalyticsController < AdminController
     tasks   = VolunteerTask.where(status: 'completed')
 
     if params[:year].present?
-      year  = params[:year].to_i
-      start = Time.new(year, 1, 1)
-      fin   = Time.new(year, 12, 31, 23, 59, 59)
-      credits = credits.where(:created_at.gte => start, :created_at.lte => fin)
-      tasks   = tasks.where(:completed_at.gte => start, :completed_at.lte => fin)
+      year       = params[:year].to_i
+      start_time = Time.new(year, 1, 1)
+      end_time   = Time.new(year + 1, 1, 1)
+      credits = credits.where(:created_at.gte => start_time, :created_at.lt => end_time)
+      tasks   = tasks.where(:completed_at.gte => start_time, :completed_at.lt => end_time)
     end
 
-    # Credits by month
-    credits_pipeline = [
-      { '$match' => credits.selector },
-      {
-        '$group' => {
-          '_id'         => { 'year' => { '$year' => '$created_at' }, 'month' => { '$month' => '$created_at' } },
-          'count'       => { '$sum' => 1 },
-          'total_value' => { '$sum' => '$credit_value' }
-        }
-      },
-      { '$sort' => { '_id.year' => 1, '_id.month' => 1 } }
-    ]
+    # Keep the global pending count in the same round-trip, but let MongoDB
+    # discard approved credits outside the requested year before $facet fans
+    # the input out to its branches. This permits the status/created_at index
+    # to bound the approved branch of the initial $or.
+    credit_input_selector = if params[:year].present?
+      { '$or' => [{ 'status' => 'pending' }, credits.selector] }
+    else
+      { 'status' => { '$in' => %w[approved pending] } }
+    end
 
-    credits_by_month = VolunteerCredit.collection.aggregate(credits_pipeline).map do |r|
+    credit_facets = VolunteerCredit.collection.aggregate([
+      { '$match' => credit_input_selector },
+      { '$facet' => {
+        'by_month' => [
+          { '$match' => credits.selector },
+          { '$group' => {
+            '_id' => { 'year' => { '$year' => '$created_at' }, 'month' => { '$month' => '$created_at' } },
+            'count' => { '$sum' => 1 },
+            'total_value' => { '$sum' => '$credit_value' }
+          } },
+          { '$sort' => { '_id.year' => 1, '_id.month' => 1 } }
+        ],
+        'top_volunteers' => [
+          { '$match' => credits.selector },
+          { '$group' => {
+            '_id' => '$member_id', 'credit_count' => { '$sum' => 1 },
+            'total_value' => { '$sum' => '$credit_value' }
+          } },
+          { '$sort' => { 'total_value' => -1 } },
+          { '$limit' => 10 }
+        ],
+        'totals' => [
+          { '$match' => credits.selector },
+          { '$group' => { '_id' => nil, 'count' => { '$sum' => 1 }, 'value' => { '$sum' => '$credit_value' } } }
+        ],
+        'pending' => [
+          { '$match' => { 'status' => 'pending' } },
+          { '$count' => 'count' }
+        ]
+      } }
+    ]).first || {}
+
+    credits_by_month = credit_facets.fetch('by_month', []).map do |r|
       {
         month:       format('%04d-%02d', r['_id']['year'], r['_id']['month']),
         count:       r['count'],
@@ -178,7 +203,7 @@ class Admin::AnalyticsController < AdminController
 
     # Tasks completed by month
     tasks_pipeline = [
-      { '$match' => { 'status' => 'completed', 'completed_at' => { '$ne' => nil } } },
+      { '$match' => tasks.where(:completed_at.ne => nil).selector },
       {
         '$group' => {
           '_id'   => { 'year' => { '$year' => '$completed_at' }, 'month' => { '$month' => '$completed_at' } },
@@ -195,21 +220,7 @@ class Admin::AnalyticsController < AdminController
       }
     end
 
-    # Top 10 volunteers by credit value
-    top_pipeline = [
-      { '$match' => credits.selector },
-      {
-        '$group' => {
-          '_id'         => '$member_id',
-          'credit_count' => { '$sum' => 1 },
-          'total_value'  => { '$sum' => '$credit_value' }
-        }
-      },
-      { '$sort' => { 'total_value' => -1 } },
-      { '$limit' => 10 }
-    ]
-
-    top_rows       = VolunteerCredit.collection.aggregate(top_pipeline).to_a
+    top_rows       = credit_facets.fetch('top_volunteers', [])
     top_member_ids = top_rows.map { |r| r['_id'] }
     top_members    = Member.in(id: top_member_ids).index_by(&:id)
 
@@ -219,13 +230,14 @@ class Admin::AnalyticsController < AdminController
       { name: m.fullname, credits: r['credit_count'], value: r['total_value'].to_f.round(2) }
     end
 
+    totals = credit_facets.fetch('totals', []).first || {}
     render json: {
       credits_by_month:   credits_by_month,
       tasks_by_month:     tasks_by_month,
       top_volunteers:     top_volunteers,
-      total_credits:      credits.count,
-      total_credit_value: credits.sum(:credit_value).to_f.round(2),
-      pending_credits:    VolunteerCredit.where(status: 'pending').count
+      total_credits:      totals.fetch('count', 0),
+      total_credit_value: totals.fetch('value', 0).to_f.round(2),
+      pending_credits:    credit_facets.fetch('pending', []).first&.fetch('count', 0) || 0
     }
   end
 
