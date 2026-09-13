@@ -10,6 +10,8 @@ module FixTicketApiSchemas
   array = ->(item) { { type: :array, items: item } }
   person = object.call({ id: string, name: string })
   capabilities = %w[requiresNoteRole canRead canAddNote canChangeStatus canManage canManageVisibility publicLocked canWithdraw canUnassign canCreateBounty canNominateReward canReviewReward canReveal].to_h { |key| [key, boolean] }
+  capabilities['canCreateBounty'] = boolean.merge(description: 'May create a bounty for an active ticket when no bounty is linked or the previous bounty is cancelled.')
+  capabilities['canReviewReward'] = boolean.merge(description: 'May independently review the pending reporter reward while the ticket is resolved.')
   ticket = {
     id: string.merge(description: 'String form of the integer _id allocated by Ticket.pull; legacy ObjectId tickets remain supported.'), reference: string, title: string, description: string,
     closedBy: person.merge(nullable: true, description: 'Closer identity only for closed tickets closed by someone other than the reporter; otherwise null.'),

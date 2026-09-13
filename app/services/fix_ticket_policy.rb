@@ -34,14 +34,18 @@ class FixTicketPolicy
     bounty = @context ? @context.bounty(ticket) : ticket.bounty
     bounty && %w[available claimed pending].include?(bounty.status)
   end
+  def bounty_replaceable?
+    ticket.bounty_id.nil? || (@context ? @context.bounty(ticket) : ticket.bounty)&.status == 'cancelled'
+  end
   def reviewable_reward?
+    return false unless ticket.status == 'resolved'
     reward = @context ? @context.reward(ticket) : VolunteerCredit.where(id: ticket.reward_id).first
     reward && reward.status == 'pending' && reward.issued_by_id != member.id
   end
   def capabilities
     { requiresNoteRole: !!(reporter? && assigned?), canRead: read?, canAddNote: note?, canChangeStatus: change_status?, canManage: !!staff?,
       canManageVisibility: !!staff? && !public_locked?, publicLocked: !!public_locked?,
-      canWithdraw: !!reporter? && ticket.active?, canUnassign: !!assigned?, canCreateBounty: bounty? && ticket.active? && ticket.bounty_id.nil?,
+      canWithdraw: !!reporter? && ticket.active?, canUnassign: !!assigned?, canCreateBounty: bounty? && ticket.active? && bounty_replaceable?,
       canNominateReward: bounty? && !reporter? && ticket.reward_id.nil?, canReviewReward: bounty? && ticket.reward_id.present? && !reporter? && !!reviewable_reward?, canReveal: member&.role == 'admin' }
   end
   def scope(mode = 'all')

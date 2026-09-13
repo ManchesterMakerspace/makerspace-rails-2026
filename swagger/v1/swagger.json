@@ -3067,13 +3067,15 @@
             "type": "boolean"
           },
           "canCreateBounty": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "May create a bounty for an active ticket when no bounty is linked or the previous bounty is cancelled."
           },
           "canNominateReward": {
             "type": "boolean"
           },
           "canReviewReward": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "May independently review the pending reporter reward while the ticket is resolved."
           },
           "canReveal": {
             "type": "boolean"
@@ -7128,7 +7130,7 @@
         }
       ],
       "post": {
-        "summary": "Admin/board/relevant RM: create bounty and publish ticket atomically",
+        "summary": "Admin/board/relevant RM: create or replace a cancelled bounty and publish an active ticket atomically",
         "tags": [
           "Fix tickets"
         ],
@@ -7191,7 +7193,7 @@
         }
       ],
       "post": {
-        "summary": "Independent authorized reviewer: approve/reject pending reporter point",
+        "summary": "Independent authorized reviewer: approve/reject pending reporter point while the ticket remains resolved",
         "tags": [
           "Fix tickets"
         ],
@@ -7208,6 +7210,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FixTicketDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation, cap, revision, or lifecycle conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
                 }
               }
             }

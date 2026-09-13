@@ -16,7 +16,8 @@ class FixTicketDelivery
       FixTicketPresenter.event_changes(event).slice(*CENTRAL_FIELDS).each { |key, pair| text += "\n#{escape(key.tr('_', ' '))}: #{escape(Array(pair).last)}" }
       text += "\n#{escape(event.note)}" if event.note.present?
       if event.kind == 'bounty'
-        link = ShortUrl.allocate("/volunteer/tasks/#{ticket.bounty_id}", origin: ShortUrl.base_url)[:short_url]
+        bounty_id = event.field_changes.dig('bounty_id', 1) || ticket.bounty_id
+        link = ShortUrl.allocate("/volunteer/tasks/#{bounty_id}", origin: ShortUrl.base_url)[:short_url]
         text += "\nA volunteer bounty is available: #{link}"
       end
       text += "\n#{url(ticket)}"
@@ -25,14 +26,16 @@ class FixTicketDelivery
         channel = Service::SlackConnector.resolved_channel_id(central)
         team = ENV['SLACK_TEAM_ID'].presence || Service::SlackConnector.slack_team_id.to_s
         root = root!(ticket, event, channel, team)
-        publish(event, 'central', ticket.slack_ticket_channel_id, text, thread_ts: root, broadcast: event.kind == 'bounty') unless event.kind == 'created'
+        publish(event, 'central', ticket.slack_ticket_channel_id, text, thread_ts: root, broadcast: event.kind == 'bounty', namespace: team) unless event.kind == 'created'
       end
       if ticket.announce_to_slack && (event.kind == 'created' || (event.field_changes.keys & %w[title status confirmation announcement_note announce_to_slack]).any?)
         channel = ticket.tool&.announce_channel.presence || ticket.tool&.users_channel.presence || ticket.shop&.slack_channel.presence
-        raise 'No shop/tool announcement channel configured' unless channel
-        safe = Service::SlackConnector.resolved_channel_id(channel)
-        if central.blank? || safe != Service::SlackConnector.resolved_channel_id(central)
-          publish(event, 'shop', safe, "#{summary(ticket)}\n#{escape(ticket.announcement_note)}")
+        # Optional shop announcements must not block participant DMs or later events.
+        if channel
+          safe = Service::SlackConnector.resolved_channel_id(channel)
+          if central.blank? || safe != Service::SlackConnector.resolved_channel_id(central)
+            publish(event, 'shop', safe, "#{summary(ticket)}\n#{escape(ticket.announcement_note)}")
+          end
         end
       end
       event.recipients.each do |id|
@@ -66,9 +69,19 @@ class FixTicketDelivery
       ticket.set(slack_ticket_ts: response.fetch('ts'), slack_ticket_channel_id: response.fetch('channel'), slack_ticket_team_id: team)
       ticket.slack_ticket_ts
     end
-    def publish(event, key, channel, text, thread_ts: nil, broadcast: false)
+    def publish(event, key, channel, text, thread_ts: nil, broadcast: false, namespace: nil)
       text.chars.each_slice(2900).map(&:join).each_with_index do |part, index|
-        post(event, "#{key}-#{index}", channel, part, thread_ts: thread_ts, broadcast: broadcast && index.zero?)
+        receipt_key = "#{key}-#{index}"
+        if key == 'central'
+          # Preserve pre-upgrade receipts/uncertain sends only in their original
+          # thread. A replacement root must receive every chunk with fresh IDs.
+          legacy = event.delivery_attempts[receipt_key]
+          unless legacy && legacy['channel'] == channel && legacy['thread_ts'] == thread_ts
+            destination = Digest::SHA256.hexdigest([namespace, channel, thread_ts].join('/'))
+            receipt_key = "central-#{destination}-#{index}"
+          end
+        end
+        post(event, receipt_key, channel, part, thread_ts: thread_ts, broadcast: broadcast && index.zero?)
       end
     end
     def reconcile(attempt, uuid)

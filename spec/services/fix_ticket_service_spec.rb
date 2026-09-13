@@ -234,6 +234,48 @@ RSpec.describe FixTicketService, requires_transactions: true do
     expect { described_class.withdraw!(id: ticket.id, actor: reporter) }.to have_enqueued_job(VolunteerSlackCanvasSyncJob).with(shop.id.to_s)
     expect(ticket.bounty.reload.status).to eq('cancelled')
   end
+  it 'allows an explicit replacement bounty after reopening, retaining cancelled history' do
+    ticket = report(reporter)
+    attrs = { title: 'Repair', description: 'Replace switch', credit_value: 1 }
+    described_class.bounty!(id: ticket.id, actor: admin, attributes: attrs)
+    old = ticket.reload.bounty
+    described_class.update!(id: ticket.id, actor: admin, attributes: { status: 'resolved', note: 'Repaired' })
+    expect(old.reload.status).to eq('cancelled')
+    described_class.update!(id: ticket.id, actor: admin, attributes: { status: 'open', note: 'Still broken', public_read_only: false })
+    expect(FixTicketPolicy.new(admin, ticket.reload).capabilities[:canCreateBounty]).to be(true)
+    expect { described_class.bounty!(id: ticket.id, actor: admin, attributes: attrs.merge(description: '')) }.to raise_error(Mongoid::Errors::Validations)
+    expect(ticket.reload.bounty_id).to eq(old.id)
+    expect(ticket.public_read_only).to be(false)
+    described_class.bounty!(id: ticket.id, actor: admin, attributes: attrs)
+    replacement = ticket.reload.bounty
+    expect(replacement.id).not_to eq(old.id)
+    expect(replacement.status).to eq('available')
+    expect(old.reload).to have_attributes(status: 'cancelled', ticket_id: ticket.id)
+    expect(ticket.public_read_only).to be(true)
+    described_class.bounty!(id: ticket.id, actor: admin, attributes: attrs)
+    expect(ticket.reload.bounty_id).to eq(replacement.id)
+    expect(FixTicketEvent.where(ticket_id: ticket.id, kind: 'bounty').order_by(revision: :desc).first.field_changes['bounty_id']).to eq([old.id, replacement.id])
+  end
+
+  it 'blocks pending reward review after reopening until the ticket is resolved again' do
+    ticket = report(reporter)
+    described_class.update!(id: ticket.id, actor: admin, attributes: { status: 'resolved', note: 'Repaired', nominate_reward: true })
+    reviewer = member(role: 'board_member')
+    reward_id = ticket.reload.reward_id
+    described_class.update!(id: ticket.id, actor: admin, attributes: { status: 'open', note: 'Still broken' })
+    expect(FixTicketPolicy.new(reviewer, ticket.reload).capabilities[:canReviewReward]).to be(false)
+    expect_any_instance_of(VolunteerCredit).not_to receive(:notify_member_credit_awarded)
+    expect_any_instance_of(VolunteerCredit).not_to receive(:check_discount_threshold!)
+    [true, false].each do |approve|
+      expect { described_class.review_reward!(id: ticket.id, actor: reviewer, approve: approve) }.to raise_error(Error::UnprocessableEntity, /must be resolved/)
+    end
+    expect(VolunteerCredit.find(reward_id).status).to eq('pending')
+    described_class.update!(id: ticket.id, actor: admin, attributes: { status: 'resolved', note: 'Fixed again' })
+    expect(FixTicketPolicy.new(reviewer, ticket.reload).capabilities[:canReviewReward]).to be(true)
+    described_class.review_reward!(id: ticket.id, actor: reviewer, approve: false)
+    expect(VolunteerCredit.find(reward_id).status).to eq('rejected')
+  end
+
   it 'uses the independently configured ticket bounty credit maximum' do
     ticket = report(reporter)
     expect { described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 5 }) }.to raise_error(Mongoid::Errors::Validations)

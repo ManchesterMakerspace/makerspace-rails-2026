@@ -84,8 +84,8 @@ RSpec.describe 'Fix tickets', type: :request do
   end
   { notes: ['Append a note', { respond_as: { type: :string, enum: %w[assignee reporter], description: 'Required when both reporter and assignee.' }, note: { type: :string, minLength: 2, maxLength: 10000, pattern: '\\S[\\s\\S]*\\S', description: 'Requires at least two non-whitespace characters.' } }], withdraw: ['Withdraw own nonterminal report', {}],
     assignments: ['Staff assignment or self-unassignment', { member_ids: { type: :array, items: { type: :string } }, unassign_self: { type: :boolean } }],
-    bounty: ['Admin/board/relevant RM: create bounty and publish ticket atomically', { title: { type: :string }, description: { type: :string }, credit_value: { type: :number }, prerequisite_tool_ids: { type: :array, items: { type: :string } } }],
-    reward: ['Independent authorized reviewer: approve/reject pending reporter point', { decision: { type: :string, enum: %w[approve reject] } }],
+    bounty: ['Admin/board/relevant RM: create or replace a cancelled bounty and publish an active ticket atomically', { title: { type: :string }, description: { type: :string }, credit_value: { type: :number }, prerequisite_tool_ids: { type: :array, items: { type: :string } } }],
+    reward: ['Independent authorized reviewer: approve/reject pending reporter point while the ticket remains resolved', { decision: { type: :string, enum: %w[approve reject] } }],
     reveal: ['Admin-only acknowledged reporter reveal; audit records ticket ID/title and acting admin, excluding reporter identity; no-store', { acknowledged: { type: :boolean } }],
     outage: ['Repair staff: independent tool availability', { out_of_service: { type: :boolean } }],
     retry_delivery: ['Repair staff: retry pending notifications', {}] }.each do |action, (title, properties)|
@@ -131,6 +131,21 @@ RSpec.describe 'Fix tickets', type: :request do
         response '403', 'Caller lacks this action capability' do; schema '$ref' => '#/components/schemas/FixError'; end
         response '422', 'Validation, cap, revision, or lifecycle conflict' do
           schema '$ref' => '#/components/schemas/FixError'
+          if action == :reward
+            let(:member) { create(:member, :admin, :current) }
+            let(:body) { { decision: 'approve' } }
+            let(:id) do
+              ticket = create(:fix_ticket)
+              credit = VolunteerCredit.create!(member_id: ticket.reporter_id, issued_by_id: create(:member, :admin, :current).id,
+                ticket_id: ticket.id, description: 'Helpful report', credit_value: 1, status: 'pending')
+              ticket.set(reward_id: credit.id)
+              ticket.id.to_s
+            end
+            run_test!(requires_transactions: true) do |response|
+              expect(response.body).to include('must be resolved')
+              expect(VolunteerCredit.find(FixTicket.find(id).reward_id).status).to eq('pending')
+            end
+          end
           if action == :notes
             let(:body) { { note: ' a ' } }
             run_test!(requires_transactions: true)

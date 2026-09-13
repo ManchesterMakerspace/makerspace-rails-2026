@@ -255,11 +255,12 @@ class FixTicketService
     def bounty!(id:, actor:, attributes:)
       mutate!(id: id, actor: actor) do |ticket, policy, member|
         raise Error::Forbidden.new unless policy.bounty? && ticket.active?
-        next if ticket.bounty_id
+        next unless policy.bounty_replaceable?
+        previous_bounty_id = ticket.bounty_id
         attrs = attributes.to_h.symbolize_keys.slice(:title, :description, :credit_value, :prerequisite_tool_ids)
         task = VolunteerTask.create!(attrs.merge(ticket_id: ticket.id, shop_id: ticket.shop_id, created_by_id: member.id, status: 'available'))
         ticket.update!(bounty_id: task.id, public_read_only: true)
-        event!(ticket, member, 'bounty')
+        event!(ticket, member, 'bounty', changes: { 'bounty_id' => [previous_bounty_id, task.id] })
       end
     end
     def nominate_reward!(ticket, member)
@@ -275,6 +276,7 @@ class FixTicketService
         credit = VolunteerCredit.where(id: ticket.reward_id).first
         raise Error::Forbidden.new unless policy.bounty? && credit && member.id != ticket.reporter_id && member.id != credit.issued_by_id
         next unless credit.status == 'pending'
+        raise Error::UnprocessableEntity.new('The ticket must be resolved before reviewing its reporter reward') unless ticket.status == 'resolved'
         credit.update!(status: approve ? 'approved' : 'rejected', issued_by_id: member.id)
         credit_id = credit.id if approve
         event!(ticket, member, 'reward', changes: { 'reward' => [ 'pending', credit.status ] })

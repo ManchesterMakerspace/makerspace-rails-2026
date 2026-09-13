@@ -121,3 +121,16 @@ old/new boolean values after the update succeeds; no-op requests emit no audit.
 Workshop bounty eligibility and Slack volunteer task listings use the same claim predicate as the member task feed. The Slack reservation picker excludes out-of-service tools, while server validation still protects against outages occurring after the modal opens.
 
 The Slack settings tab displays and overrides `SLACK_TICKETS_CHANNEL`. Saved `slack_channel_tickets` takes precedence, including a blank value that disables central announcements. Without an override the environment value is used, with no default channel. Both event creation and delivery use this effective value.
+
+Missing optional shop/tool announcement destinations are skipped so recipient DMs
+and later outbox events can proceed. Central reply receipts are scoped to workspace,
+channel, and root; replacing a deleted root republishes pending event replies and
+bounty broadcasts. Legacy receipts are reused only for their original thread.
+
+Pending reporter rewards can be reviewed only while the ticket remains resolved;
+reopening leaves the pending credit unissued and hides review controls until resolution.
+An active ticket may explicitly replace a cancelled bounty with a new reviewed bounty.
+The old task remains cancelled with its source ticket backlink; reopening alone never
+reactivates it. Bounty events record their task ID so delayed notifications retain the
+correct historical bounty link. Active, claimed, pending, and completed bounty links
+cannot be replaced by this action.

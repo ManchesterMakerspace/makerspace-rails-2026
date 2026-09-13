@@ -29,6 +29,53 @@ RSpec.describe FixTicketDelivery do
     expect(event.reload.completed_at).to be_present
   end
 
+  it 'skips a missing optional shop destination and still delivers recipient DMs' do
+    allow(Service::MemberProvisioning).to receive(:invite_slack)
+    reporter.save!
+    ticket.set(announce_to_slack: true)
+    SlackUser.create!(member_id: reporter.id, slack_id: 'U123')
+    event.set(kind: 'updated', field_changes: { 'announce_to_slack' => [false, true] }, recipients: [reporter.id], central_enabled: false)
+    allow(Service::SlackConnector).to receive(:safe_channel).with('U123').and_return('U123')
+    expect(client).to receive(:conversations_open).with(users: 'U123').and_return({ 'channel' => { 'id' => 'D123' } })
+    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'D123')).and_return({ 'ts' => '100.002', 'channel' => 'D123' })
+    described_class.call(ticket, event)
+    expect(event.reload.completed_at).to be_present
+  end
+
+  %w[note bounty].each do |kind|
+    it "reposts a previously delivered #{kind} into a replacement root" do
+      ticket.set(slack_ticket_ts: '90.001', slack_ticket_channel_id: 'C1234567890', slack_ticket_team_id: 'T_TEST')
+      receipt_key = kind == 'note' ? "central-#{Digest::SHA256.hexdigest('T_TEST/C1234567890/90.001')}-0" : 'central-0'
+      event.set(kind: kind, delivered: { receipt_key => { 'ts' => '90.002', 'channel' => 'C1234567890' } },
+        delivery_attempts: { receipt_key => { 'channel' => 'C1234567890', 'thread_ts' => '90.001', 'oldest' => '89' } }, delivery_error: 'IOError')
+      allow(ShortUrl).to receive(:allocate).and_return(short_url: 'https://portal.example.com/L23456789AB')
+      expect(client).to receive(:chat_getPermalink).and_raise(Slack::Web::Api::Errors::SlackError.new('message_not_found'))
+      expect(client).to receive(:chat_postMessage).with(hash_including(thread_ts: nil)).ordered.and_return({ 'ts' => '101.001', 'channel' => 'C1234567890' })
+      expect(client).to receive(:chat_postMessage).with(hash_including(thread_ts: '101.001', text: include('Switch &lt;@USER&gt; failed'), reply_broadcast: kind == 'bounty')).ordered.and_return({ 'ts' => '101.002', 'channel' => 'C1234567890' })
+      described_class.call(ticket, event)
+      expect(event.reload.completed_at).to be_present
+      expect(event.delivered.values.map { |receipt| receipt['ts'] }).to include('101.002')
+    end
+  end
+
+  it 'links delayed bounty announcements to their original task after replacement' do
+    original_id = BSON::ObjectId.new
+    ticket.set(bounty_id: BSON::ObjectId.new)
+    event.set(kind: 'bounty', central_enabled: false, field_changes: { 'bounty_id' => [nil, original_id] })
+    expect(ShortUrl).to receive(:allocate).with("/volunteer/tasks/#{original_id}", origin: 'https://portal.example.com').and_return(short_url: 'https://portal.example.com/L23456789AB')
+    described_class.call(ticket, event)
+  end
+
+  it 'retains legacy receipts when the same root still exists' do
+    ticket.set(slack_ticket_ts: '90.001', slack_ticket_channel_id: 'C1234567890', slack_ticket_team_id: 'T_TEST')
+    event.set(delivered: { 'central-0' => { 'ts' => '90.002', 'channel' => 'C1234567890' } },
+      delivery_attempts: { 'central-0' => { 'channel' => 'C1234567890', 'thread_ts' => '90.001', 'oldest' => '89' } })
+    expect(client).to receive(:chat_getPermalink).and_return({})
+    expect(client).not_to receive(:chat_postMessage)
+    described_class.call(ticket, event)
+    expect(event.reload.completed_at).to be_present
+  end
+
   it 'creates a root then posts a full escaped note with its thread_ts' do
     expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'C1234567890', thread_ts: nil, text: include("Ticket ##{ticket.id}:"))).ordered.and_return({ 'ts' => '100.001', 'channel' => 'C1234567890' })
     expect(client).to receive(:chat_postMessage).with(hash_including(thread_ts: '100.001', text: include("Ticket ##{ticket.id}:", 'Switch &lt;@USER&gt; failed'), reply_broadcast: false)).ordered.and_return({ 'ts' => '100.002', 'channel' => 'C1234567890' })
