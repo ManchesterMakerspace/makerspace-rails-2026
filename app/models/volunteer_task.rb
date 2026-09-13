@@ -242,7 +242,7 @@ class VolunteerTask
   end
 
   # Release a claimed task back to available (or deny a child task).
-  def release!(admin, reason)
+  def release!(admin, reason, notify: true)
     raise Error::Forbidden.new unless status == 'claimed'
     raise Error::Forbidden.new if admin.id == claimed_by_id
 
@@ -259,12 +259,14 @@ class VolunteerTask
       )
     end
 
-    notify_member_task_released(former_claimant_id, reason)
-    enqueue_volunteer_canvas_sync
+    if notify
+      notify_member_task_released(former_claimant_id, reason)
+      enqueue_volunteer_canvas_sync
+    end
   end
 
   # Reject a pending task (or deny a child task).
-  def reject_pending!(admin, reason)
+  def reject_pending!(admin, reason, notify: true)
     raise Error::Forbidden.new unless status == 'pending'
     raise Error::Forbidden.new if admin.id == claimed_by_id
 
@@ -282,8 +284,10 @@ class VolunteerTask
       )
     end
 
-    notify_member_task_rejected(former_claimant_id, reason)
-    enqueue_volunteer_canvas_sync
+    if notify
+      notify_member_task_rejected(former_claimant_id, reason)
+      enqueue_volunteer_canvas_sync
+    end
   end
 
   def cancel!

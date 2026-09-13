@@ -189,6 +189,44 @@ RSpec.describe FixTicketService, requires_transactions: true do
     expect(ticket.reload.assignee_ids).to include(volunteer.id)
     expect(ticket.bounty_assignee_ids).to be_empty
   end
+  it 'forbids reporter claims even for an admin and preserves active claimants in staff assignment edits' do
+    ticket = report(admin)
+    described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
+    task = ticket.reload.bounty
+    expect { task.claim!(admin) }.to raise_error(Error::Forbidden, /reporter cannot claim/)
+    expect(task.reload.status).to eq('available')
+    claimant = member
+    task.claim!(claimant)
+    described_class.assign!(id: ticket.id, actor: admin, member_ids: [])
+    expect(ticket.reload.bounty_assignee_ids).to eq([claimant.id])
+    expect(ticket.assignee_ids).to eq([claimant.id])
+    claimant.set(expirationTime: 1.day.ago.to_i * 1000)
+    expect(FixTicketPolicy.new(claimant, ticket).change_status?).to be(true)
+  end
+
+  { release!: ['claimed', :notify_member_task_released], reject_pending!: ['pending', :notify_member_task_rejected] }.each do |operation, (state, notification)|
+    it "defers #{operation} effects until assignment writes commit" do
+      ticket = report(reporter)
+      described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
+      task = ticket.reload.bounty
+      claimant = member
+      task.update!(status: state, claimed_by_id: claimant.id)
+      ticket.update!(bounty_assignee_ids: [claimant.id], assignee_ids: [claimant.id])
+      allow(task).to receive(notification)
+      allow(task).to receive(:enqueue_volunteer_canvas_sync)
+      allow(described_class).to receive(:event!).and_raise('Simulated transaction abort')
+      expect { task.public_send(operation, admin, 'Cannot finish') }.to raise_error(/Simulated transaction abort/)
+      expect(task.reload.status).to eq(state)
+      expect(ticket.reload.assignee_ids).to eq([claimant.id])
+      expect(task).not_to have_received(notification)
+      expect(task).not_to have_received(:enqueue_volunteer_canvas_sync)
+      allow(described_class).to receive(:event!).and_call_original
+      task.public_send(operation, admin, 'Cannot finish')
+      expect(task).to have_received(notification).with(claimant.id, 'Cannot finish').once
+      expect(task).to have_received(:enqueue_volunteer_canvas_sync).once
+      expect(ticket.reload.assignee_ids).to be_empty
+    end
+  end
 
   it 'restricts report names on creation and editing, including Slack service calls' do
     expect { report(reporter, title: 'Drill <script>') }.to raise_error(Error::UnprocessableEntity)

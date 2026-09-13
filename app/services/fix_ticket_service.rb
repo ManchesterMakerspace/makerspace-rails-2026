@@ -187,7 +187,8 @@ class FixTicketService
           # Retain explicit manual grants, but do not promote existing claim-only
           # access to a manual grant when staff submits the effective list.
           ticket.manual_assignee_ids = (ticket.manual_assignee_ids & ids) | (ids - ticket.bounty_assignee_ids)
-          ticket.bounty_assignee_ids &= ids
+          # Staff edits affect manual assignments only. Claim-derived access is
+          # removed by release/rejection (or the participant's own unassignment).
         end
         ticket.assignee_ids = (ticket.manual_assignee_ids + ticket.bounty_assignee_ids).uniq
         next unless ticket.changed?

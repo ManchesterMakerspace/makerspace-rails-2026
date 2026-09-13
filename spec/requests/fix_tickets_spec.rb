@@ -71,5 +71,15 @@ RSpec.describe 'Fix ticket API', type: :request, requires_transactions: true do
     get "/api/volunteer/tasks/#{task.id}/detail"
     expect(JSON.parse(response.body)['capabilities']['canSubmitCompletion']).to be(true)
   end
+  it 'does not offer the reporter a claim capability on a linked bounty' do
+    ticket = submit
+    FixTicketService.bounty!(id: ticket['id'], actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
+    bounty = FixTicket.find(ticket['id']).bounty
+    get "/api/volunteer/tasks/#{bounty.id}/detail"
+    expect(JSON.parse(response.body)['capabilities']['canClaim']).to be(false)
+    sign_in admin
+    get "/api/volunteer/tasks/#{bounty.id}/detail"
+    expect(JSON.parse(response.body)['capabilities']['canClaim']).to be(true)
+  end
 
 end

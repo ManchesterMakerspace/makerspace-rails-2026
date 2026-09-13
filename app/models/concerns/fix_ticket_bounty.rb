@@ -9,6 +9,7 @@ module FixTicketBounty
       reload
       ticket.reload
       raise Error::Forbidden.new unless ticket.active?
+      raise Error::Forbidden.new('The reporter cannot claim this repair bounty') if ticket.reporter_id == member.id
       raise Error::Forbidden.new('Required tool checkouts are missing') unless missing_prerequisite_tool_ids(member).empty?
       result = super
       previous = ticket.assignee_ids
@@ -22,11 +23,11 @@ module FixTicketBounty
   end
   def release!(member, reason)
     return super unless ticket_id
-    release_ticket_claim(member) { super }
+    release_ticket_claim(member, reason, :notify_member_task_released) { super(member, reason, notify: false) }
   end
   def reject_pending!(member, reason)
     return super unless ticket_id
-    release_ticket_claim(member) { super }
+    release_ticket_claim(member, reason, :notify_member_task_rejected) { super(member, reason, notify: false) }
   end
   def cancel!
     return super unless ticket_id
@@ -40,8 +41,9 @@ module FixTicketBounty
     end
   end
   private
-  def release_ticket_claim(actor)
+  def release_ticket_claim(actor, reason, notification)
     ticket = FixTicket.find(ticket_id)
+    former = nil
     FixTicketService.transaction(ticket.reporter_id) do
       reload
       former = claimed_by_id
@@ -55,6 +57,8 @@ module FixTicketBounty
       FixTicketService.event!(ticket, actor, 'assigned', changes: { 'assignees' => [FixTicketService.names(previous), FixTicketService.names(ticket.assignee_ids)] })
     end
     FixTicketService.enqueue(ticket)
+    enqueue_volunteer_canvas_sync
+    send(notification, former, reason)
     self
   end
 end

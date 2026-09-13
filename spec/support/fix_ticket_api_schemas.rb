@@ -51,5 +51,7 @@ module FixTicketApiSchemas
       nextAvailable: { type: :string, nullable: true }, rejectionReason: nullable_string, isChildTask: boolean, isCoolingDown: boolean,
       capabilities: object.call({ canClaim: boolean, canSubmitCompletion: boolean }) },
       %i[id title description status creditValue ticketId capabilities])
-  }.freeze
+  }.tap do |schemas|
+    schemas[:VolunteerTask] = object.call(schemas[:FixBountyDetail][:properties].except(:capabilities))
+  end.freeze
 end

@@ -12,6 +12,8 @@ Reporter identity is excluded by explicit presenters. Reveal is a separate admin
 
 ## Slack delivery
 
+Reporters cannot claim their own linked repair bounties, including privileged reporters. Staff assignment edits preserve bounty-derived assignments; release/rejection removes them while retaining manual grants. Linked release/rejection notifications and canvas refreshes occur only after the ticket/bounty transaction commits. Generic volunteer-task API responses include nullable `ticketId`; source ticket access is independently authorized.
+
 Slack filter dialogs retain selected tool and assignee IDs when changing other filters. Shop-linked bounty creation and automatic cancellation refresh the volunteer canvas after commit. Direct cancellation of a claimed or pending linked bounty is blocked under the ticket transaction lock: release the claim or reject pending work first so claim-derived ticket access is removed by the existing cleanup flow.
 
 Configure the optional `SLACK_TICKETS_CHANNEL` only after testing the destination. Full ticket notes are visible to channel participants, including notes on otherwise private tickets. Human thread replies are not imported. Shop/tool announcements are independently opt-in and contain designated summaries only.
