@@ -1,5 +1,5 @@
 namespace :data do
-  desc "Verify and create unique indexes for core identity fields"
+  desc "Verify and create core unique, lookup, and repair ticket indexes"
   task ensure_unique_indexes: :environment do
     member_index_collections = %w[
       permissions
@@ -224,5 +224,9 @@ namespace :data do
       collection.indexes.create_one(member_id: 1)
       puts "#{collection_name}.member_id: non-unique index enabled"
     end
+
+    # Keep compound uniqueness and repair lookup/outbox indexes with the same
+    # release-time entry point as core indexes. MongoDB rejects duplicate data.
+    [FixTicket, FixTicketEvent, FixTicketReveal].each(&:create_indexes)
   end
 end

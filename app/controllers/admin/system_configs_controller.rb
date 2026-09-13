@@ -19,6 +19,7 @@ class Admin::SystemConfigsController < AdminController
     'slack_channel_rm',
     'slack_channel_admin',
     'slack_channel_logs',
+    'slack_channel_tickets',
     'slack_channel_new_members',
     'volunteer_pending_slack_channel',
     # Volunteer settings
@@ -68,6 +69,7 @@ class Admin::SystemConfigsController < AdminController
       slack_channel_treasurer:          SystemConfig.get('slack_channel_treasurer')          || 'treasurer',
       slack_channel_rm:                 SystemConfig.get('slack_channel_rm')                 || 'members_relations',
       slack_channel_admin:              SystemConfig.get('slack_channel_admin')               || 'general',
+      slack_channel_tickets: SystemConfig.slack_tickets_channel,
       slack_channel_logs:               SystemConfig.get('slack_channel_logs')               || 'interface-logs',
       slack_channel_new_members:        SystemConfig.get('slack_channel_new_members')        || 'new_members',
       volunteer_pending_slack_channel:  SystemConfig.get('volunteer_pending_slack_channel')  || 'general',

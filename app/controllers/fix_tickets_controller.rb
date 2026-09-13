@@ -30,7 +30,7 @@ class FixTicketsController < ApplicationController
       canCreate: can_create, creationUnavailableReason: reason,
       openCount: open_count, openLimit: privileged ? nil : FixTicketService.limit,
       bountyMaxCredit: VolunteerTask.ticket_bounty_max_credit,
-      centralSlackEnabled: ENV['SLACK_TICKETS_CHANNEL'].present? }
+      centralSlackEnabled: SystemConfig.slack_tickets_channel.present? }
   end
   def show
     render_ticket(find_ticket, detail: true)

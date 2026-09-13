@@ -49,7 +49,7 @@ The Bounty Tasks section of `/admin/system-settings` includes `ticket_bounty_max
 
 Acknowledged admin reporter reveals also create a general audit record containing the ticket ObjectID, title, and acting admin. No reporter identity, subject, or ticket snapshot containing reporter data is included. The separate restricted reveal record is retained; the reveal response is withheld if the general audit record cannot be saved.
 
-`FixTicketService` requires MongoDB transactions on a replica set. Its reporter write lock participates in the transaction, serializing cap checks, current-role checks, priority insertion, ticket changes, and bounty linkage. Do not run this feature on standalone MongoDB. Use `fix_tickets:ensure_indexes` before accepting submissions. The admin security settings page exposes `ticket_open_limit` (default 10).
+`FixTicketService` requires MongoDB transactions on a replica set. Its reporter write lock participates in the transaction, serializing cap checks, current-role checks, priority insertion, ticket changes, and bounty linkage. Do not run this feature on standalone MongoDB. Use `data:ensure_unique_indexes` before accepting submissions. The admin security settings page exposes `ticket_open_limit` (default 10).
 
 Reporter identity is excluded by explicit presenters. Reveal is a separate admin-only acknowledged, no-store action recorded in `fix_ticket_reveals`. Restrict operational collection access and backups accordingly. User-authored text may identify its author. Reporter reward credits are excluded from general credit administration and reviewed through ticket capabilities by a different authorized reviewer.
 
@@ -81,11 +81,11 @@ For a local test server, a single-node replica set is sufficient. Stop the exist
 rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] })
 ```
 
-Wait until `db.hello().isWritablePrimary` returns `true`. For Rails running on the same host, set `MLAB_URI=mongodb://localhost:27017/makerspace_test?replicaSet=rs0`, restart Rails, and run `bundle exec rake fix_tickets:ensure_indexes`. Preserve your actual database name, credentials, and other URI options. If Rails or MongoDB runs in Docker, use a replica-set member hostname and port reachable from both MongoDB and Rails instead of `localhost`; the URI must use that reachable address too. Single-node configuration provides transactions, not failover redundancy.
+Wait until `db.hello().isWritablePrimary` returns `true`. For Rails running on the same host, set `MLAB_URI=mongodb://localhost:27017/makerspace_test?replicaSet=rs0`, restart Rails, and run `bundle exec rake data:ensure_unique_indexes`. Preserve your actual database name, credentials, and other URI options. If Rails or MongoDB runs in Docker, use a replica-set member hostname and port reachable from both MongoDB and Rails instead of `localhost`; the URI must use that reachable address too. Single-node configuration provides transactions, not failover redundancy.
 
 ### Rollout
 
-1. Deploy additive Rails models, services, indexes, and jobs before exposing the portal and Slack entry points. Run `bundle exec rake fix_tickets:ensure_indexes` with the deployment database configuration.
+1. Deploy additive Rails models, services, indexes, and jobs before exposing the portal and Slack entry points. Run `bundle exec rake data:ensure_unique_indexes` with the deployment database configuration.
 2. Purge managed/CDN caches for public shop and tool HTML/JSON. Their new responses require revalidation. Previously fresh browser responses can remain until their original three-day freshness expires. QR SVG caching stays separate.
 3. Deploy the portal assets, update Slack command/interactivity URLs from the manifest for the staging host, and verify signatures and workspace identity. Keep publication disabled initially.
 4. Exercise role scopes, cap/concurrency, anonymous reward review, bounty claim/release, all four Hidden/out-of-service combinations, public QR-linked pages, and reservation edits in staging.
@@ -119,3 +119,5 @@ Outage transitions emit `tool_availability_changed` audits with actor, tool ID, 
 old/new boolean values after the update succeeds; no-op requests emit no audit.
 
 Workshop bounty eligibility and Slack volunteer task listings use the same claim predicate as the member task feed. The Slack reservation picker excludes out-of-service tools, while server validation still protects against outages occurring after the modal opens.
+
+The Slack settings tab displays and overrides `SLACK_TICKETS_CHANNEL`. Saved `slack_channel_tickets` takes precedence, including a blank value that disables central announcements. Without an override the environment value is used, with no default channel. Both event creation and delivery use this effective value.

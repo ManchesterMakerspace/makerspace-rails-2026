@@ -90,6 +90,6 @@ IDs and legacy ObjectIds. `audit_logs.resource_id` likewise preserves integer
 IDs for FixTicket records, while other resources retain ObjectIds. API resource
 IDs remain strings. Never reset the `tickets` counter against existing tickets.
 
-Existing tools gain out_of_service (false for legacy documents), independent of disabled/Hidden. volunteer_tasks gain optional ticket_id. volunteer_credits gain restricted ticket_id for reporter rewards. members gain an internal fix_ticket_write_revision used to serialize concurrent cap/priority writes. Run `bundle exec rake fix_tickets:ensure_indexes` before enabling tickets. MongoDB replica-set transactions are required; unsupported deployments fail closed.
+Existing tools gain out_of_service (false for legacy documents), independent of disabled/Hidden. volunteer_tasks gain optional ticket_id. volunteer_credits gain restricted ticket_id for reporter rewards. members gain an internal fix_ticket_write_revision used to serialize concurrent cap/priority writes. Run `bundle exec rake data:ensure_unique_indexes` before enabling tickets. MongoDB replica-set transactions are required; unsupported deployments fail closed.
 
 FixTicketEvent `note_role` is private submission-time attribution (`reporter`, `assignee`, or absent for legacy/staff notes). It is not exposed as reporter metadata.

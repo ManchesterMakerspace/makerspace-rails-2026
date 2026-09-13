@@ -10692,7 +10692,16 @@
                       }
                     },
                     "slack": {
-                      "type": "object"
+                      "type": "object",
+                      "required": [
+                        "slack_channel_tickets"
+                      ],
+                      "properties": {
+                        "slack_channel_tickets": {
+                          "type": "string",
+                          "description": "Effective ticket announcement channel. Saved override (including blank) takes precedence over SLACK_TICKETS_CHANNEL; no default channel. Blank disables central publication."
+                        }
+                      }
                     },
                     "volunteer": {
                       "type": "object",
@@ -10802,6 +10811,7 @@
                       "slack_channel_rm",
                       "slack_channel_admin",
                       "slack_channel_logs",
+                      "slack_channel_tickets",
                       "slack_channel_new_members",
                       "volunteer_pending_slack_channel",
                       "volunteer_credits_per_discount",
@@ -10846,6 +10856,7 @@
                           "slack_channel_rm",
                           "slack_channel_admin",
                           "slack_channel_logs",
+                          "slack_channel_tickets",
                           "slack_channel_new_members",
                           "volunteer_pending_slack_channel",
                           "volunteer_credits_per_discount",

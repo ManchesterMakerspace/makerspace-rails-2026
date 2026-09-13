@@ -20,7 +20,7 @@ class FixTicketDelivery
         text += "\nA volunteer bounty is available: #{link}"
       end
       text += "\n#{url(ticket)}"
-      central = ENV['SLACK_TICKETS_CHANNEL'].to_s.strip
+      central = SystemConfig.slack_tickets_channel
       if central.present? && event.central_enabled && (%w[created assigned note bounty].include?(event.kind) || (event.kind == 'updated' && (event.note.present? || (event.field_changes.keys & CENTRAL_FIELDS).any?)))
         channel = Service::SlackConnector.resolved_channel_id(central)
         team = ENV['SLACK_TEAM_ID'].presence || Service::SlackConnector.slack_team_id.to_s

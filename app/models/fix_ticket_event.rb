@@ -11,7 +11,7 @@ class FixTicketEvent
   field :recipients, type: Array, default: []
   field :created_at, type: Time, default: -> { Time.current }
   field :delivered, type: Hash, default: {}
-  field :central_enabled, type: Boolean, default: -> { ENV['SLACK_TICKETS_CHANNEL'].present? }
+  field :central_enabled, type: Boolean, default: -> { SystemConfig.slack_tickets_channel.present? }
   field :delivery_attempts, type: Hash, default: {}
   field :delivery_error, type: String
   field :completed_at, type: Time

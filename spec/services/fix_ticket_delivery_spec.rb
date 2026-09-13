@@ -12,6 +12,23 @@ RSpec.describe FixTicketDelivery do
     allow(ENV).to receive(:[]).with('SLACK_TEAM_ID').and_return('T_TEST')
     allow(ShortUrl).to receive(:base_url).and_return('https://portal.example.com')
   end
+  it 'uses a saved channel override for new events and delivery' do
+    allow(ENV).to receive(:[]).with('SLACK_TICKETS_CHANNEL').and_return(nil)
+    SystemConfig.set('slack_channel_tickets', 'C9876543210')
+    expect(event.central_enabled).to be(true)
+    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'C9876543210', thread_ts: nil)).and_return({ 'ts' => '100.001', 'channel' => 'C9876543210' })
+    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'C9876543210', thread_ts: '100.001')).and_return({ 'ts' => '100.002', 'channel' => 'C9876543210' })
+    described_class.call(ticket, event)
+  end
+  it 'stops queued central delivery when a blank override disables the environment channel' do
+    expect(event.central_enabled).to be(true)
+    SystemConfig.set('slack_channel_tickets', '')
+    expect(FixTicketEvent.new.central_enabled).to be(false)
+    expect(client).not_to receive(:chat_postMessage)
+    described_class.call(ticket, event)
+    expect(event.reload.completed_at).to be_present
+  end
+
   it 'creates a root then posts a full escaped note with its thread_ts' do
     expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'C1234567890', thread_ts: nil, text: include("Ticket ##{ticket.id}:"))).ordered.and_return({ 'ts' => '100.001', 'channel' => 'C1234567890' })
     expect(client).to receive(:chat_postMessage).with(hash_including(thread_ts: '100.001', text: include("Ticket ##{ticket.id}:", 'Switch &lt;@USER&gt; failed'), reply_broadcast: false)).ordered.and_return({ 'ts' => '100.002', 'channel' => 'C1234567890' })
