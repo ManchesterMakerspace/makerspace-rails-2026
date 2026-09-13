@@ -8,31 +8,79 @@ RSpec.describe DocumentUploadJob, type: :job do
   end
 
   describe '#perform' do
+    it 'suppresses automatic argument logging so the encoded signature is not exposed' do
+      expect(described_class.log_arguments).to be false
+    end
+
     it 'sends the document mailer when the upload is verified in Drive' do
       member = create(:member)
       allow(Service::GoogleDrive).to receive(:upload_document).and_return('pdf-bytes')
       allow(Service::GoogleDrive).to receive(:document_uploaded?).and_return(true)
+      allow(Rails.logger).to receive(:info)
 
       described_class.new.perform('signature-data', 'member_contract', member.id.as_json)
 
+      expect(Rails.logger).to have_received(:info).with(
+        a_string_including(
+          "resource=Member(#{member.id})",
+          "member=#{member.fullname.inspect}",
+          'document_type="member_contract"'
+        )
+      )
+      expect(Rails.logger).not_to have_received(:info).with(a_string_including('signature-data'))
       expect(MemberMailer).to have_received(:send_document).with('member_contract', member.id.as_json, 'pdf-bytes')
       expect(Service::SlackConnector).not_to have_received(:send_slack_message)
     end
 
+    it 'does not upload a duplicate when the expected document already exists' do
+      member = create(:member, member_contract_signed_date: Date.new(2026, 9, 13))
+      job = described_class.new
+      job.executions = 2
+      allow(Service::GoogleDrive).to receive(:document_uploaded?).and_return(true)
+      allow(Service::GoogleDrive).to receive(:upload_document)
+      allow(Service::GoogleDrive).to receive(:generate_document_string).and_return('pdf-bytes')
+      allow(Rails.logger).to receive(:info)
+
+      job.perform('signature-data', 'member_contract', member.id.as_json)
+
+      expect(Service::GoogleDrive).not_to have_received(:upload_document)
+      expect(Service::GoogleDrive).to have_received(:generate_document_string).with(
+        :member_contract,
+        { member: member },
+        'signature-data'
+      )
+      expect(Rails.logger).to have_received(:info).with(a_string_including('skipping duplicate Drive upload'))
+      expect(MemberMailer).to have_received(:send_document).with('member_contract', member.id.as_json, 'pdf-bytes')
+    end
+
     it 'raises when the upload reports success but the file cannot be found afterward' do
-      member = create(:member)
+      member = create(:member, member_contract_signed_date: Date.new(2026, 9, 13))
       allow(Service::GoogleDrive).to receive(:upload_document).and_return('pdf-bytes')
       allow(Service::GoogleDrive).to receive(:document_uploaded?).and_return(false)
+      allow(Service::GoogleDrive).to receive(:get_templates).and_return(
+        member_contract: { folder_id: 'member-contract-folder-id' }
+      )
+      expected_filename = "#{member.fullname}_member_contract_09-13-2026.pdf"
 
       expect {
         described_class.new.perform('signature-data', 'member_contract', member.id.as_json)
-      }.to raise_error(Error::Google::Upload)
+      }.to raise_error(
+        Error::Google::Upload,
+        a_string_including(
+          "member=#{member.fullname.inspect}",
+          "resource=Member(#{member.id})",
+          'document_type="member_contract"',
+          "expected_filename=#{expected_filename.inspect}",
+          'folder_id="member-contract-folder-id"'
+        )
+      )
 
       expect(MemberMailer).not_to have_received(:send_document)
     end
 
     it 'lets a genuine upload error from Drive propagate the same way' do
       member = create(:member)
+      allow(Service::GoogleDrive).to receive(:document_uploaded?).and_return(false)
       allow(Service::GoogleDrive).to receive(:upload_document).and_raise(Error::Google::Upload.new)
 
       expect {
