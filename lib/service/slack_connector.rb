@@ -117,10 +117,11 @@ module Service
       end
     end
 
-    def self.find_channel_id(channel_name)
+    def self.find_channel_id(channel_name, on_channel_not_found: nil)
       # The normalize_name function forces channel_name into either C0123456789 form or '#human-readable' form
       requested = Service::SlackChannelCache.normalize_name(channel_name)
       return if requested.blank?
+      operation = Service::SlackChannelCache.channel_id?(requested) ? 'conversations.info' : 'conversations.list'
 
       cached = Service::SlackChannelCache.fetch(requested)
       return cached[:id] if cached&.dig(:id).present?
@@ -153,7 +154,12 @@ module Service
         break if cursor.blank?
       end
       nil
-    rescue Slack::Web::Api::Errors::ChannelNotFound
+    rescue Slack::Web::Api::Errors::ChannelNotFound => error
+      if on_channel_not_found
+        on_channel_not_found.call(error)
+      else
+        report_channel_not_found(requested, error, operation: operation)
+      end
       nil
     end
 
@@ -270,6 +276,29 @@ module Service
       end
     end
     private_class_method :redact_secret_strings
+
+    def self.report_channel_not_found(channel, error, operation:)
+      response = error.respond_to?(:response) ? error.response : nil
+      context = {
+        operation: operation,
+        channel: channel,
+        slack_response: filter_log_data(response)
+      }
+      message = "[SlackChannelNotFound] channel=#{channel.inspect} " \
+        "operation=#{operation.inspect} error=#{format_api_error(error)}"
+
+      Rails.logger.error(message)
+      Honeybadger.notify(error, context: context) if defined?(Honeybadger)
+
+      begin
+        send_slack_message(message, logs_channel)
+      rescue => logging_error
+        Rails.logger.error(
+          "[SlackChannelNotFound] unable to send failure to Slack logs channel, " \
+          "error=#{format_api_error(logging_error)}"
+        )
+      end
+    end
 
     def self.invite_to_channel(channel, slack_id)
       return true if Rails.env.test?
