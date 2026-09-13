@@ -17,11 +17,11 @@ RSpec.describe Service::SlackUserEvents do
   before do
     allow(Service::SlackConnector).to receive(:send_slack_message)
     allow(Service::AuditLogger).to receive(:log)
-    allow(ENV).to receive(:fetch).and_call_original
   end
 
   it 'links a new team member and sends the welcome message' do
-    allow(ENV).to receive(:fetch).with('SLACK_NEW_MEMBERS_CHANNEL', 'new-members')
+    allow(SystemConfig).to receive(:get).and_call_original
+    allow(SystemConfig).to receive(:get).with('slack_channel_new_members')
       .and_return('new-members-test')
     described_class.process('type' => 'team_join', 'user' => user)
 

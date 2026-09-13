@@ -4,9 +4,9 @@ class ToolCheckoutSlackCanvasSyncJob < ApplicationJob
 
   def perform(shop_id)
     shop = Shop.find(shop_id)
+    return if shop.nil?
+
     Service::ToolCheckoutSlackCanvas.sync!(shop)
-  rescue Mongoid::Errors::DocumentNotFound
-    nil
   rescue => error
     Service::ToolCheckoutSlackCanvas.report_failure(shop, error) if shop
     message = "[ToolCheckoutSlackCanvasSyncJobError] shop_id=#{shop_id} " \

@@ -454,6 +454,10 @@ module Service
       SystemConfig.get('slack_channel_admin') || 'general'
     end
 
+    def self.new_members_channel
+      SystemConfig.get('slack_channel_new_members') || 'new_members'
+    end
+
     def self.api_token_present?
       ENV['SLACK_BOT_TOKEN'].present? || ENV['SLACK_ADMIN_TOKEN'].present?
     end

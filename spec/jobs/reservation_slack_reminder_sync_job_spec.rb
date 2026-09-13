@@ -12,6 +12,15 @@ RSpec.describe ReservationSlackReminderSyncJob, type: :job do
       .with(reservation)
   end
 
+  it "no-ops when the reservation no longer exists (Mongoid raise_not_found_error is false)" do
+    allow(Service::ReservationSlackReminder).to receive(:sync!)
+    missing_id = reservation.id.to_s
+    reservation.destroy
+
+    expect { described_class.perform_now(missing_id) }.not_to raise_error
+    expect(Service::ReservationSlackReminder).not_to have_received(:sync!)
+  end
+
   it "logs and reraises Slack failures for Active Job retries" do
     error = StandardError.new("Slack unavailable")
     allow(Service::ReservationSlackReminder).to receive(:sync!).and_raise(error)

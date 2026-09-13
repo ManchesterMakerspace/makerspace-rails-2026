@@ -15,9 +15,9 @@ task :invoice_review => :environment do
       def build_member_url(member_id)
         base_url = Rails.configuration.x.app_base_url
         member = Member.find(member_id)
+        return "(deleted member #{member_id})" if member.nil?
+
         "<#{base_url}/members/#{member.id}|#{member.fullname}>"
-      rescue Mongoid::Errors::DocumentNotFound
-        "(deleted member #{member_id})"
       end
 
       def build_member_list(invoice_list)

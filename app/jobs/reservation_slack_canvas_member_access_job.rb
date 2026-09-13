@@ -4,12 +4,12 @@ class ReservationSlackCanvasMemberAccessJob < ApplicationJob
 
   def perform(member_id, shop_ids)
     member = Member.find(member_id)
+    return if member.nil?
+
     Service::ReservationSlackCanvas.sync_member_access!(
       member,
       shop_ids: shop_ids
     )
-  rescue Mongoid::Errors::DocumentNotFound
-    nil
   rescue => error
     Rails.logger.error(
       "[ReservationSlackCanvasMemberAccessError] member_id=#{member_id} " \
