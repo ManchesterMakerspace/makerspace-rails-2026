@@ -342,6 +342,21 @@ class Member
       Array(resource_manager_shop_ids).map(&:to_s).include?(shop_or_id.try(:id).to_s.presence || shop_or_id.to_s)
   end
 
+  # Roles that can be tagged as a shop's point-of-contact via
+  # resource_manager_shop_ids. An admin or board member already has blanket
+  # management authority everywhere (see can_manage_shop?/manages_shop?
+  # above, which stay resource_manager-only on purpose) -- this tagging is
+  # purely about who gets LISTED as the contact for a specific shop (e.g. on
+  # the public workshop page, or in a shop's volunteer Slack canvas), since
+  # in practice that's often an admin or board member wearing a second hat
+  # rather than someone whose only role is resource_manager.
+  RESOURCE_MANAGER_TAGGABLE_ROLES = %w[admin board_member resource_manager].freeze
+
+  def self.tagged_resource_managers_for_shop(shop_or_id)
+    shop_id = shop_or_id.try(:id).to_s.presence || shop_or_id.to_s
+    where(:role.in => RESOURCE_MANAGER_TAGGABLE_ROLES, :resource_manager_shop_ids.in => [shop_id])
+  end
+
   def handle_reservation_membership_changes
     cleanup_type = if previous_changes["status"]&.first != "revoked" && status == "revoked"
       "revoked"

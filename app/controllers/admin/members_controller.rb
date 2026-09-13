@@ -257,19 +257,28 @@ class Admin::MembersController < AdminController
     params
   end
 
+  # Board members and admins can also be tagged with resource_manager_shop_ids
+  # -- not for authority (they already manage every shop via can_manage_shop?)
+  # but so they can be listed as a shop's point-of-contact (e.g. on the
+  # workshop page) when that's actually who members should reach out to.
+  # Only role "member" has no meaning for this field and always clears it.
+  # A plain resource_manager still requires at least one shop, since that's
+  # their sole source of authority; for admin/board_member it's optional.
   def normalize_and_validate_rm_assignments!(permitted_params, member = nil)
     role = permitted_params[:role].presence || member&.role
-    if role != "resource_manager"
+    unless Member::RESOURCE_MANAGER_TAGGABLE_ROLES.include?(role)
       permitted_params[:resource_manager_shop_ids] = [] if permitted_params.key?(:role) || permitted_params.key?(:resource_manager_shop_ids)
       return
     end
+
+    return unless role == "resource_manager" || permitted_params.key?(:resource_manager_shop_ids)
 
     ids = if permitted_params.key?(:resource_manager_shop_ids)
       Array(permitted_params[:resource_manager_shop_ids]).map(&:to_s).uniq
     else
       Array(member&.resource_manager_shop_ids).map(&:to_s)
     end
-    raise ::Error::UnprocessableEntity.new("Select at least one shop for a Resource Manager") if ids.empty?
+    raise ::Error::UnprocessableEntity.new("Select at least one shop for a Resource Manager") if role == "resource_manager" && ids.empty?
 
     valid_ids = Shop.where(:id.in => ids).pluck(:id).map(&:to_s)
     raise ::Error::UnprocessableEntity.new("One or more Resource Manager shops are invalid") unless (ids - valid_ids).empty?
