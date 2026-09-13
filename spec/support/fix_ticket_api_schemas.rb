@@ -9,7 +9,7 @@ module FixTicketApiSchemas
   timestamp = { type: :string, format: 'date-time' }
   array = ->(item) { { type: :array, items: item } }
   person = object.call({ id: string, name: string })
-  capabilities = %w[canRead canAddNote canChangeStatus canManage canManageVisibility publicLocked canWithdraw canUnassign canCreateBounty canNominateReward canReviewReward canReveal].to_h { |key| [key, boolean] }
+  capabilities = %w[requiresNoteRole canRead canAddNote canChangeStatus canManage canManageVisibility publicLocked canWithdraw canUnassign canCreateBounty canNominateReward canReviewReward canReveal].to_h { |key| [key, boolean] }
   ticket = {
     id: string.merge(description: 'String form of the integer _id allocated by Ticket.pull; legacy ObjectId tickets remain supported.'), reference: string, title: string, description: string,
     closedBy: person.merge(nullable: true, description: 'Closer identity only for closed tickets closed by someone other than the reporter; otherwise null.'),
@@ -27,12 +27,18 @@ module FixTicketApiSchemas
     capabilities: ref.call('FixTicketCapabilities')
   }
   SCHEMAS = {
+    ReservationError: { type: :object, required: %w[message], properties: { message: string, error: string, status: integer } },
+    ReservationWrite: { type: :object, properties: {
+      title: string, member_id: string.merge(description: 'Required for admin creation on behalf of a member.'),
+      shop_id: string, reservation_scope: { type: :string, enum: %w[shop tools] }, tool_ids: array.call(string),
+      start_at: timestamp, end_at: timestamp, full_day: boolean, fee_confirmation: boolean } },
     VolunteerTaskWrite: { type: :object, properties: {
           title: { type: :string }, description: { type: :string }, credit_value: { type: :number, exclusiveMinimum: true, minimum: 0, description: 'Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited.' },
           shop_id: { type: :string, nullable: true }, status: { type: :string, enum: VolunteerTask::VALID_STATUSES },
           days: { type: :integer, nullable: true }, prerequisite_tool_ids: { type: :array, items: { type: :string } }
         } },
     FixTicketUpdate: { type: :object, properties: {
+        respond_as: { type: :string, enum: %w[assignee reporter], description: 'Required for notes when the viewer is both reporter and assignee.' },
         revision: { type: :integer }, status: { type: :string, enum: FixTicket::STATUSES }, confirmation: { type: :string, enum: FixTicket::CONFIRMATIONS },
         note: { type: :string, maxLength: 10000, description: 'Nonblank notes require at least two non-whitespace characters. State transitions may require a note.' }, title: { type: :string, maxLength: 150, pattern: FixTicket::SAFE_NAME_PATTERN }, description: { type: :string }, category: { type: :string },
         shop_id: { type: :string, nullable: true }, tool_id: { type: :string, nullable: true }, uncatalogued_tool: { type: :string, pattern: "(?:#{FixTicket::SAFE_NAME_PATTERN})|^$" },

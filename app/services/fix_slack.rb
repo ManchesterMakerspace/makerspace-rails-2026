@@ -35,6 +35,16 @@ class FixSlack
     def plain(text) = { type: 'plain_text', text: text.to_s.first(150) }
     def option(label, value) = { text: plain(label.to_s.first(75)), value: value.to_s }
     def text_block(text) = { type: 'section', text: { type: 'plain_text', text: text.to_s.first(2900) } }
+    def note_role_inputs(member, data, optional: false)
+      policy = FixTicketPolicy.new(member, FixTicket.find(data['id']))
+      return [] unless policy.reporter? && policy.assigned?
+      block = input('respond_as', 'Respond as:', optional: optional,
+        options: [option('Assignee (shows your name)', 'assignee'), option('Reporter (anonymous)', 'reporter')])
+      block[:element][:type] = 'radio_buttons'
+      block[:hint] = plain('Choose how this note is attributed. Assignee shows your name; Reporter keeps your identity hidden.')
+      [block]
+    end
+
     def input(id, label, value: nil, optional: false, options: nil, multi: false)
       element = if options
         { type: multi ? 'multi_static_select' : 'static_select', action_id: id, options: options }
@@ -232,8 +242,8 @@ class FixSlack
             input('uncatalogued_tool', 'Uncatalogued tool name', value: ticket.uncatalogued_tool, optional: true),
             input('announcement_note', 'Shop/tool announcement note', value: ticket.announcement_note, optional: true, multi: true),
             yes_no('announce_to_slack', 'Publish designated shop/tool summaries', ticket.announce_to_slack)], data.merge('revision' => ticket.revision))
-        when 'note' then modal('fix_note', [input('note', 'Note (shared to central Slack when configured)', multi: true)], data)
-        when 'status' then modal('fix_status', [input('status', 'Status', options: (FixTicket::STATUSES - ['withdrawn']).map { |v| option(v.tr('_', ' '), v) }), input('confirmation', 'Confirmation', optional: true, options: FixTicket::CONFIRMATIONS.map { |v| option(v.tr('_', ' '), v) }), input('note', 'Note (required to close/reopen or cannot confirm)', optional: true, multi: true)], data)
+        when 'note' then modal('fix_note', [input('note', 'Note (shared to central Slack when configured)', multi: true)] + note_role_inputs(member, data), data)
+        when 'status' then modal('fix_status', [input('status', 'Status', options: (FixTicket::STATUSES - ['withdrawn']).map { |v| option(v.tr('_', ' '), v) }), input('confirmation', 'Confirmation', optional: true, options: FixTicket::CONFIRMATIONS.map { |v| option(v.tr('_', ' '), v) }), input('note', 'Note (required to close/reopen or cannot confirm)', optional: true, multi: true)] + note_role_inputs(member, data, optional: true), data)
         when 'visibility' then modal('fix_visibility', [yes_no('public_read_only', 'Publish full ticket and history to current members')], data)
         when 'assign'
           ticket = FixTicket.find(data['id'])
@@ -259,7 +269,7 @@ class FixSlack
         %w[shop_id tool_id].each { |key| form[key] = nil if form[key] == 'none' }
         form['announce_to_slack'] = form['announce_to_slack'] == 'true'
         FixTicketService.update!(id: data['id'], actor: member, attributes: form.merge('revision' => data['revision']))
-      when 'fix_note' then FixTicketService.note!(id: data['id'], actor: member, note: form['note'])
+      when 'fix_note' then FixTicketService.note!(id: data['id'], actor: member, note: form['note'], respond_as: form['respond_as'])
       when 'fix_status' then FixTicketService.update!(id: data['id'], actor: member, attributes: form.compact.merge('revision' => data['revision']))
       when 'fix_visibility' then FixTicketService.update!(id: data['id'], actor: member, attributes: { public_read_only: form['public_read_only'] == 'true' })
       when 'fix_assign' then FixTicketService.assign!(id: data['id'], actor: member, member_ids: form['member_ids'])
@@ -267,7 +277,8 @@ class FixSlack
       { response_action: 'update', view: detail(member, data['id'], data['query'] || {}) }
     rescue Error::CustomError, Mongoid::Errors::Validations => error
       if payload['type'] == 'view_submission'
-        key = payload.dig('view', 'state', 'values')&.keys&.first || 'title'
+        keys = payload.dig('view', 'state', 'values')&.keys || []
+        key = error.message.include?('Respond as') && keys.include?('respond_as') ? 'respond_as' : (keys.first || 'title')
         { response_action: 'errors', errors: { key => error.message.first(150) } }
       else
         present_view(payload, modal('fix_error', [text_block(error.message)], {}, submit: nil))

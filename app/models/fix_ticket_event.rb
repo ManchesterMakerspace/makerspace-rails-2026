@@ -5,6 +5,8 @@ class FixTicketEvent
   field :actor_id, type: BSON::ObjectId
   field :kind, type: String
   field :note, type: String
+  # Private author context captured at submission; never inferred retroactively.
+  field :note_role, type: String
   field :field_changes, type: Hash, default: {}
   field :recipients, type: Array, default: []
   field :created_at, type: Time, default: -> { Time.current }

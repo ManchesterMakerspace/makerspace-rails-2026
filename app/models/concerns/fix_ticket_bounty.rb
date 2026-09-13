@@ -1,5 +1,10 @@
 module FixTicketBounty
   extend ActiveSupport::Concern
+  def eligible_for?(member)
+    return super unless ticket_id
+    ticket = FixTicket.where(id: ticket_id).first
+    !!(member&.fully_active_unexpired? && ticket&.active? && ticket.reporter_id != member.id && missing_prerequisite_tool_ids(member).empty?)
+  end
   def claim!(member)
     return super unless ticket_id
     raise Error::Forbidden.new unless member.fully_active_unexpired?

@@ -3,6 +3,9 @@ class FixTicketPresenter
   # reporter. Use the same neutral representation for every assignment event,
   # including historical events and queued deliveries. Current assignees stay visible.
   def self.event_actor(event, ticket, context: nil)
+    if event.note.present? && event.note_role == 'assignee'
+      return context ? context.member_name(event.actor_id) : Member.where(id: event.actor_id).first&.fullname || 'Former member'
+    end
     event.kind == 'assigned' ? 'Member' : member_label(event.actor_id, ticket, context: context)
   end
   def self.event_changes(event, policy: nil, context: nil)

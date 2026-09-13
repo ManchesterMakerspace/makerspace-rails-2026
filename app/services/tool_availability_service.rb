@@ -5,7 +5,13 @@ class ToolAvailabilityService
     raise Error::Forbidden.new unless FixTicketPolicy.new(actor, proxy).staff?
     raise Error::UnprocessableEntity.new('out_of_service must be a boolean') unless [true, false].include?(value)
     ReservationService.send(:with_shop_locks, [tool.shop_id]) do
-      tool.reload.update!(out_of_service: value)
+      previous = !!tool.reload.out_of_service
+      if previous != value
+        tool.update!(out_of_service: value)
+        Service::AuditLogger.log(log_type: 'portal', event_type: 'tool_availability_changed',
+          resource_type: 'Tool', resource_id: tool.id, actor: actor,
+          field_changes: { 'out_of_service' => [previous, value] })
+      end
     end
     affected = Reservation.where(tool_ids: tool.id.to_s, :status.in => Reservation::ACTIVE_STATUSES, :end_at.gt => Time.current)
     { outOfService: value, affectedReservations: affected.order_by(start_at: :asc).limit(100).map { |r| { id: r.id.to_s, startAt: r.start_at, endAt: r.end_at } },

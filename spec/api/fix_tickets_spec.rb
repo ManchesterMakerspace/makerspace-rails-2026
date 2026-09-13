@@ -82,7 +82,7 @@ RSpec.describe 'Fix tickets', type: :request do
     end
     end
   end
-  { notes: ['Append a note', { note: { type: :string, minLength: 2, maxLength: 10000, pattern: '\\S[\\s\\S]*\\S', description: 'Requires at least two non-whitespace characters.' } }], withdraw: ['Withdraw own nonterminal report', {}],
+  { notes: ['Append a note', { respond_as: { type: :string, enum: %w[assignee reporter], description: 'Required when both reporter and assignee.' }, note: { type: :string, minLength: 2, maxLength: 10000, pattern: '\\S[\\s\\S]*\\S', description: 'Requires at least two non-whitespace characters.' } }], withdraw: ['Withdraw own nonterminal report', {}],
     assignments: ['Staff assignment or self-unassignment', { member_ids: { type: :array, items: { type: :string } }, unassign_self: { type: :boolean } }],
     bounty: ['Admin/board/relevant RM: create bounty and publish ticket atomically', { title: { type: :string }, description: { type: :string }, credit_value: { type: :number }, prerequisite_tool_ids: { type: :array, items: { type: :string } } }],
     reward: ['Independent authorized reviewer: approve/reject pending reporter point', { decision: { type: :string, enum: %w[approve reject] } }],

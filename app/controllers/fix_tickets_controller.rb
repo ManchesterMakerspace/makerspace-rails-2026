@@ -42,7 +42,7 @@ class FixTicketsController < ApplicationController
     render_ticket(FixTicketService.update!(id: params[:id], actor: current_member, attributes: body), detail: true)
   end
   def notes
-    render_ticket(FixTicketService.note!(id: params[:id], actor: current_member, note: params[:note]), detail: true)
+    render_ticket(FixTicketService.note!(id: params[:id], actor: current_member, note: params[:note], respond_as: params[:respond_as]), detail: true)
   end
   def withdraw
     render_ticket(FixTicketService.withdraw!(id: params[:id], actor: current_member), detail: true)

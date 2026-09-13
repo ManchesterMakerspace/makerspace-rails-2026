@@ -102,3 +102,18 @@ The catalog includes a creation-unavailable reason for deep-linked reporting dia
 Ticket list reads apply authorization and filters before a page/count `$facet`, then batch-load related records through `FixTicketContext`. This read-only context belongs to one response; write transactions and delivery-time authorization use fresh records. The presenter and policy retain authorization and reporter redaction checks.
 
 Local refactor verification (September 12, 2026) compared identical responses against the previous implementation. For pages of 1/25/100 tickets with three assignees, a hidden tool, bounty, and reward, Mongo reads fell from 17/377/1502 to 7/7/7 for admins and from 30/678/2703 to 7/7/7 for approvers. A separate 10,000-ticket benchmark covering three sorts, three page sizes, and optional shop filtering measured median page/count latency of roughly 31 ms separately versus 15-18 ms with `$facet`. These are local measurements, not production latency guarantees. `fix_ticket_query_spec` guards bounded reads and empty pages; the existing lifecycle, privacy, and delivery specs remain in place.
+
+### Response attribution and repair updates
+
+A viewer who is both reporter and assignee must choose `respond_as` (`reporter`
+or `assignee`) when submitting a discussion or transition note. Portal and Slack
+forms offer an unselected Respond as choice. Reporter responses remain anonymous;
+assignee responses use the ordinary member name without identifying the reporter.
+The private event `note_role` preserves that choice; it is not a response field.
+Current assignees receive notes and status/confirmation updates, excluding the actor,
+with existing deduplication and delivery-time permission/suppression checks.
+
+Linked bounty feeds use the same eligibility predicate as claims: current membership,
+a different reporter, and all prerequisites. Ordinary privileged task exemptions remain.
+Outage transitions emit `tool_availability_changed` audits with actor, tool ID, and
+old/new boolean values after the update succeeds; no-op requests emit no audit.

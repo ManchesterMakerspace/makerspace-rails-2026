@@ -8,6 +8,15 @@ RSpec.describe FixSlack do
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:eval).and_return(1)
   end
+  it 'offers an unselected response role only for a reporter assignee' do
+    ticket = create(:fix_ticket, reporter_id: member.id, assignee_ids: [member.id])
+    block = described_class.note_role_inputs(member, { 'id' => ticket.id }).first
+    expect(block[:element]).to include(type: 'radio_buttons')
+    expect(block[:element]).not_to have_key(:initial_option)
+    expect(block[:optional]).to be(false)
+    ticket.set(assignee_ids: [])
+    expect(described_class.note_role_inputs(member, { 'id' => ticket.id })).to be_empty
+  end
   it 'uses searchable tool selections and a private submission key' do
     view = described_class.command_view(member, 'new')
     tool = view[:blocks].find { |block| block[:block_id] == 'tool_id' }

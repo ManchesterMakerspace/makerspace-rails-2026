@@ -12,6 +12,12 @@ RSpec.describe ToolAvailabilityService do
     expect { described_class.set!(tool: tool, actor: build(:member, :admin, :current), value: 'true') }.to raise_error(Error::UnprocessableEntity)
     expect(tool.reload.out_of_service).to be(false)
   end
+  it 'audits actual availability transitions only' do
+    tool = create(:tool, shop: create(:shop))
+    actor = build(:member, :admin, :current)
+    expect(Service::AuditLogger).to receive(:log).with(hash_including(actor: actor, resource_id: tool.id, field_changes: { 'out_of_service' => [false, true] })).once
+    2.times { described_class.set!(tool: tool, actor: actor, value: true) }
+  end
   it 'does not couple Hidden and out of service, including restoration' do
     admin = build(:member, :admin, :current)
     shop = create(:shop)

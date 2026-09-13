@@ -11,6 +11,21 @@ RSpec.describe FixTicketService, requires_transactions: true do
   end
   let(:reporter) { member }
   let(:admin) { member(role: 'admin') }
+  it 'requires dual-role authors to choose and notifies other assignees' do
+    ticket = report(reporter)
+    assignee = member
+    described_class.assign!(id: ticket.id, actor: admin, member_ids: [reporter.id, assignee.id])
+    expect { described_class.note!(id: ticket.id, actor: reporter, note: 'Repair update') }.to raise_error(Error::UnprocessableEntity, /Respond as/)
+    %w[reporter assignee].each do |role|
+      described_class.note!(id: ticket.id, actor: reporter, note: 'Repair update', respond_as: role)
+      event = FixTicketEvent.where(ticket_id: ticket.id, kind: 'note').order_by(revision: :desc).first
+      expect(event.recipients).to contain_exactly(assignee.id)
+      expect(FixTicketPresenter.event_actor(event, ticket)).to eq(role == 'reporter' ? 'Reporter' : reporter.fullname)
+    end
+    described_class.update!(id: ticket.id, actor: admin, attributes: { status: 'in_progress' })
+    expect(FixTicketEvent.where(ticket_id: ticket.id).order_by(revision: :desc).first.recipients).to contain_exactly(reporter.id, assignee.id)
+  end
+
   it 'preserves assignment notifications without looking up names for discarded deltas' do
     ticket = report(reporter)
     assignee = member
@@ -363,7 +378,9 @@ RSpec.describe FixTicketService, requires_transactions: true do
       described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1, prerequisite_tool_ids: [tool.id.to_s] })
       task = ticket.reload.bounty
       claimant = member(role: role)
-      expect(task.eligible_for?(claimant)).to be(true) # Ordinary bounties retain the existing exemption.
+      expect(task.eligible_for?(claimant)).to be(false)
+      ordinary = VolunteerTask.new(title: 'Ordinary', description: 'Work', credit_value: 1, prerequisite_tool_ids: [tool.id.to_s])
+      expect(ordinary.eligible_for?(claimant)).to be(true)
       expect { task.claim!(claimant) }.to raise_error(Error::Forbidden)
       expect(task.reload.status).to eq('available')
       expect(ticket.reload.assignee_ids).not_to include(claimant.id)

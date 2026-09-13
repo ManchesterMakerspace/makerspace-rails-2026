@@ -144,12 +144,14 @@ class FixTicketService
       attrs = attributes.to_h.stringify_keys
       revision = attrs.delete('revision')
       note = attrs.delete('note').to_s.strip
+      respond_as = attrs.delete('respond_as')
       validate_note!(note) if note.present?
       nominate = attrs.delete('nominate_reward') == true
       raise Error::UnprocessableEntity.new('Priority cannot be changed after submission') if attrs.key?('priority')
       raise Error::UnprocessableEntity.new('Unknown update fields') if (attrs.keys - STAFF_FIELDS - %w[status confirmation]).any?
       mutate!(id: id, actor: actor, revision: revision) do |ticket, policy, member|
         raise Error::Forbidden.new if note.present? && !policy.note?
+        note_role = note_role!(policy, respond_as) if note.present?
         raise Error::UnprocessableEntity.new('Notes must be at most 10000 characters') if note.length > 10000
         raise Error::Forbidden.new if (attrs.keys & STAFF_FIELDS).any? && !policy.staff?
         raise Error::Forbidden.new if (attrs.keys & %w[status confirmation]).any? && !policy.change_status?
@@ -185,15 +187,23 @@ class FixTicketService
         ticket.save!
         cancel_unclaimed_bounty!(ticket) unless ticket.active?
         nominate_reward!(ticket, member) if nominate && next_status == 'resolved'
-        event!(ticket, member, 'updated', note: note.presence, changes: changes) if changes.any? || note.present? || nominate
+        event!(ticket, member, 'updated', note: note.presence, note_role: note_role, changes: changes) if changes.any? || note.present? || nominate
       end
     end
-    def note!(id:, actor:, note:)
+    def note!(id:, actor:, note:, respond_as: nil)
       validate_note!(note)
       mutate!(id: id, actor: actor) do |ticket, policy, member|
         raise Error::Forbidden.new unless policy.note?
-        event!(ticket, member, 'note', note: note.strip)
+        event!(ticket, member, 'note', note: note.strip, note_role: note_role!(policy, respond_as))
       end
+    end
+    def note_role!(policy, choice)
+      if choice.present?
+        return choice if (choice == 'reporter' && policy.reporter?) || (choice == 'assignee' && policy.assigned?)
+        raise Error::UnprocessableEntity.new('Choose a response role you hold on this ticket')
+      end
+      raise Error::UnprocessableEntity.new('Choose Respond as: Assignee or Reporter') if policy.reporter? && policy.assigned?
+      policy.reporter? ? 'reporter' : (policy.assigned? ? 'assignee' : nil)
     end
     def validate_note!(note)
       text = note.to_s.strip
@@ -276,10 +286,11 @@ class FixTicketService
       end
       result
     end
-    def event!(ticket, actor, kind, note: nil, changes: {}, added: [])
+    def event!(ticket, actor, kind, note: nil, note_role: nil, changes: {}, added: [])
       ticket.inc(revision: 1)
       ticket.set(updated_at: Time.current)
       recipients = []
+      recipients += ticket.assignee_ids - [actor.id] if kind == 'note' || note.present? || (changes.keys & %w[status confirmation]).any?
       recipients << ticket.reporter_id if actor.id != ticket.reporter_id && (kind == 'assigned' || note.present? || (changes.keys & %w[status confirmation assignees announcement_note]).any?)
       if kind == 'created' || note.present?
         approver_rules = [{ shop_ids: ticket.shop_id.to_s }]
@@ -299,7 +310,7 @@ class FixTicketService
       end
       recipients += added
       recipients += [ticket.reporter_id] + ticket.assignee_ids if kind == 'bounty'
-      FixTicketEvent.create!(ticket_id: ticket.id, actor_id: actor.id, kind: kind, note: note,
+      FixTicketEvent.create!(ticket_id: ticket.id, actor_id: actor.id, kind: kind, note: note, note_role: note_role,
         field_changes: kind == 'assigned' ? changes.except('assignees') : changes, revision: ticket.revision, recipients: recipients.uniq)
     end
     def enqueue(ticket)

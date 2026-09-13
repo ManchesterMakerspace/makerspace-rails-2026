@@ -39,7 +39,7 @@ class FixTicketPolicy
     reward && reward.status == 'pending' && reward.issued_by_id != member.id
   end
   def capabilities
-    { canRead: read?, canAddNote: note?, canChangeStatus: change_status?, canManage: !!staff?,
+    { requiresNoteRole: !!(reporter? && assigned?), canRead: read?, canAddNote: note?, canChangeStatus: change_status?, canManage: !!staff?,
       canManageVisibility: !!staff? && !public_locked?, publicLocked: !!public_locked?,
       canWithdraw: !!reporter? && ticket.active?, canUnassign: !!assigned?, canCreateBounty: bounty? && ticket.active? && ticket.bounty_id.nil?,
       canNominateReward: bounty? && !reporter? && ticket.reward_id.nil?, canReviewReward: bounty? && ticket.reward_id.present? && !reporter? && !!reviewable_reward?, canReveal: member&.role == 'admin' }
