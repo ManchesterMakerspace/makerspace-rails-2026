@@ -57,6 +57,7 @@ class VolunteerCredit
   index({ member_id: 1 })
   index({ status: 1 })
   index({ created_at: 1 })
+  index({ status: 1, created_at: 1 })
 
   # ── Scopes ────────────────────────────────────────────────────────────────
 
