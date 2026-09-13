@@ -54,6 +54,16 @@ RSpec.describe 'Generic volunteer task responses', type: :request do
           days: { type: :integer, nullable: true }, prerequisite_tool_ids: { type: :array, items: { type: :string } }
         } }
         let(:body) { { title: 'Repair', description: 'Replace switch', credit_value: 1 } }
+        unless verb == :post
+          response '403', 'Only admin and board may change linked bounty credits' do
+            schema '$ref' => '#/components/schemas/FixError'
+            let(:shop) { create(:shop) }
+            let(:member) { create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s]) }
+            let(:body) { { credit_value: 1000 } }
+            before { task.set(shop_id: shop.id) }
+            run_test! { expect(task.reload.credit_value).to eq(1) }
+          end
+        end
         response '200', 'Saved task with nullable ticketId (source linkage is not generically editable)' do
           schema '$ref' => '#/components/schemas/VolunteerTask'
           run_test! { |response| expect(JSON.parse(response.body)).to have_key('ticketId') }

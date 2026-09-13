@@ -40,6 +40,10 @@ class Admin::VolunteerTasksController < AdminOrRmController
       authorize_shop_assignment!(task_params[:shop_id])
     end
     previous_shop_id = @task.shop_id
+    if @task.ticket_id && task_params.key?(:credit_value) && !is_admin? && !is_board_member? &&
+        task_params[:credit_value].to_f != @task.credit_value
+      raise Error::Forbidden.new('Only admins and board members can change linked bounty credits')
+    end
     if @task.ticket_id && (task_params.keys - %w[title description credit_value prerequisite_tool_ids]).any?
       raise Error::UnprocessableEntity.new('Linked ticket bounties cannot change shop or lifecycle through generic edits')
     end

@@ -46,7 +46,7 @@ module FixTicketApiSchemas
     ShopWrite: { type: :object, properties: {
       name: string, wiki_url: nullable_string, gdrive_id: nullable_string, slack_channel: nullable_string,
       disabled: boolean, reservable: boolean, color_id: string, floor_name: nullable_string, capacity: integer,
-      resource_manager_ids: { type: :array, items: string, description: 'Admin/board only. Replace Resource Manager assignments; omit to preserve, [] to clear. IDs must belong to members with the Resource Manager role.' },
+      resource_manager_ids: { type: :array, items: string, description: 'Admin/board only. Replace Resource Manager assignments; omit to preserve, [] to clear. IDs must belong to Resource Managers, Admins, or Board members; their roles are preserved.' },
       max_concurrent_reservations: integer, reservation_horizon_days: integer, minimum_advance_notice_hours: { type: :number },
       prohibit_same_day_reservations: boolean, reservation_full_day: boolean, max_reservation_duration_hours: { type: :number },
       reservation_requires_approval: boolean, reservation_prerequisite_tool_ids: array.call(string),

@@ -2639,7 +2639,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Admin/board only. Replace Resource Manager assignments; omit to preserve, [] to clear. IDs must belong to members with the Resource Manager role."
+            "description": "Admin/board only. Replace Resource Manager assignments; omit to preserve, [] to clear. IDs must belong to Resource Managers, Admins, or Board members; their roles are preserved."
           },
           "max_concurrent_reservations": {
             "type": "integer"
@@ -9528,7 +9528,7 @@
     },
     "/admin/shops/resource_manager_options": {
       "get": {
-        "summary": "List members with the Resource Manager role for shop assignment (admin/board only)",
+        "summary": "List Resource Managers, Admins and Board members for shop assignment (admin/board only)",
         "tags": [
           "Shops"
         ],
@@ -9724,6 +9724,29 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ShopWrite"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete catalog resource unless referenced by a repair ticket",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "409": {
+            "description": "Repair ticket reference prevents deletion, including closed tickets and force deletion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
               }
             }
           }
@@ -10030,6 +10053,117 @@
         }
       }
     },
+    "/admin/tools/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "delete": {
+        "summary": "Delete catalog resource unless referenced by a repair ticket",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "409": {
+            "description": "Repair ticket reference prevents deletion, including closed tickets and force deletion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update tool; ticket references prevent moving shops",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "409": {
+            "description": "Repair ticket reference prevents shop move",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shop_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update tool; ticket references prevent moving shops",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "409": {
+            "description": "Repair ticket reference prevents shop move",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shop_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/volunteer/tasks": {
       "get": {
         "summary": "List volunteer tasks including nullable source ticketId",
@@ -10246,6 +10380,16 @@
         ],
         "parameters": [],
         "responses": {
+          "403": {
+            "description": "Only admin and board may change linked bounty credits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Saved task with nullable ticketId (source linkage is not generically editable)",
             "content": {
@@ -10321,6 +10465,16 @@
         ],
         "parameters": [],
         "responses": {
+          "403": {
+            "description": "Only admin and board may change linked bounty credits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Saved task with nullable ticketId (source linkage is not generically editable)",
             "content": {

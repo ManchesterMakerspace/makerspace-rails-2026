@@ -4,7 +4,7 @@ class Admin::ShopsController < ApplicationController
   before_action :authorize_create_destroy, only: [:create, :destroy, :resource_manager_options]
 
   def resource_manager_options
-    render json: Member.where(role: 'resource_manager').order_by(firstname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } }
+    render json: Member.where(:role.in => %w[resource_manager admin board_member]).order_by(firstname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } }
   end
   before_action :find_shop, only: [:update, :destroy]
   before_action :authorize_update, only: [:update]
@@ -87,7 +87,7 @@ class Admin::ShopsController < ApplicationController
     google_resources.each do |resource_id, label_source_id|
       GoogleResourceDeleteJob.perform_later(resource_id, label_source_id)
     end
-    Member.where(role: "resource_manager", :resource_manager_shop_ids.in => [before["_id"].to_s]).each do |member|
+    Member.where(:role.in => %w[resource_manager admin board_member], :resource_manager_shop_ids.in => [before["_id"].to_s]).each do |member|
       member.pull(resource_manager_shop_ids: before["_id"].to_s)
     end
     CheckoutApprover.where(:shop_ids.in => [before["_id"].to_s]).each do |approver|
@@ -122,17 +122,17 @@ class Admin::ShopsController < ApplicationController
       raise ::Error::UnprocessableEntity.new('Choose valid Resource Managers')
     end
     ids = ids.map(&:to_s).uniq
-    unless Member.where(role: 'resource_manager', :id.in => ids).count == ids.length
-      raise ::Error::UnprocessableEntity.new('Selected members must have the Resource Manager role')
+    unless Member.where(:role.in => %w[resource_manager admin board_member], :id.in => ids).count == ids.length
+      raise ::Error::UnprocessableEntity.new('Selected members must be Resource Managers, Admins, or Board members')
     end
     ids
   end
 
   def assign_resource_managers(shop, ids)
     return if ids.nil?
-    previous = Member.where(role: 'resource_manager', resource_manager_shop_ids: shop.id.to_s).pluck(:id).map(&:to_s)
-    Member.where(role: 'resource_manager', :id.in => ids - previous).each { |m| m.add_to_set(resource_manager_shop_ids: shop.id.to_s) }
-    Member.where(role: 'resource_manager', :id.in => previous - ids).each { |m| m.pull(resource_manager_shop_ids: shop.id.to_s) }
+    previous = Member.where(:role.in => %w[resource_manager admin board_member], resource_manager_shop_ids: shop.id.to_s).pluck(:id).map(&:to_s)
+    Member.where(:role.in => %w[resource_manager admin board_member], :id.in => ids - previous).each { |m| m.add_to_set(resource_manager_shop_ids: shop.id.to_s) }
+    Member.where(:role.in => %w[resource_manager admin board_member], :id.in => previous - ids).each { |m| m.pull(resource_manager_shop_ids: shop.id.to_s) }
     return if previous.sort == ids.sort
     ::Service::AuditLogger.log(log_type: 'portal', event_type: 'shop_resource_managers_changed',
       resource_type: 'Shop', resource_id: shop.id, actor: current_member,
@@ -177,6 +177,9 @@ class Admin::ShopsController < ApplicationController
 
   def prevent_deletion_if_tools_are_referenced
     deleted_tool_ids = @shop.tools.pluck(:id)
+    if FixTicket.any_of({ shop_id: @shop.id }, { :tool_id.in => deleted_tool_ids }).exists?
+      raise ::Error::Conflict.new('Cannot delete a shop referenced by a repair ticket')
+    end
     return if deleted_tool_ids.empty?
     prerequisite_ids = deleted_tool_ids.flat_map { |id| [id, id.to_s] }
 

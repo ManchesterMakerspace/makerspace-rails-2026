@@ -10,7 +10,7 @@ RSpec.describe 'Shop Resource Manager assignments', type: :request do
     allow(REDIS).to receive(:set)
   end
   path '/admin/shops/resource_manager_options' do
-    get 'List members with the Resource Manager role for shop assignment (admin/board only)' do
+    get 'List Resource Managers, Admins and Board members for shop assignment (admin/board only)' do
       tags 'Shops'
       security [sessionAuth: []]
       produces 'application/json'
@@ -103,8 +103,27 @@ RSpec.describe 'Shop Resource Manager assignments', type: :request do
     expect(response).to have_http_status(:ok)
     expect(manager.reload.resource_manager_shop_ids).to eq([other.id.to_s])
   end
-  it 'rejects non-RM selections before changing the shop' do
-    put "/api/admin/shops/#{shop.id}", params: { name: 'Invalid edit', resource_manager_ids: [member.id.to_s] }, as: :json
+  it 'assigns and removes Admin and Board members without changing their roles' do
+    board = create(:member, :board_member, :current)
+    get '/api/admin/shops/resource_manager_options'
+    expect(JSON.parse(response.body).map { |row| row['id'] }).to include(member.id.to_s, board.id.to_s)
+    put "/api/admin/shops/#{shop.id}", params: { resource_manager_ids: [member.id.to_s, board.id.to_s] }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body)['resourceManagers'].map { |row| row['id'] }).to contain_exactly(member.id.to_s, board.id.to_s)
+    expect(member.reload.role).to eq('admin')
+    expect(board.reload.role).to eq('board_member')
+    put "/api/admin/members/#{board.id}", params: { role: 'board_member' }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(board.reload.resource_manager_shop_ids).to include(shop.id.to_s)
+    put "/api/admin/shops/#{shop.id}", params: { resource_manager_ids: [] }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(board.reload.resource_manager_shop_ids).not_to include(shop.id.to_s)
+    put "/api/admin/members/#{board.id}", params: { role: 'board_member' }, as: :json
+    expect(response).to have_http_status(:ok)
+  end
+  it 'rejects ordinary member selections before changing the shop' do
+    ordinary = create(:member, :current)
+    put "/api/admin/shops/#{shop.id}", params: { name: 'Invalid edit', resource_manager_ids: [ordinary.id.to_s] }, as: :json
     expect(response).to have_http_status(:unprocessable_content)
     expect(shop.reload.name).not_to eq('Invalid edit')
   end

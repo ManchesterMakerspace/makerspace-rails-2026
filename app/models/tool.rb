@@ -117,7 +117,7 @@ class Tool
   private
 
   CHECKOUT_CANVAS_FIELDS = %w[
-    shop_id name description wiki_url prerequisite_ids disabled
+    shop_id name description wiki_url prerequisite_ids disabled out_of_service
   ].freeze
 
   def enqueue_checkout_canvas_sync_after_catalog_change

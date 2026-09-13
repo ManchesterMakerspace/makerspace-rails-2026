@@ -259,7 +259,7 @@ class Admin::MembersController < AdminController
 
   def normalize_and_validate_rm_assignments!(permitted_params, member = nil)
     role = permitted_params[:role].presence || member&.role
-    if role != "resource_manager"
+    unless %w[resource_manager admin board_member].include?(role)
       permitted_params[:resource_manager_shop_ids] = [] if permitted_params.key?(:role) || permitted_params.key?(:resource_manager_shop_ids)
       return
     end
@@ -269,7 +269,7 @@ class Admin::MembersController < AdminController
     else
       Array(member&.resource_manager_shop_ids).map(&:to_s)
     end
-    raise ::Error::UnprocessableEntity.new("Select at least one shop for a Resource Manager") if ids.empty?
+    raise ::Error::UnprocessableEntity.new("Select at least one shop for a Resource Manager") if role == 'resource_manager' && ids.empty?
 
     valid_ids = Shop.where(:id.in => ids).pluck(:id).map(&:to_s)
     raise ::Error::UnprocessableEntity.new("One or more Resource Manager shops are invalid") unless (ids - valid_ids).empty?
@@ -277,7 +277,7 @@ class Admin::MembersController < AdminController
   end
 
   def rm_shop_ids_for(member)
-    return [] unless member.role == "resource_manager"
+    return [] unless %w[resource_manager admin board_member].include?(member.role)
 
     Array(member.resource_manager_shop_ids).map(&:to_s).uniq
   end

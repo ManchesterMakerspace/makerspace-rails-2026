@@ -10,6 +10,8 @@ class FixTicketPolicy
   end
   def staff?
     return false unless member && ticket
+    # Hidden controls catalog visibility, not an existing approver's repair scope.
+    # Resolve the referenced tool without a disabled filter, just as queue scope does.
     global? || member.manages_shop?(ticket.shop_id) ||
       (approver && (ticket.tool ? approver.can_approve_tool?(ticket.tool) : approver.can_approve_for_shop?(ticket.shop_id)))
   end
