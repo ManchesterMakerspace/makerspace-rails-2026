@@ -53,9 +53,7 @@ class WorkshopSerializer < ActiveModel::Serializer
   end
 
   def resource_managers
-    @resource_managers ||= Member.where(
-      :role.in => %w[resource_manager admin board_member],
-      :resource_manager_shop_ids.in => [object.id.to_s]
+    @resource_managers ||= Member.shop_resource_manager_candidates.where(:resource_manager_shop_ids.in => [object.id.to_s]
     ).order_by(lastname: :asc, firstname: :asc).map do |member|
       slack_user = member.slack_user
       {

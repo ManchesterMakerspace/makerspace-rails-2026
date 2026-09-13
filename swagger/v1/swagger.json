@@ -2272,6 +2272,118 @@
           "paymentMethodDetails"
         ]
       },
+      "VolunteerTaskWrite": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "credit_value": {
+            "type": "number",
+            "exclusiveMinimum": true,
+            "minimum": 0,
+            "description": "Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited."
+          },
+          "shop_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "claimed",
+              "pending",
+              "completed",
+              "cancelled",
+              "denied",
+              "reusable",
+              "repeatable",
+              "recurring"
+            ]
+          },
+          "days": {
+            "type": "integer",
+            "nullable": true
+          },
+          "prerequisite_tool_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FixTicketUpdate": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_progress",
+              "waiting_for_parts",
+              "resolved",
+              "rejected",
+              "withdrawn"
+            ]
+          },
+          "confirmation": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "confirmed",
+              "could_not_confirm"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "Nonblank notes require at least two non-whitespace characters. State transitions may require a note."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 150,
+            "pattern": "^[A-Za-z0-9 .,_()/\\-]+$"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "shop_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "tool_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "uncatalogued_tool": {
+            "type": "string",
+            "pattern": "(?:^[A-Za-z0-9 .,_()/\\-]+$)|^$"
+          },
+          "public_read_only": {
+            "type": "boolean"
+          },
+          "announce_to_slack": {
+            "type": "boolean"
+          },
+          "announcement_note": {
+            "type": "string"
+          },
+          "nominate_reward": {
+            "type": "boolean"
+          }
+        }
+      },
       "FixSlackInteractionPayload": {
         "type": "object",
         "required": [
@@ -6584,71 +6696,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "revision": {
-                    "type": "integer"
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "open",
-                      "in_progress",
-                      "waiting_for_parts",
-                      "resolved",
-                      "rejected",
-                      "withdrawn"
-                    ]
-                  },
-                  "confirmation": {
-                    "type": "string",
-                    "enum": [
-                      "unverified",
-                      "confirmed",
-                      "could_not_confirm"
-                    ]
-                  },
-                  "note": {
-                    "type": "string",
-                    "maxLength": 10000,
-                    "description": "Nonblank notes require at least two non-whitespace characters. State transitions may require a note."
-                  },
-                  "title": {
-                    "type": "string",
-                    "maxLength": 150,
-                    "pattern": "^[A-Za-z0-9 .,_()/\\-]+$"
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "category": {
-                    "type": "string"
-                  },
-                  "shop_id": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "tool_id": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "uncatalogued_tool": {
-                    "type": "string",
-                    "pattern": "(?:^[A-Za-z0-9 .,_()/\\-]+$)|^$"
-                  },
-                  "public_read_only": {
-                    "type": "boolean"
-                  },
-                  "announce_to_slack": {
-                    "type": "boolean"
-                  },
-                  "announcement_note": {
-                    "type": "string"
-                  },
-                  "nominate_reward": {
-                    "type": "boolean"
-                  }
-                }
+                "$ref": "#/components/schemas/FixTicketUpdate"
               }
             }
           }
@@ -6681,71 +6729,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "revision": {
-                    "type": "integer"
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "open",
-                      "in_progress",
-                      "waiting_for_parts",
-                      "resolved",
-                      "rejected",
-                      "withdrawn"
-                    ]
-                  },
-                  "confirmation": {
-                    "type": "string",
-                    "enum": [
-                      "unverified",
-                      "confirmed",
-                      "could_not_confirm"
-                    ]
-                  },
-                  "note": {
-                    "type": "string",
-                    "maxLength": 10000,
-                    "description": "Nonblank notes require at least two non-whitespace characters. State transitions may require a note."
-                  },
-                  "title": {
-                    "type": "string",
-                    "maxLength": 150,
-                    "pattern": "^[A-Za-z0-9 .,_()/\\-]+$"
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "category": {
-                    "type": "string"
-                  },
-                  "shop_id": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "tool_id": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "uncatalogued_tool": {
-                    "type": "string",
-                    "pattern": "(?:^[A-Za-z0-9 .,_()/\\-]+$)|^$"
-                  },
-                  "public_read_only": {
-                    "type": "boolean"
-                  },
-                  "announce_to_slack": {
-                    "type": "boolean"
-                  },
-                  "announcement_note": {
-                    "type": "string"
-                  },
-                  "nominate_reward": {
-                    "type": "boolean"
-                  }
-                }
+                "$ref": "#/components/schemas/FixTicketUpdate"
               }
             }
           }
@@ -10308,49 +10292,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "title": {
-                    "type": "string"
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "credit_value": {
-                    "type": "number",
-                    "exclusiveMinimum": true,
-                    "minimum": 0,
-                    "description": "Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited."
-                  },
-                  "shop_id": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "available",
-                      "claimed",
-                      "pending",
-                      "completed",
-                      "cancelled",
-                      "denied",
-                      "reusable",
-                      "repeatable",
-                      "recurring"
-                    ]
-                  },
-                  "days": {
-                    "type": "integer",
-                    "nullable": true
-                  },
-                  "prerequisite_tool_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                }
+                "$ref": "#/components/schemas/VolunteerTaskWrite"
               }
             }
           }
@@ -10405,49 +10347,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "title": {
-                    "type": "string"
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "credit_value": {
-                    "type": "number",
-                    "exclusiveMinimum": true,
-                    "minimum": 0,
-                    "description": "Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited."
-                  },
-                  "shop_id": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "available",
-                      "claimed",
-                      "pending",
-                      "completed",
-                      "cancelled",
-                      "denied",
-                      "reusable",
-                      "repeatable",
-                      "recurring"
-                    ]
-                  },
-                  "days": {
-                    "type": "integer",
-                    "nullable": true
-                  },
-                  "prerequisite_tool_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                }
+                "$ref": "#/components/schemas/VolunteerTaskWrite"
               }
             }
           }
@@ -10490,49 +10390,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "title": {
-                    "type": "string"
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "credit_value": {
-                    "type": "number",
-                    "exclusiveMinimum": true,
-                    "minimum": 0,
-                    "description": "Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited."
-                  },
-                  "shop_id": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "available",
-                      "claimed",
-                      "pending",
-                      "completed",
-                      "cancelled",
-                      "denied",
-                      "reusable",
-                      "repeatable",
-                      "recurring"
-                    ]
-                  },
-                  "days": {
-                    "type": "integer",
-                    "nullable": true
-                  },
-                  "prerequisite_tool_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                }
+                "$ref": "#/components/schemas/VolunteerTaskWrite"
               }
             }
           }

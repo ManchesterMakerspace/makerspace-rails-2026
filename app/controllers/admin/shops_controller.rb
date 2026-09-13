@@ -4,7 +4,7 @@ class Admin::ShopsController < ApplicationController
   before_action :authorize_create_destroy, only: [:create, :destroy, :resource_manager_options]
 
   def resource_manager_options
-    render json: Member.where(:role.in => %w[resource_manager admin board_member]).order_by(firstname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } }
+    render json: Member.shop_resource_manager_candidates.order_by(firstname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } }
   end
   before_action :find_shop, only: [:update, :destroy]
   before_action :authorize_update, only: [:update]
@@ -87,7 +87,7 @@ class Admin::ShopsController < ApplicationController
     google_resources.each do |resource_id, label_source_id|
       GoogleResourceDeleteJob.perform_later(resource_id, label_source_id)
     end
-    Member.where(:role.in => %w[resource_manager admin board_member], :resource_manager_shop_ids.in => [before["_id"].to_s]).each do |member|
+    Member.shop_resource_manager_candidates.where(:resource_manager_shop_ids.in => [before["_id"].to_s]).each do |member|
       member.pull(resource_manager_shop_ids: before["_id"].to_s)
     end
     CheckoutApprover.where(:shop_ids.in => [before["_id"].to_s]).each do |approver|
@@ -122,7 +122,7 @@ class Admin::ShopsController < ApplicationController
       raise ::Error::UnprocessableEntity.new('Choose valid Resource Managers')
     end
     ids = ids.map(&:to_s).uniq
-    unless Member.where(:role.in => %w[resource_manager admin board_member], :id.in => ids).count == ids.length
+    unless Member.shop_resource_manager_candidates.where(:id.in => ids).count == ids.length
       raise ::Error::UnprocessableEntity.new('Selected members must be Resource Managers, Admins, or Board members')
     end
     ids
@@ -130,9 +130,9 @@ class Admin::ShopsController < ApplicationController
 
   def assign_resource_managers(shop, ids)
     return if ids.nil?
-    previous = Member.where(:role.in => %w[resource_manager admin board_member], resource_manager_shop_ids: shop.id.to_s).pluck(:id).map(&:to_s)
-    Member.where(:role.in => %w[resource_manager admin board_member], :id.in => ids - previous).each { |m| m.add_to_set(resource_manager_shop_ids: shop.id.to_s) }
-    Member.where(:role.in => %w[resource_manager admin board_member], :id.in => previous - ids).each { |m| m.pull(resource_manager_shop_ids: shop.id.to_s) }
+    previous = Member.shop_resource_manager_candidates.where(resource_manager_shop_ids: shop.id.to_s).pluck(:id).map(&:to_s)
+    Member.shop_resource_manager_candidates.where(:id.in => ids - previous).each { |m| m.add_to_set(resource_manager_shop_ids: shop.id.to_s) }
+    Member.shop_resource_manager_candidates.where(:id.in => previous - ids).each { |m| m.pull(resource_manager_shop_ids: shop.id.to_s) }
     return if previous.sort == ids.sort
     ::Service::AuditLogger.log(log_type: 'portal', event_type: 'shop_resource_managers_changed',
       resource_type: 'Shop', resource_id: shop.id, actor: current_member,

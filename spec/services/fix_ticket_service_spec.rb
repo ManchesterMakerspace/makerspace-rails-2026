@@ -11,6 +11,29 @@ RSpec.describe FixTicketService, requires_transactions: true do
   end
   let(:reporter) { member }
   let(:admin) { member(role: 'admin') }
+  it 'preserves assignment notifications without looking up names for discarded deltas' do
+    ticket = report(reporter)
+    assignee = member
+    described_class.assign!(id: ticket.id, actor: admin, member_ids: [assignee.id])
+    event = FixTicketEvent.where(ticket_id: ticket.id, kind: 'assigned').first
+    expect(event.recipients).to contain_exactly(reporter.id, assignee.id)
+    expect(event.field_changes).to eq({})
+    described_class.assign!(id: ticket.id, actor: assignee, unassign_self: true)
+    expect(FixTicketEvent.where(ticket_id: ticket.id, kind: 'assigned').order_by(revision: :desc).first.recipients).to eq([reporter.id])
+  end
+  it 'selects current relevant approvers and RMs with batched notification lookups' do
+    shop = Shop.create!(name: 'Shop')
+    tool = Tool.create!(shop: shop, name: 'Tool')
+    rm = member(role: 'resource_manager')
+    rm.set(resource_manager_shop_ids: [shop.id.to_s])
+    approver = member
+    expired = member(expiry: 1.day.ago.to_i * 1000)
+    [approver, expired].each { |person| CheckoutApprover.create!(member_id: person.id, tool_ids: [tool.id.to_s]) }
+    ticket = report(reporter, shop_id: shop.id, tool_id: tool.id)
+    expect(FixTicketEvent.where(ticket_id: ticket.id, kind: 'created').first.recipients).to contain_exactly(rm.id, approver.id)
+    described_class.note!(id: ticket.id, actor: approver, note: 'Investigating')
+    expect(FixTicketEvent.where(ticket_id: ticket.id, kind: 'note').first.recipients).to contain_exactly(reporter.id, rm.id)
+  end
   it 'rejects hidden catalog resources for ordinary reporters while preserving scoped management' do
     shop = Shop.create!(name: 'Private workshop')
     tool = Tool.create!(name: 'Private drill', shop: shop, disabled: true)

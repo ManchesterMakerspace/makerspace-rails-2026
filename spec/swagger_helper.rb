@@ -1,5 +1,5 @@
-require_relative 'support/fix_ticket_api_schemas'
 require 'rails_helper'
+require_relative 'support/fix_ticket_api_schemas'
 
 RSpec.configure do |config|
   # Specify a root folder where Swagger JSON files are generated

@@ -1,6 +1,6 @@
 class ShopSerializer < ActiveModel::Serializer
   attribute :resource_managers do
-    Member.where(:role.in => %w[resource_manager admin board_member], resource_manager_shop_ids: object.id.to_s).map { |m| { id: m.id.to_s, name: m.fullname } }
+    Member.shop_resource_manager_candidates.where(resource_manager_shop_ids: object.id.to_s).map { |m| { id: m.id.to_s, name: m.fullname } }
   end
   attributes :id, :name, :wiki_url, :gdrive_id, :slack_channel, :disabled, :reservable,
              :max_concurrent_reservations, :reservation_horizon_days,

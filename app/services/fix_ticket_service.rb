@@ -220,9 +220,9 @@ class FixTicketService
         else
           raise Error::Forbidden.new unless policy.staff?
           ids = Array(member_ids).map { |value| parse_id(value) }.compact.uniq
-          (ids - previous).each do |value|
-            raise Error::UnprocessableEntity.new('New assignees must be active, unexpired members') unless Member.where(id: value).first&.fully_active_unexpired?
-          end
+          added = ids - previous
+          members = Member.where(:id.in => added).to_a
+          raise Error::UnprocessableEntity.new('New assignees must be active, unexpired members') unless members.length == added.length && members.all?(&:fully_active_unexpired?)
           # Retain explicit manual grants, but do not promote existing claim-only
           # access to a manual grant when staff submits the effective list.
           ticket.manual_assignee_ids = (ticket.manual_assignee_ids & ids) | (ids - ticket.bounty_assignee_ids)
@@ -232,10 +232,12 @@ class FixTicketService
         ticket.assignee_ids = (ticket.manual_assignee_ids + ticket.bounty_assignee_ids).uniq
         next unless ticket.changed?
         ticket.save!
-        event!(ticket, member, 'assigned', changes: { 'assignees' => [names(previous), names(ticket.assignee_ids)] }, added: ticket.assignee_ids - previous)
+        assignment_event!(ticket, member, previous)
       end
     end
-    def names(ids) = ids.map { |id| Member.where(id: id).first&.fullname || 'Former member' }
+    def assignment_event!(ticket, actor, previous)
+      event!(ticket, actor, 'assigned', added: ticket.assignee_ids - previous)
+    end
     def cancel_unclaimed_bounty!(ticket)
       task = ticket.bounty
       task.update!(status: 'cancelled') if task&.status == 'available' && task.claimed_by_id.nil?
@@ -278,17 +280,20 @@ class FixTicketService
       ticket.inc(revision: 1)
       ticket.set(updated_at: Time.current)
       recipients = []
-      recipients << ticket.reporter_id if actor.id != ticket.reporter_id && (note.present? || (changes.keys & %w[status confirmation assignees announcement_note]).any?)
+      recipients << ticket.reporter_id if actor.id != ticket.reporter_id && (kind == 'assigned' || note.present? || (changes.keys & %w[status confirmation assignees announcement_note]).any?)
       if kind == 'created' || note.present?
         approver_rules = [{ shop_ids: ticket.shop_id.to_s }]
         approver_rules << { tool_ids: ticket.tool_id.to_s } if ticket.tool_id
-        approver_member_ids = CheckoutApprover.any_of(*approver_rules).pluck(:member_id)
-        candidates = Member.any_of({ role: 'resource_manager', resource_manager_shop_ids: ticket.shop_id.to_s }, { :id.in => approver_member_ids })
+        approver_ids = CheckoutApprover.any_of(*approver_rules).pluck(:member_id)
+        candidates = Member.any_of({ role: 'resource_manager', resource_manager_shop_ids: ticket.shop_id.to_s }, { :id.in => approver_ids }).to_a
+        # Match Policy#approver's first record even if legacy duplicate rows exist.
+        approvers = CheckoutApprover.where(:member_id.in => candidates.map(&:id)).order_by(_id: :asc).to_a.reverse.index_by(&:member_id)
+        tool = ticket.tool
         candidates.each do |candidate|
           next if candidate.id == actor.id
           rm = candidate.manages_shop?(ticket.shop_id)
-          approver = FixTicketPolicy.new(candidate, ticket).approver
-          relevant = approver && (ticket.tool ? approver.can_approve_tool?(ticket.tool) : approver.can_approve_for_shop?(ticket.shop_id))
+          approver = candidate.valid_for_checkout_request? && approvers[candidate.id]
+          relevant = approver && (tool ? approver.can_approve_tool?(tool) : approver.can_approve_for_shop?(ticket.shop_id))
           recipients << candidate.id if rm || relevant
         end
       end

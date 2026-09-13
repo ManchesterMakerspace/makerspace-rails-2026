@@ -16,7 +16,7 @@ module FixTicketBounty
       ticket.bounty_assignee_ids = (ticket.bounty_assignee_ids + [member.id]).uniq
       ticket.assignee_ids = (ticket.manual_assignee_ids + ticket.bounty_assignee_ids).uniq
       ticket.save!
-      FixTicketService.event!(ticket, member, 'assigned', changes: { 'assignees' => [FixTicketService.names(previous), FixTicketService.names(ticket.assignee_ids)] }, added: [member.id] - previous)
+      FixTicketService.assignment_event!(ticket, member, previous)
     end
     FixTicketService.enqueue(ticket)
     enqueue_volunteer_canvas_sync(struck_task_id: id)
@@ -55,7 +55,7 @@ module FixTicketBounty
       ticket.assignee_ids = (ticket.manual_assignee_ids + ticket.bounty_assignee_ids).uniq
       ticket.save!
       update!(status: 'cancelled') unless ticket.active?
-      FixTicketService.event!(ticket, actor, 'assigned', changes: { 'assignees' => [FixTicketService.names(previous), FixTicketService.names(ticket.assignee_ids)] })
+      FixTicketService.assignment_event!(ticket, actor, previous)
     end
     FixTicketService.enqueue(ticket)
     enqueue_volunteer_canvas_sync

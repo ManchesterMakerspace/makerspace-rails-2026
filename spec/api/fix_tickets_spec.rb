@@ -2,13 +2,8 @@ require 'swagger_helper'
 
 RSpec.describe 'Fix tickets', type: :request do
   let(:member) { create(:member, :current) }
-  let(:id) { FixTicketService.create!(actor: member, attributes: { title: 'Drill', description: 'Switch failed', category: 'broken', submission_key: SecureRandom.uuid }).id.to_s }
-  before do
-    ActiveJob::Base.queue_adapter = :test
-    allow(REDIS).to receive(:set).and_return(true)
-    allow(REDIS).to receive(:eval).and_return(1)
-    sign_in member
-  end
+  let(:id) { create(:fix_ticket, reporter_id: member.id).id.to_s }
+  include_context 'authenticated ticket request'
   path '/fix_tickets' do
     get 'List authorized repair tickets' do
       tags 'Fix tickets'
@@ -71,7 +66,7 @@ RSpec.describe 'Fix tickets', type: :request do
       tags 'Fix tickets'
       security [sessionAuth: []]
       produces 'application/json'
-      response('200', 'No reporter identity is included') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test!(requires_transactions: true) }
+      response('200', 'No reporter identity is included') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test! }
     end
     %i[patch put].each do |verb|
     public_send(verb, 'Update authorized ticket fields; priority is immutable') do
@@ -79,12 +74,7 @@ RSpec.describe 'Fix tickets', type: :request do
       security [sessionAuth: []]
       consumes 'application/json'
       produces 'application/json'
-      parameter name: :update, in: :body, schema: { type: :object, properties: {
-        revision: { type: :integer }, status: { type: :string, enum: FixTicket::STATUSES }, confirmation: { type: :string, enum: FixTicket::CONFIRMATIONS },
-        note: { type: :string, maxLength: 10000, description: 'Nonblank notes require at least two non-whitespace characters. State transitions may require a note.' }, title: { type: :string, maxLength: 150, pattern: FixTicket::SAFE_NAME_PATTERN }, description: { type: :string }, category: { type: :string },
-        shop_id: { type: :string, nullable: true }, tool_id: { type: :string, nullable: true }, uncatalogued_tool: { type: :string, pattern: "(?:#{FixTicket::SAFE_NAME_PATTERN})|^$" },
-        public_read_only: { type: :boolean }, announce_to_slack: { type: :boolean }, announcement_note: { type: :string }, nominate_reward: { type: :boolean }
-      } }
+      parameter name: :update, in: :body, schema: { '$ref' => '#/components/schemas/FixTicketUpdate' }
       let(:update) { { note: 'Additional details' } }
       response('200', 'Updated; operation-specific staff/assignee/reporter authorization applies') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test!(requires_transactions: true) }
       response('503', 'MongoDB topology does not support atomic ticket writes') { schema '$ref' => '#/components/schemas/FixError' }
@@ -170,7 +160,7 @@ RSpec.describe 'Fix tickets', type: :request do
       security [sessionAuth: []]
       parameter name: :search, in: :query, required: false, type: :string
       produces 'application/json'
-      response('200', 'Up to fifty active unexpired members') { schema type: :array, items: { '$ref' => '#/components/schemas/FixPerson' }; let(:member) { create(:member, :admin, :current) }; run_test!(requires_transactions: true) }
+      response('200', 'Up to fifty active unexpired members') { schema type: :array, items: { '$ref' => '#/components/schemas/FixPerson' }; let(:member) { create(:member, :admin, :current) }; run_test! }
     end
   end
   path '/tools/{id}/outage' do

@@ -2,12 +2,7 @@ require 'rails_helper'
 RSpec.describe 'Fix ticket API', type: :request, requires_transactions: true do
   let(:member) { create(:member, :current) }
   let(:admin) { create(:member, :current, :admin) }
-  before do
-    ActiveJob::Base.queue_adapter = :test
-    allow(REDIS).to receive(:set).and_return(true)
-    allow(REDIS).to receive(:eval).and_return(1)
-    sign_in member
-  end
+  include_context 'authenticated ticket request'
   def submit(extra = {})
     post '/api/fix_tickets', params: { title: 'Drill', description: 'Broken switch', category: 'broken', submission_key: SecureRandom.uuid }.merge(extra), as: :json
     expect(response).to have_http_status(:ok)

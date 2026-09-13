@@ -3,7 +3,8 @@ class FixTicketQuery
     p = parameters.to_h.stringify_keys
     mode = p.fetch('mode', 'all')
     raise Error::UnprocessableEntity.new('Invalid list') unless %w[all mine assigned queue public].include?(mode)
-    scope = FixTicketPolicy.new(member).scope(mode)
+    policy = FixTicketPolicy.new(member)
+    scope = policy.scope(mode)
     statuses = p.key?('statuses') ? Array(p['statuses']) : FixTicket::ACTIVE
     raise Error::UnprocessableEntity.new('Invalid statuses') if (statuses - FixTicket::STATUSES).any?
     scope = scope.where(:status.in => statuses)
@@ -29,11 +30,17 @@ class FixTicketQuery
     order = { sort => direction == 'asc' ? 1 : -1 }
     order['created_at'] = 1 if sort == 'priority'
     order['_id'] = 1
-    pipeline = [{ '$match' => scope.selector }, { '$addFields' => { 'priority_missing' => { '$cond' => [{ '$eq' => [{ '$ifNull' => ['$priority', nil] }, nil] }, 1, 0] } } }]
+    pipeline = []
+    pipeline << { '$addFields' => { 'priority_missing' => { '$cond' => [{ '$eq' => [{ '$ifNull' => ['$priority', nil] }, nil] }, 1, 0] } } } if sort == 'priority'
     order = { 'priority_missing' => 1 }.merge(order) if sort == 'priority'
     pipeline += [{ '$sort' => order }, { '$skip' => page * size }, { '$limit' => size }]
-    records = FixTicket.collection.aggregate(pipeline).map { |row| FixTicket.instantiate(row.except('priority_missing')) }
-    { tickets: records.map { |ticket| FixTicketPresenter.ticket(ticket, member) }, total: scope.count, page: page, pageSize: size }
+    page_result = FixTicket.collection.aggregate([
+      { '$match' => scope.selector },
+      { '$facet' => { 'tickets' => pipeline, 'total' => [{ '$count' => 'count' }] } }
+    ]).first
+    records = page_result.fetch('tickets').map { |row| FixTicket.instantiate(row.except('priority_missing')) }
+    context = FixTicketContext.new(records, policy)
+    { tickets: records.map { |ticket| FixTicketPresenter.ticket(ticket, member, context: context) }, total: page_result.dig('total', 0, 'count') || 0, page: page, pageSize: size }
   rescue ArgumentError, TypeError
     raise Error::UnprocessableEntity.new('Invalid pagination')
   end

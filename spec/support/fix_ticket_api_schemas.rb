@@ -27,6 +27,17 @@ module FixTicketApiSchemas
     capabilities: ref.call('FixTicketCapabilities')
   }
   SCHEMAS = {
+    VolunteerTaskWrite: { type: :object, properties: {
+          title: { type: :string }, description: { type: :string }, credit_value: { type: :number, exclusiveMinimum: true, minimum: 0, description: 'Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited.' },
+          shop_id: { type: :string, nullable: true }, status: { type: :string, enum: VolunteerTask::VALID_STATUSES },
+          days: { type: :integer, nullable: true }, prerequisite_tool_ids: { type: :array, items: { type: :string } }
+        } },
+    FixTicketUpdate: { type: :object, properties: {
+        revision: { type: :integer }, status: { type: :string, enum: FixTicket::STATUSES }, confirmation: { type: :string, enum: FixTicket::CONFIRMATIONS },
+        note: { type: :string, maxLength: 10000, description: 'Nonblank notes require at least two non-whitespace characters. State transitions may require a note.' }, title: { type: :string, maxLength: 150, pattern: FixTicket::SAFE_NAME_PATTERN }, description: { type: :string }, category: { type: :string },
+        shop_id: { type: :string, nullable: true }, tool_id: { type: :string, nullable: true }, uncatalogued_tool: { type: :string, pattern: "(?:#{FixTicket::SAFE_NAME_PATTERN})|^$" },
+        public_read_only: { type: :boolean }, announce_to_slack: { type: :boolean }, announcement_note: { type: :string }, nominate_reward: { type: :boolean }
+      } },
     FixSlackInteractionPayload: { type: :object, required: %w[type team user], properties: {
       type: { type: :string, enum: %w[block_suggestion block_actions view_submission] },
       team: object.call({ id: string }), user: object.call({ id: string }), action_id: string, value: string,

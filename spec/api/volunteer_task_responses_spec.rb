@@ -48,11 +48,7 @@ RSpec.describe 'Generic volunteer task responses', type: :request do
         security [sessionAuth: []]
         consumes 'application/json'
         produces 'application/json'
-        parameter name: :body, in: :body, schema: { type: :object, properties: {
-          title: { type: :string }, description: { type: :string }, credit_value: { type: :number, exclusiveMinimum: true, minimum: 0, description: 'Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited.' },
-          shop_id: { type: :string, nullable: true }, status: { type: :string, enum: VolunteerTask::VALID_STATUSES },
-          days: { type: :integer, nullable: true }, prerequisite_tool_ids: { type: :array, items: { type: :string } }
-        } }
+        parameter name: :body, in: :body, schema: { '$ref' => '#/components/schemas/VolunteerTaskWrite' }
         let(:body) { { title: 'Repair', description: 'Replace switch', credit_value: 1 } }
         unless verb == :post
           response '403', 'Only admin and board may change linked bounty credits' do
