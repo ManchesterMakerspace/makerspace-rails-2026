@@ -18,7 +18,9 @@ RSpec.describe 'System configuration', type: :request do
       response '200', 'Configuration including the effective open-ticket limit' do
         schema type: :object, required: %w[flags jobs slack volunteer totp security reservation job_schedule], properties: {
           flags: { type: :object }, jobs: { type: :array, items: { type: :object } },
-          slack: { type: :object }, volunteer: { type: :object }, totp: { type: :object },
+          slack: { type: :object }, volunteer: { type: :object, required: ['ticket_bounty_max_credit'], properties: {
+            ticket_bounty_max_credit: { type: :string, default: '2.0', description: 'Maximum credits for creating a bounty from a repair ticket. Finite number at least 0.5; changes are audited.' }
+          } }, totp: { type: :object },
           reservation: { type: :object }, job_schedule: { type: :object },
           security: { type: :object, required: %w[ticket_open_limit devise_timeout_minutes], properties: {
             ticket_open_limit: { type: :integer, minimum: 1, default: 10, description: 'Maximum nonterminal reports per reporter; current admin/board reporters are exempt. Only admins can change this setting.' },
@@ -53,14 +55,32 @@ RSpec.describe 'System configuration', type: :request do
       let(:setting) { { key: 'ticket_open_limit', value: '12' } }
       response '200', 'Saved setting as a string' do
         schema type: :object, required: %w[key value], properties: { key: { type: :string }, value: { type: :string } }
-        run_test! do |response|
-          expect(JSON.parse(response.body)).to include('key' => 'ticket_open_limit', 'value' => '12')
-          expect(SystemConfig.get('ticket_open_limit')).to eq('12')
+        context 'open ticket limit' do
+          run_test! do |response|
+            expect(JSON.parse(response.body)).to include('key' => 'ticket_open_limit', 'value' => '12')
+            expect(SystemConfig.get('ticket_open_limit')).to eq('12')
+          end
+        end
+        context 'ticket bounty credit maximum' do
+          let(:setting) { { key: 'ticket_bounty_max_credit', value: '15' } }
+          before do
+            allow(Service::AuditLogger).to receive(:log).and_call_original
+            allow(Service::SlackConnector).to receive(:send_slack_message)
+          end
+          run_test! do
+            expect(SystemConfig.get('ticket_bounty_max_credit')).to eq('15')
+            expect(Service::AuditLogger).to have_received(:log).with(hash_including(actor: member, field_changes: { 'ticket_bounty_max_credit' => ['', '15'] }))
+            expect(AuditLog.where(event_type: 'portal_setting_changed').first.field_changes['ticket_bounty_max_credit']).to eq(['', '15'])
+          end
         end
       end
       response '422', 'Invalid setting value' do
         let(:setting) { { key: 'ticket_open_limit', value: '0' } }
         run_test! { expect(SystemConfig.get('ticket_open_limit')).to be_nil }
+        context 'invalid ticket bounty maximum' do
+          let(:setting) { { key: 'ticket_bounty_max_credit', value: 'NaN' } }
+          run_test! { expect(SystemConfig.get('ticket_bounty_max_credit')).to be_nil }
+        end
       end
       response '403', 'Only admins may change ticket_open_limit' do
         let(:member) { create(:member, :current, role: 'board_member') }

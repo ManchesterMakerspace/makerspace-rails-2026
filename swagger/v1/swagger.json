@@ -2351,6 +2351,23 @@
           "description": {
             "type": "string"
           },
+          "closedBy": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "nullable": true,
+            "description": "Closer identity only for closed tickets closed by someone other than the reporter; otherwise null."
+          },
           "category": {
             "type": "string",
             "enum": [
@@ -2471,6 +2488,7 @@
           "reference",
           "title",
           "description",
+          "closedBy",
           "category",
           "status",
           "confirmation",
@@ -2662,6 +2680,12 @@
           "openCount": {
             "type": "integer"
           },
+          "bountyMaxCredit": {
+            "type": "number",
+            "minimum": 0.5,
+            "default": 2,
+            "description": "Configured maximum credits when converting a ticket to a bounty."
+          },
           "openLimit": {
             "type": "integer",
             "nullable": true,
@@ -2678,6 +2702,7 @@
           "canCreate",
           "creationUnavailableReason",
           "openCount",
+          "bountyMaxCredit",
           "openLimit",
           "centralSlackEnabled"
         ]
@@ -5817,7 +5842,7 @@
         }
       ],
       "post": {
-        "summary": "Admin-only acknowledged reporter reveal; audited and no-store",
+        "summary": "Admin-only acknowledged reporter reveal; audit records ticket ID/title and acting admin, excluding reporter identity; no-store",
         "tags": [
           "Fix tickets"
         ],
@@ -5834,6 +5859,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FixReporterReveal"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity is withheld when the reveal audit cannot be saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
                 }
               }
             }
@@ -7233,7 +7268,17 @@
                       "type": "object"
                     },
                     "volunteer": {
-                      "type": "object"
+                      "type": "object",
+                      "required": [
+                        "ticket_bounty_max_credit"
+                      ],
+                      "properties": {
+                        "ticket_bounty_max_credit": {
+                          "type": "string",
+                          "default": "2.0",
+                          "description": "Maximum credits for creating a bounty from a repair ticket. Finite number at least 0.5; changes are audited."
+                        }
+                      }
                     },
                     "totp": {
                       "type": "object"
@@ -7335,6 +7380,7 @@
                       "volunteer_max_discounts_per_year",
                       "volunteer_discount_id",
                       "volunteer_task_max_credit",
+                      "ticket_bounty_max_credit",
                       "volunteer_bounty_token",
                       "volunteer_rolling_days",
                       "volunteer_leaderboard_top",
@@ -7377,6 +7423,7 @@
                           "volunteer_max_discounts_per_year",
                           "volunteer_discount_id",
                           "volunteer_task_max_credit",
+                          "ticket_bounty_max_credit",
                           "volunteer_bounty_token",
                           "volunteer_rolling_days",
                           "volunteer_leaderboard_top",
@@ -7551,7 +7598,8 @@
                   "credit_value": {
                     "type": "number",
                     "exclusiveMinimum": true,
-                    "minimum": 0
+                    "minimum": 0,
+                    "description": "Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited."
                   },
                   "shop_id": {
                     "type": "string",
@@ -7637,7 +7685,8 @@
                   "credit_value": {
                     "type": "number",
                     "exclusiveMinimum": true,
-                    "minimum": 0
+                    "minimum": 0,
+                    "description": "Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited."
                   },
                   "shop_id": {
                     "type": "string",
@@ -7711,7 +7760,8 @@
                   "credit_value": {
                     "type": "number",
                     "exclusiveMinimum": true,
-                    "minimum": 0
+                    "minimum": 0,
+                    "description": "Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited."
                   },
                   "shop_id": {
                     "type": "string",

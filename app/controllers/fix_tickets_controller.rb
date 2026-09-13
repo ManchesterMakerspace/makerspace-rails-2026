@@ -30,6 +30,7 @@ class FixTicketsController < ApplicationController
       assignees: Member.where(:id.in => FixTicketPolicy.new(current_member).scope.distinct(:assignee_ids)).order_by(lastname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } },
       canCreate: can_create, creationUnavailableReason: reason,
       openCount: open_count, openLimit: privileged ? nil : FixTicketService.limit,
+      bountyMaxCredit: VolunteerTask.ticket_bounty_max_credit,
       centralSlackEnabled: ENV['SLACK_TICKETS_CHANNEL'].present? }
   end
   def show
@@ -70,6 +71,11 @@ class FixTicketsController < ApplicationController
     raise Error::Forbidden.new unless current_member.role == 'admin' && params[:acknowledged] == true
     response.set_header('Cache-Control', 'no-store')
     FixTicketReveal.create!(ticket_id: ticket.id, admin_id: current_member.id)
+    audit = Service::AuditLogger.log(log_type: 'portal', event_type: 'ticket_reporter_revealed',
+      resource_type: 'FixTicket', resource_id: ticket.id, actor: current_member,
+      after_snapshot: { ticket_id: ticket.id.to_s, title: ticket.title },
+      message_details: "Ticket #{ticket.id}: #{ticket.title}")
+    raise Error::ServiceUnavailable.new('Unable to audit this reveal. Please retry.') unless audit
     member = Member.where(id: ticket.reporter_id).first
     render json: { name: member&.fullname || 'Former member', id: member&.id&.to_s }
   end

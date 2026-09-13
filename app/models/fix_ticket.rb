@@ -1,5 +1,7 @@
 class FixTicket
   include Mongoid::Document
+  # Private attribution; the presenter only exposes non-reporter closers.
+  field :closed_by_id, type: BSON::ObjectId
   include Mongoid::Timestamps
 
   ACTIVE = %w[open in_progress waiting_for_parts].freeze

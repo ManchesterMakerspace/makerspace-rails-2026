@@ -90,6 +90,32 @@ RSpec.describe FixTicketService, requires_transactions: true do
     described_class.update!(id: ticket.id, actor: admin, attributes: { status: 'open', note: 'Failed again' })
     expect(ticket.reload.priority).to be_nil
   end
+  it 'atomically records every closure, clears attribution on reopen, and protects reporter privacy' do
+    ticket = report(reporter)
+    %w[resolved rejected].each do |status|
+      described_class.update!(id: ticket.id, actor: admin, attributes: { status: status, note: 'Reviewed repair' })
+      expect(ticket.reload.closed_by_id).to eq(admin.id)
+      expect(FixTicketPresenter.ticket(ticket, reporter, detail: true)[:closedBy]).to eq({ id: admin.id.to_s, name: admin.fullname })
+      described_class.update!(id: ticket.id, actor: admin, attributes: { status: 'open', note: 'Needs more work' })
+      expect(ticket.reload.closed_by_id).to be_nil
+    end
+    described_class.withdraw!(id: ticket.id, actor: reporter)
+    expect(ticket.reload.closed_by_id).to eq(reporter.id)
+    expect(FixTicketPresenter.ticket(ticket, admin, detail: true).to_json).not_to include(reporter.id.to_s, reporter.fullname)
+    audits = AuditLog.where(resource_id: ticket.id, event_type: 'ticket_closed')
+    expect(audits.count).to eq(3)
+    expect(audits.to_json).not_to include(reporter.id.to_s, reporter.fullname)
+    expect(audits.where(actor_id: admin.id).count).to eq(2)
+  end
+  it 'rolls back closure and its event when audit persistence fails' do
+    ticket = report(reporter)
+    revision = ticket.revision
+    allow(AuditLog).to receive(:create!).and_raise('Audit unavailable')
+    expect { described_class.withdraw!(id: ticket.id, actor: reporter) }.to raise_error('Audit unavailable')
+    expect(ticket.reload.status).to eq('open')
+    expect(ticket.closed_by_id).to be_nil
+    expect(ticket.revision).to eq(revision)
+  end
   it 'advances meaningful timestamps but not delivery bookkeeping' do
     ticket = report(reporter)
     created = ticket.created_at
@@ -123,6 +149,15 @@ RSpec.describe FixTicketService, requires_transactions: true do
     expect { described_class.update!(id: ticket.id, actor: admin, attributes: { public_read_only: false }) }.to raise_error(Error::UnprocessableEntity)
     expect { described_class.withdraw!(id: ticket.id, actor: reporter) }.to have_enqueued_job(VolunteerSlackCanvasSyncJob).with(shop.id.to_s)
     expect(ticket.bounty.reload.status).to eq('cancelled')
+  end
+  it 'uses the independently configured ticket bounty credit maximum' do
+    ticket = report(reporter)
+    expect { described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 5 }) }.to raise_error(Mongoid::Errors::Validations)
+    expect(ticket.reload.bounty_id).to be_nil
+    SystemConfig.set('ticket_bounty_max_credit', '5')
+    described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 5 })
+    expect(ticket.reload.bounty.credit_value).to eq(5)
+    expect { VolunteerTask.create!(title: 'Ordinary task', description: 'Work', created_by_id: admin.id, credit_value: 5) }.to raise_error(Mongoid::Errors::Validations)
   end
   %w[claimed pending].each do |state|
     it "requires claim cleanup before cancelling a #{state} linked bounty" do

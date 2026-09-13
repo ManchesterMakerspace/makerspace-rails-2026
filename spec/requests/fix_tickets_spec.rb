@@ -37,6 +37,12 @@ RSpec.describe 'Fix ticket API', type: :request, requires_transactions: true do
     expect(response.headers['Cache-Control']).to include('no-store')
     expect(JSON.parse(response.body)['id']).to eq(member.id.to_s)
     expect(FixTicketReveal.count).to eq(1)
+    audit = AuditLog.where(event_type: 'ticket_reporter_revealed').first
+    expect(audit.resource_id.to_s).to eq(ticket['id'])
+    expect(audit.actor_id).to eq(admin.id)
+    expect(audit.after_snapshot).to include('title' => 'Drill', 'ticket_id' => ticket['id'])
+    expect(audit.subject_id).to be_nil
+    expect(audit.as_json.to_json).not_to include(member.id.to_s, member.fullname, member.email)
   end
   it 'denies a read-only viewer mutations and excludes nonmatching statuses' do
     ticket = submit(public_read_only: true)

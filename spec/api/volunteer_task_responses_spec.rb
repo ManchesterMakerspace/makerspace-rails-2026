@@ -49,7 +49,7 @@ RSpec.describe 'Generic volunteer task responses', type: :request do
         consumes 'application/json'
         produces 'application/json'
         parameter name: :body, in: :body, schema: { type: :object, properties: {
-          title: { type: :string }, description: { type: :string }, credit_value: { type: :number, exclusiveMinimum: true, minimum: 0 },
+          title: { type: :string }, description: { type: :string }, credit_value: { type: :number, exclusiveMinimum: true, minimum: 0, description: 'Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited.' },
           shop_id: { type: :string, nullable: true }, status: { type: :string, enum: VolunteerTask::VALID_STATUSES },
           days: { type: :integer, nullable: true }, prerequisite_tool_ids: { type: :array, items: { type: :string } }
         } }
@@ -57,6 +57,20 @@ RSpec.describe 'Generic volunteer task responses', type: :request do
         response '200', 'Saved task with nullable ticketId (source linkage is not generically editable)' do
           schema '$ref' => '#/components/schemas/VolunteerTask'
           run_test! { |response| expect(JSON.parse(response.body)).to have_key('ticketId') }
+          unless verb == :post
+            %w[admin board_member].each do |role|
+              context "uncapped credit edit by #{role}" do
+                let(:member) { create(:member, :current, role: role) }
+                let(:body) { { credit_value: 1000.5 } }
+                run_test! do
+                  expect(task.reload.credit_value).to eq(1000.5)
+                  audit = AuditLog.where(event_type: 'volunteer_task_credit_changed', resource_id: task.id).first
+                  expect(audit.actor_id).to eq(member.id)
+                  expect(audit.field_changes['credit_value']).to eq([1.0, 1000.5])
+                end
+              end
+            end
+          end
         end
       end
     end

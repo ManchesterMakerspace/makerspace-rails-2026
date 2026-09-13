@@ -54,6 +54,9 @@ class VolunteerTask
   validates :title,        presence: true
   validates :description,  presence: true
   validates :credit_value, numericality: { greater_than: 0 }
+  validate do
+    errors.add(:credit_value, 'must be finite') if credit_value && !credit_value.finite?
+  end
   validates_inclusion_of :status, in: VALID_STATUSES
   validates :days, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
 
@@ -88,6 +91,10 @@ class VolunteerTask
   def self.max_credit_value
     (SystemConfig.get('volunteer_task_max_credit') ||
       ENV.fetch('VOLUNTEER_TASK_MAX_CREDIT', 2.0)).to_f
+  end
+
+  def self.ticket_bounty_max_credit
+    (SystemConfig.get('ticket_bounty_max_credit') || '2.0').to_f
   end
 
   def self.find_by_number(number)
@@ -328,7 +335,7 @@ class VolunteerTask
   end
 
   def credit_value_within_max
-    max = VolunteerTask.max_credit_value
+    max = ticket_id ? VolunteerTask.ticket_bounty_max_credit : VolunteerTask.max_credit_value
     if credit_value && credit_value > max
       errors.add(:credit_value, "cannot exceed #{max} credits (current maximum). Contact an admin to increase the limit.")
     end

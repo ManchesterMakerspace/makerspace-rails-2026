@@ -17,6 +17,9 @@ class FixTicketPresenter
       rewardStatus: ticket.reward_id ? VolunteerCredit.where(id: ticket.reward_id).first&.status : nil,
       revision: ticket.revision, createdAt: ticket.created_at, updatedAt: ticket.updated_at,
       capabilities: policy.capabilities }
+    result[:closedBy] = if !ticket.active? && ticket.closed_by_id && ticket.closed_by_id != ticket.reporter_id
+      { id: ticket.closed_by_id.to_s, name: member_label(ticket.closed_by_id, ticket) }
+    end
     # Assignments must never expose which member is the submitter. If the reporter
     # volunteers, display their ordinary assignee identity without labeling the link.
     result[:assignees] = ticket.assignee_ids.map { |id| { id: id.to_s, name: Member.where(id: id).first&.fullname || 'Former member' } }

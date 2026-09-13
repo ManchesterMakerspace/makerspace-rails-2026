@@ -25,6 +25,7 @@ class Admin::SystemConfigsController < AdminController
     'volunteer_max_discounts_per_year',
     'volunteer_discount_id',
     'volunteer_task_max_credit',
+    'ticket_bounty_max_credit',
     'volunteer_bounty_token',
     'volunteer_rolling_days',
     'volunteer_leaderboard_top',
@@ -76,6 +77,7 @@ class Admin::SystemConfigsController < AdminController
       volunteer_max_discounts_per_year: SystemConfig.get('volunteer_max_discounts_per_year') || '2',
       volunteer_discount_id:            SystemConfig.get('volunteer_discount_id')             || '',
       volunteer_task_max_credit:        SystemConfig.get('volunteer_task_max_credit')         || '2.0',
+      ticket_bounty_max_credit:         SystemConfig.get('ticket_bounty_max_credit')          || '2.0',
       volunteer_bounty_token:           SystemConfig.get('volunteer_bounty_token')            || '',
       volunteer_rolling_days:           SystemConfig.get('volunteer_rolling_days')           || '90',
       volunteer_leaderboard_top:        SystemConfig.get('volunteer_leaderboard_top')        || '10',
@@ -242,6 +244,12 @@ class Admin::SystemConfigsController < AdminController
   end
 
   def valid_setting_value?(key, value)
+    if key == 'ticket_bounty_max_credit'
+      amount = Float(value, exception: false)
+      return true if amount && amount.finite? && amount >= 0.5
+      render json: { error: 'Ticket bounty maximum must be a finite number of at least 0.5 credits' }, status: :unprocessable_entity
+      return false
+    end
     if key == 'ticket_open_limit'
       raise Error::Forbidden.new unless current_member.role == 'admin'
       return true if value.match?(/\A[1-9]\d*\z/)

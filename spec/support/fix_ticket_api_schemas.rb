@@ -12,6 +12,7 @@ module FixTicketApiSchemas
   capabilities = %w[canRead canAddNote canChangeStatus canManage canManageVisibility publicLocked canWithdraw canUnassign canCreateBounty canNominateReward canReviewReward canReveal].to_h { |key| [key, boolean] }
   ticket = {
     id: string, reference: string, title: string, description: string,
+    closedBy: person.merge(nullable: true, description: 'Closer identity only for closed tickets closed by someone other than the reporter; otherwise null.'),
     category: { type: :string, enum: %w[damaged broken missing other] },
     status: { type: :string, enum: %w[open in_progress waiting_for_parts resolved rejected withdrawn] },
     confirmation: { type: :string, enum: %w[unverified confirmed could_not_confirm] },
@@ -35,6 +36,7 @@ module FixTicketApiSchemas
     FixTicketPage: object.call({ tickets: array.call(ref.call('FixTicket')), total: integer, page: integer, pageSize: integer }),
     FixTicketCatalog: object.call({ shops: array.call(person), tools: array.call(object.call({ id: string, name: string, shopId: string, outOfService: boolean })),
       assignees: array.call(person), canCreate: boolean, creationUnavailableReason: nullable_string, openCount: integer,
+      bountyMaxCredit: { type: :number, minimum: 0.5, default: 2, description: 'Configured maximum credits when converting a ticket to a bounty.' },
       openLimit: { type: :integer, nullable: true, minimum: 1 }, centralSlackEnabled: boolean }),
     FixReporterReveal: object.call({ id: nullable_string, name: string }),
     FixOutageResult: object.call({ outOfService: boolean, affectedCount: integer,

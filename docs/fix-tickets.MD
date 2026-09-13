@@ -1,8 +1,14 @@
 # Repair tickets and independent availability
 
+Successful portal submissions return to the default ticket list, clearing URL filters and pagination and refreshing results. Every terminal transition (resolved, rejected, or withdrawn) stores the closer's member ObjectId in `FixTicket.closed_by_id` and creates a `ticket_closed` audit record in the same transaction. Audit failure rolls back the closure. Reopening clears the current closure attribution; prior audit records remain. Responses expose nullable `closedBy` only when someone other than the reporter closed the ticket. Reporter closures remain labeled Reporter in ordinary audit views, without their identity or request metadata. Legacy tickets without attribution show no closer.
+
 The portal entry is `/fix-tickets`. `/fix new`, `mine`, `assigned`, `queue`, `public`, and a ticket ObjectId open private Slack modals. Both clients use the same service authorization and transitions. Ticket list queries are server-paginated and scoped before filtering.
 
 ## Data and privacy
+
+The Bounty Tasks section of `/admin/system-settings` includes `ticket_bounty_max_credit` (default 2), separate from the ordinary task-creation maximum. It limits ticket-to-bounty conversions and is returned as `bountyMaxCredit` in the ticket catalog. Setting edits use the portal audit log. Admin/board edits of existing bounty tasks may set any positive finite credit value without an upper cap; credit changes record actor, task ID/title, and before/after credits in the portal audit log. Existing awarded volunteer credits are not rewritten.
+
+Acknowledged admin reporter reveals also create a general audit record containing the ticket ObjectID, title, and acting admin. No reporter identity, subject, or ticket snapshot containing reporter data is included. The separate restricted reveal record is retained; the reveal response is withheld if the general audit record cannot be saved.
 
 `FixTicketService` requires MongoDB transactions on a replica set. Its reporter write lock participates in the transaction, serializing cap checks, current-role checks, priority insertion, ticket changes, and bounty linkage. Do not run this feature on standalone MongoDB. Use `fix_tickets:ensure_indexes` before accepting submissions. The admin security settings page exposes `ticket_open_limit` (default 10).
 

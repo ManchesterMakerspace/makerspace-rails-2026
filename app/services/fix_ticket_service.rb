@@ -94,6 +94,7 @@ class FixTicketService
         canvas_shop_id = nil
         result = FixTicket.find(initial.id)
         previous_bounty = [result.bounty_id, result.bounty&.status]
+        previous_status = result.status
         actor = Member.find(actor.id)
         policy = FixTicketPolicy.new(actor, result)
         raise Error::NotFound.new unless policy.read?
@@ -101,6 +102,23 @@ class FixTicketService
           raise Error::UnprocessableEntity.new('Ticket changed. Refresh before trying again.')
         end
         yield result, policy, actor
+        if previous_status != result.status
+          if result.active?
+            result.update!(closed_by_id: nil)
+          else
+            result.update!(closed_by_id: actor.id)
+            reporter_closed = actor.id == result.reporter_id
+            # Database-only and fail-closed: rollback the closure if auditing fails.
+            # Do not put reporter identity or request metadata in ordinary audit views.
+            AuditLog.create!(log_type: 'portal', event_type: 'ticket_closed',
+              resource_type: 'FixTicket', resource_id: result.id,
+              actor_id: reporter_closed ? nil : actor.id,
+              actor_name: reporter_closed ? 'Reporter' : actor.fullname,
+              field_changes: { 'status' => [previous_status, result.status] },
+              after_snapshot: { 'title' => result.title },
+              slack_message: "Ticket #{result.id}: #{result.title} closed as #{result.status}")
+          end
+        end
         # Recomputed on each transaction retry; enqueue only after commit.
         canvas_shop_id = result.shop_id if previous_bounty != [result.bounty_id, result.bounty&.reload&.status]
       end

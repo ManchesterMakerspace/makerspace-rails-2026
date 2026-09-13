@@ -93,7 +93,7 @@ RSpec.describe 'Fix tickets', type: :request do
     assignments: ['Staff assignment or self-unassignment', { member_ids: { type: :array, items: { type: :string } }, unassign_self: { type: :boolean } }],
     bounty: ['Admin/board/relevant RM: create bounty and publish ticket atomically', { title: { type: :string }, description: { type: :string }, credit_value: { type: :number }, prerequisite_tool_ids: { type: :array, items: { type: :string } } }],
     reward: ['Independent authorized reviewer: approve/reject pending reporter point', { decision: { type: :string, enum: %w[approve reject] } }],
-    reveal: ['Admin-only acknowledged reporter reveal; audited and no-store', { acknowledged: { type: :boolean } }],
+    reveal: ['Admin-only acknowledged reporter reveal; audit records ticket ID/title and acting admin, excluding reporter identity; no-store', { acknowledged: { type: :boolean } }],
     outage: ['Repair staff: independent tool availability', { out_of_service: { type: :boolean } }],
     retry_delivery: ['Repair staff: retry pending notifications', {}] }.each do |action, (title, properties)|
     path "/fix_tickets/{id}/#{action}" do
@@ -139,6 +139,18 @@ RSpec.describe 'Fix tickets', type: :request do
         response '422', 'Validation, cap, revision, or lifecycle conflict' do; schema '$ref' => '#/components/schemas/FixError'; end
         unless %i[reveal outage retry_delivery].include?(action)
           response('503', 'MongoDB topology does not support atomic ticket writes') { schema '$ref' => '#/components/schemas/FixError' }
+        end
+        if action == :reveal
+          response '503', 'Identity is withheld when the reveal audit cannot be saved' do
+            schema '$ref' => '#/components/schemas/FixError'
+            let(:member) { create(:member, :admin, :current) }
+            let(:body) { { acknowledged: true } }
+            before { allow(Service::AuditLogger).to receive(:log).and_return(nil) }
+            run_test!(requires_transactions: true) do |response|
+              expect(JSON.parse(response.body)).not_to have_key('name')
+              expect(JSON.parse(response.body)).not_to have_key('id')
+            end
+          end
         end
       end
     end
