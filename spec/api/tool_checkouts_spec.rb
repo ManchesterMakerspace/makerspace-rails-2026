@@ -74,6 +74,8 @@ RSpec.describe 'Tool Checkouts API', type: :request do
       expect(response).to have_http_status(:ok)
       expect(checkout.reload.revoked_at).to be_present
       expect(checkout.revocation_reason).to eq('Safety retraining required')
+      audit_log = AuditLog.where(event_type: 'tool_checkout_revoked', resource_id: checkout.id).last
+      expect(audit_log.slack_message).to include('shop: Woodshop', 'tool: Disabled Bandsaw')
     end
   end
 end

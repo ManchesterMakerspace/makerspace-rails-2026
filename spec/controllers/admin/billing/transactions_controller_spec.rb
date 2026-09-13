@@ -124,7 +124,7 @@ RSpec.describe Admin::Billing::TransactionsController, type: :controller do
           resource_type: 'Invoice',
           resource_id: linked_invoice.id,
           subject: member,
-          message_details: a_string_matching(/74\.99/)
+          message_details: a_string_matching(/Braintree invoice ID: #{linked_invoice.id}.*resource class: #{linked_invoice.resource_class}.*74\.99/)
         )
       )
 

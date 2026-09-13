@@ -51,9 +51,15 @@ class ApplicationController < ActionController::Base
     end.uniq
   end
 
+  # Checks the fully negotiated response format (request.format), not just
+  # params[:format] -- an explicit ?format=json/.json extension isn't the
+  # only way a request ends up non-HTML. A bare path hit with an
+  # `Accept: application/json` header (typical of bots/scanners probing for
+  # API endpoints) negotiates to JSON too, and params[:format] alone can't
+  # see that, letting it through to blow up on the HTML-only layout template.
   def allow_only_html_requests
-    if params[:format] && params[:format] != "html"
-      Rails.logger.info("[allow_only_html] #{scrub_log_value(params[:format])}.")
+    unless request.format.html?
+      Rails.logger.info("[allow_only_html] #{scrub_log_value(request.format.to_s)}.")
       render plain: "Not Found", status: 404
     end
   end

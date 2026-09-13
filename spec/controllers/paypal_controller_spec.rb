@@ -23,10 +23,8 @@ RSpec.describe PaypalController, type: :controller do
     context "with valid params" do
       before(:each) do
         member
-        REDIS.flushall
-        sleep(5.seconds)
         allow(::PayPal::SDK::Core::API::IPN).to receive(:valid?).and_return(true)
-      end 
+      end
       it "creates a new Paypal" do
         expect {
           post :notify, params: valid_attributes, format: :json
@@ -72,11 +70,13 @@ RSpec.describe PaypalController, type: :controller do
 
       it "Notifies of duplicate txn_ids" do
         ActiveJob::Base.queue_adapter = :test
+        keys_before = REDIS.keys
         post :notify, params: valid_attributes, format: :json
         expect {
           post :notify, params: valid_attributes, format: :json
         }.to have_enqueued_job
-        messages = REDIS.mget(*REDIS.keys)
+        new_keys = REDIS.keys - keys_before
+        messages = REDIS.mget(*new_keys)
         sorted_messages = messages.sort_by { |payload| Time.parse(JSON.load(payload)["timestamp"]) }
         expect(JSON.load(sorted_messages.last)["message"]).to include("already been taken")
       end

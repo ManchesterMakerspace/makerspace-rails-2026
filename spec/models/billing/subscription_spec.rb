@@ -88,10 +88,6 @@ RSpec.describe BraintreeService::Subscription, type: :model do
     end
 
     describe "#create" do
-      after(:each) do 
-        REDIS.flushall
-      end
-
       it "creates a subscription" do
         invoice = build(:invoice, payment_method_id: "foo", plan_id: "bar")
         # Freeze subscription ID generated from this invoice

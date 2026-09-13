@@ -4,6 +4,8 @@ class ReservationMembershipCleanupJob < ApplicationJob
 
   def perform(resource_id, cleanup_type, resource_type = "Member")
     resource = resource_type.constantize.find(resource_id)
+    return if resource.nil?
+
     case cleanup_type
     when "revoked"
       ReservationLifecycleService.cancel_current_and_future!(
@@ -18,7 +20,5 @@ class ReservationMembershipCleanupJob < ApplicationJob
           "Recurring membership was cancelled"
       )
     end
-  rescue Mongoid::Errors::DocumentNotFound
-    nil
   end
 end

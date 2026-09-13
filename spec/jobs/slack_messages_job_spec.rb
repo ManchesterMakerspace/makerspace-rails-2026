@@ -3,10 +3,12 @@ require 'rails_helper'
 RSpec.describe SlackMessagesJob, type: :job do 
   include ActiveJob::TestHelper
 
-  let(:target_id) { "foobar" }
+  let(:target_id) { "slack-messages-job-#{SecureRandom.hex(8)}" }
+  let(:unrelated_id) { "slack-messages-job-unrelated-#{SecureRandom.hex(8)}" }
 
   before(:each) do 
-    Service::SlackConnector.enque_message("Message1", nil, "fizzbuzz.method")
+    clear_enqueued_jobs
+    Service::SlackConnector.enque_message("Message1", nil, "#{unrelated_id}.method")
     sleep 1
     Service::SlackConnector.enque_message("Message2", nil, "#{target_id}.method")
     sleep 1
@@ -14,7 +16,8 @@ RSpec.describe SlackMessagesJob, type: :job do
   end
 
   after(:each) do
-    REDIS.flushall
+    keys = REDIS.keys("#{target_id}.*") + REDIS.keys("#{unrelated_id}.*")
+    REDIS.del(*keys) if keys.any?
     # SlackMessagesJob has retry_on StandardError -- once a stubbed failure
     # actually raises (as it should), that enqueues a real retry job into
     # ActiveJob::TestHelper's in-memory test queue. Left uncleared, it leaks

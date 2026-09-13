@@ -15,4 +15,15 @@ RSpec.describe ReservationSlackCanvasMemberAccessJob, type: :job do
     expect(Service::ReservationSlackCanvas).to have_received(:sync_member_access!)
       .with(member, shop_ids: [shop.id.to_s])
   end
+
+  it "no-ops when the member no longer exists (Mongoid raise_not_found_error is false)" do
+    shop = create(:shop)
+    member = create(:member)
+    allow(Service::ReservationSlackCanvas).to receive(:sync_member_access!)
+    missing_id = member.id.to_s
+    member.destroy
+
+    expect { described_class.perform_now(missing_id, [shop.id.to_s]) }.not_to raise_error
+    expect(Service::ReservationSlackCanvas).not_to have_received(:sync_member_access!)
+  end
 end

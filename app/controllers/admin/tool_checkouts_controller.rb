@@ -104,7 +104,9 @@ class Admin::ToolCheckoutsController < ApplicationController
       resource_id:    @checkout.id,
       actor:          current_member,
       subject:        @checkout.member,
-      after_snapshot: { tool_id: @checkout.tool_id.to_s, revocation_reason: reason },
+      after_snapshot: { tool_id: @checkout.tool_id.to_s, revocation_reason: reason,
+                        shop_name: @checkout.tool.shop.name, tool_name: @checkout.tool.name },
+      message_details: "shop: #{@checkout.tool.shop.name}, tool: #{@checkout.tool.name}",
       slack_channel:  ::Service::SlackConnector.logs_channel
     )
 

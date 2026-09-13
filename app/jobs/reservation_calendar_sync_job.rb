@@ -4,9 +4,9 @@ class ReservationCalendarSyncJob < ApplicationJob
 
   def perform(reservation_id)
     reservation = Reservation.find(reservation_id)
+    return if reservation.nil?
+
     Service::ReservationCalendar.sync!(reservation)
-  rescue Mongoid::Errors::DocumentNotFound
-    nil
   rescue => error
     Service::GoogleApiErrorReporter.report_if_permission_denied(
       error,

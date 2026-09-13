@@ -18,6 +18,7 @@ module Service
 
         resolved[field.to_s] = { id: channel_id, name: name }
       rescue Slack::Web::Api::Errors::SlackError => error
+        bot_channel_not_found = error if error.is_a?(Slack::Web::Api::Errors::ChannelNotFound)
         Rails.logger.warn(
           "[SlackChannelAssignment] resolution failed field=#{field} " \
           "channel=#{name.inspect} error=#{error.class}"
@@ -30,9 +31,14 @@ module Service
     end
 
     def self.find_channel_id(channel_name)
+      bot_channel_not_found = nil
       channel_id = begin
-        Service::SlackConnector.find_channel_id(channel_name)
+        Service::SlackConnector.find_channel_id(
+          channel_name,
+          on_channel_not_found: ->(error) { bot_channel_not_found = error }
+        )
       rescue Slack::Web::Api::Errors::SlackError => error
+        bot_channel_not_found = error if error.is_a?(Slack::Web::Api::Errors::ChannelNotFound)
         Rails.logger.warn(
           "[SlackChannelAssignment] bot channel resolution failed " \
           "channel=#{channel_name.inspect} error=#{error.class}; retrying with admin token"
@@ -40,7 +46,34 @@ module Service
         nil
       end
 
-      channel_id.presence || find_channel_id_with_admin(channel_name)
+      return channel_id if channel_id.present?
+
+      admin_channel_id = begin
+        find_channel_id_with_admin(channel_name)
+      rescue Slack::Web::Api::Errors::ChannelNotFound
+        raise
+      rescue
+        report_deferred_channel_not_found(channel_name, bot_channel_not_found)
+        raise
+      end
+      return admin_channel_id if admin_channel_id.present?
+
+      report_deferred_channel_not_found(channel_name, bot_channel_not_found)
+      nil
+    rescue Slack::Web::Api::Errors::ChannelNotFound => error
+      operation = Service::SlackChannelCache.channel_id?(channel_name) ?
+        'conversations.info admin channel resolution' :
+        'conversations.list admin channel resolution'
+      Service::SlackConnector.report_channel_not_found(channel_name, error, operation: operation)
+      nil
+    end
+
+    def self.report_deferred_channel_not_found(channel_name, error)
+      return unless error
+
+      operation = Service::SlackChannelCache.channel_id?(channel_name) ?
+        'conversations.info' : 'conversations.list'
+      Service::SlackConnector.report_channel_not_found(channel_name, error, operation: operation)
     end
 
     def self.find_channel_id_with_admin(channel_name)
@@ -82,8 +115,6 @@ module Service
         cursor = response.response_metadata&.next_cursor.to_s
         break if cursor.blank?
       end
-      nil
-    rescue Slack::Web::Api::Errors::ChannelNotFound
       nil
     end
 
@@ -197,6 +228,6 @@ module Service
 
     private_class_method :find_channel_id, :find_channel_id_with_admin, :bot_in_channel?,
       :invite_bot_with_admin, :notify_actor,
-      :report_unresolved_channels, :display_name
+      :report_unresolved_channels, :report_deferred_channel_not_found, :display_name
   end
 end

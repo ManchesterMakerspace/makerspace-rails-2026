@@ -4,9 +4,9 @@ class ReservationSlackReminderSyncJob < ApplicationJob
 
   def perform(reservation_id)
     reservation = Reservation.find(reservation_id)
+    return if reservation.nil?
+
     Service::ReservationSlackReminder.sync!(reservation)
-  rescue Mongoid::Errors::DocumentNotFound
-    nil
   rescue => error
     message = "[ReservationSlackReminderError] reservation_id=#{reservation_id} " \
       "error=#{Service::SlackConnector.format_api_error(error)}"

@@ -170,4 +170,59 @@ RSpec.describe Service::SlackConnector do
 
     expect(described_class.find_channel_id("C12345678")).to eq("C12345678")
   end
+
+  it "reports a missing channel and the filtered Slack response to interface logs and Honeybadger" do
+    response = {
+      status: 404,
+      body: { ok: false, error: "channel_not_found", token: "response-secret" },
+      headers: { "x-slack-req-id" => "request-123" }
+    }
+    error = Slack::Web::Api::Errors::ChannelNotFound.new("channel_not_found", response)
+    allow(Service::SlackChannelCache).to receive(:fetch).and_return(nil)
+    allow(client).to receive(:conversations_info).and_raise(error)
+    allow(described_class).to receive(:send_slack_message)
+    allow(Honeybadger).to receive(:notify)
+
+    expect(described_class.find_channel_id("C12345678")).to be_nil
+    expect(described_class).to have_received(:send_slack_message).with(
+      a_string_including(
+        "[SlackChannelNotFound]",
+        'channel="C12345678"',
+        '"error":"channel_not_found"',
+        '"token":"[FILTERED]"',
+        '"x-slack-req-id":"request-123"'
+      ),
+      described_class.logs_channel
+    )
+    expect(Honeybadger).to have_received(:notify).with(
+      error,
+      context: {
+        operation: "conversations.info",
+        channel: "C12345678",
+        slack_response: {
+          status: 404,
+          body: { ok: false, error: "channel_not_found", token: "[FILTERED]" },
+          headers: { "x-slack-req-id" => "request-123" }
+        }
+      }
+    )
+  end
+
+  it "defers channel_not_found diagnostics to a caller that has a fallback" do
+    response = { ok: false, error: "channel_not_found" }
+    error = Slack::Web::Api::Errors::ChannelNotFound.new("channel_not_found", response)
+    captured_error = nil
+    allow(Service::SlackChannelCache).to receive(:fetch).and_return(nil)
+    allow(client).to receive(:conversations_info).and_raise(error)
+    allow(described_class).to receive(:report_channel_not_found)
+
+    result = described_class.find_channel_id(
+      "C12345678",
+      on_channel_not_found: ->(caught_error) { captured_error = caught_error }
+    )
+
+    expect(result).to be_nil
+    expect(captured_error).to be(error)
+    expect(described_class).not_to have_received(:report_channel_not_found)
+  end
 end

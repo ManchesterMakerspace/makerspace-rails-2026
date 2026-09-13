@@ -81,10 +81,10 @@ module Service
         return if task_id.blank?
 
         task = VolunteerTask.find(task_id)
+        return if task.nil?
+
         task = task.parent_task if task.child_task?
         task if task&.shop_id.to_s == shop.id.to_s
-      rescue Mongoid::Errors::DocumentNotFound
-        nil
       end
 
       def create_and_cache_canvas!(shop, channel_id, owner_ids)

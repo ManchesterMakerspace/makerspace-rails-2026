@@ -4,9 +4,9 @@ class ReservationSlackCanvasSyncJob < ApplicationJob
 
   def perform(shop_id, dates)
     shop = Shop.find(shop_id)
+    return if shop.nil?
+
     Service::ReservationSlackCanvas.sync!(shop, dates: dates)
-  rescue Mongoid::Errors::DocumentNotFound
-    nil
   rescue => error
     Rails.logger.error(
       "[ReservationSlackCanvasError] shop_id=#{shop_id} " \
