@@ -45,9 +45,15 @@ class DocumentUploadJob < ApplicationJob
       # isn't guaranteed to match what's archived (e.g. if the retry crosses
       # midnight, the signed-date in a re-rendered PDF would differ from the
       # one actually on file for this legal document).
-      File.binread(
-        ::Service::GoogleDrive.get_document(resource, document_type, upload_attempt_id: job_id).path
-      )
+      downloaded_file = ::Service::GoogleDrive.get_document(resource, document_type, upload_attempt_id: job_id)
+      begin
+        File.binread(downloaded_file.path)
+      ensure
+        # get_document hands back an open Tempfile -- this runs in a
+        # long-lived queue worker, so leaving cleanup to GC would let
+        # repeated retries accumulate temp files and file descriptors.
+        downloaded_file.close!
+      end
     else
       upload_document(
         document_type,
