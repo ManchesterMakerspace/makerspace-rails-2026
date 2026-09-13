@@ -116,7 +116,7 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
           format: :json
 
       expect(response).to have_http_status(200)
-      expect(SystemConfig.get("slack_channel_new_members")).to eq("new-members-2")
+      expect(SystemConfig.get("slack_channel_new_members")).to eq("#new-members-2")
     end
   end
 
