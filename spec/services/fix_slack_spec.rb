@@ -19,7 +19,7 @@ RSpec.describe FixSlack do
       view = described_class.command_view(member, mode)
       expect(JSON.parse(view[:private_metadata])['page_size']).to eq(10)
     end
-    filter_ids = described_class.filters({})[:blocks].map { |block| block[:block_id] }
+    filter_ids = described_class.filters({}, member)[:blocks].map { |block| block[:block_id] }
     expect(filter_ids).to include('shop_id', 'priority', 'statuses', 'category', 'confirmation', 'tool_id', 'assignee_id')
   end
   it 'rejects a workspace mismatch before resolving identity' do
@@ -94,7 +94,7 @@ RSpec.describe FixSlack do
   it 'initializes tool and assignee filters without losing their IDs' do
     tool = create(:tool, shop: create(:shop))
     query = { 'tool_id' => tool.id.to_s, 'assignee_id' => member.id.to_s }
-    view = described_class.filters(query)
+    view = described_class.filters(query, member)
     %w[tool_id assignee_id].each do |key|
       element = view[:blocks].find { |block| block[:block_id] == key }[:element]
       expect(element[:initial_option][:value]).to eq(query[key])

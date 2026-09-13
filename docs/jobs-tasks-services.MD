@@ -102,6 +102,8 @@ rental, so a run can finish even when some rentals were not changed.
 Repair ticket delivery jobs accept integer sequence IDs (including their string
 form in queued arguments) and legacy ObjectId ticket IDs. Their persisted queue
 reservation and recovery behavior is unchanged.
+Delivery skips members whose direct notifications are suppressed before Slack
+lookup, preserving progress past revoked or suspended recipients.
 
 `ReservationSlackCanvasMemberAccessJob` synchronizes a member's current Slack
 canvas access for the supplied shops. Member edits enqueue it when RM shop

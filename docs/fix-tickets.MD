@@ -1,5 +1,17 @@
 # Repair tickets and independent availability
 
+Ticket detail/list projections apply catalog visibility independently of ticket
+access: hidden tool/shop IDs, names and availability are redacted for viewers
+without catalog access, including historical reference changes. Authorized
+admins and scoped RMs retain catalog metadata; raw records remain available to
+the authorization policy. Reporter assignees retain ordinary names/IDs, while
+assignment events never associate their identities with the Reporter label.
+Revoked and suspended recipients are skipped before repair-ticket Slack DM
+lookup, so they do not block the event delivery queue.
+
+Outage authorization uses a tool/shop scope without constructing a ticket or
+allocating a ticket number, including rejected requests.
+
 New repair tickets use the integer returned by `Ticket.pull` (the `tickets`
 counter sequence) as `_id`. Portal/API links retain string representations;
 ticket details, Slack posts and DMs display `#<id>`. Existing ObjectId tickets

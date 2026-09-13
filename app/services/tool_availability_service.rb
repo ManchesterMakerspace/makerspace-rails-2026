@@ -1,6 +1,7 @@
 class ToolAvailabilityService
+  ToolScope = Struct.new(:shop_id, :tool)
   def self.set!(tool:, actor:, value:)
-    proxy = FixTicket.new(shop_id: tool.shop_id, tool_id: tool.id)
+    proxy = ToolScope.new(tool.shop_id, tool)
     raise Error::Forbidden.new unless FixTicketPolicy.new(actor, proxy).staff?
     raise Error::UnprocessableEntity.new('out_of_service must be a boolean') unless [true, false].include?(value)
     ReservationService.send(:with_shop_locks, [tool.shop_id]) do

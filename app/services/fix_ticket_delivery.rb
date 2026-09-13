@@ -37,7 +37,7 @@ class FixTicketDelivery
       end
       event.recipients.each do |id|
         member = Member.where(id: id).first
-        next unless member && FixTicketPolicy.new(member, ticket).read?
+        next unless member && !member.direct_notifications_suppressed? && FixTicketPolicy.new(member, ticket).read?
         slack = SlackUser.where(member_id: id).first
         next unless slack
         publish(event, "dm-#{id}", Service::SlackConnector.safe_channel(slack.slack_id), text)

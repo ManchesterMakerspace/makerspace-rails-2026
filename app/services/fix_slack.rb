@@ -122,7 +122,7 @@ class FixSlack
     def list(member, query, ephemeral: false)
       query = query.stringify_keys.merge('page_size' => 10)
       result = FixTicketQuery.call(member, query)
-      shop = Shop.where(id: query['shop_id']).first if query['shop_id'].present? && query['shop_id'] != 'none'
+      shop = FixTicketService.catalog_shops(member).where(id: query['shop_id']).first if query['shop_id'].present? && query['shop_id'] != 'none'
       heading = "#{shop ? "Tickets in #{shop.name}:" : 'Tickets:'} #{result[:total]} · page #{result[:page] + 1}"
       blocks = [text_block(heading),
         { type: 'actions', elements: [button('New report', 'new', query), button('Filters / sort', 'filters', query)] }]
@@ -141,12 +141,12 @@ class FixSlack
     def button(label, action, data = {})
       { type: 'button', text: plain(label), action_id: "fix_#{action}", value: data.to_json }
     end
-    def filters(query)
-      tool = Tool.where(id: query['tool_id']).first if query['tool_id'].present?
+    def filters(query, member)
+      tool = FixTicketService.catalog_tools(member).where(id: query['tool_id']).first if query['tool_id'].present?
       assignee = Member.where(id: query['assignee_id']).first if query['assignee_id'].present?
       modal('fix_filters', [
         input('mode', 'List', value: query['mode'] || 'all', options: %w[all mine assigned queue public].map { |v| option(v, v) }),
-        external('shop_id', 'Shop (clear for all)', selected: query['shop_id'].present? ? [option(query['shop_id'] == 'none' ? 'No shop' : Shop.where(id: query['shop_id']).first&.name || 'Shop', query['shop_id'])] : []),
+        external('shop_id', 'Shop (clear for all)', selected: query['shop_id'].present? ? [option(query['shop_id'] == 'none' ? 'No shop' : FixTicketService.catalog_shops(member).where(id: query['shop_id']).first&.name || 'Unavailable shop', query['shop_id'])] : []),
         input('priority', 'Priority', value: query['priority'], options: [option('All priorities', 'all'), option('Unprioritized', 'none')] + (1..10).map { |n| option(n, n) }),
         input('statuses', 'Statuses', value: query['statuses'] || FixTicket::ACTIVE, multi: true, options: FixTicket::STATUSES.map { |v| option(v.tr('_', ' '), v) }),
         input('category', 'Category', optional: true, value: query['category'], options: [option('All categories', 'all')] + FixTicket::CATEGORIES.map { |v| option(v, v) }),
@@ -210,7 +210,7 @@ class FixSlack
           return {}
         when 'view' then detail(member, data['id'], data['query'] || {})
         when 'page' then list(member, data)
-        when 'filters' then filters(data)
+        when 'filters' then filters(data, member)
         when 'unassign'
           FixTicketService.assign!(id: data['id'], actor: member, unassign_self: true)
           list(member, { 'mode' => 'assigned' })

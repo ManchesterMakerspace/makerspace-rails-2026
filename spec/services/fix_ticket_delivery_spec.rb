@@ -29,6 +29,19 @@ RSpec.describe FixTicketDelivery do
     expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'D123', text: include("Ticket ##{ticket.id}:"))).and_return({ 'ts' => '100.001', 'channel' => 'D123' })
     described_class.call(ticket, event)
   end
+  %w[revoked suspended].each do |status|
+    it "completes delivery without contacting a #{status} participant" do
+      allow(Service::MemberProvisioning).to receive(:invite_slack)
+      reporter.save!
+      ticket.set(assignee_ids: [reporter.id])
+      event.set(recipients: [reporter.id], central_enabled: false)
+      reporter.set(status: status)
+      expect(SlackUser).not_to receive(:where)
+      expect(client).not_to receive(:chat_postMessage)
+      described_class.call(ticket, event)
+      expect(event.reload.completed_at).to be_present
+    end
+  end
   it 'redacts legacy assignment deltas and reporter attribution before Slack publication' do
     event.set(kind: 'assigned', note: nil, field_changes: { 'assignees' => [[reporter.fullname], []] })
     allow(client).to receive(:chat_postMessage).and_return({ 'ts' => '100.001', 'channel' => 'C1234567890' })

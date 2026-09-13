@@ -1,9 +1,16 @@
 require 'rails_helper'
 RSpec.describe ToolAvailabilityService do
   before do
+    expect(Ticket).not_to receive(:pull)
     ActiveJob::Base.queue_adapter = :test
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:eval).and_return(1)
+  end
+  it 'does not allocate ticket numbers for rejected outages' do
+    tool = create(:tool, shop: create(:shop))
+    expect { described_class.set!(tool: tool, actor: build(:member, :current), value: true) }.to raise_error(Error::Forbidden)
+    expect { described_class.set!(tool: tool, actor: build(:member, :admin, :current), value: 'true') }.to raise_error(Error::UnprocessableEntity)
+    expect(tool.reload.out_of_service).to be(false)
   end
   it 'does not couple Hidden and out of service, including restoration' do
     admin = build(:member, :admin, :current)

@@ -63,6 +63,7 @@ RSpec.describe 'Fix tickets', type: :request do
   path '/fix_tickets/{id}' do
     parameter name: :id, in: :path, type: :string
     get 'Read a ticket and redacted history' do
+      description 'Catalog IDs, names and availability are redacted when the viewer cannot see the referenced hidden shop/tool, including historical references. Reporter assignees appear as ordinary named assignees; assignment history never associates those names with Reporter.'
       tags 'Fix tickets'
       security [sessionAuth: []]
       produces 'application/json'

@@ -5,6 +5,12 @@ class FixTicketPolicy
   end
   def global? = member && %w[admin board_member].include?(member.role)
   def current? = !!member&.fully_active_unexpired?
+  def catalog_shop_visible?(shop)
+    shop && (global? || member&.manages_shop?(shop.id) || !shop.disabled?)
+  end
+  def catalog_tool_visible?(tool, shop)
+    tool && catalog_shop_visible?(shop) && (global? || member&.manages_shop?(tool.shop_id) || !tool.disabled?)
+  end
   def approver
     return @context.approver if @context
     return @approver if defined?(@approver)
