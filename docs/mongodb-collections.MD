@@ -34,6 +34,7 @@ conditions are included where they are part of the index contract.
 | `braintree__notifications` | `BraintreeService::Notification` | Stored Braintree webhook kind, timestamp, and payload data. | None |
 | `cards` | `Card` | Member access-card identifiers, holder details, expiration, and validity. | Unique `{ uid: 1 }`, partial when `uid` is a string; `{ member_id: 1 }` (deployment task) |
 | `checkins` | None (direct collection access) | Facility check-in events used by administrative check-in and space-usage reporting. | None beyond `_id` is declared by this repository |
+| `counter` | `Counter` | Atomic `seq` values for named client sequences, with one document per sequence (for example, `_id: "tickets"`). | None |
 | `checkout_approvers` | `CheckoutApprover` | Members authorized to approve Safety Checkouts, optionally scoped to shops or tools. | None |
 | `default_permissions` | `DefaultPermission` | Default enabled/disabled values applied to member permissions. | None |
 | `earned_memberships` | `EarnedMembership` | A member's earned-membership program and its requirement/report relationships. | `{ member_id: 1 }` (deployment task) |
