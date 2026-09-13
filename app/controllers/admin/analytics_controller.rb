@@ -144,15 +144,25 @@ class Admin::AnalyticsController < AdminController
     tasks   = VolunteerTask.where(status: 'completed')
 
     if params[:year].present?
-      year  = params[:year].to_i
-      start = Time.new(year, 1, 1)
-      fin   = Time.new(year, 12, 31, 23, 59, 59)
-      credits = credits.where(:created_at.gte => start, :created_at.lte => fin)
-      tasks   = tasks.where(:completed_at.gte => start, :completed_at.lte => fin)
+      year       = params[:year].to_i
+      start_time = Time.new(year, 1, 1)
+      end_time   = Time.new(year + 1, 1, 1)
+      credits = credits.where(:created_at.gte => start_time, :created_at.lt => end_time)
+      tasks   = tasks.where(:completed_at.gte => start_time, :completed_at.lt => end_time)
+    end
+
+    # Keep the global pending count in the same round-trip, but let MongoDB
+    # discard approved credits outside the requested year before $facet fans
+    # the input out to its branches. This permits the status/created_at index
+    # to bound the approved branch of the initial $or.
+    credit_input_selector = if params[:year].present?
+      { '$or' => [{ 'status' => 'pending' }, credits.selector] }
+    else
+      { 'status' => { '$in' => %w[approved pending] } }
     end
 
     credit_facets = VolunteerCredit.collection.aggregate([
-      { '$match' => { 'status' => { '$in' => %w[approved pending] } } },
+      { '$match' => credit_input_selector },
       { '$facet' => {
         'by_month' => [
           { '$match' => credits.selector },
