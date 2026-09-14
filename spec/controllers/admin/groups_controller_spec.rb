@@ -12,6 +12,8 @@ RSpec.describe Admin::GroupsController, type: :controller do
       create(:invoice, member: existing_primary, resource_id: existing_primary.id.to_s,
         resource_class: "member", plan_id: "household-membership-one-month-recurring")
       existing_primary.update_attributes!(groupName: existing_primary.id.to_s)
+      Group.create!(groupName: existing_primary.id.to_s, groupRep: existing_primary.fullname,
+        expiry: existing_primary.expirationTime)
 
       post :create, params: { primary_member_id: existing_primary.id.to_s }, format: :json
 
