@@ -482,7 +482,8 @@ shop; later refreshes replace its contents. The canvas lists every enabled tool
 in the shop, its description and wiki link, enabled checkout prerequisites,
 and active, unexpired members with a current checkout. Checkout approvers and
 Resource Managers for the shop are distinguished from other checked-out
-members.
+members. Each checked-out member is rendered as a separate bulleted-list item
+so Slack preserves one member per line.
 
 Like reservation canvases, Slack does **not** automatically make a newly
 created checkout canvas visible in the shop channel header. After the shop's
