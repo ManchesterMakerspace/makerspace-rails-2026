@@ -72,6 +72,8 @@ class ToolCheckout
     message = checkout_success_message
     sent_channels = []
     if announce_channel.present? && request&.message_id.present?
+      channel = announce_channel
+      Rails.logger.info("[announce_checkout_success] Updating '#{request.message_id}' in channel '#{channel}'")
       ::Service::SlackConnector.update_slack_message(announce_channel, request.message_id, message)
       sent_channels << announce_channel
     end
@@ -83,7 +85,7 @@ class ToolCheckout
       request.update_attributes!(message_id: response.ts) if channel == announce_channel && request && response.respond_to?(:ts)
     end
   rescue => e
-    Service::ErrorReporter.notify(e)
+    Service::ErrorReporter.notify(e, context: { channel: channel, member_id: member_id })
   end
 
   def remove_member_from_users_channel
