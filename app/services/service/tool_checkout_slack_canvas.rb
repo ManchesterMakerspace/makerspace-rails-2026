@@ -63,7 +63,7 @@ module Service
             marker = checkout_approver?(member, tool) ? ":ballot_box_with_check:" : ":white_check_mark:"
             slack_id = SlackUser.find_by(member_id: member.id)&.slack_id
             reference = slack_id.present? ? "![](@#{slack_id})" : escape_markdown(member.fullname)
-            lines << "#{marker} #{reference}"
+            lines << "- #{marker} #{reference}"
           end
         end
 

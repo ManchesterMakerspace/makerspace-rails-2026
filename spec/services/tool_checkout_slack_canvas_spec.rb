@@ -58,8 +58,11 @@ RSpec.describe Service::ToolCheckoutSlackCanvas do
       expect(markdown).not_to include("[Table Saw](#table-saw)")
       expect(markdown).to include("### Table Saw", "Cuts lumber ([Table Saw Wiki](https://example.test/table-saw))")
       expect(markdown).to include("Pre-requisites: Orientation")
-      expect(markdown).to include(":ballot_box_with_check: ![](@URM123456)")
-      expect(markdown).to include(":white_check_mark: Amy Zimmer")
+      expect(markdown).to include("- :ballot_box_with_check: ![](@URM123456)")
+      expect(markdown).to include("- :white_check_mark: Amy Zimmer")
+      expect(markdown).to match(
+        /- :ballot_box_with_check: !\[\]\(@URM123456\)\n- :white_check_mark: Amy Zimmer/
+      )
       expect(markdown).not_to include("Hidden Tool", expired.fullname)
       expect(markdown.index("Zoe Anderson")).to be_nil
       expect(markdown).to match(/_Last updated .+\._/)
