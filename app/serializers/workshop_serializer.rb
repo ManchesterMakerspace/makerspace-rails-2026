@@ -1,4 +1,5 @@
 class WorkshopSerializer < ActiveModel::Serializer
+  attributes :out_of_service, :out_of_service_note
   attributes :id, :name, :wiki_url, :gdrive_id, :slack_channel,
              :slack_channel_details, :disabled, :reservable,
              :reservations_available, :resource_managers,
@@ -31,7 +32,7 @@ class WorkshopSerializer < ActiveModel::Serializer
         wikiUrl: tool.effective_wiki_url,
         gdriveId: tool.gdrive_id,
         description: tool.description,
-        disabled: tool.disabled?,
+        outOfService: !!tool.out_of_service, disabled: tool.disabled?,
         open: tool.open,
         reservable: tool.reservable,
         prerequisiteIds: Array(tool.prerequisite_ids).map(&:to_s),
@@ -53,8 +54,8 @@ class WorkshopSerializer < ActiveModel::Serializer
   end
 
   def resource_managers
-    @resource_managers ||= Member.tagged_resource_managers_for_shop(object.id)
-      .order_by(lastname: :asc, firstname: :asc).map do |member|
+    @resource_managers ||= Member.shop_resource_manager_candidates.where(:resource_manager_shop_ids.in => [object.id.to_s]
+    ).order_by(lastname: :asc, firstname: :asc).map do |member|
       slack_user = member.slack_user
       {
         id: member.id.to_s,
@@ -100,12 +101,10 @@ class WorkshopSerializer < ActiveModel::Serializer
         next if hidden_or_missing_prerequisite
       end
 
-      eligible = viewer.status == "activeMember" && (
-        global_privilege? || missing_ids.empty?
-      )
+      eligible = task.eligible_for?(viewer)
       {
         id: task.id.to_s,
-        taskNumber: task.task_number,
+        taskNumber: task.task_number, ticketId: task.ticket_id&.to_s,
         title: task.title,
         description: task.description,
         creditValue: task.credit_value,
@@ -123,7 +122,7 @@ class WorkshopSerializer < ActiveModel::Serializer
 
   def reservations_available
     return false unless viewer_can_reserve?
-    return false if object.disabled?
+    return false if object.disabled? || object.out_of_service?
     return true if !pending_reservation_restrictions? && object.reservable &&
       reservation_requirements_met?(object.reservation_prerequisite_tool_ids)
 
@@ -171,8 +170,8 @@ class WorkshopSerializer < ActiveModel::Serializer
   end
 
   def tool_reservation_available?(tool)
-    viewer_can_reserve? && !object.disabled? && !tool.disabled? &&
-      tool.reservable && pending_tool_allowed?(tool) &&
+    viewer_can_reserve? && !object.disabled? && !object.out_of_service? && !tool.disabled? &&
+      !tool.out_of_service && tool.reservable && pending_tool_allowed?(tool) &&
       reservation_requirements_met?(
         tool.effective_reservation_prerequisite_ids,
         pending_tool: tool

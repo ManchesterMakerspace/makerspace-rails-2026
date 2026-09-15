@@ -108,7 +108,7 @@ class SlackVolunteerJob < ApplicationJob
       .where(parent_task_id: nil)
       .order_by(task_number: :asc)
       .to_a
-    tasks.select! { |task| task.eligible_for?(invoker) } unless privileged?(invoker)
+    tasks.select! { |task| task.eligible_for?(invoker) }
     tasks = tasks.first(15)
 
     if tasks.empty?

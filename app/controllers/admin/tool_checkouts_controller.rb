@@ -70,11 +70,11 @@ class Admin::ToolCheckoutsController < ApplicationController
       slack_channel:  ::Service::SlackConnector.logs_channel
     )
 
-    render json: checkout.as_json(
+    render json: ActiveModelSerializers::SerializableResource.new(checkout,
       serializer: ToolCheckoutSerializer,
       adapter: :attributes,
       scope: current_member
-    ).merge(unmet_prerequisites: unmet.map(&:name)), adapter: :attributes
+    ).as_json.merge(unmet_prerequisites: unmet.map(&:name)), adapter: :attributes
   end
 
   def update

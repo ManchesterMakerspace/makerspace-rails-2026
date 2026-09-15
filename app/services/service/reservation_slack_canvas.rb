@@ -156,6 +156,7 @@ module Service
       def reservation_canvas_relevant?(shop, dates)
         requested_dates = Array(dates).filter_map { |value| parse_date(value) }
         return false if requested_dates.empty?
+        return true if shop.out_of_service?
 
         first_date = requested_dates.min
         last_date = requested_dates.max + 1.day
@@ -339,6 +340,14 @@ module Service
           "## #{date.strftime('%A, %B %-d, %Y')}",
           ""
         ]
+
+        if shop.out_of_service?
+          lines.concat([
+            "## Shop out of service",
+            "**New reservations for this shop and all its tools are unavailable until service is restored.**",
+            ""
+          ])
+        end
 
         if agenda_items.empty?
           lines << "_No pending or approved reservations._"

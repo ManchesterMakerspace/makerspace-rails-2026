@@ -1,7 +1,11 @@
 class Admin::ShopsController < ApplicationController
   before_action :authenticate_member!
   before_action :authorize_index, only: [:index]
-  before_action :authorize_create_destroy, only: [:create, :destroy]
+  before_action :authorize_create_destroy, only: [:create, :destroy, :resource_manager_options]
+
+  def resource_manager_options
+    render json: Member.shop_resource_manager_candidates.order_by(firstname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } }
+  end
   before_action :find_shop, only: [:update, :destroy]
   before_action :authorize_update, only: [:update]
 
@@ -16,10 +20,12 @@ class Admin::ShopsController < ApplicationController
   end
 
   def create
+    manager_ids = resource_manager_ids_param
     attributes = shop_params
     resolved_channels = resolve_changed_slack_channels(attributes, nil, current_member)
     shop = Shop.new(attributes)
     shop.save!
+    assign_resource_managers(shop, manager_ids)
     Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
     GoogleResourceSyncJob.perform_later("Shop", shop.id.to_s)
 
@@ -37,10 +43,12 @@ class Admin::ShopsController < ApplicationController
   end
 
   def update
+    manager_ids = resource_manager_ids_param
     attributes = shop_params
     resolved_channels = resolve_changed_slack_channels(attributes, @shop, current_member)
     before = @shop.attributes.dup
     @shop.update_attributes!(attributes)
+    assign_resource_managers(@shop, manager_ids)
     Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
     shop_sync_needed = @shop.resource_email.blank? ||
       %w[name reservable color_id].any? { |field| @shop.previous_changes.key?(field) }
@@ -81,7 +89,7 @@ class Admin::ShopsController < ApplicationController
     google_resources.each do |resource_id, label_source_id|
       GoogleResourceDeleteJob.perform_later(resource_id, label_source_id)
     end
-    Member.where(role: "resource_manager", :resource_manager_shop_ids.in => [before["_id"].to_s]).each do |member|
+    Member.shop_resource_manager_candidates.where(:resource_manager_shop_ids.in => [before["_id"].to_s]).each do |member|
       member.pull(resource_manager_shop_ids: before["_id"].to_s)
     end
     CheckoutApprover.where(:shop_ids.in => [before["_id"].to_s]).each do |approver|
@@ -108,6 +116,37 @@ class Admin::ShopsController < ApplicationController
   end
 
   private
+
+  def resource_manager_ids_param
+    return nil unless params.key?(:resource_manager_ids)
+    raise ::Error::Forbidden.new unless is_admin? || is_board_member?
+    ids = params[:resource_manager_ids]
+    unless ids.is_a?(Array) && ids.all? { |id| BSON::ObjectId.legal?(id.to_s) }
+      raise ::Error::UnprocessableEntity.new('Choose valid Resource Managers')
+    end
+    ids = ids.map(&:to_s).uniq
+    unless Member.shop_resource_manager_candidates.where(:id.in => ids).count == ids.length
+      raise ::Error::UnprocessableEntity.new('Selected members must be Resource Managers, Admins, or Board members')
+    end
+    ids
+  end
+
+  def assign_resource_managers(shop, ids)
+    return if ids.nil?
+    previous = Member.shop_resource_manager_candidates.where(resource_manager_shop_ids: shop.id.to_s).pluck(:id).map(&:to_s)
+    Member.shop_resource_manager_candidates.where(:id.in => ids - previous).each do |member|
+      member.add_to_set(resource_manager_shop_ids: shop.id.to_s)
+      ReservationSlackCanvasMemberAccessJob.perform_later(member.id.to_s, [shop.id.to_s])
+    end
+    Member.shop_resource_manager_candidates.where(:id.in => previous - ids).each do |member|
+      member.pull(resource_manager_shop_ids: shop.id.to_s)
+      ReservationSlackCanvasMemberAccessJob.perform_later(member.id.to_s, [shop.id.to_s])
+    end
+    return if previous.sort == ids.sort
+    ::Service::AuditLogger.log(log_type: 'portal', event_type: 'shop_resource_managers_changed',
+      resource_type: 'Shop', resource_id: shop.id, actor: current_member,
+      field_changes: { 'resource_manager_ids' => [previous, ids] })
+  end
 
   def shop_params
     params.permit(
@@ -147,6 +186,9 @@ class Admin::ShopsController < ApplicationController
 
   def prevent_deletion_if_tools_are_referenced
     deleted_tool_ids = @shop.tools.pluck(:id)
+    if FixTicket.any_of({ shop_id: @shop.id }, { :tool_id.in => deleted_tool_ids }).exists?
+      raise ::Error::Conflict.new('Cannot delete a shop referenced by a repair ticket')
+    end
     return if deleted_tool_ids.empty?
     prerequisite_ids = deleted_tool_ids.flat_map { |id| [id, id.to_s] }
 

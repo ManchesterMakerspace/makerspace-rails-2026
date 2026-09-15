@@ -3,7 +3,7 @@ class ReservationCatalogController < ApplicationController
   before_action :require_active_member
 
   def index
-    enabled_shops = Shop.where(:disabled.ne => true)
+    enabled_shops = Shop.where(:disabled.ne => true, :out_of_service.ne => true)
     tools = Tool.where(
       :disabled.ne => true,
       reservable: true,

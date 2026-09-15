@@ -33,7 +33,7 @@ module Service
     #   log_type:        (required) "member" | "portal"
     #   event_type:      (required) e.g. "member_updated", "membership_revoked"
     #   resource_type:   (required) Mongoid model class name, e.g. "Member"
-    #   resource_id:     (required) BSON::ObjectId of the record changed
+    #   resource_id:     (required) record ObjectId, or integer for a FixTicket
     #
     #   actor:           (optional) Member instance — who made the change.
     #                    Falls back to Current.actor if not passed.
@@ -106,7 +106,7 @@ module Service
         subject_id:      subject_id,
         subject_name:    subject_name,
         resource_type:   resource_type,
-        resource_id:     to_object_id(resource_id),
+        resource_id:     resource_type == 'FixTicket' ? FixTicketId.mongoize(resource_id) : to_object_id(resource_id),
         field_changes:   clean_field_changes,
         before_snapshot: clean_before,
         after_snapshot:  clean_after,

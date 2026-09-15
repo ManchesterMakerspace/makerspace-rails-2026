@@ -286,7 +286,7 @@ class Admin::MembersController < AdminController
   end
 
   def rm_shop_ids_for(member)
-    return [] unless member.role == "resource_manager"
+    return [] unless %w[resource_manager admin board_member].include?(member.role)
 
     Array(member.resource_manager_shop_ids).map(&:to_s).uniq
   end

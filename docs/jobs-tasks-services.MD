@@ -1,5 +1,41 @@
 # Production jobs, tasks, and services
 
+## Shop outage announcements
+
+`ShopAvailabilityService` lets admins, board members, and assigned resource managers
+mark a shop out of service with a required reason, or restore it. The shared
+reservation service blocks new shop and tool bookings during an outage.
+`ShopOutageSlackJob` posts the shop name and reason to its configured Slack channel
+on the default queue, retrying failures up to five attempts. It stores Slack's
+message timestamp in the shop's `ts_oos` field. Each outage has an `outage_id` used
+as Slack's stable client message ID; completed deliveries and superseded outages
+are skipped. A new outage clears the prior receipt; restoration retains it.
+The job also sends each assigned resource manager with a linked Slack account a
+direct message containing the actor's name, shop name, and outage note, even when
+the shop has no channel. Member IDs and actor name are captured when the flag
+is set; suspended/revoked members are excluded. Before each DM, delivery rechecks
+the member's current assignment, notification suppression and active Slack link.
+It skips outage DMs after restoration or a newer outage. Legacy raw-Slack-ID
+recipient lists are not used to send private outage messages. Per-member receipts
+prevent completed DMs from being resent on retry.
+The same admin/board/assigned-RM authorization applies to restoring service.
+Restoration never clears tool flags. It queues a reply to the original `ts_oos`
+in the original channel with `reply_broadcast: true`, recording `ts_in_service`.
+If restoration precedes root delivery, the delivery job sends the root first,
+then the recovery reply. Failed destinations retry independently of successful
+deliveries, up to the job's retry limit.
+Setting or clearing a shop outage also queues `ReservationSlackCanvasSyncJob`
+for today and tomorrow. Both reservation canvases show a prominent shop-outage
+banner above the agenda while the flag is set; restoration removes the banner
+without removing bookings or tool flags. Scheduled rebuilds include unavailable
+shops even when they have no reservations or existing canvases.
+
+Unscoped repair-ticket creation and note events capture an explicit staff-channel
+notification intent. `FixTicketDelivery` sends those events to the configured
+`slack_channel_rm`, falling back to the Admin Channel when RM Channel is blank.
+This is independent of the optional central ticket feed and uses the normal
+delivery receipts/retry handling. Scoped tickets retain their RM/approver routing.
+
 <!-- markdownlint-disable MD013 -->
 
 This is the production operator's inventory of recurring background work. It
@@ -115,6 +151,18 @@ rental, so a run can finish even when some rentals were not changed.
 
 ## Supporting services
 
+Repair ticket delivery jobs accept integer sequence IDs (including their string
+form in queued arguments) and legacy ObjectId ticket IDs. Their persisted queue
+reservation and recovery behavior is unchanged.
+Delivery skips members whose direct notifications are suppressed before Slack
+lookup, preserving progress past revoked or suspended recipients.
+
+`ReservationSlackCanvasMemberAccessJob` synchronizes a member's current Slack
+canvas access for the supplied shops. Member edits enqueue it when RM shop
+access changes. Shop-side RM assignment edits also enqueue it once per added
+or removed member, after saving the assignment, for that shop only. Unchanged
+or omitted assignments do not enqueue access synchronization.
+
 Recurring jobs should normally be invoked through their job or Rake entry
 point, because wrappers provide status tracking and error reporting. The table
 below identifies the service that performs each recurring workflow and gives a
@@ -170,3 +218,25 @@ synchronous diagnostic invocation where one is useful.
   configuration before enabling scheduler entries. Failures are generally sent
   to the central error reporter and/or Slack logs channel, but per-record rescue
   behavior can allow a job to complete after partial failure.
+
+## Repair ticket delivery
+
+`FixTicketDeliveryJob` delivers each ticket's pending events in revision order under a renewable per-ticket Redis lease (`FixTicketDeliveryLease`). It creates/repairs central Slack roots, posts threaded/broadcast updates, optional shop summaries and recipient DMs. Stable per-event delivery IDs and persisted receipts support retries; failures do not roll back committed tickets. Retry policy: polynomial backoff, eight attempts. A MongoDB reservation (delivery_job_id and delivery_job_until on the ticket) admits only one queued/running/retrying job chain per ticket. Enqueue failure, success, or exhausted retries release it by matching job ID. Every enqueue and running lease heartbeat renews the reservation for 24 hours beyond the current/scheduled time; an abandoned reservation can then be replaced, and stale job IDs stop without spawning retries. Events arriving during delivery are rechecked after release. Reservation writes never advance the ticket update timestamp.
+
+`FixTicketDeliveryRecoveryJob` runs every ten minutes in config/schedule.rb; it re-enqueues tickets with undelivered events, including events whose original queue enqueue failed. External schedulers may run `bundle exec rake fix_tickets:recover_deliveries` every ten minutes instead. `data:ensure_unique_indexes` creates repair ticket, event, and reveal indexes alongside the core indexes during deployment. `fix_tickets:ensure_indexes` remains a compatibility alias for that task. FixTicketService owns transactional mutations/outbox creation; FixTicketPolicy owns scopes/capabilities; FixTicketDelivery owns notification content and routing.
+
+Central repair-ticket delivery allowlists status, confirmation, assignments, and announcement-note changes plus new discussion notes/bounties. Unrelated field updates do not create central replies or roots.
+
+FixTicketService maps MongoDB `TransactionsNotSupported` to an actionable HTTP 503 error; it never retries ticket writes outside a transaction. Local single-node replica-set setup is documented in `fix-tickets.MD`.
+
+Ticket mutations enqueue `VolunteerSlackCanvasSyncJob` for the linked shop after commit when creating a bounty or cancelling an available bounty through ticket closure/withdrawal. Rolled-back mutations do not enqueue canvas updates.
+
+Linked bounty release/rejection defers its claimant Slack notification and `VolunteerSlackCanvasSyncJob` until after assignment and event writes commit; transaction aborts/retries do not publish those effects.
+
+Linked bounty claims also suppress the superclass canvas enqueue inside the transaction. One canvas sync (with the claimed task ID struck) is enqueued only after the claim, assignment, and event writes commit; aborted claims enqueue none.
+
+Checkout canvas catalog synchronization includes out_of_service changes. Visible unavailable tools show an Out of service - do not use warning; Hidden remains independent.
+
+`SlackVolunteerJob` filters personalized bounty listings through `VolunteerTask#eligible_for?` for every role, before the 15-task limit. Linked-ticket reporter and prerequisite restrictions apply; ordinary-task privileged exemptions remain.
+
+Repair-ticket delivery skips missing optional shop destinations, and scopes central reply receipts to the current Slack thread so recovery can republish pending events after root deletion.

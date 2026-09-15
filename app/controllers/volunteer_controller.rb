@@ -63,7 +63,7 @@ class VolunteerController < AuthenticationController
     tasks = VolunteerTask.claimable
                          .where(parent_task_id: nil)
                          .order_by(task_number: :asc)
-    tasks = tasks.to_a.select { |task| task.eligible_for?(current_member) } unless privileged_volunteer_member?
+    tasks = tasks.to_a.select { |task| task.eligible_for?(current_member) }
     render json: tasks, each_serializer: VolunteerTaskSerializer, adapter: :attributes
   end
 

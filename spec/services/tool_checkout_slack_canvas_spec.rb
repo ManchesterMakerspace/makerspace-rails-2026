@@ -3,6 +3,17 @@ require "rails_helper"
 RSpec.describe Service::ToolCheckoutSlackCanvas do
   let(:shop) { create(:shop, name: "Wood Shop", slack_channel: "woodshop") }
 
+  it 'refreshes availability warnings independently of Hidden' do
+    shop.set(checkout_canvas_id: 'FCHECKOUTS')
+    tool = create(:tool, shop: shop)
+    expect { tool.update!(out_of_service: true) }.to have_enqueued_job(ToolCheckoutSlackCanvasSyncJob).with(shop.id.to_s)
+    expect(described_class.canvas_markdown(shop)).to include('Out of service - do not use.')
+    tool.update!(disabled: true)
+    expect(described_class.canvas_markdown(shop)).not_to include('Out of service - do not use.')
+    tool.update!(out_of_service: false)
+    expect(tool.reload.disabled).to be(true)
+  end
+
   before do
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:eval).and_return(1)
@@ -54,11 +65,15 @@ RSpec.describe Service::ToolCheckoutSlackCanvas do
     expect(Service::SlackConnector).to have_received(:replace_canvas) do |_id, markdown|
       expect(markdown).to include("# Wood Shop Checkouts")
       expect(markdown).to include("Current tool checkouts in ![](#C123ABC456)")
-      expect(markdown).to include("- [Table Saw](#table-saw)")
+      expect(markdown).to include("- Table Saw")
+      expect(markdown).not_to include("[Table Saw](#table-saw)")
       expect(markdown).to include("### Table Saw", "Cuts lumber ([Table Saw Wiki](https://example.test/table-saw))")
       expect(markdown).to include("Pre-requisites: Orientation")
-      expect(markdown).to include(":ballot_box_with_check: ![](@URM123456)")
-      expect(markdown).to include(":white_check_mark: Amy Zimmer")
+      expect(markdown).to include("- :ballot_box_with_check: ![](@URM123456)")
+      expect(markdown).to include("- :white_check_mark: Amy Zimmer")
+      expect(markdown).to match(
+        /- :ballot_box_with_check: !\[\]\(@URM123456\)\n- :white_check_mark: Amy Zimmer/
+      )
       expect(markdown).not_to include("Hidden Tool", expired.fullname)
       expect(markdown.index("Zoe Anderson")).to be_nil
       expect(markdown).to match(/_Last updated .+\._/)

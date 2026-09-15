@@ -92,6 +92,7 @@ class Admin::ToolsController < ApplicationController
   end
 
   def destroy
+    prevent_ticket_reference_change!
     if current_or_future_blocking_reservations.exists?
       raise ::Error::Conflict.new("Cancel future reservations before deleting this tool")
     end
@@ -173,6 +174,7 @@ class Admin::ToolsController < ApplicationController
   def prevent_move_with_active_reservations
     return unless tool_params.key?(:shop_id)
     return if tool_params[:shop_id].to_s == @tool.shop_id.to_s
+    prevent_ticket_reference_change!
     return unless current_or_future_blocking_reservations.exists?
 
     raise ::Error::Conflict.new(
@@ -185,6 +187,12 @@ class Admin::ToolsController < ApplicationController
       tool_ids: @tool.id.to_s,
       :end_at.gt => Time.current
     )
+  end
+
+  def prevent_ticket_reference_change!
+    if FixTicket.where(tool_id: @tool.id).exists?
+      raise ::Error::Conflict.new('Cannot move or delete a tool referenced by a repair ticket')
+    end
   end
 
   def prevent_deletion_if_prerequisite_is_referenced

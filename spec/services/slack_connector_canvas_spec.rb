@@ -115,15 +115,15 @@ RSpec.describe Service::SlackConnector do
         method: "views.open",
         arguments: {
           trigger_id: "trigger-secret",
-          view: { private_metadata: "not-a-secret" },
+          view: { private_metadata: "private-ticket-context", callback_id: "not-a-secret" },
           api_key: "request-secret"
         }
       }
     )
 
     expect(details).to include(validation_message, "not-a-secret")
-    expect(details).to include('"trigger_id":"[FILTERED]"', '"api_key":"[FILTERED]"', '"token":"[FILTERED]"')
-    expect(details).not_to include("trigger-secret", "request-secret", "response-secret", "xoxb-embedded-secret")
+    expect(details).to include('"trigger_id":"[FILTERED]"', '"api_key":"[FILTERED]"', '"token":"[FILTERED]"', '"private_metadata":"[FILTERED]"')
+    expect(details).not_to include("trigger-secret", "request-secret", "response-secret", "xoxb-embedded-secret", "private-ticket-context")
   end
 
   it "resolves a configured channel name to its Slack channel ID" do
