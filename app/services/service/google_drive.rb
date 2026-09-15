@@ -3,6 +3,7 @@ require 'base64'
 module Service
   module GoogleDrive
     BASE64_SIGNATURE_PATTERN = /\A[A-Za-z0-9+\/]*={0,2}\z/.freeze
+    DOCUMENT_UPLOAD_ATTEMPT_PROPERTY = 'document_upload_job_id'.freeze
 
     def self.build_template_location(document)
       Rails.root.join("app/views/documents/#{document}.html.erb")
@@ -73,7 +74,7 @@ module Service
       end
     end
 
-    def self.upload_document(document_name, member, locals, base64_signature)
+    def self.upload_document(document_name, member, locals, base64_signature, upload_attempt_id: nil)
       sym_name = document_name.to_sym
       raise Error::NotFound.new unless (::Service::GoogleDrive.get_templates().keys.any? { |key| key.to_sym === sym_name })
 
@@ -85,6 +86,9 @@ module Service
         name: ::Service::GoogleDrive.get_document_name(member, sym_name),
         parents: [template_hash[:folder_id]]
       }
+      if upload_attempt_id.present?
+        pdf_meta[:app_properties] = { DOCUMENT_UPLOAD_ATTEMPT_PROPERTY => upload_attempt_id }
+      end
       pdf = Tempfile.new("document", encoding: 'ascii-8bit')
       pdf.write(pdf_string)
       unless Rails.env.test?
@@ -140,8 +144,14 @@ module Service
       raise Error::UnprocessableEntity.new('Invalid signature')
     end
 
-    def upload_document(base64_signature, member, locals, document_name)
-      ::Service::GoogleDrive.upload_document(base64_signature, member, locals, document_name)
+    def upload_document(document_name, member, locals, base64_signature, upload_attempt_id: nil)
+      ::Service::GoogleDrive.upload_document(
+        document_name,
+        member,
+        locals,
+        base64_signature,
+        upload_attempt_id: upload_attempt_id
+      )
     end
 
     def self.upload_backup(file_name)
@@ -159,8 +169,8 @@ module Service
       end
     end
 
-    def get_document(resource, document_name)
-      ::Service::GoogleDrive.get_document(resource, document_name)
+    def get_document(resource, document_name, upload_attempt_id: nil)
+      ::Service::GoogleDrive.get_document(resource, document_name, upload_attempt_id: upload_attempt_id)
     end
 
     # Filename the archived copy of a signed document is expected to have,
@@ -176,15 +186,21 @@ module Service
       "#{member_name}_#{document_name}_#{signed_date.strftime('%m-%d-%Y')}.pdf"
     end
 
-    def self.find_document_file(resource, document_name)
+    def self.find_document_file(resource, document_name, upload_attempt_id: nil)
       doc_name = expected_document_filename(resource, document_name)
       return nil if doc_name.nil?
 
       folder_id = get_templates()[document_name.to_sym][:folder_id]
 
+      query = "'#{folder_id}' in parents and name = '#{doc_name}'"
+      if upload_attempt_id.present?
+        query += " and appProperties has { key='#{DOCUMENT_UPLOAD_ATTEMPT_PROPERTY}' " \
+          "and value='#{upload_attempt_id}' }"
+      end
+
       result = report_google_exceptions("drive.files.list") do
         load_gdrive.list_files(
-          q: "'#{folder_id}' in parents and name = '#{doc_name}'",
+          q: query,
           fields: "files(id, web_content_link)",
         )
       end
@@ -196,14 +212,14 @@ module Service
     # an upload reports success, since a misconfigured destination folder
     # makes the upload API call succeed without ever raising,
     # even though the file didn't land where get_document will later look.
-    def self.document_uploaded?(resource, document_name)
-      !find_document_file(resource, document_name).nil?
+    def self.document_uploaded?(resource, document_name, upload_attempt_id: nil)
+      !find_document_file(resource, document_name, upload_attempt_id: upload_attempt_id).nil?
     end
 
-    def self.get_document(resource, document_name)
+    def self.get_document(resource, document_name, upload_attempt_id: nil)
       raise ::Error::NotFound.new() if expected_document_filename(resource, document_name).nil?
 
-      first_match = find_document_file(resource, document_name)
+      first_match = find_document_file(resource, document_name, upload_attempt_id: upload_attempt_id)
       raise ::Error::NotFound.new() if first_match.nil?
 
       file = Tempfile.new(["#{document_name}_download", ".pdf"], encoding: "ASCII-8BIT")

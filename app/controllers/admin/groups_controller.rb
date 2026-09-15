@@ -39,8 +39,11 @@ class Admin::GroupsController < AdminController
       raise ::Error::UnprocessableEntity.new("Primary member must be on a household membership plan before creating a household")
     end
 
-    # Check primary is not already in a household
-    raise ::Error::UnprocessableEntity.new("Primary member is already part of a household") if primary.groupName.present?
+    # Check primary is not already in a household. household_role, not raw
+    # groupName -- groupName can hold a legacy, non-household value (see
+    # Member#household_role) that would otherwise falsely block ever
+    # creating a real household for this member.
+    raise ::Error::UnprocessableEntity.new("Primary member is already part of a household") if primary.household_role.present?
 
     group = Group.new(
       groupName: primary.id.to_s,
@@ -72,7 +75,7 @@ class Admin::GroupsController < AdminController
   def add_member
     secondary = Member.find(params[:secondary_member_id])
     raise ::Mongoid::Errors::DocumentNotFound.new(Member, { id: params[:secondary_member_id] }) if secondary.nil?
-    raise ::Error::UnprocessableEntity.new("Member is already part of a household") if secondary.groupName.present?
+    raise ::Error::UnprocessableEntity.new("Member is already part of a household") if secondary.household_role.present?
 
     @group.add_subordinate(secondary)
 
