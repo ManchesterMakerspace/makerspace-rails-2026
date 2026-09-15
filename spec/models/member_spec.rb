@@ -629,4 +629,45 @@ RSpec.describe Member, type: :model do
       expect(create(:member).timeout_in).to eq(30.minutes)
     end
   end
+
+  describe "#household_role" do
+    it "returns nil when groupName is blank" do
+      member = create(:member, groupName: nil)
+      expect(member.household_role).to be_nil
+    end
+
+    it "returns nil when groupName is an empty string" do
+      member = create(:member, groupName: "")
+      expect(member.household_role).to be_nil
+    end
+
+    it "returns :primary when groupName is the member's own id" do
+      member = create(:member)
+      member.update_attribute(:groupName, member.id.to_s)
+      expect(member.household_role).to eq(:primary)
+    end
+
+    it "returns :secondary when groupName references another existing member" do
+      primary = create(:member)
+      secondary = create(:member, groupName: primary.id.to_s)
+      expect(secondary.household_role).to eq(:secondary)
+    end
+
+    # groupName predates the household feature and was also used as a
+    # free-text organizational/partner-group label (e.g. real production
+    # values like "Autodesk", "FRC Team", "GSWT" found via #313's
+    # investigation) -- those values are present and don't match the
+    # member's own id, so without checking that a real member actually
+    # exists at that id, household_role would misreport these as :secondary.
+    it "returns nil when groupName is a legacy label that isn't any real member's id" do
+      member = create(:member, groupName: "Autodesk")
+      expect(member.household_role).to be_nil
+    end
+
+    it "returns nil when groupName references a member id that no longer exists" do
+      orphaned_id = BSON::ObjectId.new.to_s
+      member = create(:member, groupName: orphaned_id)
+      expect(member.household_role).to be_nil
+    end
+  end
 end

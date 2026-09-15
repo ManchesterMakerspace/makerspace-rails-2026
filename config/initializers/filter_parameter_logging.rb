@@ -13,5 +13,7 @@ Rails.application.config.filter_parameters += [
   :client_secret,
   :private_key,
   :otp_secret,
-  :otp_secret_encrypted
+  :otp_secret_encrypted,
+  :bt_signature,
+  :bt_payload
 ]

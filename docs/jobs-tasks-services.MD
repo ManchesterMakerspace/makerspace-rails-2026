@@ -20,6 +20,22 @@ Its `key` parameter is the value in the **Admin key** column below. The
 application must have a working Active Job queue consumer for those requests.
 The direct Rake commands run synchronously in the invoking process.
 
+Document uploads run asynchronously as `DocumentUploadJob` on the `slack`
+queue. Its Active Job lifecycle log suppresses arguments because the first
+argument contains the complete base64-encoded signature. A separate safe log
+entry identifies the resource, member, and document type. If post-upload Drive
+verification fails, the retry log includes the member, resource, expected
+filename, and destination folder ID that were used for the unsuccessful
+lookup. Before uploading, the job checks for the expected file in the
+destination folder. If it is already present (for example, when a successful
+upload is retried after delayed Drive search indexing), the job does not upload
+a duplicate; it reads that archived file back from Drive for the
+signed-document email instead of re-rendering it, so the attachment always
+matches the exact bytes on file. This retry check -- and the read-back
+download -- both use the Active Job ID stored in the Drive file's application
+properties, rather than filename alone, so a contract signed earlier on the
+same date cannot be mistaken for the current signing attempt.
+
 ## Admin-triggerable recurring jobs
 
 `SystemConfig::JOB_KEYS` is the source for the list shown by the admin API. A
