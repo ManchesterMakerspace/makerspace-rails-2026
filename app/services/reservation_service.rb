@@ -299,6 +299,9 @@ class ReservationService
       if tools.any?(&:out_of_service) && (reservation.nil? || reservation.start_at != attributes[:start_at] || reservation.end_at != attributes[:end_at] || (tools.select(&:out_of_service).map { |t| t.id.to_s } - Array(reservation.tool_ids).map(&:to_s)).any?)
         errors << "A selected tool is out of service and cannot be reserved"
       end
+      if shop.out_of_service? && (reservation.nil? || material_edit?(reservation, attributes))
+        errors << "The selected shop is out of service and cannot be reserved"
+      end
       errors << "The selected shop is not reservable" if attributes[:reservation_scope] == "shop" && (!shop.reservable || shop.disabled?)
       if attributes[:reservation_scope] == "tools" &&
           (shop.disabled? || tools.any? { |tool| !tool.reservable || tool.disabled? })

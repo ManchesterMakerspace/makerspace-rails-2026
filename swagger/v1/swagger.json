@@ -979,6 +979,13 @@
           {
             "type": "object",
             "properties": {
+              "outOfService": {
+                "type": "boolean"
+              },
+              "outOfServiceNote": {
+                "type": "string",
+                "nullable": true
+              },
               "resourceManagers": {
                 "type": "array",
                 "items": {
@@ -2691,6 +2698,9 @@
             "type": "string",
             "nullable": true
           },
+          "out_of_service": {
+            "type": "boolean"
+          },
           "tools": {
             "type": "array",
             "items": {
@@ -2722,6 +2732,7 @@
           "id",
           "name",
           "wiki_url",
+          "out_of_service",
           "tools"
         ]
       },
@@ -2760,12 +2771,16 @@
               "wiki_url": {
                 "type": "string",
                 "nullable": true
+              },
+              "out_of_service": {
+                "type": "boolean"
               }
             },
             "required": [
               "id",
               "name",
-              "wiki_url"
+              "wiki_url",
+              "out_of_service"
             ]
           }
         },
@@ -10345,6 +10360,143 @@
                 "properties": {
                   "decision_note": {
                     "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workshops": {
+      "get": {
+        "summary": "List workshops including shop outage status and reason",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workshops with availability and member capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "canAddShop": {
+                      "type": "boolean"
+                    },
+                    "workshops": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "outOfService",
+                          "outOfServiceNote",
+                          "reservationsAvailable"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "outOfService": {
+                            "type": "boolean"
+                          },
+                          "outOfServiceNote": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "reservationsAvailable": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shops/{id}/outage": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Admin, board or assigned Resource Manager: change shop availability",
+        "tags": [
+          "Shops"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "description": "The same admin, board or assigned RM may set or clear the flag. Requires a nonblank note when marking out of service. Blocks new shop and tool reservations; existing bookings remain. Queues a Slack channel announcement, saves ts_oos, and DMs linked shop resource managers with actor, shop and note. Clearing preserves tool flags and queues a back-in-service reply to ts_oos with reply_broadcast true.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Availability saved; Slack delivery queued if configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "outOfService",
+                    "outOfServiceNote"
+                  ],
+                  "properties": {
+                    "outOfService": {
+                      "type": "boolean"
+                    },
+                    "outOfServiceNote": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not admin, board or assigned RM"
+          },
+          "422": {
+            "description": "Missing reason or invalid boolean"
+          },
+          "404": {
+            "description": "Shop not found"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "out_of_service"
+                ],
+                "properties": {
+                  "out_of_service": {
+                    "type": "boolean"
+                  },
+                  "note": {
+                    "type": "string",
+                    "description": "Required and nonblank when out_of_service is true"
                   }
                 }
               }

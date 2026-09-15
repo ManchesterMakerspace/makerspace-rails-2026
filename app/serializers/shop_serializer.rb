@@ -1,4 +1,5 @@
 class ShopSerializer < ActiveModel::Serializer
+  attributes :out_of_service, :out_of_service_note
   attribute :resource_managers do
     Member.shop_resource_manager_candidates.where(resource_manager_shop_ids: object.id.to_s).map { |m| { id: m.id.to_s, name: m.fullname } }
   end

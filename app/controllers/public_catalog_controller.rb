@@ -1,7 +1,7 @@
 # No ApplicationController callbacks, authentication, session, or CSRF helpers.
 class PublicCatalogController < ActionController::Base
   include CatalogUnavailable
-  TEMPLATE_VERSION = "public-catalog-v3-availability"
+  TEMPLATE_VERSION = "public-catalog-v4-shop-availability"
 
   def shop
     shop = PublicCatalog.shop(params[:id])
@@ -32,10 +32,10 @@ class PublicCatalogController < ActionController::Base
     response.headers.delete("ETag")
     response.headers.delete("Last-Modified")
     response.set_header("Cache-Control", "no-store")
-    shops = Shop.where(:disabled.ne => true).only(:id, :name)
+    shops = Shop.where(:disabled.ne => true).only(:id, :name, :out_of_service)
       .collation(locale: "en", strength: 2).order_by(name: :asc, id: :asc)
     page = { name: "Workshops", title: "Workshops", footer_links: PublicCatalog.footer_links,
-             shops: shops.map { |shop| { id: shop.id.to_s, name: shop.name } } }
+             shops: shops.map { |shop| { id: shop.id.to_s, name: shop.name, out_of_service: !!shop.out_of_service } } }
     render template: "public_catalog/workshops", layout: "public_catalog", locals: { page: page }, status: :not_found
   end
 

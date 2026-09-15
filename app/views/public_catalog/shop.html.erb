@@ -1,4 +1,5 @@
 <h1><%= page[:name] %></h1>
+<% if page[:out_of_service] %><p class="status" role="status">Shop out of service. New reservations for this shop and its tools are unavailable.</p><% end %>
 <% if page[:wiki_url] %><p><%= link_to "Shop wiki", page[:wiki_url] %></p><% end %>
 <h2>Tools</h2>
 <ul>

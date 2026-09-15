@@ -1,4 +1,5 @@
 class WorkshopSerializer < ActiveModel::Serializer
+  attributes :out_of_service, :out_of_service_note
   attributes :id, :name, :wiki_url, :gdrive_id, :slack_channel,
              :slack_channel_details, :disabled, :reservable,
              :reservations_available, :resource_managers,
@@ -121,7 +122,7 @@ class WorkshopSerializer < ActiveModel::Serializer
 
   def reservations_available
     return false unless viewer_can_reserve?
-    return false if object.disabled?
+    return false if object.disabled? || object.out_of_service?
     return true if !pending_reservation_restrictions? && object.reservable &&
       reservation_requirements_met?(object.reservation_prerequisite_tool_ids)
 
@@ -169,7 +170,7 @@ class WorkshopSerializer < ActiveModel::Serializer
   end
 
   def tool_reservation_available?(tool)
-    viewer_can_reserve? && !object.disabled? && !tool.disabled? &&
+    viewer_can_reserve? && !object.disabled? && !object.out_of_service? && !tool.disabled? &&
       !tool.out_of_service && tool.reservable && pending_tool_allowed?(tool) &&
       reservation_requirements_met?(
         tool.effective_reservation_prerequisite_ids,

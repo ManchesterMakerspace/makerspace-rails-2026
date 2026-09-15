@@ -3,7 +3,7 @@ class PublicCatalog
   class Unavailable < StandardError; end
   def self.shop(id)
     raise Unavailable unless BSON::ObjectId.legal?(id.to_s)
-    record = Shop.where(id: id, :disabled.ne => true).only(:id, :name, :wiki_url, :google_resource_id, :resource_email).first
+    record = Shop.where(id: id, :disabled.ne => true).only(:id, :name, :wiki_url, :out_of_service, :google_resource_id, :resource_email).first
     raise Unavailable unless record
     record
   end
@@ -18,7 +18,7 @@ class PublicCatalog
   end
 
   def self.shop_fields(shop)
-    { id: shop.id.to_s, name: shop.name, wiki_url: safe_url(shop.effective_wiki_url) }
+    { id: shop.id.to_s, name: shop.name, wiki_url: safe_url(shop.effective_wiki_url), out_of_service: !!shop.out_of_service }
   end
 
   def self.tool_fields(tool, shop)

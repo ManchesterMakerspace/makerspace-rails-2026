@@ -8,6 +8,15 @@ class Shop
   field :gdrive_id, type: String
   field :slack_channel, type: String  # e.g. "shop-woodworking" — used for slash command routing
   field :disabled, type: Boolean, default: false
+  field :out_of_service, type: Boolean, default: false
+  field :out_of_service_note, type: String
+  field :ts_oos, type: String
+  field :outage_id, type: String
+  field :outage_actor_name, type: String
+  field :outage_manager_slack_ids, type: Array, default: []
+  field :outage_dm_receipts, type: Hash, default: {}
+  field :oos_channel_id, type: String
+  field :ts_in_service, type: String
   field :reservable, type: Boolean, default: false
   field :max_concurrent_reservations, type: Integer, default: 1
   field :reservation_horizon_days, type: Integer, default: 7
@@ -32,6 +41,7 @@ class Shop
   after_save :enqueue_checkout_canvas_sync_after_channel_change
 
   validates :name, presence: true, uniqueness: { case_sensitive: false }
+  validates :out_of_service_note, presence: true, if: :out_of_service?
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :floor_name, presence: true, inclusion: { in: %w[B 1 2] }
   validates :capacity, numericality: { only_integer: true, greater_than_or_equal_to: 1 }

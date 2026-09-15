@@ -108,6 +108,7 @@ Rails.application.routes.draw do
       end
       get '/volunteer/tasks/:id/detail', to: 'fix_bounties#show'
       post '/tools/:id/outage', to: 'tool_availability#create'
+      post '/shops/:id/outage', to: 'shop_availability#create'
       resources :workshops, only: [:index]
       resources :tool_checkout_requests, only: [:index, :create, :update, :destroy]
       resources :reservation_catalog, only: [:index]

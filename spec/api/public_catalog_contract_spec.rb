@@ -1,7 +1,7 @@
 require 'swagger_helper'
 
 RSpec.describe 'Public catalog contracts', type: :request do
-  let(:shop) { create(:shop) }
+  let(:shop) { create(:shop, out_of_service: true, out_of_service_note: 'Private maintenance note') }
   let(:tool) { create(:tool, shop: shop, out_of_service: true) }
   %w[shop tool].each do |kind|
     ["/#{kind}/{id}/public", "/api/#{kind}/{id}/public", "/#{kind}s/{id}/public"].flat_map { |route| [route, "#{route}.{format}"] }.each do |route|
@@ -27,6 +27,8 @@ RSpec.describe 'Public catalog contracts', type: :request do
               assert_response_matches_metadata(example.metadata)
               data = JSON.parse(response.body)
               expect(kind == 'tool' ? data['out_of_service'] : data['tools'].first['out_of_service']).to eq(true)
+              expect(kind == 'tool' ? data['shop']['out_of_service'] : data['out_of_service']).to eq(true)
+              expect(data.to_json).not_to include('Private maintenance note', 'ts_oos')
               expect(response.headers['Cache-Control']).to include('max-age=0', 'must-revalidate')
               expect(data.to_json).not_to include('reporter', 'ticket_id')
             end

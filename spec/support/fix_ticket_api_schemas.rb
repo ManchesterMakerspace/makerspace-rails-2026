@@ -58,10 +58,10 @@ module FixTicketApiSchemas
       object.call({ response_action: { type: :string, enum: ['update'] }, view: { type: :object, required: %w[type title blocks], properties: { type: { type: :string, enum: ['modal'] }, title: { type: :object }, callback_id: string, private_metadata: string, blocks: array.call({ type: :object }) } } }),
       object.call({ response_action: { type: :string, enum: ['errors'] }, errors: { type: :object, additionalProperties: string } }) ] },
     CheckoutApproverWrite: { type: :object, properties: { member_id: string, shop_ids: array.call(string), tool_ids: array.call(string) } },
-    PublicCatalogShop: object.call({ id: string, name: string, wiki_url: nullable_string,
+    PublicCatalogShop: object.call({ id: string, name: string, wiki_url: nullable_string, out_of_service: boolean,
       tools: array.call(object.call({ id: string, name: string, open: boolean, out_of_service: boolean })) }),
     PublicCatalogTool: object.call({ id: string, name: string, description: nullable_string, open: boolean, out_of_service: boolean,
-      wiki_url: nullable_string, shop: object.call({ id: string, name: string, wiki_url: nullable_string }) }),
+      wiki_url: nullable_string, shop: object.call({ id: string, name: string, wiki_url: nullable_string, out_of_service: boolean }) }),
     ShopWrite: { type: :object, properties: {
       name: string, wiki_url: nullable_string, gdrive_id: nullable_string, slack_channel: nullable_string,
       disabled: boolean, reservable: boolean, color_id: string, floor_name: nullable_string, capacity: integer,

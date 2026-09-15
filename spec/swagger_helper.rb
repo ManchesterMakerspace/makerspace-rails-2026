@@ -457,6 +457,8 @@ RSpec.configure do |config|
         {
           type: :object,
           properties: {
+            outOfService: { type: :boolean },
+            outOfServiceNote: { type: :string, nullable: true },
             resourceManagers: { type: :array, items: { '$ref' => '#/components/schemas/FixPerson' } },
             id: { type: :string },
             name: { type: :string },

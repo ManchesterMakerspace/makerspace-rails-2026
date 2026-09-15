@@ -1,5 +1,31 @@
 # Production jobs, tasks, and services
 
+## Shop outage announcements
+
+`ShopAvailabilityService` lets admins, board members, and assigned resource managers
+mark a shop out of service with a required reason, or restore it. The shared
+reservation service blocks new shop and tool bookings during an outage.
+`ShopOutageSlackJob` posts the shop name and reason to its configured Slack channel
+on the default queue, retrying failures up to five attempts. It stores Slack's
+message timestamp in the shop's `ts_oos` field. Each outage has an `outage_id` used
+as Slack's stable client message ID; completed deliveries and superseded outages
+are skipped. A new outage clears the prior receipt; restoration retains it.
+The job also sends each assigned resource manager with a linked Slack account a
+direct message containing the actor's name, shop name, and outage note, even when
+the shop has no channel. Recipient IDs and actor name are captured when the flag
+is set. Per-recipient receipts prevent completed DMs from being resent on retry.
+The same admin/board/assigned-RM authorization applies to restoring service.
+Restoration never clears tool flags. It queues a reply to the original `ts_oos`
+in the original channel with `reply_broadcast: true`, recording `ts_in_service`.
+If restoration precedes root delivery, the delivery job sends the root first,
+then the recovery reply. Failed destinations retry independently of successful
+deliveries, up to the job's retry limit.
+Setting or clearing a shop outage also queues `ReservationSlackCanvasSyncJob`
+for today and tomorrow. Both reservation canvases show a prominent shop-outage
+banner above the agenda while the flag is set; restoration removes the banner
+without removing bookings or tool flags. Scheduled rebuilds include unavailable
+shops even when they have no reservations or existing canvases.
+
 <!-- markdownlint-disable MD013 -->
 
 This is the production operator's inventory of recurring background work. It

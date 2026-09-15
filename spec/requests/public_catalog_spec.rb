@@ -6,6 +6,26 @@ RSpec.describe "Public catalog", type: :request do
   let(:cache) { ActiveSupport::Cache::MemoryStore.new }
   before { allow(Rails).to receive(:cache).and_return(cache) }
 
+  it 'shows independent shop and tool outages publicly and revalidates on restoration' do
+    tool.update!(out_of_service: true)
+    shop.update!(out_of_service: true, out_of_service_note: 'Private maintenance note', ts_oos: 'PRIVATE-RECEIPT')
+    ["/shops/#{shop.id}/public.html", "/tools/#{tool.id}/public.html"].each do |path|
+      get path
+      expect(response.body).to include('Shop out of service', 'Out of service')
+      expect(response.body).not_to include('Private maintenance note', 'PRIVATE-RECEIPT')
+      etag = response.headers['ETag']
+      shop.update!(out_of_service: false)
+      get path, headers: { 'If-None-Match' => etag }
+      expect(response).to have_http_status(:ok)
+      expect(response.headers['ETag']).not_to eq(etag)
+      expect(response.body).not_to include('Shop out of service')
+      expect(response.body).to include('Out of service')
+      shop.update!(out_of_service: true)
+    end
+    get '/shop/invalid/public.html'
+    expect(response.body).to include('Shop out of service')
+  end
+
   it "uses exactly two projected reads per page, even on cache hits" do
     3.times { |n| create(:tool, shop: shop, name: "Tool #{n}") }
     commands = []
