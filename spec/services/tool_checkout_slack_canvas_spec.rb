@@ -54,7 +54,8 @@ RSpec.describe Service::ToolCheckoutSlackCanvas do
     expect(Service::SlackConnector).to have_received(:replace_canvas) do |_id, markdown|
       expect(markdown).to include("# Wood Shop Checkouts")
       expect(markdown).to include("Current tool checkouts in ![](#C123ABC456)")
-      expect(markdown).to include("- [Table Saw](#table-saw)")
+      expect(markdown).to include("- Table Saw")
+      expect(markdown).not_to include("[Table Saw](#table-saw)")
       expect(markdown).to include("### Table Saw", "Cuts lumber ([Table Saw Wiki](https://example.test/table-saw))")
       expect(markdown).to include("Pre-requisites: Orientation")
       expect(markdown).to include(":ballot_box_with_check: ![](@URM123456)")

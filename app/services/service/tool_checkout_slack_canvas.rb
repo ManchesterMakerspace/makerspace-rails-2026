@@ -42,7 +42,10 @@ module Service
           "Current tool checkouts in #{shop_reference(shop, channel_id)}",
           ""
         ]
-        tools.each { |tool| lines << "- [#{escape_markdown(tool.name)}](##{anchor(tool.name)})" }
+        # Slack Canvas markdown does not support document-fragment link targets.
+        # Keep the tool index as plain text so one invalid link cannot reject the
+        # entire canvas update.
+        tools.each { |tool| lines << "- #{escape_markdown(tool.name)}" }
 
         tools.each do |tool|
           lines.concat(["", "---", "", "### #{escape_markdown(tool.name)}"])
@@ -144,10 +147,6 @@ module Service
       def checkout_approver?(member, tool)
         member.manages_shop?(tool.shop) ||
           CheckoutApprover.find_by(member_id: member.id)&.can_approve_tool?(tool)
-      end
-
-      def anchor(value)
-        value.to_s.downcase.gsub(/[^a-z0-9\s-]/, "").strip.gsub(/\s+/, "-")
       end
 
       def escape_markdown(value)
