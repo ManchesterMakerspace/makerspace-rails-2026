@@ -31,7 +31,9 @@ class ReservationAgendasController < ApplicationController
     agenda = {
       shopName: @shop.name,
       toolName: @tool&.name,
-      outOfService: !!@tool&.out_of_service,
+      outOfService: !!(@shop.out_of_service || @tool&.out_of_service),
+      shopOutOfService: !!@shop.out_of_service,
+      toolOutOfService: !!@tool&.out_of_service,
       generatedAt: now.iso8601,
       windowStart: now.iso8601,
       windowEnd: window_end.iso8601,

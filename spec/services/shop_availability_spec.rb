@@ -120,7 +120,7 @@ RSpec.describe ShopAvailabilityService do
     other = create(:member, :resource_manager, :current)
     SlackUser.create!(member: other, slack_id: 'U999999999')
     described_class.set!(shop: shop, actor: actor, value: true, note: 'Water leak')
-    expect(shop.outage_manager_slack_ids).to match_array(%w[U000000000 U000000001])
+    expect(shop.outage_manager_member_ids).to match_array(managers.map { |manager| manager.id.to_s })
     client = double('Slack')
     allow(Service::SlackConnector).to receive(:client).and_return(client)
     2.times do |i|
@@ -132,11 +132,14 @@ RSpec.describe ShopAvailabilityService do
   end
 
   it 'delivers a restoration reply when cleared before the original announcement runs' do
+    manager = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+    SlackUser.create!(member: manager, slack_id: 'UMANAGER')
     shop.set(slack_channel: '#woodshop')
     described_class.set!(shop: shop, actor: actor, value: true, note: 'Leak')
     described_class.set!(shop: shop, actor: actor, value: false)
     client = double('Slack')
     allow(Service::SlackConnector).to receive(:client).and_return(client)
+    expect(client).not_to receive(:conversations_open)
     allow(Service::SlackConnector).to receive(:resolved_channel_id).and_return('C123456789')
     expect(client).to receive(:chat_postMessage).with(hash_including(client_msg_id: shop.outage_id)).ordered.and_return('ts' => '123.1', 'channel' => 'C123456789')
     expect(client).to receive(:chat_postMessage).with(hash_including(thread_ts: '123.1', reply_broadcast: true)).ordered.and_return('ts' => '123.2')
@@ -144,9 +147,48 @@ RSpec.describe ShopAvailabilityService do
     expect(shop.reload.ts_in_service).to eq('123.2')
   end
 
+  %w[suspended revoked unassigned deleted unlinked].each do |change|
+    it "rechecks a queued DM recipient who becomes #{change}" do
+      manager = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+      slack = SlackUser.create!(member: manager, slack_id: 'UMANAGER')
+      described_class.set!(shop: shop, actor: actor, value: true, note: 'Internal reason')
+      case change
+      when 'unassigned' then manager.set(resource_manager_shop_ids: [])
+      when 'deleted' then Member.where(id: manager.id).delete_all
+      when 'unlinked' then slack.destroy!
+      else manager.set(status: change)
+      end
+      client = double('Slack')
+      allow(Service::SlackConnector).to receive(:client).and_return(client)
+      expect(client).not_to receive(:conversations_open)
+      expect(client).not_to receive(:chat_postMessage)
+      ShopOutageSlackJob.perform_now(shop.id.to_s, shop.outage_id, nil, shop.name, 'Internal reason')
+      expect(shop.reload.outage_dm_receipts).to be_empty
+    end
+  end
+
+  it 'excludes already suppressed managers and rechecks after opening a DM' do
+    suppressed = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+    suppressed.set(status: 'suspended')
+    manager = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+    SlackUser.create!(member: manager, slack_id: 'UMANAGER')
+    described_class.set!(shop: shop, actor: actor, value: true, note: 'Internal reason')
+    expect(shop.outage_manager_member_ids).not_to include(suppressed.id.to_s)
+    client = double('Slack')
+    allow(Service::SlackConnector).to receive(:client).and_return(client)
+    expect(client).to receive(:conversations_open).with(users: 'UMANAGER') do
+      manager.set(status: 'revoked')
+      { 'channel' => { 'id' => 'DMANAGER' } }
+    end
+    expect(client).not_to receive(:chat_postMessage)
+    ShopOutageSlackJob.perform_now(shop.id.to_s, shop.outage_id, nil, shop.name, 'Internal reason')
+  end
+
   it 'continues other DMs on failure and retries only unfinished recipients' do
+    managers = 2.times.map { create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s]) }
+    managers.each_with_index { |manager, i| SlackUser.create!(member: manager, slack_id: "U00000000#{i}") }
     shop.set(out_of_service: true, out_of_service_note: 'Leak', outage_id: 'outage-1', outage_actor_name: actor.fullname,
-      outage_manager_slack_ids: %w[U000000000 U000000001])
+      outage_manager_member_ids: managers.map { |manager| manager.id.to_s })
     client = double('Slack')
     allow(Service::SlackConnector).to receive(:client).and_return(client)
     allow(client).to receive(:conversations_open).with(users: 'U000000000').and_return('channel' => { 'id' => 'D0' })
@@ -154,7 +196,7 @@ RSpec.describe ShopAvailabilityService do
     allow(client).to receive(:chat_postMessage).with(hash_including(channel: 'D0')).and_raise('DM temporarily unavailable')
     expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'D1')).once.and_return('ts' => '123.1')
     expect { ShopOutageSlackJob.perform_now(shop.id.to_s, shop.outage_id, nil, shop.name, 'Leak') }.to have_enqueued_job(ShopOutageSlackJob)
-    expect(shop.reload.outage_dm_receipts).to eq('U000000001' => '123.1')
+    expect(shop.reload.outage_dm_receipts).to eq(managers.last.id.to_s => '123.1')
     allow(client).to receive(:chat_postMessage).with(hash_including(channel: 'D0')).and_return('ts' => '123.0')
     ShopOutageSlackJob.perform_now(shop.id.to_s, shop.outage_id, nil, shop.name, 'Leak')
     expect(shop.reload.outage_dm_receipts.size).to eq(2)

@@ -9,6 +9,7 @@ class FixTicketEvent
   field :note_role, type: String
   field :field_changes, type: Hash, default: {}
   field :recipients, type: Array, default: []
+  field :unscoped_staff_notification, type: Boolean, default: false
   field :created_at, type: Time, default: -> { Time.current }
   field :delivered, type: Hash, default: {}
   field :central_enabled, type: Boolean, default: -> { SystemConfig.slack_tickets_channel.present? }

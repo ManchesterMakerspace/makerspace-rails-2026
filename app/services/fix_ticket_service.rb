@@ -294,7 +294,8 @@ class FixTicketService
       recipients = []
       recipients += ticket.assignee_ids - [actor.id] if kind == 'note' || note.present? || (changes.keys & %w[status confirmation]).any?
       recipients << ticket.reporter_id if actor.id != ticket.reporter_id && (kind == 'assigned' || note.present? || (changes.keys & %w[status confirmation assignees announcement_note]).any?)
-      if kind == 'created' || note.present?
+      notify_staff = kind == 'created' || note.present?
+      if notify_staff && ticket.shop_id.present?
         approver_rules = [{ shop_ids: ticket.shop_id.to_s }]
         approver_rules << { tool_ids: ticket.tool_id.to_s } if ticket.tool_id
         approver_ids = CheckoutApprover.any_of(*approver_rules).pluck(:member_id)
@@ -313,6 +314,7 @@ class FixTicketService
       recipients += added
       recipients += [ticket.reporter_id] + ticket.assignee_ids if kind == 'bounty'
       FixTicketEvent.create!(ticket_id: ticket.id, actor_id: actor.id, kind: kind, note: note, note_role: note_role,
+        unscoped_staff_notification: notify_staff && ticket.shop_id.blank?,
         field_changes: kind == 'assigned' ? changes.except('assignees') : changes, revision: ticket.revision, recipients: recipients.uniq)
     end
     def enqueue(ticket)

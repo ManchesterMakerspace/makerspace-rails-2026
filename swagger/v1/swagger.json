@@ -1585,7 +1585,15 @@
         "type": "object",
         "properties": {
           "outOfService": {
+            "type": "boolean",
+            "description": "True when the shop or selected tool is out of service."
+          },
+          "shopOutOfService": {
             "type": "boolean"
+          },
+          "toolOutOfService": {
+            "type": "boolean",
+            "description": "Selected tool flag; false without a tool filter."
           },
           "shopName": {
             "type": "string"

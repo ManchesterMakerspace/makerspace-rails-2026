@@ -14,6 +14,7 @@ class Shop
   field :outage_id, type: String
   field :outage_actor_name, type: String
   field :outage_manager_slack_ids, type: Array, default: []
+  field :outage_manager_member_ids, type: Array, default: []
   field :outage_dm_receipts, type: Hash, default: {}
   field :oos_channel_id, type: String
   field :ts_in_service, type: String

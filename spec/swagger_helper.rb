@@ -649,7 +649,9 @@ RSpec.configure do |config|
     ReservationAgenda: {
       type: :object,
       properties: {
-        outOfService: { type: :boolean },
+        outOfService: { type: :boolean, description: 'True when the shop or selected tool is out of service.' },
+        shopOutOfService: { type: :boolean },
+        toolOutOfService: { type: :boolean, description: 'Selected tool flag; false without a tool filter.' },
         shopName: { type: :string },
         toolName: { type: :string, 'x-nullable': true },
         generatedAt: { type: :string, format: 'date-time' },

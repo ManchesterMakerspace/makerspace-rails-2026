@@ -37,7 +37,8 @@
       </nav>
     </details>
     <h1><%= @agenda[:toolName].present? ? "#{@agenda[:shopName]}: #{@agenda[:toolName]}" : @agenda[:shopName] %></h1>
-    <% if @agenda[:outOfService] %><p role="status"><strong>Out of service</strong> — Do not use this tool.</p><% end %>
+    <% if @agenda[:shopOutOfService] %><p role="status"><strong>Shop out of service</strong> — New reservations for this shop and its tools are unavailable.</p><% end %>
+    <% if @agenda[:toolOutOfService] %><p role="status"><strong>Tool out of service</strong> — Do not use this tool.</p><% end %>
     <% if @agenda[:toolName].present? && @agenda[:upNext].present? %>
       <% next_name = @agenda[:upNext][:slackUsername].present? ? "@#{@agenda[:upNext][:slackUsername]}" : @agenda[:upNext][:memberName] %>
       <h2>Up Next <%= next_name %> at <%= Time.iso8601(@agenda[:upNext][:startAt]).in_time_zone(ReservationService::ZONE).strftime("%H:%M") %></h2>

@@ -12,8 +12,12 @@ as Slack's stable client message ID; completed deliveries and superseded outages
 are skipped. A new outage clears the prior receipt; restoration retains it.
 The job also sends each assigned resource manager with a linked Slack account a
 direct message containing the actor's name, shop name, and outage note, even when
-the shop has no channel. Recipient IDs and actor name are captured when the flag
-is set. Per-recipient receipts prevent completed DMs from being resent on retry.
+the shop has no channel. Member IDs and actor name are captured when the flag
+is set; suspended/revoked members are excluded. Before each DM, delivery rechecks
+the member's current assignment, notification suppression and active Slack link.
+It skips outage DMs after restoration or a newer outage. Legacy raw-Slack-ID
+recipient lists are not used to send private outage messages. Per-member receipts
+prevent completed DMs from being resent on retry.
 The same admin/board/assigned-RM authorization applies to restoring service.
 Restoration never clears tool flags. It queues a reply to the original `ts_oos`
 in the original channel with `reply_broadcast: true`, recording `ts_in_service`.
@@ -25,6 +29,12 @@ for today and tomorrow. Both reservation canvases show a prominent shop-outage
 banner above the agenda while the flag is set; restoration removes the banner
 without removing bookings or tool flags. Scheduled rebuilds include unavailable
 shops even when they have no reservations or existing canvases.
+
+Unscoped repair-ticket creation and note events capture an explicit staff-channel
+notification intent. `FixTicketDelivery` sends those events to the configured
+`slack_channel_rm`, falling back to the Admin Channel when RM Channel is blank.
+This is independent of the optional central ticket feed and uses the normal
+delivery receipts/retry handling. Scoped tickets retain their RM/approver routing.
 
 <!-- markdownlint-disable MD013 -->
 

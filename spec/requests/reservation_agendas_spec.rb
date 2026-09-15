@@ -10,6 +10,27 @@ RSpec.describe "Public reservation agenda", type: :request do
     SlackUser.create!(member: member, slack_id: "U123", name: "ada")
   end
 
+  it 'shows shop outages on whole-shop and tool agendas while preserving bookings and independent flags' do
+    tool
+    shop.update!(out_of_service: true, out_of_service_note: 'Maintenance')
+    create(:reservation, member: member, shop: shop, title: 'Existing booking', reservation_scope: 'shop', start_at: 1.hour.from_now, end_at: 2.hours.from_now)
+    [nil, tool.name].each do |selected_tool|
+      params = { shop: shop.name, tool: selected_tool }.compact
+      get '/reservations/agenda.json', params: params
+      expect(response.parsed_body).to include('outOfService' => true, 'shopOutOfService' => true, 'toolOutOfService' => false)
+      expect(response.parsed_body['reservations'].map { |row| row['title'] }).to include('Existing booking')
+      get '/reservations/agenda', params: params
+      expect(response.body).to include('Shop out of service')
+      expect(response.body).not_to include('Do not use this tool')
+    end
+    shop.update!(out_of_service: false)
+    tool.update!(out_of_service: true)
+    get '/reservations/agenda.json', params: { shop: shop.name, tool: tool.name }
+    expect(response.parsed_body).to include('outOfService' => true, 'shopOutOfService' => false, 'toolOutOfService' => true)
+    get '/reservations/agenda.json', params: { shop: shop.name }
+    expect(response.parsed_body).to include('outOfService' => false, 'shopOutOfService' => false, 'toolOutOfService' => false)
+  end
+
   it "returns active in-progress and upcoming reservations in JSON" do
     travel_to(zone.local(2026, 7, 28, 10, 0)) do
       create(:reservation, member: member, shop: shop, title: "In progress",

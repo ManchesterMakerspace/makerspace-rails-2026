@@ -21,6 +21,10 @@ class FixTicketDelivery
         text += "\nA volunteer bounty is available: #{link}"
       end
       text += "\n#{url(ticket)}"
+      if event.unscoped_staff_notification
+        channel = SystemConfig.get('slack_channel_rm').presence || Service::SlackConnector.admin_channel
+        publish(event, 'unscoped-staff', Service::SlackConnector.resolved_channel_id(channel), text)
+      end
       central = SystemConfig.slack_tickets_channel
       if central.present? && event.central_enabled && (%w[created assigned note bounty].include?(event.kind) || (event.kind == 'updated' && (event.note.present? || (event.field_changes.keys & CENTRAL_FIELDS).any?)))
         channel = Service::SlackConnector.resolved_channel_id(central)

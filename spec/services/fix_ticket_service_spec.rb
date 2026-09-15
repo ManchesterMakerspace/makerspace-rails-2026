@@ -11,6 +11,14 @@ RSpec.describe FixTicketService, requires_transactions: true do
   end
   let(:reporter) { member }
   let(:admin) { member(role: 'admin') }
+  it 'routes unscoped ticket creation and reporter notes to the staff channel' do
+    ticket = report(reporter)
+    expect(FixTicketEvent.where(ticket_id: ticket.id, kind: 'created').first.unscoped_staff_notification).to be(true)
+    described_class.note!(id: ticket.id, actor: reporter, note: 'Additional details')
+    expect(FixTicketEvent.where(ticket_id: ticket.id, kind: 'note').first.unscoped_staff_notification).to be(true)
+    scoped = report(reporter, shop_id: create(:shop).id.to_s)
+    expect(FixTicketEvent.where(ticket_id: scoped.id, kind: 'created').first.unscoped_staff_notification).to be(false)
+  end
   it 'requires dual-role authors to choose and notifies other assignees' do
     ticket = report(reporter)
     assignee = member

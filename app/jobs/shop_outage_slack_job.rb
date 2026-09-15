@@ -23,13 +23,21 @@ class ShopOutageSlackJob < ApplicationJob
         end
       end
 
-      Array(shop.outage_manager_slack_ids).each do |slack_id|
-        next if shop.outage_dm_receipts[slack_id].present?
+      Array(shop.outage_manager_member_ids).each do |member_id|
+        next if shop.outage_dm_receipts[member_id].present?
         attempt.call do
+          member = eligible_manager(shop, outage_id, member_id)
+          next unless member
+          slack_id = member.slack_user&.slack_id.presence
+          next unless slack_id
           destination = Service::SlackConnector.client.conversations_open(users: slack_id).dig('channel', 'id')
           raise 'Slack did not return a DM channel' if destination.blank?
-          response = post(channel: destination, text: text, client_msg_id: message_id(outage_id, slack_id))
-          receipt(shop, outage_id, outage_dm_receipts: shop.outage_dm_receipts.merge(slack_id => response['ts']))
+          # Recheck after opening the DM as well: membership and shop state may
+          # change while Slack is responding. Never trust a queued raw Slack ID.
+          member = eligible_manager(shop, outage_id, member_id)
+          next unless member && member.slack_user&.slack_id == slack_id
+          response = post(channel: destination, text: text, client_msg_id: message_id(outage_id, member_id))
+          receipt(shop, outage_id, outage_dm_receipts: shop.outage_dm_receipts.merge(member_id => response['ts']))
         end
       end
 
@@ -49,6 +57,13 @@ class ShopOutageSlackJob < ApplicationJob
   end
 
   private
+
+  def eligible_manager(shop, outage_id, member_id)
+    shop.reload
+    return unless shop.outage_id == outage_id && shop.out_of_service?
+    member = Member.shop_resource_manager_candidates.where(id: member_id, resource_manager_shop_ids: shop.id.to_s).first
+    member if member && !member.direct_notifications_suppressed?
+  end
 
   def post(**options)
     response = Service::SlackConnector.client.chat_postMessage(**options,

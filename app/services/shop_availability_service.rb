@@ -15,7 +15,8 @@ class ShopAvailabilityService
         if value
           managers = Member.shop_resource_manager_candidates.where(resource_manager_shop_ids: shop.id.to_s)
           changes.merge!(out_of_service_note: note, ts_oos: nil, outage_id: SecureRandom.uuid,
-            outage_actor_name: actor.fullname, outage_manager_slack_ids: managers.filter_map { |manager| manager.slack_user&.slack_id.presence }.uniq,
+            outage_actor_name: actor.fullname, outage_manager_slack_ids: [],
+            outage_manager_member_ids: managers.reject(&:direct_notifications_suppressed?).map { |manager| manager.id.to_s },
             outage_dm_receipts: {}, oos_channel_id: nil, ts_in_service: nil)
         end
         shop.update!(changes)
@@ -24,7 +25,7 @@ class ShopAvailabilityService
           field_changes: { 'out_of_service' => [previous, value], 'out_of_service_note' => [previous_note, shop.out_of_service_note] })
       end
       # Repeated requests can recover a failed enqueue without starting a new outage.
-      if shop.outage_id.present? && (shop.slack_channel.present? || shop.ts_oos.present? || shop.outage_manager_slack_ids.present?)
+      if shop.outage_id.present? && (shop.slack_channel.present? || shop.ts_oos.present? || shop.outage_manager_member_ids.present?)
         ShopOutageSlackJob.perform_later(shop.id.to_s, shop.outage_id, shop.slack_channel, shop.name, shop.out_of_service_note)
       end
       if shop.slack_channel.present?
