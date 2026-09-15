@@ -68,24 +68,24 @@ class ToolCheckout
     announce_channel = tool.announce? ? (tool.announce_channel.presence || tool.shop.try(:slack_channel)) : nil
     channels = [announce_channel, tool.users_channel.presence].compact.uniq
     return if channels.empty?
-
+    target_channel = nil
     message = checkout_success_message
     sent_channels = []
     if announce_channel.present? && request&.message_id.present?
-      channel = announce_channel
-      Rails.logger.info("[announce_checkout_success] Updating '#{request.message_id}' in channel '#{channel}'")
+      target_channel = announce_channel
+      Rails.logger.info("[announce_checkout_success] Updating '#{request.message_id}' in channel '#{announce_channel}'")
       ::Service::SlackConnector.update_slack_message(announce_channel, request.message_id, message)
       sent_channels << announce_channel
     end
 
     channels.each do |channel|
       next if sent_channels.include?(channel)
-
+      target_channel = channel
       response = ::Service::SlackConnector.send_slack_message(message, channel)
       request.update_attributes!(message_id: response.ts) if channel == announce_channel && request && response.respond_to?(:ts)
     end
   rescue => e
-    Service::ErrorReporter.notify(e, context: { channel: channel, member_id: member_id })
+    Service::ErrorReporter.notify(e, context: { channel: target_channel, member_id: member_id })
   end
 
   def remove_member_from_users_channel
