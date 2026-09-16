@@ -99,7 +99,14 @@ class Admin::ToolCheckoutsController < ApplicationController
       revocation_reason: reason
     )
     @checkout.send_revocation_slack_notification
-    @checkout.send_approver_revocation_slack_notification(current_member)
+    begin
+      @checkout.send_approver_revocation_slack_notification(current_member)
+    rescue => error
+      ::Service::ErrorReporter.notify(error, context: {
+        phase: 'notify original approver of checkout revocation',
+        checkout_id: @checkout.id.to_s
+      })
+    end
     @checkout.remove_member_from_users_channel
 
     ::Service::AuditLogger.log(

@@ -89,5 +89,30 @@ RSpec.describe 'Tool Checkouts API', type: :request do
         'UORIGINAL'
       )
     end
+
+
+    it 'completes revocation bookkeeping when the approver DM fails' do
+      checkout = ToolCheckout.create!(
+        member: member,
+        tool: tool,
+        approved_by: create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+      )
+      allow_any_instance_of(ToolCheckout).to receive(:send_approver_revocation_slack_notification)
+        .and_raise(StandardError, 'account_inactive')
+      expect_any_instance_of(ToolCheckout).to receive(:remove_member_from_users_channel)
+      allow(Service::ErrorReporter).to receive(:notify)
+
+      delete "/api/admin/tool_checkouts/#{checkout.id}", params: {
+        revocation_reason: 'Safety retraining required'
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(checkout.reload.revoked_at).to be_present
+      expect(AuditLog.where(event_type: 'tool_checkout_revoked', resource_id: checkout.id)).to exist
+      expect(Service::ErrorReporter).to have_received(:notify).with(
+        instance_of(StandardError),
+        context: hash_including(checkout_id: checkout.id.to_s)
+      )
+    end
   end
 end

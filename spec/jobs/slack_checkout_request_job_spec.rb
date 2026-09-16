@@ -56,6 +56,17 @@ RSpec.describe SlackCheckoutRequestJob do
     expect(posted_bodies.last['text']).to include('Requested checkout')
   end
 
+  it 'requires an exact tool name when another tool contains the requested name' do
+    create(:tool, shop: shop, name: 'Bandsaw')
+    create(:tool, shop: shop, name: 'Saw')
+
+    expect { perform('band') }.not_to change(ToolCheckoutRequest, :count)
+    expect(posted_bodies.last['text']).to include("No eligible tool matching 'band'")
+
+    expect { perform('sAw') }.to change(ToolCheckoutRequest, :count).by(1)
+    expect(ToolCheckoutRequest.last.tool.name).to eq('Saw')
+  end
+
   it 'rejects a tool with an existing target checkout' do
     create(:tool_checkout, member: member, tool: tool)
 

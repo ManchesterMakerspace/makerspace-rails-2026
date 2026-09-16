@@ -71,6 +71,42 @@ RSpec.describe Service::ToolCheckoutSlackCanvas do
     end
   end
 
+  it "rebuilds instead of deleting when the member line occurs in multiple tool sections" do
+    shop.update!(checkout_canvas_id: "FCHECKOUTS")
+    checkout = ToolCheckout.create!(
+      member: create(:member, :current, firstname: "Amy", lastname: "Zimmer"),
+      tool: create(:tool, shop: shop),
+      revoked_at: Time.current
+    )
+    allow(Service::SlackConnector).to receive(:lookup_canvas_sections)
+      .and_return([double(id: "SONE"), double(id: "STWO")])
+    allow(described_class).to receive(:sync!)
+
+    described_class.sync_checkout!(checkout, action: "remove")
+
+    expect(Service::SlackConnector).not_to have_received(:edit_canvas)
+    expect(described_class).to have_received(:sync!).with(shop)
+  end
+
+  it "does not incrementally add an inactive member" do
+    shop.update!(checkout_canvas_id: "FCHECKOUTS")
+    checkout = ToolCheckout.create!(
+      member: create(:member, :expired),
+      tool: create(:tool, shop: shop)
+    )
+    allow(Service::SlackConnector).to receive(:lookup_canvas_sections)
+      .and_return([double(id: "STIMESTAMP")])
+
+    described_class.sync_checkout!(checkout, action: "add")
+
+    expect(Service::SlackConnector).to have_received(:lookup_canvas_sections).once.with(
+      "FCHECKOUTS", contains_text: "Last updated", section_types: nil
+    )
+    expect(Service::SlackConnector).to have_received(:edit_canvas) do |_canvas_id, changes|
+      expect(changes.map { |change| change[:operation] }).to eq(["replace"])
+    end
+  end
+
   it "falls back to a complete rebuild when an incremental lookup fails" do
     shop.update!(checkout_canvas_id: "FCHECKOUTS")
     checkout = ToolCheckout.create!(

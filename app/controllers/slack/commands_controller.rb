@@ -131,6 +131,10 @@ class Slack::CommandsController < ApplicationController
     shop = current_checkout_shop
 
     unless tool_name
+      unless params[:user_id].present?
+        return render json: { response_type: "ephemeral", text: checkout_shop_channel_instruction }
+      end
+
       member = find_slack_member
       raise ::Error::UnprocessableEntity.new("Link your Slack account to a Member Portal account first") unless member
 
@@ -217,13 +221,14 @@ class Slack::CommandsController < ApplicationController
   def checkout_shop_channel_instruction
     channels = Service::ShopSlackChannels.resolved
     introduction = "Checkout approvals and new requests must start in the appropriate shop channel."
-    return "#{introduction} Please join a public shop channel and run `/checkout` there." if channels.empty?
+    return "#{introduction} Please join the public Slack channel for the appropriate shop and run `/checkout` there." if channels.empty?
 
     channel_list = channels.map { |channel| "• <##{channel.id}> — *#{channel.shop.name}*" }.join("\n")
     "#{introduction}\n\nAvailable shop channels:\n#{channel_list}\n\nJoin the appropriate channel, then run `/checkout` there."
   rescue => error
     Rails.logger.warn("[SlackCheckout] shop channel instructions unavailable error=#{error.class}: #{error.message}")
-    "Checkout approvals and new requests must start in an appropriate public shop channel."
+    "Checkout approvals and new requests must start in an appropriate public shop channel. " \
+      "Please join the public Slack channel for the appropriate shop and run `/checkout` there."
   end
 
   def open_request_list(member)

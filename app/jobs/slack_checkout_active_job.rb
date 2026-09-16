@@ -63,7 +63,10 @@ class SlackCheckoutActiveJob < ApplicationJob
   end
 
   def shop_channel(shop)
-    shop.slack_channel.present? ? "##{Service::SlackChannelCache.normalize_name(shop.slack_channel)}" : "no Slack channel"
+    channel = Service::SlackChannelCache.normalize_name(shop.slack_channel)
+    return "no Slack channel" if channel.blank?
+
+    Service::SlackChannelCache.channel_id?(channel) ? "<##{channel}>" : channel
   end
 
   def post_response(response_url, text)

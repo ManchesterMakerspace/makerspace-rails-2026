@@ -72,4 +72,13 @@ RSpec.describe SlackCheckoutActiveJob do
     perform(channel: "general")
     expect(posted_bodies.last.fetch("text")).to include("Alpha Shop", "Zulu Shop")
   end
+
+  it "renders a configured channel ID as a Slack channel reference" do
+    shop = create(:shop, name: "Private Shop", slack_channel: "C12345678")
+    create(:tool_checkout, member: member, tool: create(:tool, shop: shop))
+
+    perform(text: "active all")
+
+    expect(posted_bodies.last.fetch("text")).to include("*Private Shop* (<#C12345678>)")
+  end
 end

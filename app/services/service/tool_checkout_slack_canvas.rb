@@ -127,6 +127,8 @@ module Service
       private
 
       def addition_changes(canvas_id, checkout)
+        return [] unless checkout.member.active_unexpired?
+
         tool_section = lookup_section!(canvas_id, checkout_list_lookup_text(checkout.tool))
         [{
           operation: "insert_after",
@@ -136,7 +138,7 @@ module Service
       end
 
       def removal_changes(canvas_id, checkout)
-        checkout_section = lookup_section!(canvas_id, checkout_line(checkout))
+        checkout_section = lookup_section!(canvas_id, checkout_line(checkout), require_unique: true)
         [{ operation: "delete", section_id: section_id(checkout_section) }]
       end
 
@@ -149,13 +151,17 @@ module Service
         }
       end
 
-      def lookup_section!(canvas_id, text, section_types: nil)
+      def lookup_section!(canvas_id, text, section_types: nil, require_unique: false)
         sections = Service::SlackConnector.lookup_canvas_sections(
           canvas_id,
           contains_text: text,
           section_types: section_types
         )
-        section = Array(sections).first
+        sections = Array(sections)
+        if require_unique && sections.size != 1
+          raise "Expected one Canvas section for #{text.inspect}, found #{sections.size}"
+        end
+        section = sections.first
         raise "Canvas section not found for #{text.inspect}" if section.nil? || section_id(section).blank?
 
         section
