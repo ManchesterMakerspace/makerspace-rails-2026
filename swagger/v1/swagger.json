@@ -5732,6 +5732,103 @@
           }
         }
       }
+    },
+    "/admin/tool_checkouts/{id}": {
+      "delete": {
+        "summary": "Revokes a tool checkout",
+        "tags": [
+          "AdminToolCheckouts"
+        ],
+        "operationId": "revokeAdminToolCheckout",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Tool checkout ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "checkout revoked even when the best-effort approver notification fails",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "toolId": {
+                      "type": "string"
+                    },
+                    "checkedOutAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "revokedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "revocationReason": {
+                      "type": "string"
+                    },
+                    "approvedById": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "active": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "memberId",
+                    "toolId",
+                    "checkedOutAt",
+                    "revokedAt",
+                    "revocationReason",
+                    "active"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "revocation reason is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revocation_reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "revocation_reason"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

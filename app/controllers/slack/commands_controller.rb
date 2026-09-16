@@ -159,6 +159,9 @@ class Slack::CommandsController < ApplicationController
       return render json: { response_type: 'ephemeral', text: checkout_shop_channel_instruction }
     end
 
+    # Every named request is created by the job under its per-member/tool
+    # distributed lock. Keep creation out of this request process so duplicate
+    # Slack deliveries cannot race the eligibility check and insert.
     SlackCheckoutRequestJob.perform_later(params.to_unsafe_h.stringify_keys.merge('tool_name' => tool_name))
 
     render json: {

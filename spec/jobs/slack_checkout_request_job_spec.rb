@@ -158,6 +158,23 @@ RSpec.describe SlackCheckoutRequestJob do
     expect(posted_bodies.last['text']).to include('already being processed')
   end
 
+  it 'does not create or announce a duplicate when another delivery runs while creation is locked' do
+    allow(REDIS).to receive(:set).and_return(true, false)
+    allow_any_instance_of(ToolCheckoutRequest).to receive(:announce_request) do
+      perform(tool.name)
+    end
+
+    expect {
+      perform(tool.name)
+    }.to change(ToolCheckoutRequest, :count).by(1)
+
+    expect(ToolCheckoutRequest.where(member_id: member.id, tool_id: tool.id, status: 'open').count).to eq(1)
+    expect(posted_bodies.map { |body| body['text'] }).to include(
+      a_string_including('already being processed'),
+      a_string_including('Requested checkout')
+    )
+  end
+
   it 'rejects a Slack user with no linked Member account' do
     allow(::Service::SlackUserSync).to receive(:sync_single).and_return(nil)
 
