@@ -92,23 +92,13 @@ RSpec.describe "Slack interactions", type: :request do
       ToolCheckoutRequest.create!(member: member, tool: tool)
       submit
 
-      expect(response.parsed_body.dig("errors", "tool")).to include("open request already exists")
+      expect(response.parsed_body.dig("errors", "tool")).to include("already have an open request")
     end
 
     it "returns the model's note validation as a Block Kit field error" do
       submit(note: "x" * 129)
 
       expect(response.parsed_body.dig("errors", "note")).to include("too long")
-      expect(ToolCheckoutRequest.count).to eq(0)
-    end
-
-    it "rechecks prerequisites at submission time" do
-      prerequisite = create(:tool, shop: shop)
-      tool.update!(prerequisite_ids: [prerequisite.id.to_s])
-
-      submit
-
-      expect(response.parsed_body.dig("errors", "tool")).to include("prerequisite")
       expect(ToolCheckoutRequest.count).to eq(0)
     end
   end

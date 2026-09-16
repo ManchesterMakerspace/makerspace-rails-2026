@@ -83,12 +83,19 @@ class Slack::InteractionsController < ApplicationController
     member = slack_user && Member.find_by(id: slack_user.member_id)
     return checkout_errors("tool" => "Link an active Member Portal account before requesting a checkout.") unless member
 
-    shop = Shop.where(:disabled.ne => true).find_by(id: metadata["shop_id"])
+    shop = Shop.find_by(id: metadata["shop_id"])
     tool_id = state.dig("tool", "tool", "selected_option", "value")
     tool = shop && Tool.where(shop_id: shop.id, :disabled.ne => true).find_by(id: tool_id)
     return checkout_errors("tool" => "That shop or tool is no longer available.") unless tool
-    eligibility = ToolCheckoutRequestEligibility.new(member: member, tool: tool)
-    return checkout_errors("tool" => eligibility.error.to_s.first(150)) if eligibility.error
+    unless SlackCheckoutRequestModal.eligible?(member, tool)
+      return checkout_errors("tool" => "You are not currently eligible to request this checkout.")
+    end
+    if ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists?
+      return checkout_errors("tool" => "You already have a checkout for this tool.")
+    end
+    if ToolCheckoutRequest.where(member_id: member.id, tool_id: tool.id, status: "open").exists?
+      return checkout_errors("tool" => "You already have an open request for this tool.")
+    end
 
     checkout_request = ToolCheckoutRequest.new(
       member: member, tool: tool, note: state.dig("note", "note", "value"),

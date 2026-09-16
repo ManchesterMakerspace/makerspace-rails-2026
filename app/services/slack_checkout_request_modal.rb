@@ -3,56 +3,43 @@ class SlackCheckoutRequestModal
 
   class << self
     def build(shop, member)
-      tools = ToolCheckoutRequestEligibility.eligible_tools(member: member, shop: shop)
-      open_requests = ToolCheckoutRequest.where(member_id: member.id, status: "open").to_a
-        .select { |request| request.tool&.shop_id.to_s == shop.id.to_s }
-        .sort_by { |request| request.tool.name.to_s.downcase }
-      if tools.length > MAX_OPTIONS
-        raise ::Error::UnprocessableEntity.new(
-          "More than 100 tools are eligible in this shop; use the Member Portal to request a checkout"
-        )
-      end
-      if tools.empty? && open_requests.empty?
-        raise ::Error::UnprocessableEntity.new("No tools are currently eligible for checkout")
-      end
+      tools = eligible_tools(shop, member)
+      raise ::Error::UnprocessableEntity.new("This shop has no tools you can request") if tools.empty?
+      raise ::Error::UnprocessableEntity.new("This shop has more than 100 eligible tools; use the Member Portal") if tools.length > MAX_OPTIONS
 
-      view = {
+      {
         type: "modal",
         callback_id: "checkout_request_submit",
         private_metadata: { shop_id: shop.id.to_s }.to_json,
         title: plain("Request a checkout"),
+        submit: plain("Request"),
         close: plain("Cancel"),
-        blocks: []
-      }
-      if open_requests.present?
-        names = open_requests.map { |request| "• #{request.tool.name.to_s.first(75)} _(request open)_" }
-        names.each_slice(25).with_index do |slice, index|
-          heading = index.zero? ? "*Already requested:*\n" : ""
-          view[:blocks] << { type: "section", text: { type: "mrkdwn", text: heading + slice.join("\n") } }
-        end
-      end
-      if tools.present?
-        view[:submit] = plain("Request")
-        view[:blocks] << {
-          type: "input",
-          block_id: "tool",
-          label: plain("Tool"),
-          element: {
-            type: "static_select",
-            action_id: "tool",
-            placeholder: plain("Select a tool"),
-            options: tools.map { |tool| option(tool) }
+        blocks: [
+          {
+            type: "input", block_id: "tool", label: plain("Tool"),
+            element: {
+              type: "static_select", action_id: "tool", placeholder: plain("Select a tool"),
+              options: tools.map { |tool| { text: plain(tool.name.first(75)), value: tool.id.to_s } }
+            }
+          },
+          {
+            type: "input", block_id: "note", optional: true, label: plain("Note"),
+            element: { type: "plain_text_input", action_id: "note", max_length: 128 }
           }
-        }
-        view[:blocks] << {
-          type: "input",
-          block_id: "note",
-          optional: true,
-          label: plain("Note"),
-          element: { type: "plain_text_input", action_id: "note", max_length: 128 }
-        }
+        ]
+      }
+    end
+
+    def eligible_tools(shop, member)
+      Tool.where(shop_id: shop.id, :disabled.ne => true, :open.ne => true).order_by(name: :asc).to_a.select do |tool|
+        eligible?(member, tool) &&
+          !ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists?
       end
-      view
+    end
+
+    def eligible?(member, tool)
+      return false if tool.nil? || tool.open || tool.disabled? || tool.shop.nil? || tool.shop.disabled?
+      member.status == "pending" ? tool.allow_pending : member.active_unexpired? && member.status == "activeMember"
     end
 
     private

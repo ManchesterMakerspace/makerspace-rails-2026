@@ -76,33 +76,46 @@ RSpec.describe Slack::CommandsController, type: :controller do
   end
 
   describe "#checkout" do
+    let!(:shop) { create(:shop, slack_channel: "woodshop") }
+    let!(:tool) { create(:tool, shop: shop, open: false) }
+    let!(:member) { create(:member, :current) }
+    let!(:slack_user) { SlackUser.create!(member: member, slack_id: "U123") }
+
     before do
       allow(ENV).to receive(:[]).and_call_original
       allow(ENV).to receive(:[]).with('SLACK_SIGNING_SECRET').and_return(secret)
+      allow(Service::ShopSlackChannels).to receive(:associated?).and_return(true)
     end
 
-    it "opens an eligible-tool modal for '/checkout request' with no tool name" do
-      shop = create(:shop, slack_channel: "woodshop")
-      member = create(:member, :current)
-      create(:tool, shop: shop)
-      SlackUser.create!(member: member, slack_id: "U123", slack_email: member.email)
-      sign_request!({ text: 'request', channel_name: "woodshop", user_id: "U123", trigger_id: "trigger" })
+    it "opens the self-service modal synchronously for an ordinary member's bare command" do
+      sign_request!({ text: '', user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" })
       expect(Service::SlackConnector).to receive(:open_modal).with("trigger", hash_including(callback_id: "checkout_request_submit"))
 
-      post :checkout, params: { text: 'request', channel_name: "woodshop", user_id: "U123", trigger_id: "trigger" }
+      post :checkout, params: { text: '', user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" }
 
       expect(response).to have_http_status(200)
     end
 
-    it "routes '/checkout request <tool>' to SlackCheckoutRequestJob with the tool name" do
-      shop = create(:shop, slack_channel: "woodshop")
-      member = create(:member, :current)
-      SlackUser.create!(member: member, slack_id: "U123")
-      request_params = { text: 'request Bandsaw', channel_name: "woodshop", user_id: "U123" }
-      sign_request!(request_params)
-      expect(SlackCheckoutRequestJob).to receive(:perform_later).with(hash_including('tool_name' => 'Bandsaw'))
+    it "opens the modal for an approver who explicitly uses '/checkout request'" do
+      create(:checkout_approver, member: member, shop_ids: [shop.id])
+      sign_request!({ text: 'request', user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" })
+      expect(Service::SlackConnector).to receive(:open_modal)
 
-      post :checkout, params: request_params
+      post :checkout, params: { text: 'request', user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" }
+
+      expect(response).to have_http_status(200)
+    end
+
+    it "synchronizes an unknown Slack identity before rejecting the command" do
+      slack_user.destroy
+      sign_request!({ text: '', user_id: "UNEW", channel_name: "woodshop", trigger_id: "trigger" })
+      expect(Service::SlackUserSync).to receive(:sync_single).with("UNEW") do
+        SlackUser.create!(member: member, slack_id: "UNEW")
+        member
+      end
+      expect(Service::SlackConnector).to receive(:open_modal)
+
+      post :checkout, params: { text: '', user_id: "UNEW", channel_name: "woodshop", trigger_id: "trigger" }
 
       expect(response).to have_http_status(200)
     end
@@ -150,34 +163,74 @@ RSpec.describe Slack::CommandsController, type: :controller do
     end
 
     it "still routes a plain '/checkout @member tool' to SlackCheckoutJob" do
-      create(:shop, slack_channel: "woodshop")
-      member = create(:member, :current)
-      SlackUser.create!(member: member, slack_id: "U123")
-      request_params = { text: '@someone Bandsaw', channel_name: "woodshop", user_id: "U123" }
-      sign_request!(request_params)
+      sign_request!({ text: '@someone Bandsaw', user_id: "U123", channel_name: "woodshop" })
       expect(SlackCheckoutJob).to receive(:perform_later)
       expect(SlackCheckoutRequestJob).not_to receive(:perform_later)
 
-      post :checkout, params: request_params
+      post :checkout, params: { text: '@someone Bandsaw', user_id: "U123", channel_name: "woodshop" }
 
+      post :checkout, params: request_params
       expect(response).to have_http_status(200)
     end
 
-
-    it "synchronizes an unknown Slack identity before opening a request modal" do
-      shop = create(:shop, slack_channel: "woodshop")
-      create(:tool, shop: shop)
-      member = create(:member, :current)
-      request_params = { text: "request", channel_name: "woodshop", user_id: "UNEW", trigger_id: "trigger" }
-      sign_request!(request_params)
-      expect(Service::SlackUserSync).to receive(:sync_single).with("UNEW") do
-        SlackUser.create!(member: member, slack_id: "UNEW")
-        member
+    context "outside a configured shop channel" do
+      let(:wood_shop) { create(:shop, name: "Wood Shop") }
+      let(:metal_shop) { create(:shop, name: "Metal Shop") }
+      let(:channels) do
+        [
+          Service::ShopSlackChannels::Channel.new(shop: wood_shop, id: "C12345678", name: "#wood-shop"),
+          Service::ShopSlackChannels::Channel.new(shop: metal_shop, id: "C23456789", name: "#metal-shop")
+        ]
       end
-      allow(Service::SlackConnector).to receive(:open_modal)
 
-      post :checkout, params: request_params
-      expect(response).to have_http_status(200)
+      before do
+        allow(Service::ShopSlackChannels).to receive(:associated?).and_return(false)
+        allow(Service::ShopSlackChannels).to receive(:resolved).and_return(channels)
+      end
+
+      ["", "request", "request Bandsaw", "@someone Bandsaw"].each do |command_text|
+        it "directs '#{command_text.presence || 'bare /checkout'}' to the public shop channels" do
+          sign_request!(text: command_text, channel_name: "general")
+
+          post :checkout, params: { text: command_text, channel_name: "general" }
+
+          payload = response.parsed_body
+          expect(payload["response_type"]).to eq("ephemeral")
+          expect(payload["text"]).to include(
+            "appropriate shop channel",
+            "<#C12345678> — *Wood Shop*",
+            "<#C23456789> — *Metal Shop*",
+            "Join the appropriate channel",
+            "`/checkout` there"
+          )
+          expect(SlackCheckoutJob).not_to have_been_enqueued
+          expect(SlackCheckoutRequestJob).not_to have_been_enqueued
+        end
+      end
+
+      it "uses generic instructions when no public channels can be resolved" do
+        allow(Service::ShopSlackChannels).to receive(:resolved).and_return([])
+        sign_request!(text: "request", channel_name: "general")
+
+        post :checkout, params: { text: "request", channel_name: "general" }
+
+        expect(response.parsed_body["text"]).to include(
+          "appropriate shop channel",
+          "join the public Slack channel",
+          "run `/checkout` there"
+        )
+      end
+
+      it "uses generic instructions when channel inventory is unavailable" do
+        allow(Service::ShopSlackChannels).to receive(:resolved).and_raise(Redis::CannotConnectError)
+        sign_request!(text: "", channel_name: "general")
+
+        expect do
+          post :checkout, params: { text: "", channel_name: "general" }
+        end.not_to raise_error
+
+        expect(response.parsed_body["text"]).to include("join the public Slack channel")
+      end
     end
   end
 end

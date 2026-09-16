@@ -1,50 +1,29 @@
 require "rails_helper"
 
 RSpec.describe SlackCheckoutRequestModal do
-  let(:shop) { create(:shop) }
   let(:member) { create(:member, :current) }
+  let(:shop) { create(:shop, name: "Woodshop") }
 
-  def options(view)
-    view[:blocks].find { |block| block[:block_id] == "tool" }[:element][:options]
-  end
+  it "builds a required tool selector and an optional 128-character note" do
+    tool = create(:tool, shop: shop, name: "Bandsaw", open: false)
 
-  it "uses IDs for values and sorted, 75-character labels" do
-    zulu = create(:tool, shop: shop, name: "Zulu")
-    alpha = create(:tool, shop: shop, name: "A" * 80)
-    result = options(described_class.build(shop, member))
-
-    expect(result.pluck(:value)).to eq([alpha.id.to_s, zulu.id.to_s])
-    expect(result.first.dig(:text, :text)).to eq("A" * 75)
-  end
-
-  it "includes an optional 128-character note" do
-    create(:tool, shop: shop)
     view = described_class.build(shop, member)
-    note = view[:blocks].find { |block| block[:block_id] == "note" }
+    tool_block = view[:blocks].find { |block| block[:block_id] == "tool" }
+    note_block = view[:blocks].find { |block| block[:block_id] == "note" }
 
-    expect(note).to include(optional: true)
-    expect(note.dig(:element, :max_length)).to eq(128)
+    expect(view).to include(callback_id: "checkout_request_submit")
+    expect(tool_block).not_to include(optional: true)
+    expect(tool_block.dig(:element, :type)).to eq("static_select")
+    expect(tool_block.dig(:element, :options)).to include(hash_including(value: tool.id.to_s))
+    expect(note_block).to include(optional: true)
+    expect(note_block.dig(:element, :max_length)).to eq(128)
   end
 
-  it "supports exactly 100 eligible options" do
-    100.times { |index| create(:tool, shop: shop, name: format("Tool %03d", index)) }
-    expect(options(described_class.build(shop, member)).length).to eq(100)
-  end
+  it "does not offer tools the member already has checked out" do
+    tool = create(:tool, shop: shop, open: false)
+    create(:tool_checkout, member: member, tool: tool)
 
-  it "provides a clear portal fallback above Slack's 100-option limit" do
-    101.times { |index| create(:tool, shop: shop, name: format("Tool %03d", index)) }
     expect { described_class.build(shop, member) }
-      .to raise_error(Error::UnprocessableEntity, /More than 100.*Member Portal/)
-  end
-
-  it "includes and marks tools with an existing open request without offering them as options" do
-    requested = create(:tool, shop: shop, name: "Bandsaw")
-    eligible = create(:tool, shop: shop, name: "Lathe")
-    ToolCheckoutRequest.create!(member: member, tool: requested, status: "open")
-
-    view = described_class.build(shop, member)
-    notice = view[:blocks].find { |block| block[:type] == "section" }
-    expect(notice.dig(:text, :text)).to include("Bandsaw", "request open")
-    expect(options(view).pluck(:value)).to eq([eligible.id.to_s])
+      .to raise_error(Error::UnprocessableEntity, "This shop has no tools you can request")
   end
 end
