@@ -5491,13 +5491,92 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "memberName": {
+                      "type": "string"
+                    },
+                    "memberEmail": {
+                      "type": "string"
+                    },
+                    "memberStatus": {
+                      "type": "string"
+                    },
+                    "toolId": {
+                      "type": "string"
+                    },
+                    "toolName": {
+                      "type": "string"
+                    },
+                    "shopId": {
+                      "type": "string"
+                    },
+                    "shopName": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "requestDate": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "checkedOutId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "memberSlackUrl": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "memberId",
+                    "memberName",
+                    "memberEmail",
+                    "memberStatus",
+                    "toolId",
+                    "toolName",
+                    "shopId",
+                    "shopName",
+                    "note",
+                    "requestDate",
+                    "status",
+                    "messageId",
+                    "checkedOutId",
+                    "memberSlackUrl"
+                  ]
                 }
               }
             }
           },
           "422": {
             "description": "tool is not eligible, prerequisites are unmet, or a record/request exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "membership is not eligible to request a checkout",
             "content": {
               "application/json": {
                 "schema": {

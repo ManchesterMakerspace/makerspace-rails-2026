@@ -4,6 +4,7 @@ class SlackCheckoutRequestJob < ApplicationJob
   def perform(params)
     response_url     = params['response_url']
     channel_name     = params['channel_name']
+    channel_id       = params['channel_id']
     invoker_slack_id = params['user_id']
     tool_name        = params['tool_name'].to_s.strip.presence
 
@@ -18,7 +19,12 @@ class SlackCheckoutRequestJob < ApplicationJob
       return
     end
 
-    shop = Shop.find_by(slack_channel: Service::SlackChannelCache.normalize_name(channel_name)) || Shop.find_by(slack_channel: channel_name)
+    channel_names = [
+      channel_id,
+      channel_name,
+      Service::SlackChannelCache.normalize_name(channel_name)
+    ].compact_blank.uniq
+    shop = Shop.where(:slack_channel.in => channel_names).first
     unless shop
       post_response(response_url, :ephemeral, "No shop is configured for ##{channel_name}. Run `/checkout request` from a shop channel.")
       return

@@ -12,13 +12,26 @@ RSpec.describe SlackCheckoutActiveJob do
     allow(http).to receive(:request) { |request| posted_bodies << JSON.parse(request.body) }
   end
 
-  def perform(text: "active", channel: "woodshop")
+  def perform(text: "active", channel: "woodshop", channel_id: nil)
     described_class.perform_now(
       "response_url" => "https://example.test/response",
       "user_id" => slack_user.slack_id,
       "channel_name" => channel,
+      "channel_id" => channel_id,
       "text" => text
     )
+  end
+
+  it "scopes checkouts by channel ID when that is the shop's configured Slack channel" do
+    channel_shop = create(:shop, name: "Channel Shop", slack_channel: "C12345678")
+    other_shop = create(:shop, name: "Other Shop", slack_channel: "other-shop")
+    create(:tool_checkout, member: member, tool: create(:tool, shop: channel_shop, name: "Lathe"))
+    create(:tool_checkout, member: member, tool: create(:tool, shop: other_shop, name: "Welder"))
+
+    perform(channel: "channel-shop", channel_id: "C12345678")
+
+    expect(posted_bodies.last.fetch("text")).to include("Lathe")
+    expect(posted_bodies.last.fetch("text")).not_to include("Welder")
   end
 
   it "lists the current shop's active checkouts alphabetically with status and approver status" do

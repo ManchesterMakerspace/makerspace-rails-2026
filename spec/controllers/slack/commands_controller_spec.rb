@@ -106,6 +106,37 @@ RSpec.describe Slack::CommandsController, type: :controller do
       expect(response).to have_http_status(200)
     end
 
+    it "routes a named checkout request to the request job instead of opening the modal" do
+      request_params = { text: "request Bandsaw", user_id: "U123", channel_name: "woodshop" }
+      sign_request!(request_params)
+      expect(SlackCheckoutRequestJob).to receive(:perform_later)
+        .with(hash_including("tool_name" => "Bandsaw"))
+      expect(Service::SlackConnector).not_to receive(:open_modal)
+
+      post :checkout, params: request_params
+
+      expect(response).to have_http_status(200)
+      expect(response.parsed_body.fetch("text")).to include("Processing your request for *Bandsaw*")
+    end
+
+    it "resolves a checkout request shop from the Slack channel ID" do
+      shop.update!(slack_channel: "C12345678")
+      request_params = {
+        text: "request",
+        user_id: "U123",
+        channel_name: "woodshop",
+        channel_id: "C12345678",
+        trigger_id: "trigger"
+      }
+      sign_request!(request_params)
+      expect(Service::SlackConnector).to receive(:open_modal)
+
+      post :checkout, params: request_params
+
+      expect(response).to have_http_status(200)
+      expect(response.parsed_body.fetch("text")).to include("Opening checkout request form")
+    end
+
     it "synchronizes an unknown Slack identity before rejecting the command" do
       slack_user.destroy
       sign_request!({ text: '', user_id: "UNEW", channel_name: "woodshop", trigger_id: "trigger" })
@@ -121,10 +152,8 @@ RSpec.describe Slack::CommandsController, type: :controller do
     end
 
     it "lists all open requests when '/checkout request' is used outside a shop channel" do
-      member = create(:member, :current)
       tool = create(:tool, name: "Bandsaw")
       ToolCheckoutRequest.create!(member: member, tool: tool, status: "open")
-      SlackUser.create!(member: member, slack_id: "U123", slack_email: member.email)
       request_params = { text: "request", channel_name: "general", user_id: "U123" }
       sign_request!(request_params)
 
@@ -134,11 +163,8 @@ RSpec.describe Slack::CommandsController, type: :controller do
     end
 
     it "suggests volunteering as an approver when the requester has an active checkout in the shop" do
-      shop = create(:shop, slack_channel: "woodshop")
-      member = create(:member, :current)
       create(:tool_checkout, member: member, tool: create(:tool, shop: shop))
       create(:tool, shop: shop)
-      SlackUser.create!(member: member, slack_id: "U123", slack_email: member.email)
       request_params = { text: "request", channel_name: "woodshop", user_id: "U123", trigger_id: "trigger" }
       sign_request!(request_params)
       allow(Service::SlackConnector).to receive(:open_modal)
@@ -169,7 +195,6 @@ RSpec.describe Slack::CommandsController, type: :controller do
 
       post :checkout, params: { text: '@someone Bandsaw', user_id: "U123", channel_name: "woodshop" }
 
-      post :checkout, params: request_params
       expect(response).to have_http_status(200)
     end
 

@@ -18,8 +18,14 @@ RSpec.describe SlackCheckoutRequestJob do
     end
   end
 
-  def perform(tool_name, channel_name: shop.slack_channel)
-    described_class.perform_now('response_url' => 'https://example.test/response', 'user_id' => 'U123', 'tool_name' => tool_name, 'channel_name' => channel_name)
+  def perform(tool_name, channel_name: shop.slack_channel, channel_id: nil)
+    described_class.perform_now(
+      'response_url' => 'https://example.test/response',
+      'user_id' => 'U123',
+      'tool_name' => tool_name,
+      'channel_name' => channel_name,
+      'channel_id' => channel_id
+    )
   end
 
   it 'rejects open tools without creating requests' do
@@ -55,6 +61,23 @@ RSpec.describe SlackCheckoutRequestJob do
       perform(tool.name)
     }.not_to change { ToolCheckoutRequest.count }
     expect(posted_bodies.last['text']).to include('checkout record already exists')
+  end
+
+  it 'rejects a tool with a revoked target checkout' do
+    create(:tool_checkout, member: member, tool: tool, revoked_at: Time.current)
+
+    expect {
+      perform(tool.name)
+    }.not_to change { ToolCheckoutRequest.count }
+    expect(posted_bodies.last['text']).to include('checkout record already exists')
+  end
+
+  it 'resolves a shop configured with a Slack channel ID' do
+    shop.update!(slack_channel: 'C12345678')
+
+    expect {
+      perform(tool.name, channel_name: 'woodshop', channel_id: 'C12345678')
+    }.to change { ToolCheckoutRequest.count }.by(1)
   end
 
   it 'requires a non-revoked checkout for every prerequisite' do

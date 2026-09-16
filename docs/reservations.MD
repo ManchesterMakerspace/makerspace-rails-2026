@@ -470,6 +470,10 @@ grants the configured shop channel read access, and saves the returned canvas
 ID as `canvas_today` or `canvas_tomorrow` on the shop. Subsequent refreshes
 replace the agenda with the day's pending, unpaid, and approved reservations. Cancelled
 and denied reservations are removed because they do not consume capacity.
+When a separately selected tool is marked out of service or restored, any
+today/tomorrow agenda containing an active reservation for that tool is also
+refreshed. Out-of-service tools are labeled **OUT OF SERVICE** in the
+reservation's Resources cell so shop operators can identify unsafe bookings.
 
 Slack does not automatically add these read-only canvases to the shop channel
 header. A channel manager must manually add each canvas to the header using the

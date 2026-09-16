@@ -15,13 +15,21 @@ production credentials available. Examples below use:
 RAILS_ENV=production bundle exec rake TASK_NAME
 ```
 
-`SlackCheckoutRequestJob` handles named `/checkout request` commands. It uses
+`SlackCheckoutRequestJob` handles named `/checkout request` commands and
+resolves shops from either the Slack channel ID or normalized channel name. It uses
 the same checkout-request eligibility service as the Member Portal and Slack
 modal, and rechecks tool/shop availability, membership, prerequisites, existing
 checkouts, and open requests immediately before creating a request.
 `SlackCheckoutActiveJob` handles `/checkout active [all]` by returning
 ephemeral, alphabetized checkout tables scoped to the current shop or grouped
-across every shop where the caller has an active checkout.
+across every shop where the caller has an active checkout. Current-shop scope
+resolves either the Slack channel ID or the normalized channel name from the
+slash-command payload, matching both supported shop-channel configurations.
+
+Changing a tool's out-of-service (`disabled`) state enqueues
+`ReservationSlackCanvasSyncJob` for today and/or tomorrow when an active
+individual-tool reservation overlaps those dates. This keeps operational
+reservation canvases synchronized with tool outages and restorations.
 
 The admin endpoint **enqueues** an Active Job and returns before it completes.
 Its `key` parameter is the value in the **Admin key** column below. The
