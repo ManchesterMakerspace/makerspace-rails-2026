@@ -125,4 +125,24 @@ RSpec.describe 'Generic volunteer task responses', type: :request do
       end
     end
   end
+  path '/admin/volunteer_tasks/{id}' do
+    parameter name: :id, in: :path, type: :string
+    delete 'Delete an unlinked volunteer task' do
+      tags 'Volunteer'
+      security [sessionAuth: []]
+      produces 'application/json'
+      response '422', 'Linked bounties must be cancelled to preserve ticket history' do
+        schema '$ref' => '#/components/schemas/FixError'
+        run_test! do |response|
+          expect(response.body).to include('Cancel linked bounties')
+          expect(VolunteerTask.where(id: task.id)).to exist
+        end
+      end
+      response '204', 'Unlinked task deleted' do
+        let(:ticket_id) { nil }
+        run_test! { expect(VolunteerTask.where(id: id)).not_to exist }
+      end
+    end
+  end
+
 end

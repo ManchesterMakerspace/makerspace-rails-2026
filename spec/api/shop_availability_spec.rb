@@ -26,15 +26,20 @@ RSpec.describe 'Shop availability', type: :request do
       response '200', 'Workshops with availability and member capabilities' do
         schema type: :object, properties: {
           canAddShop: { type: :boolean }, workshops: { type: :array, items: {
-            type: :object, required: %w[id outOfService outOfServiceNote reservationsAvailable], properties: {
+            type: :object, required: %w[id outOfService outOfServiceNote reservationsAvailable tools], properties: {
               id: { type: :string }, outOfService: { type: :boolean },
-              outOfServiceNote: { type: :string, nullable: true }, reservationsAvailable: { type: :boolean }
+              outOfServiceNote: { type: :string, nullable: true }, reservationsAvailable: { type: :boolean },
+              tools: { type: :array, items: { type: :object, required: %w[id name outOfService], properties: {
+                id: { type: :string }, name: { type: :string }, outOfService: { type: :boolean }
+              } } }
             }
           } }
         }
+        let!(:unavailable_tool) { create(:tool, shop: shop, out_of_service: true) }
         before { shop.update!(out_of_service: true, out_of_service_note: 'Leak') }
         run_test! do |response|
           data = response.parsed_body['workshops'].find { |item| item['id'] == shop.id.to_s }
+          expect(data['tools']).to include(hash_including('id' => unavailable_tool.id.to_s, 'outOfService' => true))
           expect(data).to include('outOfService' => true, 'outOfServiceNote' => 'Leak', 'reservationsAvailable' => false)
         end
       end

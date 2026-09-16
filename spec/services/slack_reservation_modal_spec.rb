@@ -1,7 +1,7 @@
 require "rails_helper"
 
 RSpec.describe SlackReservationModal do
-  let(:shop) { instance_double(Shop, id: BSON::ObjectId.new, name: "Woodshop", reservable: shop_reservable) }
+  let(:shop) { instance_double(Shop, id: BSON::ObjectId.new, name: "Woodshop", reservable: shop_reservable, out_of_service?: false) }
   let(:member) { instance_double(Member, id: BSON::ObjectId.new) }
   let(:relation) { double("tool relation") }
 
@@ -14,6 +14,16 @@ RSpec.describe SlackReservationModal do
     ).and_return(relation)
     allow(relation).to receive(:order_by).with(name: :asc).and_return(relation)
     allow(relation).to receive(:to_a).and_return(tools)
+  end
+
+  context 'when the entire shop is out of service' do
+    let(:shop_reservable) { true }
+    let(:tools) { [] }
+    it 'rejects the modal before querying reservation options' do
+      allow(shop).to receive(:out_of_service?).and_return(true)
+      expect(Tool).not_to receive(:where)
+      expect { described_class.build(shop, member) }.to raise_error(Error::UnprocessableEntity, /out of service/)
+    end
   end
 
   def block(view, block_id)

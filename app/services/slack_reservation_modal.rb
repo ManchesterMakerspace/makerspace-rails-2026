@@ -1,6 +1,7 @@
 class SlackReservationModal
   class << self
     def build(shop, member)
+      raise Error::UnprocessableEntity.new('This shop is out of service') if shop.out_of_service?
       tools = Tool.where(shop_id: shop.id, reservable: true, :disabled.ne => true, :out_of_service.ne => true).order_by(name: :asc).to_a
       raise ::Error::UnprocessableEntity.new("This shop has more than 100 reservable tools; use the portal") if tools.length > 100
       raise ::Error::UnprocessableEntity.new("This shop has no reservable resources") unless shop.reservable || tools.present?

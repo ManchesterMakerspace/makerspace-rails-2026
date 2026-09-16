@@ -160,8 +160,10 @@ lookup, preserving progress past revoked or suspended recipients.
 `ReservationSlackCanvasMemberAccessJob` synchronizes a member's current Slack
 canvas access for the supplied shops. Member edits enqueue it when RM shop
 access changes. Shop-side RM assignment edits also enqueue it once per added
-or removed member, after saving the assignment, for that shop only. Unchanged
-or omitted assignments do not enqueue access synchronization.
+or removed member, after saving all assignment changes, for that shop only.
+Each enqueue failure is logged and does not interrupt the remaining enqueues
+or turn the completed shop save into a failed request. Unchanged or omitted
+assignments do not enqueue access synchronization.
 
 Recurring jobs should normally be invoked through their job or Rake entry
 point, because wrappers provide status tracking and error reporting. The table

@@ -85,6 +85,15 @@ RSpec.describe 'Shop Resource Manager assignments', type: :request do
             expect(AuditLog.where(resource_id: shop.id, event_type: 'shop_resource_managers_changed')).to exist
           end
         end
+        response('422', 'Resource Manager IDs must be valid and belong to permitted roles') do
+          schema '$ref' => '#/components/schemas/FixError'
+          let(:body) { { resource_manager_ids: ['invalid-id'] } }
+          run_test!
+          context 'member outside the permitted roles' do
+            let(:body) { { resource_manager_ids: [create(:member, :current).id.to_s] } }
+            run_test!
+          end
+        end
         response('403', 'Resource Managers cannot change their own assignments') do
           let(:member) { manager }
           before { manager.update!(resource_manager_shop_ids: [shop.id.to_s]) }
@@ -152,4 +161,25 @@ RSpec.describe 'Shop Resource Manager assignments', type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(shop.reload.name).not_to eq('Invalid edit')
   end
+  it 'finishes all replacements even when a canvas enqueue raises' do
+    removed = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+    added = create(:member, :resource_manager, :current, resource_manager_shop_ids: [])
+    allow(ReservationSlackCanvasMemberAccessJob).to receive(:perform_later) do
+      expect(manager.reload.resource_manager_shop_ids).to include(shop.id.to_s)
+      expect(added.reload.resource_manager_shop_ids).to include(shop.id.to_s)
+      expect(removed.reload.resource_manager_shop_ids).not_to include(shop.id.to_s)
+      raise 'Queue unavailable'
+    end
+    put "/api/admin/shops/#{shop.id}", params: { resource_manager_ids: [manager.id.to_s, added.id.to_s] }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(ReservationSlackCanvasMemberAccessJob).to have_received(:perform_later).exactly(3).times
+  end
+
+  it 'successfully creates and assigns a shop when canvas enqueues fail' do
+    allow(ReservationSlackCanvasMemberAccessJob).to receive(:perform_later).and_raise('Queue unavailable')
+    post '/api/admin/shops', params: { name: 'Queue failure shop', resource_manager_ids: [manager.id.to_s] }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(manager.reload.resource_manager_shop_ids).to include(response.parsed_body['id'])
+  end
+
 end

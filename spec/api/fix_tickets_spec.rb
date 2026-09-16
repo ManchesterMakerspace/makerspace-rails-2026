@@ -176,6 +176,14 @@ RSpec.describe 'Fix tickets', type: :request do
       security [sessionAuth: []]
       parameter name: :search, in: :query, required: false, type: :string
       produces 'application/json'
+      response '403', 'Ticket readers who are not repair staff cannot list assignee options' do
+        schema '$ref' => '#/components/schemas/FixError'
+        run_test!
+        context 'assigned member' do
+          let(:id) { create(:fix_ticket, reporter_id: create(:member, :current).id, assignee_ids: [member.id]).id.to_s }
+          run_test!
+        end
+      end
       response('200', 'Up to fifty active unexpired members') { schema type: :array, items: { '$ref' => '#/components/schemas/FixPerson' }; let(:member) { create(:member, :admin, :current) }; run_test! }
     end
   end
@@ -202,6 +210,30 @@ RSpec.describe 'Fix tickets', type: :request do
       tags 'Volunteer'
       security [sessionAuth: []]
       produces 'application/json'
+      response '401', 'A signed-in member session is required' do
+        schema '$ref' => '#/components/schemas/FixError'
+        before { sign_out member }
+        run_test!
+      end
+      response '422', 'Malformed task ID' do
+        schema '$ref' => '#/components/schemas/FixError'
+        let(:id) { 'malformed' }
+        run_test!
+      end
+      response '404', 'Task does not exist' do
+        schema '$ref' => '#/components/schemas/FixError'
+        let(:id) { BSON::ObjectId.new.to_s }
+        run_test!
+      end
+      response '403', 'Non-current members must be authorized to read the source ticket' do
+        schema '$ref' => '#/components/schemas/FixError'
+        let(:id) do
+          ticket = create(:fix_ticket, reporter_id: create(:member, :current).id)
+          VolunteerTask.create!(title: 'Repair', description: 'Fix switch', created_by_id: ticket.reporter_id, ticket_id: ticket.id).id.to_s
+        end
+        before { member.set(expirationTime: 1.day.ago.to_i * 1000) }
+        run_test!
+      end
       response('200', 'Current member or authorized source-ticket viewer') do
         schema '$ref' => '#/components/schemas/FixBountyDetail'
         let(:id) { VolunteerTask.create!(title: 'Repair drill', description: 'Replace switch', credit_value: 1, created_by_id: member.id).id.to_s }

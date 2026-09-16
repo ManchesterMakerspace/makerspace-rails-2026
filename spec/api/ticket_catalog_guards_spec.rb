@@ -6,6 +6,7 @@ RSpec.describe 'Repair ticket catalog references', type: :request do
   let(:tool) { create(:tool, shop: shop) }
   let!(:ticket) { FixTicket.create!(reporter_id: member.id, title: 'Broken tool', description: 'Needs repair', category: 'broken', submission_key: SecureRandom.uuid, shop_id: shop.id, tool_id: tool.id) }
   before do
+    ActiveJob::Base.queue_adapter = :test
     sign_in member
     allow(REDIS).to receive(:set)
   end
@@ -19,6 +20,11 @@ RSpec.describe 'Repair ticket catalog references', type: :request do
         name: { type: :string, description: 'Unique within the shop, ignoring case.' }, shop_id: { type: :string }
       } }
       let(:body) { { name: tool.name, shop_id: shop.id.to_s } }
+      response '200', 'Created tool including its availability' do
+        schema '$ref' => '#/components/schemas/Tool'
+        let(:body) { { name: 'New unique tool', shop_id: shop.id.to_s } }
+        run_test! { |response| expect(response.parsed_body['outOfService']).to eq(false) }
+      end
       response '422', 'Another tool in the same shop already has this name' do
         run_test! { |response| expect(response.body).to include('already exists in this shop') }
       end
@@ -51,6 +57,12 @@ RSpec.describe 'Repair ticket catalog references', type: :request do
         produces 'application/json'
         parameter name: :body, in: :body, schema: { type: :object, properties: { shop_id: { type: :string }, name: { type: :string, description: 'Unique within the shop, ignoring case; the existing tool is excluded when editing.' } } }
         let(:body) { { shop_id: create(:shop).id.to_s } }
+        response '200', 'Updated tool including its availability' do
+          schema '$ref' => '#/components/schemas/Tool'
+          let(:body) { { name: 'Updated tool' } }
+          before { tool.set(out_of_service: true) }
+          run_test! { |response| expect(response.parsed_body).to include('name' => 'Updated tool', 'outOfService' => true) }
+        end
         response '409', 'Repair ticket reference prevents shop move' do
           schema '$ref' => '#/components/schemas/FixError'
           run_test! { expect(tool.reload.shop_id).to eq(shop.id) }

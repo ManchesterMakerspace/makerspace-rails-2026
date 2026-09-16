@@ -136,16 +136,22 @@ class Admin::ShopsController < ApplicationController
     previous = Member.shop_resource_manager_candidates.where(resource_manager_shop_ids: shop.id.to_s).pluck(:id).map(&:to_s)
     Member.shop_resource_manager_candidates.where(:id.in => ids - previous).each do |member|
       member.add_to_set(resource_manager_shop_ids: shop.id.to_s)
-      ReservationSlackCanvasMemberAccessJob.perform_later(member.id.to_s, [shop.id.to_s])
     end
     Member.shop_resource_manager_candidates.where(:id.in => previous - ids).each do |member|
       member.pull(resource_manager_shop_ids: shop.id.to_s)
-      ReservationSlackCanvasMemberAccessJob.perform_later(member.id.to_s, [shop.id.to_s])
     end
     return if previous.sort == ids.sort
     ::Service::AuditLogger.log(log_type: 'portal', event_type: 'shop_resource_managers_changed',
       resource_type: 'Shop', resource_id: shop.id, actor: current_member,
       field_changes: { 'resource_manager_ids' => [previous, ids] })
+    # Complete the replacement before attempting any external queue work.
+    ((ids - previous) + (previous - ids)).each do |member_id|
+      begin
+        ReservationSlackCanvasMemberAccessJob.perform_later(member_id, [shop.id.to_s])
+      rescue StandardError => error
+        Rails.logger.error("Canvas access enqueue failed for member #{member_id}, shop #{shop.id}: #{error.class}: #{error.message}")
+      end
+    end
   end
 
   def shop_params

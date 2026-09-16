@@ -5276,6 +5276,279 @@
         }
       }
     },
+    "/reservation_catalog": {
+      "get": {
+        "summary": "List enabled reservation shops and their reservable tools",
+        "tags": [
+          "Reservations"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "description": "Out-of-service shops and all tools belonging to them are omitted. Shop entries include resourceManagers; tool entries include outOfService. Individually out-of-service tools remain visible for availability display.",
+        "responses": {
+          "200": {
+            "description": "Reservation catalog with availability and Resource Managers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "shops",
+                    "tools"
+                  ],
+                  "properties": {
+                    "shops": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Shop"
+                      }
+                    },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Tool"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools": {
+      "get": {
+        "summary": "List checkout request tools, including availability",
+        "tags": [
+          "Tools"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Checkout catalog retains out-of-service tools with their status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "name",
+                      "shopId",
+                      "outOfService",
+                      "requestable"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "shopId": {
+                        "type": "string"
+                      },
+                      "shopName": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "description": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "outOfService": {
+                        "type": "boolean"
+                      },
+                      "open": {
+                        "type": "boolean"
+                      },
+                      "requestable": {
+                        "type": "boolean"
+                      },
+                      "allowPending": {
+                        "type": "boolean"
+                      },
+                      "prerequisiteIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "prerequisiteNames": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "unmetPrerequisiteIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "unmetPrerequisiteNames": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/volunteer_credits": {
+      "get": {
+        "summary": "List general volunteer credits excluding repair-ticket rewards",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "description": "Returns newest credits first. All credits associated with a repair ticket are excluded, including reporter rewards and reversals, regardless of optional member/status filters.",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "reversal"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "General volunteer credits only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "memberId",
+                      "description",
+                      "creditValue",
+                      "status"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "memberId": {
+                        "type": "string"
+                      },
+                      "issuedById": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "taskId": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "creditValue": {
+                        "type": "number"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "approved",
+                          "rejected",
+                          "reversal"
+                        ]
+                      },
+                      "discountApplied": {
+                        "type": "boolean"
+                      },
+                      "discountAppliedAt": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "reversed": {
+                        "type": "boolean"
+                      },
+                      "reversalOfId": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "reversalReason": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "reversedById": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "reversedAt": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "type": "string"
+                      },
+                      "memberName": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "issuedByName": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "taskTitle": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "reversedByName": {
+                        "type": "string",
+                        "nullable": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/billing/discounts": {
       "get": {
         "summary": "Gets a list of discounts",
@@ -7460,6 +7733,16 @@
           }
         ],
         "responses": {
+          "403": {
+            "description": "Ticket readers who are not repair staff cannot list assignee options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Up to fifty active unexpired members",
             "content": {
@@ -7551,6 +7834,46 @@
           }
         ],
         "responses": {
+          "401": {
+            "description": "A signed-in member session is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed task ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Non-current members must be authorized to read the source ticket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Current member or authorized source-ticket viewer",
             "content": {
@@ -10406,7 +10729,8 @@
                           "id",
                           "outOfService",
                           "outOfServiceNote",
-                          "reservationsAvailable"
+                          "reservationsAvailable",
+                          "tools"
                         ],
                         "properties": {
                           "id": {
@@ -10421,6 +10745,28 @@
                           },
                           "reservationsAvailable": {
                             "type": "boolean"
+                          },
+                          "tools": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "id",
+                                "name",
+                                "outOfService"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "outOfService": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -10667,6 +11013,16 @@
               }
             }
           },
+          "422": {
+            "description": "Resource Manager IDs must be valid and belong to permitted roles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Resource Managers cannot change their own assignments"
           }
@@ -10700,6 +11056,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Shop"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Resource Manager IDs must be valid and belong to permitted roles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
                 }
               }
             }
@@ -11068,6 +11434,16 @@
         ],
         "parameters": [],
         "responses": {
+          "200": {
+            "description": "Created tool including its availability",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tool"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Another tool in the same shop already has this name"
           }
@@ -11138,6 +11514,16 @@
         ],
         "parameters": [],
         "responses": {
+          "200": {
+            "description": "Updated tool including its availability",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tool"
+                }
+              }
+            }
+          },
           "409": {
             "description": "Repair ticket reference prevents shop move",
             "content": {
@@ -11183,6 +11569,16 @@
         ],
         "parameters": [],
         "responses": {
+          "200": {
+            "description": "Updated tool including its availability",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tool"
+                }
+              }
+            }
+          },
           "409": {
             "description": "Repair ticket reference prevents shop move",
             "content": {
@@ -11462,6 +11858,32 @@
                 "$ref": "#/components/schemas/VolunteerTaskWrite"
               }
             }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an unlinked volunteer task",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "422": {
+            "description": "Linked bounties must be cancelled to preserve ticket history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Unlinked task deleted"
           }
         }
       }
