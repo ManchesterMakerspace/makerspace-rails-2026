@@ -31,7 +31,7 @@ module Service
       private
 
       def configured_shops
-        Shop.where(disabled: false, :slack_channel.nin => [nil, ""]).order_by(name: :asc)
+        Shop.where(:disabled.ne => true, :slack_channel.nin => [nil, ""]).order_by(name: :asc)
       end
 
       def public_channel?(details)
