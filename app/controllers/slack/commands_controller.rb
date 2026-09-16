@@ -155,9 +155,6 @@ class Slack::CommandsController < ApplicationController
       return render json: { response_type: 'ephemeral', text: checkout_shop_channel_instruction }
     end
 
-    member = find_slack_member
-    raise ::Error::UnprocessableEntity.new("Link your Slack account to a Member Portal account first") unless member
-
     SlackCheckoutRequestJob.perform_later(params.to_unsafe_h.stringify_keys.merge('tool_name' => tool_name))
 
     render json: {

@@ -119,6 +119,30 @@ RSpec.describe Slack::CommandsController, type: :controller do
       expect(response.parsed_body.fetch("text")).to include("Processing your request for *Bandsaw*")
     end
 
+    it "defers Slack identity synchronization for a named checkout request" do
+      slack_user.destroy
+      request_params = {
+        text: "request Bandsaw",
+        user_id: "UUNLINKED",
+        channel_name: "woodshop",
+        response_url: "https://example.test/slack-response"
+      }
+      sign_request!(request_params)
+      expect(Service::SlackUserSync).not_to receive(:sync_single)
+      expect(SlackCheckoutRequestJob).to receive(:perform_later).with(
+        hash_including(
+          "tool_name" => "Bandsaw",
+          "user_id" => "UUNLINKED",
+          "response_url" => "https://example.test/slack-response"
+        )
+      )
+
+      post :checkout, params: request_params
+
+      expect(response).to have_http_status(200)
+      expect(response.parsed_body.fetch("text")).to include("Processing your request for *Bandsaw*")
+    end
+
     it "resolves a checkout request shop from the Slack channel ID" do
       shop.update!(slack_channel: "C12345678")
       request_params = {

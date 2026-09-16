@@ -5477,6 +5477,131 @@
         }
       }
     },
+    "/slack/commands/checkout": {
+      "post": {
+        "summary": "Handles the Slack checkout slash command",
+        "servers": [
+          {
+            "url": "/",
+            "description": "Application root"
+          }
+        ],
+        "tags": [
+          "SlackCommands"
+        ],
+        "operationId": "slackCheckoutCommand",
+        "parameters": [
+          {
+            "name": "X-Slack-Signature",
+            "in": "header",
+            "required": true,
+            "description": "Slack v0 request signature",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Slack-Request-Timestamp",
+            "in": "header",
+            "required": true,
+            "description": "Unix timestamp covered by the Slack signature",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "command accepted with an ephemeral acknowledgement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "response_type": {
+                      "type": "string",
+                      "enum": [
+                        "ephemeral"
+                      ]
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "response_type",
+                    "text"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Slack signature is missing, invalid, or stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "example": "/checkout"
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "Checkout command text: MEMBER TOOL, request [TOOL], or active [all]"
+                  },
+                  "channel_id": {
+                    "type": "string"
+                  },
+                  "channel_name": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "user_name": {
+                    "type": "string"
+                  },
+                  "trigger_id": {
+                    "type": "string"
+                  },
+                  "response_url": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "text",
+                  "channel_id",
+                  "channel_name",
+                  "user_id",
+                  "response_url"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/tool_checkout_requests": {
       "post": {
         "summary": "Requests a safety checkout",
