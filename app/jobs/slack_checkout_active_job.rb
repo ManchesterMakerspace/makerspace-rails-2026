@@ -12,8 +12,12 @@ class SlackCheckoutActiveJob < ApplicationJob
     end
     return post_response(response_url, "Link your Slack account to a Member Portal account first.") unless member
 
-    channel_name = Service::SlackChannelCache.normalize_name(params["channel_name"])
-    channel_shop = Shop.find_by(slack_channel: channel_name) || Shop.find_by(slack_channel: params["channel_name"])
+    channel_names = [
+      params["channel_id"],
+      params["channel_name"],
+      Service::SlackChannelCache.normalize_name(params["channel_name"])
+    ].compact_blank.uniq
+    channel_shop = Shop.where(:slack_channel.in => channel_names).first
     all_shops = params["text"].to_s.split(/\s+/)[1].to_s.casecmp("all").zero? || channel_shop.nil?
     checkouts = ToolCheckout.where(member_id: member.id, revoked_at: nil).to_a
     checkouts.select! { |checkout| checkout.tool&.shop_id.to_s == channel_shop.id.to_s } unless all_shops

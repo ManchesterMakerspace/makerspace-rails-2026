@@ -9,6 +9,8 @@ RSpec.describe SlackCheckoutRequestJob do
 
   before do
     allow(::Service::SlackConnector).to receive(:send_slack_message)
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
 
     http = instance_double(Net::HTTP)
     allow(Net::HTTP).to receive(:new).and_return(http)
@@ -18,8 +20,14 @@ RSpec.describe SlackCheckoutRequestJob do
     end
   end
 
-  def perform(tool_name, channel_name: shop.slack_channel)
-    described_class.perform_now('response_url' => 'https://example.test/response', 'user_id' => 'U123', 'tool_name' => tool_name, 'channel_name' => channel_name)
+  def perform(tool_name, channel_name: shop.slack_channel, channel_id: nil)
+    described_class.perform_now(
+      'response_url' => 'https://example.test/response',
+      'user_id' => 'U123',
+      'tool_name' => tool_name,
+      'channel_name' => channel_name,
+      'channel_id' => channel_id
+    )
   end
 
   it 'rejects open tools without creating requests' do
@@ -55,6 +63,23 @@ RSpec.describe SlackCheckoutRequestJob do
       perform(tool.name)
     }.not_to change { ToolCheckoutRequest.count }
     expect(posted_bodies.last['text']).to include('checkout record already exists')
+  end
+
+  it 'rejects a tool with a revoked target checkout' do
+    create(:tool_checkout, member: member, tool: tool, revoked_at: Time.current)
+
+    expect {
+      perform(tool.name)
+    }.not_to change { ToolCheckoutRequest.count }
+    expect(posted_bodies.last['text']).to include('checkout record already exists')
+  end
+
+  it 'resolves a shop configured with a Slack channel ID' do
+    shop.update!(slack_channel: 'C12345678')
+
+    expect {
+      perform(tool.name, channel_name: 'woodshop', channel_id: 'C12345678')
+    }.to change { ToolCheckoutRequest.count }.by(1)
   end
 
   it 'requires a non-revoked checkout for every prerequisite' do
@@ -104,6 +129,22 @@ RSpec.describe SlackCheckoutRequestJob do
       perform(tool.name)
     }.not_to change { ToolCheckoutRequest.count }
     expect(posted_bodies.last['text']).to include('open request already exists')
+  end
+
+  it 'serializes concurrent request creation for the same member and tool' do
+    allow(REDIS).to receive(:set)
+      .with(
+        "checkout_request_lock/#{member.id}/#{tool.id}",
+        kind_of(String),
+        nx: true,
+        ex: SlackCheckoutRequestJob::REQUEST_LOCK_TTL_SECONDS
+      )
+      .and_return(false)
+
+    expect {
+      perform(tool.name)
+    }.not_to change(ToolCheckoutRequest, :count)
+    expect(posted_bodies.last['text']).to include('already being processed')
   end
 
   it 'rejects a Slack user with no linked Member account' do

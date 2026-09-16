@@ -61,9 +61,7 @@ module Service
 
           active_checkout_members(tool).each do |member|
             marker = checkout_approver?(member, tool) ? ":ballot_box_with_check:" : ":white_check_mark:"
-            slack_id = SlackUser.find_by(member_id: member.id)&.slack_id
-            reference = slack_id.present? ? "![](@#{slack_id})" : escape_markdown(member.fullname)
-            lines << "- #{marker} #{reference}"
+            lines << "- #{marker} #{canvas_member_name(member)}"
           end
         end
 
@@ -147,6 +145,19 @@ module Service
       def checkout_approver?(member, tool)
         member.manages_shop?(tool.shop) ||
           CheckoutApprover.find_by(member_id: member.id)&.can_approve_tool?(tool)
+      end
+
+      def canvas_member_name(member)
+        slack_name = SlackUser.find_by(member_id: member.id)&.name
+        sanitize_member_name(slack_name).presence || sanitize_member_name(member.fullname)
+      end
+
+      def sanitize_member_name(value)
+        value.to_s
+          .gsub(/[^\x00-\x7F]/, "")
+          .gsub(/[\\`*_{}\[\]()#+\-.!|>@]/, "")
+          .gsub(/\s+/, " ")
+          .strip
       end
 
       def escape_markdown(value)
