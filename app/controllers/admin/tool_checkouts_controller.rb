@@ -80,8 +80,12 @@ class Admin::ToolCheckoutsController < ApplicationController
   def update
     # Only allow updating revocation fields
     if update_params[:revoked_at] || update_params[:revocation_reason]
+      was_active = @checkout.revoked_at.nil?
       @checkout.update_attributes!(update_params)
-      @checkout.send_revocation_slack_notification if @checkout.revoked_at.present?
+      if was_active && @checkout.revoked_at.present?
+        @checkout.send_revocation_slack_notification
+        @checkout.send_approver_revocation_slack_notification(current_member)
+      end
     end
     render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
   end
@@ -95,6 +99,14 @@ class Admin::ToolCheckoutsController < ApplicationController
       revocation_reason: reason
     )
     @checkout.send_revocation_slack_notification
+    begin
+      @checkout.send_approver_revocation_slack_notification(current_member)
+    rescue => error
+      ::Service::ErrorReporter.notify(error, context: {
+        phase: 'notify original approver of checkout revocation',
+        checkout_id: @checkout.id.to_s
+      })
+    end
     @checkout.remove_member_from_users_channel
 
     ::Service::AuditLogger.log(

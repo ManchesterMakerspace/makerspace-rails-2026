@@ -4,6 +4,7 @@ class SlackCheckoutJob < ApplicationJob
   def perform(params)
     response_url     = params['response_url']
     channel_name     = params['channel_name']
+    channel_id       = params['channel_id']
     text             = params['text'].to_s.strip
     invoker_slack_id = params['user_id']
 
@@ -44,7 +45,12 @@ class SlackCheckoutJob < ApplicationJob
         return
       end
  
-      shop = Shop.find_by(slack_channel: Service::SlackChannelCache.normalize_name(channel_name) ) || Shop.find_by(slack_channel: channel_name)
+      channel_names = [
+        channel_id,
+        channel_name,
+        Service::SlackChannelCache.normalize_name(channel_name)
+      ].compact_blank.uniq
+      shop = Shop.where(:slack_channel.in => channel_names).first
       unless shop
         Service::ErrorReporter.notify('Slack checkout failed: shop not found for channel', context: {
           reason:           "No Shop record found with slack_channel matching '#{channel_name}'",
@@ -52,7 +58,8 @@ class SlackCheckoutJob < ApplicationJob
           invoker_slack_id: invoker_slack_id,
           member_token:     member_token,
           member_slack_id:  member_slack_id,
-          channel_name:     channel_name
+          channel_name:     channel_name,
+          channel_id:       channel_id
         })
         post_response(response_url, :ephemeral, "No shop is configured for ##{channel_name}. Please use the portal or run /checkout from a shop channel.")
         return

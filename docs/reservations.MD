@@ -470,6 +470,10 @@ grants the configured shop channel read access, and saves the returned canvas
 ID as `canvas_today` or `canvas_tomorrow` on the shop. Subsequent refreshes
 replace the agenda with the day's pending, unpaid, and approved reservations. Cancelled
 and denied reservations are removed because they do not consume capacity.
+When a separately selected tool is marked out of service or restored, any
+today/tomorrow agenda containing an active reservation for that tool is also
+refreshed. Out-of-service tools are labeled **OUT OF SERVICE** in the
+reservation's Resources cell so shop operators can identify unsafe bookings.
 
 Slack does not automatically add these read-only canvases to the shop channel
 header. A channel manager must manually add each canvas to the header using the
@@ -483,7 +487,9 @@ in the shop, its description and wiki link, enabled checkout prerequisites,
 and active, unexpired members with a current checkout. Checkout approvers and
 Resource Managers for the shop are distinguished from other checked-out
 members. Each checked-out member is rendered as a separate bulleted-list item
-so Slack preserves one member per line.
+so Slack preserves one member per line. Linked members are displayed as plain,
+ASCII-only sanitized Slack usernames rather than Slack mention markup; members
+without a stored Slack username fall back to their sanitized portal name.
 
 Like reservation canvases, Slack does **not** automatically make a newly
 created checkout canvas visible in the shop channel header. After the shop's

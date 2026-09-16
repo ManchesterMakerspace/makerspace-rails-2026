@@ -33,6 +33,7 @@ class Tool
   before_validation :normalize_external_fields
   after_save :warm_changed_slack_channel_cache
   after_save :enqueue_checkout_canvas_sync_after_catalog_change
+  after_update :enqueue_reservation_canvas_sync_after_availability_change
   after_destroy :enqueue_checkout_canvas_sync_after_destroy
 
   validates :name, presence: true
@@ -60,12 +61,7 @@ class Tool
   end
 
   def checkout_request_error(member)
-    return "No checkout required" if open
-    eligible = member.status == "pending" ? allow_pending : (member.status == "activeMember" && member.active_unexpired?)
-    return "Your membership must first be activated and you must complete your Orientation checkout before requesting this Safety Checkout" unless eligible
-    return "A checkout record already exists for this tool" if ToolCheckout.where(member_id: member.id, tool_id: id).exists?
-    return "An open request already exists for this tool" if ToolCheckoutRequest.where(member_id: member.id, tool_id: id, status: "open").exists?
-    nil
+    ToolCheckoutRequestEligibility.new(member: member, tool: self).error
   end
 
   def disabled
@@ -127,6 +123,12 @@ class Tool
 
   def enqueue_checkout_canvas_sync_after_destroy
     enqueue_checkout_canvas_syncs([shop_id])
+  end
+
+  def enqueue_reservation_canvas_sync_after_availability_change
+    return unless previous_changes.key?("disabled")
+
+    ToolAvailabilityService.enqueue_reservation_canvas_refreshes(self)
   end
 
   def enqueue_checkout_canvas_syncs(shop_ids)

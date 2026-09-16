@@ -15,6 +15,39 @@ production credentials available. Examples below use:
 RAILS_ENV=production bundle exec rake TASK_NAME
 ```
 
+`SlackCheckoutRequestJob` handles named `/checkout request` commands and
+resolves shops from either the Slack channel ID or normalized channel name. It uses
+an exact, case-insensitive tool-name match so similarly named tools cannot be
+selected ambiguously, then applies the same checkout-request eligibility service
+as the Member Portal and Slack
+modal, and rechecks tool/shop availability, membership, prerequisites, existing
+checkouts, and open requests immediately before creating a request. Creation is
+serialized per member and tool so concurrent Slack deliveries cannot announce
+duplicate open requests.
+`SlackCheckoutJob` handles approver-driven `/checkout MEMBER TOOL` commands and
+also resolves the current shop from either the Slack channel ID or normalized
+channel name before creating the checkout.
+`SlackCheckoutActiveJob` handles `/checkout active [all]` by returning
+ephemeral, alphabetized checkout tables scoped to the current shop or grouped
+across every shop where the caller has an active checkout. Current-shop scope
+resolves either the Slack channel ID or the normalized channel name from the
+slash-command payload, matching both supported shop-channel configurations.
+
+`ToolCheckoutSlackCanvasSyncJob` incrementally updates an extant shop checkout
+canvas when one member's checkout is added or revoked. It locates the affected
+Canvas section with `canvases.sections.lookup`, applies the member and last-updated
+timestamp changes with `canvases.edit`, and falls back to rebuilding the complete
+canvas if an incremental lookup or edit fails. Ambiguous member-section matches
+also trigger a rebuild rather than deleting a checkout from the wrong tool, and
+incremental additions omit inactive or expired members just as full rebuilds do.
+Calls that do not identify one
+checkout continue to perform a complete canvas rebuild.
+
+Changing a tool's out-of-service (`disabled`) state enqueues
+`ReservationSlackCanvasSyncJob` for today and/or tomorrow when an active
+individual-tool reservation overlaps those dates. This keeps operational
+reservation canvases synchronized with tool outages and restorations.
+
 The admin endpoint **enqueues** an Active Job and returns before it completes.
 Its `key` parameter is the value in the **Admin key** column below. The
 application must have a working Active Job queue consumer for those requests.

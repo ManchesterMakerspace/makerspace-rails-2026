@@ -58,6 +58,29 @@ class ToolCheckout
     ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
   end
 
+  # Tell the original approver when another currently-authorized approver
+  # revokes their approval. Ordinary recipients see only the revoker's role;
+  # board/admin recipients may also see the revoker's name.
+  def send_approver_revocation_slack_notification(revoked_by)
+    original_approver = approved_by
+    return if original_approver.nil? || revoked_by.nil? || original_approver.id == revoked_by.id
+    return unless currently_approves_tool?(original_approver)
+
+    slack_user = SlackUser.find_by(member_id: original_approver.id)
+    return if slack_user.nil? || original_approver.direct_notifications_suppressed?
+
+    checked_out_member_slack_id = SlackUser.find_by(member_id: member_id)&.slack_id
+    checked_out_member = checked_out_member_slack_id.present? ? "<@#{checked_out_member_slack_id}>" : member.fullname
+    revoker = revoker_description(revoked_by)
+    if original_approver.role.in?(%w[admin board_member])
+      revoker += " (#{revoked_by.fullname})"
+    end
+    date = checked_out_at&.to_date&.iso8601 || "an unknown date"
+    message = "Your approval of checkout in *#{tool.shop&.name}* for *#{tool.name}* on #{date} " \
+      "for member #{checked_out_member} has been revoked by #{revoker}."
+    ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
+  end
+
   def announce_checkout_success
     request = ToolCheckoutRequest.where(
       member_id: member_id,
@@ -122,12 +145,29 @@ class ToolCheckout
 
   private
 
+  def currently_approves_tool?(approver)
+    approver.role.in?(%w[admin board_member]) || approver.manages_shop?(tool.shop_id) ||
+      (!tool.disabled? && approver.valid_for_checkout_request? &&
+        CheckoutApprover.find_by(member_id: approver.id)&.can_approve_tool?(tool))
+  end
+
+  def revoker_description(revoked_by)
+    return "an admin" if revoked_by.role == "admin"
+    return "a board member" if revoked_by.role == "board_member"
+    return "an RM" if revoked_by.manages_shop?(tool.shop_id)
+
+    "a checkout approver"
+  end
+
   def enqueue_checkout_canvas_sync
-    ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s)
+    ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s, id.to_s, "add")
   end
 
   def enqueue_checkout_canvas_sync_after_revocation
-    enqueue_checkout_canvas_sync if previous_changes.key?("revoked_at")
+    return unless previous_changes.key?("revoked_at")
+
+    action = revoked_at.present? ? "remove" : "add"
+    ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s, id.to_s, action)
   end
 
   def close_open_request

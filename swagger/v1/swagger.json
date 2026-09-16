@@ -5476,6 +5476,359 @@
           }
         }
       }
+    },
+    "/slack/commands/checkout": {
+      "post": {
+        "summary": "Handles the Slack checkout slash command",
+        "servers": [
+          {
+            "url": "/",
+            "description": "Application root"
+          }
+        ],
+        "tags": [
+          "SlackCommands"
+        ],
+        "operationId": "slackCheckoutCommand",
+        "parameters": [
+          {
+            "name": "X-Slack-Signature",
+            "in": "header",
+            "required": true,
+            "description": "Slack v0 request signature",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Slack-Request-Timestamp",
+            "in": "header",
+            "required": true,
+            "description": "Unix timestamp covered by the Slack signature",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "command accepted with an ephemeral acknowledgement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "response_type": {
+                      "type": "string",
+                      "enum": [
+                        "ephemeral"
+                      ]
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "response_type",
+                    "text"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Slack signature is missing, invalid, or stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "example": "/checkout"
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "Checkout command text: MEMBER TOOL, request [TOOL], or active [all]"
+                  },
+                  "channel_id": {
+                    "type": "string"
+                  },
+                  "channel_name": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "user_name": {
+                    "type": "string"
+                  },
+                  "trigger_id": {
+                    "type": "string"
+                  },
+                  "response_url": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "text",
+                  "channel_id",
+                  "channel_name",
+                  "user_id",
+                  "response_url"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_checkout_requests": {
+      "post": {
+        "summary": "Requests a safety checkout",
+        "tags": [
+          "ToolCheckoutRequests"
+        ],
+        "operationId": "createToolCheckoutRequest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "checkout request created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "memberName": {
+                      "type": "string"
+                    },
+                    "memberEmail": {
+                      "type": "string"
+                    },
+                    "memberStatus": {
+                      "type": "string"
+                    },
+                    "toolId": {
+                      "type": "string"
+                    },
+                    "toolName": {
+                      "type": "string"
+                    },
+                    "shopId": {
+                      "type": "string"
+                    },
+                    "shopName": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "requestDate": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "checkedOutId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "memberSlackUrl": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "memberId",
+                    "memberName",
+                    "memberEmail",
+                    "memberStatus",
+                    "toolId",
+                    "toolName",
+                    "shopId",
+                    "shopName",
+                    "note",
+                    "requestDate",
+                    "status",
+                    "messageId",
+                    "checkedOutId",
+                    "memberSlackUrl"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "tool is not eligible, prerequisites are unmet, or a record/request exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "membership is not eligible to request a checkout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tool_id": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "tool_id"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tool_checkouts/{id}": {
+      "delete": {
+        "summary": "Revokes a tool checkout",
+        "tags": [
+          "AdminToolCheckouts"
+        ],
+        "operationId": "revokeAdminToolCheckout",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Tool checkout ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "checkout revoked even when the best-effort approver notification fails",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "toolId": {
+                      "type": "string"
+                    },
+                    "checkedOutAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "revokedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "revocationReason": {
+                      "type": "string"
+                    },
+                    "approvedById": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "active": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "memberId",
+                    "toolId",
+                    "checkedOutAt",
+                    "revokedAt",
+                    "revocationReason",
+                    "active"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "revocation reason is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revocation_reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "revocation_reason"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

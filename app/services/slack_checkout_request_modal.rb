@@ -47,5 +47,9 @@ class SlackCheckoutRequestModal
     def plain(text)
       { type: "plain_text", text: text, emoji: true }
     end
+
+    def option(tool)
+      { text: plain(tool.name.to_s.first(75)), value: tool.id.to_s }
+    end
   end
 end
