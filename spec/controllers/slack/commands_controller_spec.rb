@@ -76,35 +76,41 @@ RSpec.describe Slack::CommandsController, type: :controller do
   end
 
   describe "#checkout" do
+    let!(:shop) { create(:shop, slack_channel: "woodshop") }
+    let!(:tool) { create(:tool, shop: shop, open: false) }
+    let!(:member) { create(:member, :current) }
+    let!(:slack_user) { SlackUser.create!(member: member, slack_id: "U123") }
+
     before do
       allow(ENV).to receive(:[]).and_call_original
       allow(ENV).to receive(:[]).with('SLACK_SIGNING_SECRET').and_return(secret)
     end
 
-    it "routes '/checkout request' (no tool) to SlackCheckoutRequestJob with no tool_name" do
-      sign_request!({ text: 'request' })
-      expect(SlackCheckoutRequestJob).to receive(:perform_later).with(hash_including('tool_name' => nil))
+    it "opens the self-service modal synchronously for an ordinary member's bare command" do
+      sign_request!({ text: '', user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" })
+      expect(Service::SlackConnector).to receive(:open_modal).with("trigger", hash_including(callback_id: "checkout_request_submit"))
 
-      post :checkout, params: { text: 'request' }
+      post :checkout, params: { text: '', user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" }
 
       expect(response).to have_http_status(200)
     end
 
-    it "routes '/checkout request <tool>' to SlackCheckoutRequestJob with the tool name" do
-      sign_request!({ text: 'request Bandsaw' })
-      expect(SlackCheckoutRequestJob).to receive(:perform_later).with(hash_including('tool_name' => 'Bandsaw'))
+    it "opens the modal for an approver who explicitly uses '/checkout request'" do
+      create(:checkout_approver, member: member, shop_ids: [shop.id])
+      sign_request!({ text: 'request', user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" })
+      expect(Service::SlackConnector).to receive(:open_modal)
 
-      post :checkout, params: { text: 'request Bandsaw' }
+      post :checkout, params: { text: 'request', user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" }
 
       expect(response).to have_http_status(200)
     end
 
     it "still routes a plain '/checkout @member tool' to SlackCheckoutJob" do
-      sign_request!({ text: '@someone Bandsaw' })
+      sign_request!({ text: '@someone Bandsaw', user_id: "U123", channel_name: "woodshop" })
       expect(SlackCheckoutJob).to receive(:perform_later)
       expect(SlackCheckoutRequestJob).not_to receive(:perform_later)
 
-      post :checkout, params: { text: '@someone Bandsaw' }
+      post :checkout, params: { text: '@someone Bandsaw', user_id: "U123", channel_name: "woodshop" }
 
       expect(response).to have_http_status(200)
     end
