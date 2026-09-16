@@ -164,7 +164,24 @@ RSpec.describe 'Fix tickets', type: :request do
           end
           run_test!(requires_transactions: true)
         end
-        response '403', 'Caller lacks this action capability' do; schema '$ref' => '#/components/schemas/FixError'; end
+        response '403', 'Caller lacks this action capability; reporters cannot publish their own bounty' do
+          schema '$ref' => '#/components/schemas/FixError'
+          if action == :bounty
+            let(:body) { { title: 'Repair', description: 'Fix switch', credit_value: 1 } }
+            %w[admin board_member resource_manager].each do |role|
+              context "reporter with #{role} privileges" do
+                let(:shop) { create(:shop) }
+                let(:member) { create(:member, :current, role: role, resource_manager_shop_ids: [shop.id.to_s]) }
+                let(:id) { create(:fix_ticket, reporter_id: member.id, shop_id: shop.id).id.to_s }
+                run_test!(requires_transactions: true) do
+                  expect(FixTicket.find(id).bounty_id).to be_nil
+                  expect(VolunteerTask.count).to eq(0)
+                  expect(FixTicketPolicy.new(member, FixTicket.find(id)).capabilities[:canCreateBounty]).to be(false)
+                end
+              end
+            end
+          end
+        end
         response '422', 'Validation, cap, revision, or lifecycle conflict' do
           schema '$ref' => '#/components/schemas/FixError'
           if action == :reward
@@ -286,7 +303,7 @@ RSpec.describe 'Fix tickets', type: :request do
       response '403', 'A claimed or pending ticket bounty must be released or rejected before cancellation' do
         let(:member) { create(:member, :admin, :current) }
         let(:id) do
-          ticket = FixTicketService.create!(actor: member, attributes: { title: 'Repair', description: 'Broken', category: 'broken', submission_key: SecureRandom.uuid })
+          ticket = FixTicketService.create!(actor: create(:member, :current), attributes: { title: 'Repair', description: 'Broken', category: 'broken', submission_key: SecureRandom.uuid })
           FixTicketService.bounty!(id: ticket.id, actor: member, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
           task = ticket.reload.bounty
           task.update!(status: 'claimed', claimed_by_id: member.id)

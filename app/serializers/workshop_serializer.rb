@@ -101,6 +101,8 @@ class WorkshopSerializer < ActiveModel::Serializer
         next if hidden_or_missing_prerequisite
       end
 
+      visibility = VolunteerTaskVisibility.new(task, viewer)
+      visible_names = visibility.prerequisite_tools.index_by { |tool| tool.id.to_s }
       eligible = task.eligible_for?(viewer)
       {
         id: task.id.to_s,
@@ -109,9 +111,9 @@ class WorkshopSerializer < ActiveModel::Serializer
         description: task.description,
         creditValue: task.credit_value,
         status: task.status,
-        prerequisiteToolNames: task.prerequisite_tools.map(&:name),
+        prerequisiteToolNames: visible_names.values.map(&:name),
         missingPrerequisiteToolNames: missing_ids.map do |tool_id|
-          missing_by_id[tool_id]&.name || "Unavailable tool"
+          visible_names[tool_id]&.name || "Unavailable tool"
         end,
         eligible: eligible
       }

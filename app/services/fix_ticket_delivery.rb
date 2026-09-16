@@ -1,4 +1,5 @@
 class FixTicketDelivery
+  REFERENCE_FIELDS = %w[shop_id tool_id].freeze
   CENTRAL_FIELDS = %w[status confirmation assignees announcement_note].freeze
   class << self
     def client
@@ -26,13 +27,14 @@ class FixTicketDelivery
         publish(event, 'unscoped-staff', Service::SlackConnector.resolved_channel_id(channel), text)
       end
       central = SystemConfig.slack_tickets_channel
-      if central.present? && event.central_enabled && (%w[created assigned note bounty].include?(event.kind) || (event.kind == 'updated' && (event.note.present? || (event.field_changes.keys & CENTRAL_FIELDS).any?)))
+      if central.present? && event.central_enabled && (%w[created assigned note bounty].include?(event.kind) || (event.kind == 'updated' && (event.note.present? || (event.field_changes.keys & (CENTRAL_FIELDS + REFERENCE_FIELDS)).any?)))
         channel = Service::SlackConnector.resolved_channel_id(central)
         team = ENV['SLACK_TEAM_ID'].presence || Service::SlackConnector.slack_team_id.to_s
         root = root!(ticket, event, channel, team)
-        publish(event, 'central', ticket.slack_ticket_channel_id, text, thread_ts: root, broadcast: event.kind == 'bounty', namespace: team) unless event.kind == 'created'
+        central_text = (event.field_changes.keys & REFERENCE_FIELDS).any? ? "#{text}\n#{summary(ticket)}" : text
+        publish(event, 'central', ticket.slack_ticket_channel_id, central_text, thread_ts: root, broadcast: event.kind == 'bounty', namespace: team) unless event.kind == 'created'
       end
-      if ticket.announce_to_slack && (event.kind == 'created' || (event.field_changes.keys & %w[title status confirmation announcement_note announce_to_slack]).any?)
+      if ticket.announce_to_slack && (event.kind == 'created' || (event.field_changes.keys & %w[title status confirmation announcement_note announce_to_slack shop_id tool_id]).any?)
         channel = ticket.tool&.announce_channel.presence || ticket.tool&.users_channel.presence || ticket.shop&.slack_channel.presence
         # Optional shop announcements must not block participant DMs or later events.
         if channel

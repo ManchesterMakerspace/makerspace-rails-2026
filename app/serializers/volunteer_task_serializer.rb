@@ -1,4 +1,8 @@
 class VolunteerTaskSerializer < ActiveModel::Serializer
+  def visibility = @visibility ||= VolunteerTaskVisibility.new(object, scope)
+  def shop_id = visibility.shop&.id
+  def prerequisite_tool_ids = visibility.prerequisite_tools.map { |tool| tool.id.to_s }
+  def created_by_id = visibility.creator_id
   def ticket_id = object.ticket_id&.to_s
   attributes :id,
              :ticket_id,
@@ -22,13 +26,13 @@ class VolunteerTaskSerializer < ActiveModel::Serializer
              :updated_at
 
   attribute :shop_name do
-    object.shop&.name
+    visibility.shop&.name
   rescue
     nil
   end
 
   attribute :prerequisite_tool_names do
-    object.prerequisite_tools.map(&:name)
+    visibility.prerequisite_tools.map(&:name)
   rescue
     []
   end
@@ -40,7 +44,7 @@ class VolunteerTaskSerializer < ActiveModel::Serializer
   end
 
   attribute :created_by_name do
-    object.created_by&.fullname
+    Member.where(id: created_by_id).first&.fullname if created_by_id
   rescue
     nil
   end

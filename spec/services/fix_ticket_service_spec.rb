@@ -375,7 +375,7 @@ RSpec.describe FixTicketService, requires_transactions: true do
   end
   it 'forbids reporter claims even for an admin and preserves active claimants in staff assignment edits' do
     ticket = report(admin)
-    described_class.bounty!(id: ticket.id, actor: admin, attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
+    described_class.bounty!(id: ticket.id, actor: member(role: 'admin'), attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
     task = ticket.reload.bounty
     expect { task.claim!(admin) }.to raise_error(Error::Forbidden, /reporter cannot claim/)
     expect(task.reload.status).to eq('available')

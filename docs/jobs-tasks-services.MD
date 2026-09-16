@@ -242,3 +242,12 @@ Checkout canvas catalog synchronization includes out_of_service changes. Visible
 `SlackVolunteerJob` filters personalized bounty listings through `VolunteerTask#eligible_for?` for every role, before the 15-task limit. Linked-ticket reporter and prerequisite restrictions apply; ordinary-task privileged exemptions remain.
 
 Repair-ticket delivery skips missing optional shop destinations, and scopes central reply receipts to the current Slack thread so recovery can republish pending events after root deletion.
+
+### Volunteer task and repair-ticket visibility
+
+Volunteer task Slack listings and claim-error messages apply the viewer's catalog
+visibility; shared volunteer canvases omit hidden task prerequisite names. Hidden-shop
+canvases use a generic header and rename existing titles on refresh.
+Stored prerequisites continue to govern eligibility. Repair-ticket announcements
+also run when shop or tool references change, selecting the current tool/shop
+channel and retaining per-event delivery receipts to prevent duplicate sends.

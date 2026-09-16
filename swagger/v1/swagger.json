@@ -3595,7 +3595,8 @@
           },
           "shopId": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Hidden shops are redacted unless the viewer manages them."
           },
           "shopName": {
             "type": "string",
@@ -3608,7 +3609,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Only catalog-visible prerequisite IDs and matching names are returned; all stored prerequisites still gate claims."
           },
           "prerequisiteToolNames": {
             "type": "array",
@@ -3626,7 +3628,8 @@
           },
           "createdById": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Redacted with createdByName when the linked ticket reporter created a legacy bounty."
           },
           "createdByName": {
             "type": "string",
@@ -3731,7 +3734,8 @@
           },
           "shopId": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Hidden shops are redacted unless the viewer manages them."
           },
           "shopName": {
             "type": "string",
@@ -3744,7 +3748,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Only catalog-visible prerequisite IDs and matching names are returned; all stored prerequisites still gate claims."
           },
           "prerequisiteToolNames": {
             "type": "array",
@@ -3762,7 +3767,8 @@
           },
           "createdById": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Redacted with createdByName when the linked ticket reporter created a legacy bounty."
           },
           "createdByName": {
             "type": "string",
@@ -6127,6 +6133,199 @@
         }
       }
     },
+    "/volunteer/bounties.{format}": {
+      "parameters": [
+        {
+          "name": "format",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "json",
+              "xml"
+            ]
+          }
+        }
+      ],
+      "get": {
+        "summary": "Public bounty feed with hidden catalog references redacted",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [],
+        "description": "Hidden shop names and prerequisite tools (including tools inside hidden shops) are omitted. Shop filtering only matches visible shop names. An optional deployment-configured feed token may be required.",
+        "parameters": [
+          {
+            "name": "shop",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public claimable bounty projections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "title",
+                      "shop_name",
+                      "prerequisite_tools"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "shop_name": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "prerequisite_tools": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "title",
+                      "shop_name",
+                      "prerequisite_tools"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "shop_name": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "prerequisite_tools": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/volunteer/tasks/{id}/detail": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Authenticated bounty detail including optional source ticket_id",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current member or authorized source-ticket viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixBountyDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A signed-in member session is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed task ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Non-current members must be authorized to read the source ticket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/checkout_approvers": {
       "get": {
         "summary": "List checkout approvers including per-tool availability",
@@ -7476,6 +7675,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Caller lacks this action capability; reporters cannot publish their own bounty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -7835,81 +8044,6 @@
                   "out_of_service": {
                     "type": "boolean"
                   }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/volunteer/tasks/{id}/detail": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "get": {
-        "summary": "Authenticated bounty detail including optional source ticket_id",
-        "tags": [
-          "Volunteer"
-        ],
-        "security": [
-          {
-            "sessionAuth": []
-          }
-        ],
-        "responses": {
-          "401": {
-            "description": "A signed-in member session is required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FixError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed task ID",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FixError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Task does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FixError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Non-current members must be authorized to read the source ticket",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FixError"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Current member or authorized source-ticket viewer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FixBountyDetail"
                 }
               }
             }

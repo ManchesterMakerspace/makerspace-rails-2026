@@ -54,6 +54,16 @@ RSpec.describe Service::SlackConnector do
     expect(client).to have_received(:canvases_create).twice
   end
 
+  it "renames an existing canvas using an encoded title operation" do
+    expect(client).to receive(:canvases_edit) do |arguments|
+      expect(arguments[:canvas_id]).to eq('F123')
+      expect(JSON.parse(arguments[:changes])).to eq([
+        { 'operation' => 'rename', 'title_content' => { 'type' => 'markdown', 'markdown' => 'Volunteer opportunities' } }
+      ])
+    end
+    described_class.rename_canvas('F123', 'Volunteer opportunities')
+  end
+
   it "replaces the entire canvas with the rendered agenda" do
     expect(client).to receive(:canvases_edit) do |arguments|
       expect(arguments[:canvas_id]).to eq("F123")

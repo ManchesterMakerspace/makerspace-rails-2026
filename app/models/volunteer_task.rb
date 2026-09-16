@@ -152,9 +152,9 @@ class VolunteerTask
   end
 
   def missing_prerequisite_tool_names(member)
-    tools_by_id = missing_prerequisite_tools(member).index_by { |tool| tool.id.to_s }
+    tools_by_id = VolunteerTaskVisibility.new(self, member).prerequisite_tools.index_by { |tool| tool.id.to_s }
     missing_prerequisite_tool_ids(member).map do |tool_id|
-      tools_by_id[tool_id]&.name || "Unavailable tool (#{tool_id})"
+      tools_by_id[tool_id]&.name || "Unavailable tool"
     end
   end
 

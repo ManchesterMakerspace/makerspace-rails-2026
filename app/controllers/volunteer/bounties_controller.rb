@@ -39,6 +39,7 @@ class Volunteer::BountiesController < ApplicationController
     # Show parent-level claimable tasks only; exclude cooling-down recurring tasks
     # and child documents spawned from multi-use claims.
     filtered_tasks.map do |t|
+      visibility = VolunteerTaskVisibility.new(t)
       {
         id:           t.id.to_s,
         task_number:  t.task_number,
@@ -46,8 +47,8 @@ class Volunteer::BountiesController < ApplicationController
         description:  t.description,
         credit_value: t.credit_value,
         status:       t.status,
-        shop_name:    (t.shop&.name rescue nil),
-        prerequisite_tools: t.prerequisite_tools.map(&:name),
+        shop_name:    (visibility.shop&.name rescue nil),
+        prerequisite_tools: visibility.prerequisite_tools.map(&:name),
         claimed_at:   t.claimed_at,
         next_available: t.next_available
       }
@@ -61,7 +62,7 @@ class Volunteer::BountiesController < ApplicationController
 
     needle = requested_shop.downcase
     tasks.to_a.select do |task|
-      shop_name = task.shop&.name.to_s
+      shop_name = VolunteerTaskVisibility.new(task).shop&.name.to_s
       shop_name.present? && shop_name.downcase.include?(needle)
     rescue Mongoid::Errors::DocumentNotFound
       false

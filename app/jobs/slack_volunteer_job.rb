@@ -126,7 +126,8 @@ class SlackVolunteerJob < ApplicationJob
         else ''
       end
       lines << "• *#{t.title}* (#{credit_label}#{type_hint}) — `#{t.display_number}`\n  #{t.description}"
-      lines << "  Shop: #{t.shop.name}" if t.shop_id.present? && t.shop
+      visible_shop = VolunteerTaskVisibility.new(t, invoker).shop
+      lines << "  Shop: #{visible_shop.name}" if visible_shop
     end
     lines << "\nUse `/volunteer claim <task#>` to claim one."
 

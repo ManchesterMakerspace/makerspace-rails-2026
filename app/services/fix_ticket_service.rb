@@ -254,7 +254,7 @@ class FixTicketService
     end
     def bounty!(id:, actor:, attributes:)
       mutate!(id: id, actor: actor) do |ticket, policy, member|
-        raise Error::Forbidden.new unless policy.bounty? && ticket.active?
+        raise Error::Forbidden.new unless policy.bounty? && !policy.reporter? && ticket.active?
         next unless policy.bounty_replaceable?
         previous_bounty_id = ticket.bounty_id
         attrs = attributes.to_h.symbolize_keys.slice(:title, :description, :credit_value, :prerequisite_tool_ids)

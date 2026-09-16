@@ -41,6 +41,29 @@ RSpec.describe FixTicketDelivery do
     expect(event.reload.completed_at).to be_present
   end
 
+  %w[shop_id tool_id].each do |field|
+    it "announces #{field} changes to the current destination exactly once" do
+      shop = create(:shop, slack_channel: 'C2222222222')
+      tool = create(:tool, shop: shop, announce_channel: 'C3333333333') if field == 'tool_id'
+      ticket.set(shop_id: shop.id, tool_id: tool&.id, announce_to_slack: true)
+      event.set(kind: 'updated', note: nil, central_enabled: false,
+        field_changes: { field => [BSON::ObjectId.new, tool&.id || shop.id] })
+      destination = tool ? 'C3333333333' : 'C2222222222'
+      expect(client).to receive(:chat_postMessage).with(hash_including(channel: destination, text: include("Ticket ##{ticket.id}", shop.name))).once.and_return('ts' => '100.001', 'channel' => destination)
+      2.times { described_class.call(ticket.reload, event.reload) }
+    end
+  end
+
+  it 'delivers reference changes when the new shop destination is also the central channel' do
+    shop = create(:shop, slack_channel: 'C1234567890')
+    ticket.set(shop_id: shop.id, announce_to_slack: true, slack_ticket_ts: '100.000',
+      slack_ticket_channel_id: 'C1234567890', slack_ticket_team_id: 'T_TEST')
+    event.set(kind: 'updated', note: nil, field_changes: { 'shop_id' => [nil, shop.id] })
+    allow(client).to receive(:chat_getPermalink).and_return({})
+    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'C1234567890', thread_ts: '100.000', text: include(shop.name))).once.and_return('ts' => '100.001', 'channel' => 'C1234567890')
+    described_class.call(ticket.reload, event)
+  end
+
   it 'skips a missing optional shop destination and still delivers recipient DMs' do
     allow(Service::MemberProvisioning).to receive(:invite_slack)
     reporter.save!

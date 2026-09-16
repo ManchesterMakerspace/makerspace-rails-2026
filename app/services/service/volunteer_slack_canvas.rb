@@ -88,7 +88,7 @@ module Service
       end
 
       def create_and_cache_canvas!(shop, channel_id, owner_ids)
-        title = "Volunteer in #{shop.name}"
+        title = shop.disabled? ? "Volunteer opportunities" : "Volunteer in #{shop.name}"
         stderr_log(
           "create_start shop_id=#{shop.id} slack_channel=#{shop.slack_channel.inspect} " \
           "slack_channel_id=#{channel_id} title=#{title.inspect}"
@@ -133,6 +133,8 @@ module Service
           "write_start shop_id=#{shop.id} canvas_id=#{canvas_id} " \
           "slack_channel=#{shop.slack_channel.inspect} markdown_bytes=#{markdown.bytesize}"
         )
+        # Refresh existing titles too: a shop may have been hidden after creation.
+        Service::SlackConnector.rename_canvas(canvas_id, "Volunteer opportunities") if shop.disabled?
         Service::SlackConnector.replace_canvas(canvas_id, markdown)
         stderr_log(
           "write_success shop_id=#{shop.id} canvas_id=#{canvas_id} " \
@@ -155,7 +157,7 @@ module Service
         end
 
         lines = [
-          "# Volunteer in #{escape_markdown(shop.name)}",
+          shop.disabled? ? "# Volunteer opportunities" : "# Volunteer in #{escape_markdown(shop.name)}",
           "## #{Date.current.strftime('%A, %B %-d, %Y')}",
           "",
           "Claim an opportunity in the member portal or use `/volunteer` in Slack.",
@@ -216,7 +218,7 @@ module Service
       end
 
       def prerequisite_label(record)
-        names = record.prerequisite_tools.map(&:name)
+        names = (record.is_a?(VolunteerTask) ? VolunteerTaskVisibility.new(record).prerequisite_tools : record.prerequisite_tools).map(&:name)
         return if names.empty?
 
         "Requires: #{names.map { |name| escape_markdown(name) }.join(', ')}"

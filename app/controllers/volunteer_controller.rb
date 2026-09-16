@@ -64,7 +64,7 @@ class VolunteerController < AuthenticationController
                          .where(parent_task_id: nil)
                          .order_by(task_number: :asc)
     tasks = tasks.to_a.select { |task| task.eligible_for?(current_member) }
-    render json: tasks, each_serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: tasks, each_serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   end
 
   # GET /api/volunteer/tasks/my_claims
@@ -93,7 +93,7 @@ class VolunteerController < AuthenticationController
                    .sort_by { |t| t.claimed_at || Time.at(0) }
                    .reverse
 
-    render json: all_claims, each_serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: all_claims, each_serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   end
 
   # GET /api/volunteer/events
@@ -124,7 +124,7 @@ class VolunteerController < AuthenticationController
     # For multi-use tasks the return value is the child task document;
     # for standard tasks claim! returns self after updating in place.
     render_target = result.is_a?(VolunteerTask) ? result : task
-    render json: render_target, serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: render_target, serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   rescue Error::AlreadyClaimed
     render json: { error: 'You have already claimed this task' }, status: :unprocessable_content
   rescue Error::CoolingDown
@@ -145,7 +145,7 @@ class VolunteerController < AuthenticationController
       VolunteerCredit.pending_slack_channel
     )
 
-    render json: task, serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: task, serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   rescue Error::Forbidden
     render json: { error: 'You cannot mark this task as complete' }, status: :unprocessable_content
   end
