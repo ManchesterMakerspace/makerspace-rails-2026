@@ -105,6 +105,20 @@ RSpec.describe Slack::CommandsController, type: :controller do
       expect(response).to have_http_status(200)
     end
 
+    it "synchronizes an unknown Slack identity before rejecting the command" do
+      slack_user.destroy
+      sign_request!({ text: '', user_id: "UNEW", channel_name: "woodshop", trigger_id: "trigger" })
+      expect(Service::SlackUserSync).to receive(:sync_single).with("UNEW") do
+        SlackUser.create!(member: member, slack_id: "UNEW")
+        member
+      end
+      expect(Service::SlackConnector).to receive(:open_modal)
+
+      post :checkout, params: { text: '', user_id: "UNEW", channel_name: "woodshop", trigger_id: "trigger" }
+
+      expect(response).to have_http_status(200)
+    end
+
     it "still routes a plain '/checkout @member tool' to SlackCheckoutJob" do
       sign_request!({ text: '@someone Bandsaw', user_id: "U123", channel_name: "woodshop" })
       expect(SlackCheckoutJob).to receive(:perform_later)

@@ -28,6 +28,13 @@ class Slack::CommandsController < ApplicationController
     slack_user = SlackUser.find_by(slack_id: params[:user_id])
     member = slack_user && Member.find_by(id: slack_user.member_id)
     unless member
+      synced_member = Service::SlackUserSync.sync_single(params[:user_id])
+      if synced_member
+        slack_user = SlackUser.find_by(slack_id: params[:user_id])
+        member = slack_user && Member.find_by(id: slack_user.member_id)
+      end
+    end
+    unless member
       return render json: { response_type: "ephemeral", text: "Link your Slack account to a Member Portal account before using /checkout." }
     end
 

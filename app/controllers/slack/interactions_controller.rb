@@ -109,7 +109,15 @@ class Slack::InteractionsController < ApplicationController
     end
 
     checkout_request.announce_request
-    Service::SlackConnector.send_slack_message(checkout_confirmation(shop), slack_user.slack_id)
+    begin
+      Service::SlackConnector.send_slack_message(checkout_confirmation(shop), slack_user.slack_id)
+    rescue => error
+      Service::ErrorReporter.notify(error, context: {
+        phase: "Slack checkout request confirmation",
+        checkout_request_id: checkout_request.id.to_s,
+        slack_user_id: slack_user.slack_id
+      })
+    end
     render json: { response_action: "clear" }
   rescue JSON::ParserError
     checkout_errors("tool" => "The checkout form expired or is invalid. Please open it again.")

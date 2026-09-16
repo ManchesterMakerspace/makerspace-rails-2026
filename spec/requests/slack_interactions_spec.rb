@@ -66,6 +66,20 @@ RSpec.describe "Slack interactions", type: :request do
       expect(ToolCheckoutRequest.last.member_id).to eq(attacker.id)
     end
 
+    it "clears the modal when confirmation delivery fails after creation" do
+      allow(Service::SlackConnector).to receive(:send_slack_message).and_raise(StandardError, "Slack unavailable")
+      allow(Service::ErrorReporter).to receive(:notify)
+
+      submit
+
+      expect(response.parsed_body).to eq("response_action" => "clear")
+      expect(ToolCheckoutRequest.where(member_id: member.id, tool_id: tool.id, status: "open")).to exist
+      expect(Service::ErrorReporter).to have_received(:notify).with(
+        instance_of(StandardError),
+        context: hash_including(phase: "Slack checkout request confirmation")
+      )
+    end
+
     it "rejects a tool tampered to belong to another shop" do
       other_tool = create(:tool, open: false)
       submit(tool_id: other_tool.id.to_s)
