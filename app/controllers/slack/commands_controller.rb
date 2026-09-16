@@ -38,6 +38,16 @@ class Slack::CommandsController < ApplicationController
       return render json: { response_type: "ephemeral", text: "Link your Slack account to a Member Portal account before using /checkout." }
     end
 
+    unless Service::ShopSlackChannels.associated?(
+      channel_name: params[:channel_name],
+      channel_id: params[:channel_id]
+    )
+      return render json: {
+        response_type: 'ephemeral',
+        text: checkout_shop_channel_instruction
+      }
+    end
+
     if text.split(/\s+/, 2).first&.downcase == 'request'
       return open_checkout_request_modal(shop, member)
     end
@@ -115,10 +125,34 @@ class Slack::CommandsController < ApplicationController
 
   private
 
-  def current_slack_shop
-    channel = Service::SlackChannelCache.normalize_name(params[:channel_name])
-    Shop.find_by(slack_channel: channel) || Shop.find_by(slack_channel: params[:channel_name])
+  def checkout_shop_channel_instruction
+    channels = Service::ShopSlackChannels.resolved
+    introduction = "Checkout requests must start in the appropriate shop channel."
+
+    if channels.empty?
+      return "#{introduction} Please join the public Slack channel for the shop whose tools you use, then run `/checkout` there."
+    end
+
+    channel_list = channels.map do |channel|
+      "• <##{channel.id}> — *#{channel.shop.name}*"
+    end.join("\n")
+
+    "#{introduction}\n\nAvailable shop channels:\n#{channel_list}\n\n" \
+      "Join the appropriate channel, then run `/checkout` there."
+  rescue => error
+    Rails.logger.warn(
+      "[SlackCheckout] shop channel instructions unavailable error=#{error.class}: #{error.message}"
+    )
+    "Checkout requests must start in the appropriate shop channel. " \
+      "Please join the public Slack channel for the shop whose tools you use, then run `/checkout` there."
   end
+
+  # /checkout request [tool-name] -- member self-service, distinct from the
+  # admin/approver-driven `/checkout @member tool-name` above. No arguments
+  # lists eligible tools; a tool name requests a new checkout, or re-sends
+  # the notes DM if the member already has an active checkout on it.
+  def handle_checkout_request(text)
+    tool_name = text.split(/\s+/, 2)[1].to_s.strip.presence
 
   def checkout_approver_for_shop?(member, shop)
     return true if %w[admin board_member].include?(member.role) || member.manages_shop?(shop)
