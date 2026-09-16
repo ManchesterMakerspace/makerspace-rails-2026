@@ -7029,6 +7029,36 @@
               }
             }
           },
+          "401": {
+            "description": "A signed-in member session is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Reporter must be active and authorized to select the catalog resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed submission or open-ticket cap exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixError"
+                }
+              }
+            }
+          },
           "503": {
             "description": "MongoDB topology does not support atomic ticket writes",
             "content": {

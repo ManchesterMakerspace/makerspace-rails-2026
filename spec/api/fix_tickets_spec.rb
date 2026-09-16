@@ -37,6 +37,42 @@ RSpec.describe 'Fix tickets', type: :request do
       }
       let(:submission) { { title: 'Drill', description: 'Failed switch', category: 'broken', submission_key: SecureRandom.uuid } }
       response('200', 'Created, or previously accepted idempotent submission') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test!(requires_transactions: true) }
+      response '401', 'A signed-in member session is required' do
+        schema '$ref' => '#/components/schemas/FixError'
+        before { sign_out member }
+        run_test!
+      end
+      response '403', 'Reporter must be active and authorized to select the catalog resource' do
+        schema '$ref' => '#/components/schemas/FixError'
+        context 'inactive reporter' do
+          before { member.set(expirationTime: 1.day.ago.to_i * 1000) }
+          run_test!(requires_transactions: true)
+        end
+        context 'hidden shop selection by an active reporter' do
+          let(:submission) { super().merge(shop_id: create(:shop, disabled: true).id.to_s) }
+          run_test!(requires_transactions: true)
+        end
+        context 'hidden tool selection by an active reporter' do
+          let(:shop) { create(:shop) }
+          let(:submission) { super().merge(shop_id: shop.id.to_s, tool_id: create(:tool, shop: shop, disabled: true).id.to_s) }
+          run_test!(requires_transactions: true)
+        end
+      end
+      response '422', 'Malformed submission or open-ticket cap exceeded' do
+        schema '$ref' => '#/components/schemas/FixError'
+        context 'malformed submission' do
+          let(:submission) { super().merge(title: '') }
+          run_test!(requires_transactions: true)
+        end
+        context 'open-ticket cap exceeded' do
+          let(:submission) { { title: 'Drill', description: 'Failed switch', category: 'broken', submission_key: SecureRandom.uuid } }
+          before do
+            allow(FixTicketService).to receive(:limit).and_return(1)
+            create(:fix_ticket, reporter_id: member.id)
+          end
+          run_test!(requires_transactions: true) { |response| expect(response.body).to include('open tickets') }
+        end
+      end
       response '503', 'MongoDB topology does not support atomic ticket writes' do
         schema '$ref' => '#/components/schemas/FixError'
         before do
