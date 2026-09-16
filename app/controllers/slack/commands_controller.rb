@@ -20,6 +20,16 @@ class Slack::CommandsController < ApplicationController
   def checkout
     text = params[:text].to_s.strip
 
+    unless Service::ShopSlackChannels.associated?(
+      channel_name: params[:channel_name],
+      channel_id: params[:channel_id]
+    )
+      return render json: {
+        response_type: 'ephemeral',
+        text: checkout_shop_channel_instruction
+      }
+    end
+
     if text.split(/\s+/, 2).first&.downcase == 'request'
       return handle_checkout_request(text)
     end
@@ -94,6 +104,28 @@ class Slack::CommandsController < ApplicationController
   end
 
   private
+
+  def checkout_shop_channel_instruction
+    channels = Service::ShopSlackChannels.resolved
+    introduction = "Checkout requests must start in the appropriate shop channel."
+
+    if channels.empty?
+      return "#{introduction} Please join the public Slack channel for the shop whose tools you use, then run `/checkout` there."
+    end
+
+    channel_list = channels.map do |channel|
+      "• <##{channel.id}> — *#{channel.shop.name}*"
+    end.join("\n")
+
+    "#{introduction}\n\nAvailable shop channels:\n#{channel_list}\n\n" \
+      "Join the appropriate channel, then run `/checkout` there."
+  rescue => error
+    Rails.logger.warn(
+      "[SlackCheckout] shop channel instructions unavailable error=#{error.class}: #{error.message}"
+    )
+    "Checkout requests must start in the appropriate shop channel. " \
+      "Please join the public Slack channel for the shop whose tools you use, then run `/checkout` there."
+  end
 
   # /checkout request [tool-name] -- member self-service, distinct from the
   # admin/approver-driven `/checkout @member tool-name` above. No arguments
