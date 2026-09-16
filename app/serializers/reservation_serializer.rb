@@ -1,4 +1,7 @@
 class ReservationSerializer < ActiveModel::Serializer
+  attribute :out_of_service_tool_names do
+    tools.select(&:out_of_service).map(&:name)
+  end
   attributes :full_day, :id, :title, :member_id, :member_name, :shop_id, :shop_name,
              :reservation_scope, :tool_ids, :tool_names, :start_at, :end_at,
              :status, :approval_reasons, :decision_note, :decided_by_id,
@@ -29,8 +32,10 @@ class ReservationSerializer < ActiveModel::Serializer
   end
 
   def tool_names
-    object.tools.map(&:name)
+    tools.map(&:name)
   end
+
+  def tools = @tools ||= object.tools.to_a
 
   def decided_by_name
     object.decided_by.try(:fullname)

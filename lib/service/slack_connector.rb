@@ -196,6 +196,14 @@ module Service
       end
     end
 
+    def self.rename_canvas(canvas_id, title)
+      with_rate_limit_retry("canvases.edit rename") do
+        client.canvases_edit(canvas_id: canvas_id, changes: JSON.generate([
+          { operation: 'rename', title_content: { type: 'markdown', markdown: title } }
+        ]))
+      end
+    end
+
     def self.replace_canvas(canvas_id, markdown)
       changes = [
         {

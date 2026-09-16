@@ -1,4 +1,7 @@
 class ToolCheckoutSerializer < ActiveModel::Serializer
+  attribute :out_of_service do
+    !!object.tool&.out_of_service
+  end
   attributes :id, :member_id, :tool_id, :checked_out_at, :revoked_at,
              :revocation_reason, :signed_off_via, :approved_by_id
 

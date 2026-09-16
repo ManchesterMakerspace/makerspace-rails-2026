@@ -232,6 +232,19 @@ RSpec.describe 'Tools API', type: :request do
   describe 'POST /api/admin/tools' do
     before { sign_in create(:member, :admin, :current) }
 
+    it 'rejects an exact duplicate and explains the shop conflict' do
+      post '/api/admin/tools', params: { name: visible_tool.name, shop_id: shop.id.to_s }
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include('already exists in this shop')
+      expect(Tool.where(name: visible_tool.name, shop_id: shop.id).count).to eq(1)
+    end
+
+    it 'allows editing the same tool without changing its name' do
+      put "/api/admin/tools/#{visible_tool.id}", params: { name: visible_tool.name, description: 'Updated description' }
+      expect(response).to have_http_status(:ok)
+      expect(visible_tool.reload.description).to eq('Updated description')
+    end
+
     it 'rejects a tool whose name differs only by case from an existing tool in the same shop' do
       post '/api/admin/tools', params: {
         name: 'bandSAW',

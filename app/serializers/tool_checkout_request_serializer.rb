@@ -1,4 +1,5 @@
 class ToolCheckoutRequestSerializer < ActiveModel::Serializer
+  attribute(:out_of_service) { !!object.tool&.out_of_service }
   attributes :id, :member_id, :member_name, :member_email, :member_status, :tool_id, :tool_name,
              :shop_id, :shop_name, :note, :request_date, :status, :message_id,
              :checked_out_id, :member_slack_url

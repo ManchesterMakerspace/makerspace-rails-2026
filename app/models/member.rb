@@ -7,6 +7,8 @@ class Member
   include Service::SlackConnector
   include Publishable
 
+  scope :shop_resource_manager_candidates, -> { where(:role.in => %w[resource_manager admin board_member]) }
+
   # Include default devise modules. Others available are:
   # :confirmable, :lockable and :omniauthable
   devise :database_authenticatable, :registerable,
