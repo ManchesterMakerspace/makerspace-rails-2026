@@ -6,6 +6,17 @@ RSpec.describe ToolAvailabilityService do
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:eval).and_return(1)
   end
+  it 'refreshes both overlapping canvas dates on outage and restoration without cancelling bookings' do
+    travel_to ReservationService::ZONE.local(2026, 9, 16, 12) do
+      tool = create(:tool, shop: create(:shop))
+      actor = build(:member, :admin, :current)
+      booking = create(:reservation, shop: tool.shop, reservation_scope: 'tools', tool_ids: [tool.id.to_s],
+        start_at: ReservationService::ZONE.local(2026, 9, 16, 23), end_at: ReservationService::ZONE.local(2026, 9, 17, 1))
+      expect(ReservationSlackCanvasSyncJob).to receive(:perform_later).with(tool.shop_id.to_s, %w[2026-09-16 2026-09-17]).twice
+      [true, false].each { |value| described_class.set!(tool: tool, actor: actor, value: value) }
+      expect(booking.reload.status).not_to eq('cancelled')
+    end
+  end
   it 'does not allocate ticket numbers for rejected outages' do
     tool = create(:tool, shop: create(:shop))
     expect { described_class.set!(tool: tool, actor: build(:member, :current), value: true) }.to raise_error(Error::Forbidden)

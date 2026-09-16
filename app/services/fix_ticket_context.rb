@@ -10,7 +10,7 @@ class FixTicketContext
     @shops = load(Shop, tickets.map(&:shop_id) + @tools.values.map(&:shop_id) + events.flat_map { |event| Array(event.field_changes['shop_id']) })
     @bounties = load(VolunteerTask, tickets.map(&:bounty_id))
     @rewards = load(VolunteerCredit, tickets.map(&:reward_id))
-    @members = load(Member, tickets.flat_map(&:assignee_ids) + tickets.map(&:closed_by_id) + events.map(&:actor_id))
+    @members = load(Member, tickets.flat_map(&:assignee_ids) + tickets.map(&:closed_by_id) + tickets.select(&:show_identity).map(&:reporter_id) + events.map(&:actor_id))
   end
 
   def shop(ticket) = @shops[ticket.shop_id.to_s]

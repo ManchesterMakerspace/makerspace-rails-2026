@@ -15,7 +15,7 @@ module FixTicketApiSchemas
   ticket = {
     id: string.merge(description: 'String form of the integer _id allocated by Ticket.pull; legacy ObjectId tickets remain supported.'), reference: string, title: string, description: string,
     closedBy: person.merge(nullable: true, description: 'Closer identity only for closed tickets closed by someone other than the reporter; otherwise null.'),
-    category: { type: :string, enum: %w[damaged broken missing other] },
+    category: { type: :string, enum: FixTicket::CATEGORIES },
     status: { type: :string, enum: %w[open in_progress waiting_for_parts resolved rejected withdrawn] },
     confirmation: { type: :string, enum: %w[unverified confirmed could_not_confirm] },
     priority: { type: :integer, nullable: true, minimum: 1, maximum: 10 },
@@ -83,7 +83,7 @@ module FixTicketApiSchemas
       memberSlackUrl: nullable_string }, %i[id memberId toolId outOfService status]),
     FixPerson: person,
     FixTicketCapabilities: object.call(capabilities),
-    FixTicket: object.call(ticket),
+    FixTicket: object.call(ticket.merge(reporter: person.merge(description: 'Submitter identity, present only when they chose to show it at creation.')), ticket.keys),
     FixTicketEvent: object.call({ id: string, kind: string, actor: string, note: nullable_string,
       changes: { type: :object, additionalProperties: { type: :array, items: {} }, description: 'Redacted before/after values; assignment-name deltas omitted and assignment actors neutralized to avoid identifying the reporter.' }, createdAt: timestamp }),
     FixTicketDetail: { allOf: [ref.call('FixTicket'), object.call({ events: array.call(ref.call('FixTicketEvent')), deliveryFailed: boolean })] },

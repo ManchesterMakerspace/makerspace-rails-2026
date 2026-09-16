@@ -33,7 +33,7 @@ RSpec.describe 'Fix tickets', type: :request do
         properties: { title: { type: :string, maxLength: 150, pattern: FixTicket::SAFE_NAME_PATTERN }, description: { type: :string, maxLength: 10000 },
           category: { type: :string, enum: FixTicket::CATEGORIES }, submission_key: { type: :string },
           shop_id: { type: :string, nullable: true }, tool_id: { type: :string, nullable: true }, uncatalogued_tool: { type: :string, pattern: "(?:#{FixTicket::SAFE_NAME_PATTERN})|^$" },
-          priority: { type: :integer, minimum: 1, maximum: 10, nullable: true }, i_broke_it: { type: :boolean }, i_can_fix_it: { type: :boolean }, public_read_only: { type: :boolean } }
+          priority: { type: :integer, minimum: 1, maximum: 10, nullable: true }, show_identity: { type: :boolean, description: 'Show submitter identity. Defaults to true for donation_offer and false otherwise; fixed at creation.' }, i_broke_it: { type: :boolean }, i_can_fix_it: { type: :boolean }, public_read_only: { type: :boolean } }
       }
       let(:submission) { { title: 'Drill', description: 'Failed switch', category: 'broken', submission_key: SecureRandom.uuid } }
       response('200', 'Created, or previously accepted idempotent submission') { schema '$ref' => '#/components/schemas/FixTicketDetail'; run_test!(requires_transactions: true) }

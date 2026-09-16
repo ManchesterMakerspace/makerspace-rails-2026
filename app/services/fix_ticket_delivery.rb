@@ -9,7 +9,7 @@ class FixTicketDelivery
     def escape(text) = text.to_s.gsub('&', '&amp;').gsub('<', '&lt;').gsub('>', '&gt;')
     def url(ticket) = "#{ShortUrl.base_url}/fix-tickets/#{ticket.id}"
     def summary(ticket)
-      "Ticket ##{ticket.id}: #{escape(ticket.title)}\n#{ticket.status.tr('_', ' ')} · #{ticket.confirmation.tr('_', ' ')}\n#{escape(ticket.shop&.name)} #{escape(ticket.tool&.name || ticket.uncatalogued_tool)}\n#{url(ticket)}"
+      "Ticket ##{ticket.id}: #{escape(ticket.title)}\n#{ticket.status.tr('_', ' ')} · #{ticket.confirmation.tr('_', ' ')}\n#{escape(ticket.shop&.name)} #{escape(ticket.tool&.name || ticket.uncatalogued_tool)}\n#{ticket.show_identity ? "Submitter: #{escape(FixTicketPresenter.member_label(ticket.reporter_id, ticket))}\n" : ""}#{url(ticket)}"
     end
     def call(ticket, event)
       text = "Ticket ##{ticket.id}: #{escape(ticket.title)}\n"

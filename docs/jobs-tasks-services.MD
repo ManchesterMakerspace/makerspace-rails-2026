@@ -251,3 +251,5 @@ canvases use a generic header and rename existing titles on refresh.
 Stored prerequisites continue to govern eligibility. Repair-ticket announcements
 also run when shop or tool references change, selecting the current tool/shop
 channel and retaining per-event delivery receipts to prevent duplicate sends.
+
+Tool availability updates queue `ReservationSlackCanvasSyncJob` for each affected active, unexpired reservation overlapping today or tomorrow in the reservation time zone. Tool restoration also refreshes these dates. Reservation canvases retain bookings and label individually booked out-of-service tools as unavailable.

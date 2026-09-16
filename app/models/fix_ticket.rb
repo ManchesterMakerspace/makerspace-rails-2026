@@ -8,12 +8,14 @@ class FixTicket
   ACTIVE = %w[open in_progress waiting_for_parts].freeze
   STATUSES = (ACTIVE + %w[resolved rejected withdrawn]).freeze
   CONFIRMATIONS = %w[unverified confirmed could_not_confirm].freeze
-  CATEGORIES = %w[damaged broken missing other].freeze
+  CATEGORIES = %w[damaged broken missing donation_offer other].freeze
   # Single-line names: keep free-form discussion in descriptions and notes.
   SAFE_NAME_PATTERN = '^[A-Za-z0-9 .,_()/\\-]+$'.freeze
   SAFE_NAME = /\A[A-Za-z0-9 .,_()\/-]+\z/.freeze
   SAFE_NAME_MESSAGE = 'may contain only ASCII letters, numbers, spaces, and . , _ ( ) / -'.freeze
   field :reporter_id, type: BSON::ObjectId
+  # Persist consent at creation; changing category must never reveal a reporter.
+  field :show_identity, type: Boolean, default: false
   field :title, type: String
   field :description, type: String
   field :category, type: String

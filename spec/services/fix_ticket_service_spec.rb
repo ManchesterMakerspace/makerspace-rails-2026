@@ -11,6 +11,17 @@ RSpec.describe FixTicketService, requires_transactions: true do
   end
   let(:reporter) { member }
   let(:admin) { member(role: 'admin') }
+  it 'defaults donation identities to visible, respects opt-out, and preserves privacy on category edits' do
+    donation = report(reporter, category: 'donation_offer')
+    expect(donation.show_identity).to be(true)
+    expect(FixTicketPresenter.ticket(donation, admin)[:reporter]).to eq(id: reporter.id.to_s, name: reporter.fullname)
+    private_donation = report(reporter, category: 'donation_offer', show_identity: false)
+    expect(FixTicketPresenter.ticket(private_donation, admin)).not_to have_key(:reporter)
+    ordinary = report(reporter)
+    described_class.update!(id: ordinary.id, actor: admin, attributes: { category: 'donation_offer' })
+    expect(ordinary.reload.show_identity).to be(false)
+    expect(FixTicketPresenter.ticket(ordinary, admin)).not_to have_key(:reporter)
+  end
   it 'routes unscoped ticket creation and reporter notes to the staff channel' do
     ticket = report(reporter)
     expect(FixTicketEvent.where(ticket_id: ticket.id, kind: 'created').first.unscoped_staff_notification).to be(true)

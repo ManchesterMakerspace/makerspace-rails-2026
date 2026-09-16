@@ -26,7 +26,7 @@ class FixTicketPresenter
     changes
   end
   def self.member_label(id, ticket, context: nil)
-    id.to_s == ticket.reporter_id.to_s ? 'Reporter' : (context ? context.member_name(id) : Member.where(id: id).first&.fullname || 'Former member')
+    id.to_s == ticket.reporter_id.to_s && !ticket.show_identity ? 'Reporter' : (context ? context.member_name(id) : Member.where(id: id).first&.fullname || 'Former member')
   end
   def self.ticket(ticket, member, detail: false, context: nil)
     policy = FixTicketPolicy.new(member, ticket, context: context)
@@ -54,6 +54,7 @@ class FixTicketPresenter
     result[:closedBy] = if !ticket.active? && ticket.closed_by_id && ticket.closed_by_id != ticket.reporter_id
       { id: ticket.closed_by_id.to_s, name: context.member_name(ticket.closed_by_id) }
     end
+    result[:reporter] = { id: ticket.reporter_id.to_s, name: context.member_name(ticket.reporter_id) } if ticket.show_identity
     if detail
       result[:events] = context.events.map do |event|
         { id: event.id.to_s, kind: event.kind, note: event.note, changes: event_changes(event, policy: policy, context: context),

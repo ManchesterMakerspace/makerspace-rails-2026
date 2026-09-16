@@ -51,7 +51,7 @@ Acknowledged admin reporter reveals also create a general audit record containin
 
 `FixTicketService` requires MongoDB transactions on a replica set. Its reporter write lock participates in the transaction, serializing cap checks, current-role checks, priority insertion, ticket changes, and bounty linkage. Do not run this feature on standalone MongoDB. Use `data:ensure_unique_indexes` before accepting submissions. The admin security settings page exposes `ticket_open_limit` (default 10).
 
-Reporter identity is excluded by explicit presenters. Reveal is a separate admin-only acknowledged, no-store action recorded in `fix_ticket_reveals`. Restrict operational collection access and backups accordingly. User-authored text may identify its author. Reporter reward credits are excluded from general credit administration and reviewed through ticket capabilities by a different authorized reviewer.
+Reporter identity is excluded by explicit presenters unless the submitter chose to show it at creation. Reveal is a separate admin-only acknowledged, no-store action recorded in `fix_ticket_reveals`. Restrict operational collection access and backups accordingly. User-authored text may identify its author. Reporter reward credits are excluded from general credit administration and reviewed through ticket capabilities by a different authorized reviewer.
 
 `Tool.disabled` retains existing Hidden behavior. `Tool.out_of_service` defaults false and is changed separately under the same shop lock used by reservations. Closing tickets does not restore service. Existing reservations and billing remain intact; the outage response identifies affected reservations for staff review.
 
@@ -134,3 +134,5 @@ The old task remains cancelled with its source ticket backlink; reopening alone 
 reactivates it. Bounty events record their task ID so delayed notifications retain the
 correct historical bounty link. Active, claimed, pending, and completed bounty links
 cannot be replaced by this action.
+
+Donation Offers (`donation_offer`) default to showing the submitter identity. Portal and Slack creation forms allow an explicit opt-out. The `show_identity` creation choice is persisted; existing tickets stay private and staff category edits do not change that choice. Authorized ticket responses include `reporter` only for visible identities, and Slack details, summaries, and reporter-authored events use that identity.

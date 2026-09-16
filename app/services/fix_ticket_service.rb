@@ -1,5 +1,5 @@
 class FixTicketService
-  CREATE_FIELDS = %w[title description category shop_id tool_id uncatalogued_tool priority public_read_only i_broke_it i_can_fix_it submission_key].freeze
+  CREATE_FIELDS = %w[title description category shop_id tool_id uncatalogued_tool priority public_read_only i_broke_it i_can_fix_it submission_key show_identity].freeze
   STAFF_FIELDS = %w[title description category shop_id tool_id uncatalogued_tool public_read_only announce_to_slack announcement_note].freeze
   class << self
     def limit = [SystemConfig.get('ticket_open_limit').to_i.nonzero? || 10, 1].max
@@ -69,6 +69,8 @@ class FixTicketService
     def create!(actor:, attributes:)
       attrs = normalize(attributes)
       raise Error::UnprocessableEntity.new('Unknown submission fields') if (attrs.keys - CREATE_FIELDS).any?
+      attrs['show_identity'] = attrs['category'] == 'donation_offer' unless attrs.key?('show_identity')
+      raise Error::UnprocessableEntity.new('show_identity must be a boolean') unless [true, false].include?(attrs['show_identity'])
       raise Error::UnprocessableEntity.new('Submission key is required') unless attrs['submission_key'].to_s.match?(/\A[\w-]{8,100}\z/)
       result = nil
       transaction(actor.id) do

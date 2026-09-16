@@ -3159,6 +3159,7 @@
               "damaged",
               "broken",
               "missing",
+              "donation_offer",
               "other"
             ]
           },
@@ -3266,6 +3267,22 @@
           },
           "capabilities": {
             "$ref": "#/components/schemas/FixTicketCapabilities"
+          },
+          "reporter": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "description": "Submitter identity, present only when they chose to show it at creation."
           }
         },
         "required": [
@@ -7297,6 +7314,7 @@
                       "damaged",
                       "broken",
                       "missing",
+                      "donation_offer",
                       "other"
                     ]
                   },
@@ -7320,6 +7338,10 @@
                     "minimum": 1,
                     "maximum": 10,
                     "nullable": true
+                  },
+                  "show_identity": {
+                    "type": "boolean",
+                    "description": "Show submitter identity. Defaults to true for donation_offer and false otherwise; fixed at creation."
                   },
                   "i_broke_it": {
                     "type": "boolean"

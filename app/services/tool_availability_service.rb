@@ -14,6 +14,10 @@ class ToolAvailabilityService
       end
     end
     affected = Reservation.where(tool_ids: tool.id.to_s, :status.in => Reservation::ACTIVE_STATUSES, :end_at.gt => Time.current)
+    affected.flat_map { |reservation| ReservationService.send(:slack_canvas_targets, reservation) }
+      .uniq.group_by(&:first).each do |shop_id, targets|
+        ReservationSlackCanvasSyncJob.perform_later(shop_id, targets.map { |(_, date)| date.iso8601 })
+      end
     { outOfService: value, affectedReservations: affected.order_by(start_at: :asc).limit(100).map { |r| { id: r.id.to_s, startAt: r.start_at, endAt: r.end_at } },
       affectedCount: affected.count }
   end

@@ -41,7 +41,7 @@ class FixSlack
       block = input('respond_as', 'Respond as:', optional: optional,
         options: [option('Assignee (shows your name)', 'assignee'), option('Reporter (anonymous)', 'reporter')])
       block[:element][:type] = 'radio_buttons'
-      block[:hint] = plain('Choose how this note is attributed. Assignee shows your name; Reporter keeps your identity hidden.')
+      block[:hint] = plain('Choose how this note is attributed. Assignee shows your name; Reporter follows the ticket identity preference.')
       [block]
     end
 
@@ -118,9 +118,10 @@ class FixSlack
     def new_view(member, query = {})
       FixTicketService.capacity!(member)
       shop = FixTicketService.catalog_shops(member).where(id: query['shop_id']).first if query['shop_id'].present? && query['shop_id'] != 'none'
-      blocks = [text_block('Your identity is hidden except after an admin privacy acknowledgment. Text may identify you. When configured, full notes are shared in the central tickets channel.'),
+      blocks = [text_block('Donation Offers show your identity by default; other categories hide it. Choose an identity preference below. Text may identify you. When configured, full notes are shared in the central tickets channel.'),
         input('title', 'Title'), input('description', 'Description', multi: true),
-        input('category', 'Category', options: FixTicket::CATEGORIES.map { |v| option(v.capitalize, v) }),
+        input('show_identity', 'Identity preference', optional: true, options: [option('Use category default', 'default'), option('Show my identity', 'true'), option('Hide my identity', 'false')]),
+        input('category', 'Category', options: FixTicket::CATEGORIES.map { |v| option(v.tr('_', ' ').capitalize, v) }),
         external('shop_id', 'Shop (optional)', selected: shop ? [option(shop.name, shop.id)] : []),
         external('tool_id', 'Tool (optional; selects its shop)'),
         input('uncatalogued_tool', 'Uncatalogued tool name', optional: true),
@@ -174,6 +175,7 @@ class FixSlack
       t = FixTicketPresenter.ticket(ticket, member, detail: true)
       blocks = [text_block("##{t[:id]}: #{t[:title]}\n#{t[:description]}\n#{t[:status]} · #{t[:confirmation]} · Priority #{t[:priority] || '—'}\n#{t[:outOfService] ? 'Tool out of service' : ''}\nCreated #{t[:createdAt]} · Updated #{t[:updatedAt]}"),
         text_block("Assignees: #{t[:assignees].map { |a| a[:name] }.join(', ')}\n#{ShortUrl.base_url}/fix-tickets/#{id}")]
+      blocks << text_block("Submitter: #{t[:reporter][:name]}") if t[:reporter]
       blocks << text_block("Bounty: #{ShortUrl.base_url}#{t[:bountyUrl]}") if t[:bountyUrl]
       # The complete ticket history is available in the linked portal.
       t[:events].last(10).each { |e| blocks << text_block("#{e[:actor]} · #{e[:createdAt]}\n#{e[:note] || e[:kind]}") }
@@ -261,6 +263,11 @@ class FixSlack
         %w[shop_id tool_id].each { |key| form.delete(key) if form[key] == 'none' }
         form['shop_id'] = Tool.find(form['tool_id']).shop_id.to_s if form['tool_id'].present?
         %w[i_broke_it i_can_fix_it public_read_only].each { |key| form[key] = form[key] == 'true' }
+        if %w[true false].include?(form['show_identity'])
+          form['show_identity'] = form['show_identity'] == 'true'
+        else
+          form.delete('show_identity')
+        end
         ticket = FixTicketService.create!(actor: member, attributes: form.merge('submission_key' => data['submission_key']))
         data['id'] = ticket.id.to_s
       when 'fix_filters'
