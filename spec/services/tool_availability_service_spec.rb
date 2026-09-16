@@ -30,6 +30,25 @@ RSpec.describe ToolAvailabilityService do
       .with(shop.id.to_s, %w[2026-09-09 2026-09-10]).exactly(:once)
   end
 
+  it "refreshes an affected canvas when a legacy nil availability becomes disabled" do
+    tool.set(disabled: nil)
+    create(
+      :reservation,
+      member: member,
+      shop: shop,
+      reservation_scope: "tools",
+      tool_ids: [tool.id.to_s],
+      start_at: zone.local(2026, 9, 9, 9, 0),
+      end_at: zone.local(2026, 9, 9, 10, 0),
+      status: "approved"
+    )
+
+    expect {
+      tool.update!(disabled: true)
+    }.to have_enqueued_job(ReservationSlackCanvasSyncJob)
+      .with(shop.id.to_s, ["2026-09-09"]).exactly(:once)
+  end
+
   it "does not refresh reservation canvases without an affected reservation" do
     create(
       :reservation,

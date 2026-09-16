@@ -33,7 +33,7 @@ class Tool
   before_validation :normalize_external_fields
   after_save :warm_changed_slack_channel_cache
   after_save :enqueue_checkout_canvas_sync_after_catalog_change
-  after_save :enqueue_reservation_canvas_sync_after_availability_change
+  after_update :enqueue_reservation_canvas_sync_after_availability_change
   after_destroy :enqueue_checkout_canvas_sync_after_destroy
 
   validates :name, presence: true
@@ -126,8 +126,7 @@ class Tool
   end
 
   def enqueue_reservation_canvas_sync_after_availability_change
-    change = previous_changes["disabled"]
-    return if change.blank? || change.first.nil?
+    return unless previous_changes.key?("disabled")
 
     ToolAvailabilityService.enqueue_reservation_canvas_refreshes(self)
   end
