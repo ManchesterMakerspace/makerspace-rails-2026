@@ -7,6 +7,7 @@ RSpec.describe SlackCheckoutJob do
   let(:member) { create(:member, :current) }
 
   before do
+    allow(MemberSubscriber).to receive(:send_slack_invite)
     SlackUser.create!(member: approver, slack_id: "UAPPROVER")
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:del)

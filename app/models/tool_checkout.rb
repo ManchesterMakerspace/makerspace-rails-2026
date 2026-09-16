@@ -160,11 +160,14 @@ class ToolCheckout
   end
 
   def enqueue_checkout_canvas_sync
-    ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s)
+    ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s, id.to_s, "add")
   end
 
   def enqueue_checkout_canvas_sync_after_revocation
-    enqueue_checkout_canvas_sync if previous_changes.key?("revoked_at")
+    return unless previous_changes.key?("revoked_at")
+
+    action = revoked_at.present? ? "remove" : "add"
+    ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s, id.to_s, action)
   end
 
   def close_open_request

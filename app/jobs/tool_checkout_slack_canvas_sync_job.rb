@@ -2,11 +2,16 @@ class ToolCheckoutSlackCanvasSyncJob < ApplicationJob
   queue_as :default
   retry_on StandardError, wait: :polynomially_longer, attempts: 5
 
-  def perform(shop_id)
+  def perform(shop_id, checkout_id = nil, action = nil)
     shop = Shop.find(shop_id)
     return if shop.nil?
 
-    Service::ToolCheckoutSlackCanvas.sync!(shop)
+    checkout = ToolCheckout.where(id: checkout_id).first if checkout_id.present?
+    if checkout && action.in?(%w[add remove])
+      Service::ToolCheckoutSlackCanvas.sync_checkout!(checkout, action: action)
+    else
+      Service::ToolCheckoutSlackCanvas.sync!(shop)
+    end
   rescue => error
     Service::ToolCheckoutSlackCanvas.report_failure(shop, error) if shop
     message = "[ToolCheckoutSlackCanvasSyncJobError] shop_id=#{shop_id} " \
