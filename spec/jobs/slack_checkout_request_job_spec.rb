@@ -48,13 +48,53 @@ RSpec.describe SlackCheckoutRequestJob do
     expect(posted_bodies.last['text']).to include('Requested checkout')
   end
 
-  it 'resends the notes DM instead of creating a request when already checked out' do
+  it 'rejects a tool with an existing target checkout' do
     create(:tool_checkout, member: member, tool: tool)
 
     expect {
       perform(tool.name)
     }.not_to change { ToolCheckoutRequest.count }
-    expect(::Service::SlackConnector).to have_received(:send_slack_message).with(a_string_including('Combo: 4-5-6'), 'U123')
+    expect(posted_bodies.last['text']).to include('checkout record already exists')
+  end
+
+  it 'requires a non-revoked checkout for every prerequisite' do
+    prerequisite = create(:tool, shop: shop)
+    tool.update!(prerequisite_ids: [prerequisite.id.to_s])
+
+    perform(tool.name)
+    expect(posted_bodies.last['text']).to include('prerequisite')
+
+    create(:tool_checkout, member: member, tool: prerequisite, revoked_at: Time.current)
+    perform(tool.name)
+    expect(posted_bodies.last['text']).to include('prerequisite')
+
+    ToolCheckout.where(member_id: member.id, tool_id: prerequisite.id).delete_all
+    create(:tool_checkout, member: member, tool: prerequisite)
+    expect { perform(tool.name) }.to change(ToolCheckoutRequest, :count).by(1)
+  end
+
+  it 'allows pending members only on tools configured to allow them' do
+    member.update!(status: 'pending')
+    perform(tool.name)
+    expect(posted_bodies.last['text']).to include('membership')
+
+    tool.update!(allow_pending: true)
+    expect { perform(tool.name) }.to change(ToolCheckoutRequest, :count).by(1)
+  end
+
+  it 'does not list disabled tools, tools in disabled shops, existing checkouts, or open requests' do
+    existing_checkout = create(:tool, shop: shop, name: 'Has Checkout')
+    open_request = create(:tool, shop: shop, name: 'Has Request')
+    disabled = create(:tool, shop: shop, name: 'Disabled', disabled: true)
+    create(:tool_checkout, member: member, tool: existing_checkout)
+    ToolCheckoutRequest.create!(member: member, tool: open_request, status: 'open')
+    perform(nil)
+
+    text = posted_bodies.last['text']
+    expect(text).not_to include(existing_checkout.name, open_request.name, disabled.name)
+    shop.update!(disabled: true)
+    perform(nil)
+    expect(posted_bodies.last['text']).to include('No eligible tools')
   end
 
   it 'does not create a duplicate open request for the same tool' do
@@ -63,7 +103,7 @@ RSpec.describe SlackCheckoutRequestJob do
     expect {
       perform(tool.name)
     }.not_to change { ToolCheckoutRequest.count }
-    expect(posted_bodies.last['text']).to include('already have an open request')
+    expect(posted_bodies.last['text']).to include('open request already exists')
   end
 
   it 'rejects a Slack user with no linked Member account' do

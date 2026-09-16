@@ -60,12 +60,7 @@ class Tool
   end
 
   def checkout_request_error(member)
-    return "No checkout required" if open
-    eligible = member.status == "pending" ? allow_pending : (member.status == "activeMember" && member.active_unexpired?)
-    return "Your membership must first be activated and you must complete your Orientation checkout before requesting this Safety Checkout" unless eligible
-    return "A checkout record already exists for this tool" if ToolCheckout.where(member_id: member.id, tool_id: id).exists?
-    return "An open request already exists for this tool" if ToolCheckoutRequest.where(member_id: member.id, tool_id: id, status: "open").exists?
-    nil
+    ToolCheckoutRequestEligibility.new(member: member, tool: self).error
   end
 
   def disabled

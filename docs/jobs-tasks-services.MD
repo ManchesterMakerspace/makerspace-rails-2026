@@ -15,6 +15,14 @@ production credentials available. Examples below use:
 RAILS_ENV=production bundle exec rake TASK_NAME
 ```
 
+`SlackCheckoutRequestJob` handles named `/checkout request` commands. It uses
+the same checkout-request eligibility service as the Member Portal and Slack
+modal, and rechecks tool/shop availability, membership, prerequisites, existing
+checkouts, and open requests immediately before creating a request.
+`SlackCheckoutActiveJob` handles `/checkout active [all]` by returning
+ephemeral, alphabetized checkout tables scoped to the current shop or grouped
+across every shop where the caller has an active checkout.
+
 The admin endpoint **enqueues** an Active Job and returns before it completes.
 Its `key` parameter is the value in the **Admin key** column below. The
 application must have a working Active Job queue consumer for those requests.

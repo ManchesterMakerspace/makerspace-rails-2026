@@ -81,31 +81,102 @@ RSpec.describe Slack::CommandsController, type: :controller do
       allow(ENV).to receive(:[]).with('SLACK_SIGNING_SECRET').and_return(secret)
     end
 
-    it "routes '/checkout request' (no tool) to SlackCheckoutRequestJob with no tool_name" do
-      sign_request!({ text: 'request' })
-      expect(SlackCheckoutRequestJob).to receive(:perform_later).with(hash_including('tool_name' => nil))
+    it "opens an eligible-tool modal for '/checkout request' with no tool name" do
+      shop = create(:shop, slack_channel: "woodshop")
+      member = create(:member, :current)
+      create(:tool, shop: shop)
+      SlackUser.create!(member: member, slack_id: "U123", slack_email: member.email)
+      sign_request!({ text: 'request', channel_name: "woodshop", user_id: "U123", trigger_id: "trigger" })
+      expect(Service::SlackConnector).to receive(:open_modal).with("trigger", hash_including(callback_id: "checkout_request_submit"))
 
-      post :checkout, params: { text: 'request' }
+      post :checkout, params: { text: 'request', channel_name: "woodshop", user_id: "U123", trigger_id: "trigger" }
 
       expect(response).to have_http_status(200)
     end
 
     it "routes '/checkout request <tool>' to SlackCheckoutRequestJob with the tool name" do
-      sign_request!({ text: 'request Bandsaw' })
+      shop = create(:shop, slack_channel: "woodshop")
+      member = create(:member, :current)
+      SlackUser.create!(member: member, slack_id: "U123")
+      request_params = { text: 'request Bandsaw', channel_name: "woodshop", user_id: "U123" }
+      sign_request!(request_params)
       expect(SlackCheckoutRequestJob).to receive(:perform_later).with(hash_including('tool_name' => 'Bandsaw'))
 
-      post :checkout, params: { text: 'request Bandsaw' }
+      post :checkout, params: request_params
 
       expect(response).to have_http_status(200)
     end
 
+    it "lists all open requests when '/checkout request' is used outside a shop channel" do
+      member = create(:member, :current)
+      tool = create(:tool, name: "Bandsaw")
+      ToolCheckoutRequest.create!(member: member, tool: tool, status: "open")
+      SlackUser.create!(member: member, slack_id: "U123", slack_email: member.email)
+      request_params = { text: "request", channel_name: "general", user_id: "U123" }
+      sign_request!(request_params)
+
+      post :checkout, params: request_params
+
+      expect(response.parsed_body.fetch("text")).to include("Bandsaw", tool.shop.name, "open checkout requests")
+    end
+
+    it "suggests volunteering as an approver when the requester has an active checkout in the shop" do
+      shop = create(:shop, slack_channel: "woodshop")
+      member = create(:member, :current)
+      create(:tool_checkout, member: member, tool: create(:tool, shop: shop))
+      create(:tool, shop: shop)
+      SlackUser.create!(member: member, slack_id: "U123", slack_email: member.email)
+      request_params = { text: "request", channel_name: "woodshop", user_id: "U123", trigger_id: "trigger" }
+      sign_request!(request_params)
+      allow(Service::SlackConnector).to receive(:open_modal)
+
+      post :checkout, params: request_params
+
+      expect(response.parsed_body.fetch("text")).to include("Volunteering as a checkout approver")
+    end
+
+    it "routes '/checkout active' to SlackCheckoutActiveJob" do
+      sign_request!({ text: "active" })
+      expect(SlackCheckoutActiveJob).to receive(:perform_later).with(hash_including("text" => "active"))
+
+      post :checkout, params: { text: "active" }
+      expect(response).to have_http_status(200)
+    end
+
+    it "lists the active command in bare checkout help" do
+      sign_request!({ text: "" })
+      post :checkout, params: { text: "" }
+      expect(response.parsed_body.fetch("text")).to include("/checkout active [all]")
+    end
+
     it "still routes a plain '/checkout @member tool' to SlackCheckoutJob" do
-      sign_request!({ text: '@someone Bandsaw' })
+      create(:shop, slack_channel: "woodshop")
+      member = create(:member, :current)
+      SlackUser.create!(member: member, slack_id: "U123")
+      request_params = { text: '@someone Bandsaw', channel_name: "woodshop", user_id: "U123" }
+      sign_request!(request_params)
       expect(SlackCheckoutJob).to receive(:perform_later)
       expect(SlackCheckoutRequestJob).not_to receive(:perform_later)
 
-      post :checkout, params: { text: '@someone Bandsaw' }
+      post :checkout, params: request_params
 
+      expect(response).to have_http_status(200)
+    end
+
+
+    it "synchronizes an unknown Slack identity before opening a request modal" do
+      shop = create(:shop, slack_channel: "woodshop")
+      create(:tool, shop: shop)
+      member = create(:member, :current)
+      request_params = { text: "request", channel_name: "woodshop", user_id: "UNEW", trigger_id: "trigger" }
+      sign_request!(request_params)
+      expect(Service::SlackUserSync).to receive(:sync_single).with("UNEW") do
+        SlackUser.create!(member: member, slack_id: "UNEW")
+        member
+      end
+      allow(Service::SlackConnector).to receive(:open_modal)
+
+      post :checkout, params: request_params
       expect(response).to have_http_status(200)
     end
   end

@@ -5476,6 +5476,58 @@
           }
         }
       }
+    },
+    "/tool_checkout_requests": {
+      "post": {
+        "summary": "Requests a safety checkout",
+        "tags": [
+          "ToolCheckoutRequests"
+        ],
+        "operationId": "createToolCheckoutRequest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "checkout request created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "tool is not eligible, prerequisites are unmet, or a record/request exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tool_id": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "tool_id"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

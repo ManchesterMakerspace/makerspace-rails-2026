@@ -10,6 +10,7 @@ RSpec.describe 'Tool Checkouts API', type: :request do
 
   before do
     allow(REDIS).to receive(:set)
+    allow(Service::SlackConnector).to receive(:send_slack_message)
     sign_in resource_manager
   end
 
@@ -65,7 +66,14 @@ RSpec.describe 'Tool Checkouts API', type: :request do
 
   describe 'DELETE /api/admin/tool_checkouts/:id' do
     it 'allows resource managers to revoke checkouts for disabled tools' do
-      checkout = ToolCheckout.create!(member: member, tool: tool, approved_by: resource_manager)
+      original_approver = create(
+        :member,
+        :resource_manager,
+        :current,
+        resource_manager_shop_ids: [shop.id.to_s]
+      )
+      SlackUser.create!(member: original_approver, slack_id: 'UORIGINAL', slack_email: original_approver.email)
+      checkout = ToolCheckout.create!(member: member, tool: tool, approved_by: original_approver)
 
       delete "/api/admin/tool_checkouts/#{checkout.id}", params: {
         revocation_reason: 'Safety retraining required'
@@ -76,6 +84,10 @@ RSpec.describe 'Tool Checkouts API', type: :request do
       expect(checkout.revocation_reason).to eq('Safety retraining required')
       audit_log = AuditLog.where(event_type: 'tool_checkout_revoked', resource_id: checkout.id).last
       expect(audit_log.slack_message).to include('shop: Woodshop', 'tool: Disabled Bandsaw')
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+        a_string_including('Your approval', 'Disabled Bandsaw', 'an RM'),
+        'UORIGINAL'
+      )
     end
   end
 end

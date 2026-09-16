@@ -1,8 +1,6 @@
 class SlackCheckoutRequestJob < ApplicationJob
   queue_as :default
 
-  MAX_TOOL_LIST = 40
-
   def perform(params)
     response_url     = params['response_url']
     channel_name     = params['channel_name']
@@ -28,22 +26,10 @@ class SlackCheckoutRequestJob < ApplicationJob
 
     return list_eligible_tools(response_url, invoker, shop) if tool_name.nil?
 
-    tool = Tool.where(shop_id: shop.id, :disabled.ne => true).find_by(name: /#{Regexp.escape(tool_name)}/i)
+    tool = Tool.where(shop_id: shop.id).find_by(name: /#{Regexp.escape(tool_name)}/i)
     unless tool
-      tool_list = Tool.where(shop_id: shop.id, :disabled.ne => true).pluck(:name).join(', ')
+      tool_list = ToolCheckoutRequestEligibility.eligible_tools(member: invoker, shop: shop).map(&:name).join(', ')
       post_response(response_url, :ephemeral, "No eligible tool matching '#{tool_name}' in #{shop.name}. Available: #{tool_list.presence || 'none'}")
-      return
-    end
-
-    if tool.open || tool.shop.nil? || tool.shop.disabled?
-      post_response(response_url, :ephemeral, tool.open ? "No checkout required" : "Tool unavailable")
-      return
-    end
-
-    existing_checkout = ToolCheckout.where(member_id: invoker.id, tool_id: tool.id, revoked_at: nil).first
-    if existing_checkout
-      existing_checkout.send_notes_slack_notification
-      post_response(response_url, :ephemeral, "You're already checked out on *#{tool.name}*#{tool.notes.present? ? ' — notes re-sent via DM.' : '.'}")
       return
     end
 
@@ -61,37 +47,21 @@ class SlackCheckoutRequestJob < ApplicationJob
     Member.find(slack_user.member_id)
   end
 
-  def eligible?(member, tool)
-    return false if tool.open || tool.disabled? || tool.shop.nil? || tool.shop.disabled?
-    if member.status == 'pending'
-      tool.allow_pending
-    else
-      member.active_unexpired? && member.status == 'activeMember'
-    end
-  end
-
   def list_eligible_tools(response_url, invoker, shop)
-    tools = Tool.where(shop_id: shop.id, :disabled.ne => true).order_by(name: :asc).select { |tool| eligible?(invoker, tool) }.first(MAX_TOOL_LIST)
+    tools = ToolCheckoutRequestEligibility.eligible_tools(member: invoker, shop: shop)
     if tools.empty?
       post_response(response_url, :ephemeral, "No eligible tools found in #{shop.name}. Your membership must be active (or, if pending, the tool must allow pending members) before requesting a checkout.")
       return
     end
 
-    lines = tools.map do |tool|
-      checked_out = ToolCheckout.where(member_id: invoker.id, tool_id: tool.id, revoked_at: nil).exists?
-      "• #{tool.name}#{checked_out ? ' _(already checked out — resends notes)_' : ''}"
-    end
+    lines = tools.map { |tool| "• #{tool.name}" }
     post_response(response_url, :ephemeral, "*Eligible tools:*\n#{lines.join("\n")}\n\nUse `/checkout request <tool name>` to request one.")
   end
 
   def create_request(response_url, invoker, tool)
-    unless eligible?(invoker, tool)
-      post_response(response_url, :ephemeral, "Your membership must first be activated and you must complete your Orientation checkout before requesting *#{tool.name}*.")
-      return
-    end
-
-    if ToolCheckoutRequest.where(member_id: invoker.id, tool_id: tool.id, status: 'open').exists?
-      post_response(response_url, :ephemeral, "You already have an open request for *#{tool.name}*.")
+    error = ToolCheckoutRequestEligibility.new(member: invoker, tool: tool).error
+    if error
+      post_response(response_url, :ephemeral, error)
       return
     end
 
