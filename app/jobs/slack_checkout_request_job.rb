@@ -1,5 +1,6 @@
 class SlackCheckoutRequestJob < ApplicationJob
   queue_as :default
+  REQUEST_LOCK_TTL_SECONDS = 30
 
   def perform(params)
     response_url     = params['response_url']
@@ -65,21 +66,50 @@ class SlackCheckoutRequestJob < ApplicationJob
   end
 
   def create_request(response_url, invoker, tool)
-    error = ToolCheckoutRequestEligibility.new(member: invoker, tool: tool).error
-    if error
-      post_response(response_url, :ephemeral, error)
+    with_request_lock(response_url, invoker, tool) do
+      error = ToolCheckoutRequestEligibility.new(member: invoker, tool: tool).error
+      if error
+        post_response(response_url, :ephemeral, error)
+        next
+      end
+
+      request = ToolCheckoutRequest.create!(
+        member_id: invoker.id,
+        tool_id: tool.id,
+        request_date: Time.now,
+        status: 'open'
+      )
+      request.announce_request
+
+      post_response(response_url, :ephemeral, "Requested checkout on *#{tool.name}*. An approver will be notified.")
+    end
+  end
+
+  def with_request_lock(response_url, invoker, tool)
+    key = "checkout_request_lock/#{invoker.id}/#{tool.id}"
+    token = SecureRandom.uuid
+    acquired = false
+    acquired = REDIS.set(key, token, nx: true, ex: REQUEST_LOCK_TTL_SECONDS)
+    unless acquired
+      post_response(response_url, :ephemeral, "A checkout request for this tool is already being processed. Please wait a moment and try again.")
       return
     end
 
-    request = ToolCheckoutRequest.create!(
-      member_id: invoker.id,
-      tool_id: tool.id,
-      request_date: Time.now,
-      status: 'open'
-    )
-    request.announce_request
-
-    post_response(response_url, :ephemeral, "Requested checkout on *#{tool.name}*. An approver will be notified.")
+    yield
+  ensure
+    if acquired
+      begin
+        REDIS.eval(
+          "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+          keys: [key],
+          argv: [token]
+        )
+      rescue Redis::BaseError => error
+        Rails.logger.warn(
+          "[SlackCheckoutRequestLockReleaseError] key=#{key} error=#{error.class}: #{error.message}"
+        )
+      end
+    end
   end
 
   def post_response(response_url, response_type, text)

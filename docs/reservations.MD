@@ -487,7 +487,9 @@ in the shop, its description and wiki link, enabled checkout prerequisites,
 and active, unexpired members with a current checkout. Checkout approvers and
 Resource Managers for the shop are distinguished from other checked-out
 members. Each checked-out member is rendered as a separate bulleted-list item
-so Slack preserves one member per line.
+so Slack preserves one member per line. Linked members are displayed as plain,
+ASCII-only sanitized Slack usernames rather than Slack mention markup; members
+without a stored Slack username fall back to their sanitized portal name.
 
 Like reservation canvases, Slack does **not** automatically make a newly
 created checkout canvas visible in the shop channel header. After the shop's

@@ -9,6 +9,8 @@ RSpec.describe SlackCheckoutRequestJob do
 
   before do
     allow(::Service::SlackConnector).to receive(:send_slack_message)
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
 
     http = instance_double(Net::HTTP)
     allow(Net::HTTP).to receive(:new).and_return(http)
@@ -127,6 +129,22 @@ RSpec.describe SlackCheckoutRequestJob do
       perform(tool.name)
     }.not_to change { ToolCheckoutRequest.count }
     expect(posted_bodies.last['text']).to include('open request already exists')
+  end
+
+  it 'serializes concurrent request creation for the same member and tool' do
+    allow(REDIS).to receive(:set)
+      .with(
+        "checkout_request_lock/#{member.id}/#{tool.id}",
+        kind_of(String),
+        nx: true,
+        ex: SlackCheckoutRequestJob::REQUEST_LOCK_TTL_SECONDS
+      )
+      .and_return(false)
+
+    expect {
+      perform(tool.name)
+    }.not_to change(ToolCheckoutRequest, :count)
+    expect(posted_bodies.last['text']).to include('already being processed')
   end
 
   it 'rejects a Slack user with no linked Member account' do

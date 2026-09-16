@@ -19,7 +19,9 @@ RAILS_ENV=production bundle exec rake TASK_NAME
 resolves shops from either the Slack channel ID or normalized channel name. It uses
 the same checkout-request eligibility service as the Member Portal and Slack
 modal, and rechecks tool/shop availability, membership, prerequisites, existing
-checkouts, and open requests immediately before creating a request.
+checkouts, and open requests immediately before creating a request. Creation is
+serialized per member and tool so concurrent Slack deliveries cannot announce
+duplicate open requests.
 `SlackCheckoutJob` handles approver-driven `/checkout MEMBER TOOL` commands and
 also resolves the current shop from either the Slack channel ID or normalized
 channel name before creating the checkout.
