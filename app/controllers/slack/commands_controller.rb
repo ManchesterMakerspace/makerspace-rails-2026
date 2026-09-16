@@ -4,11 +4,12 @@
 # The payload includes: command, text, channel_name, user_id, user_name
 #
 # Response must be returned within 3 seconds (Slack timeout).
-# All processing is deferred to jobs to avoid the timeout.
+# Modal-opening commands are handled synchronously because Slack trigger IDs
+# expire quickly; longer-running legacy workflows are deferred to jobs.
 #
 # Commands:
 #   /checkout @member tool-name   — tool checkout, current shop channel (SlackCheckoutJob)
-#   /checkout request [tool-name] — member self-service request/notes resend, current shop channel (SlackCheckoutRequestJob)
+#   /checkout request             — member self-service request modal, current shop channel
 #   /reserve                       — reserve a shop/tool in the current shop channel
 #   /volunteer <subcommand>       — volunteer credits/tasks (SlackVolunteerJob)
 #
@@ -19,6 +20,23 @@ class Slack::CommandsController < ApplicationController
 
   def checkout
     text = params[:text].to_s.strip
+    shop = current_slack_shop
+    unless shop
+      return render json: { response_type: "ephemeral", text: "No shop is configured for this channel." }
+    end
+
+    slack_user = SlackUser.find_by(slack_id: params[:user_id])
+    member = slack_user && Member.find_by(id: slack_user.member_id)
+    unless member
+      synced_member = Service::SlackUserSync.sync_single(params[:user_id])
+      if synced_member
+        slack_user = SlackUser.find_by(slack_id: params[:user_id])
+        member = slack_user && Member.find_by(id: slack_user.member_id)
+      end
+    end
+    unless member
+      return render json: { response_type: "ephemeral", text: "Link your Slack account to a Member Portal account before using /checkout." }
+    end
 
     unless Service::ShopSlackChannels.associated?(
       channel_name: params[:channel_name],
@@ -31,14 +49,16 @@ class Slack::CommandsController < ApplicationController
     end
 
     if text.split(/\s+/, 2).first&.downcase == 'request'
-      return handle_checkout_request(text)
+      return open_checkout_request_modal(shop, member)
     end
 
     parts = text.split(/\s+/, 2)
     if parts.length < 2
+      return open_checkout_request_modal(shop, member) unless checkout_approver_for_shop?(member, shop)
+
       render json: {
         response_type: 'ephemeral',
-        text: 'Usage: `/checkout @member tool-name`, `/checkout email@example.com tool-name`, or `/checkout request [tool-name]`'
+        text: 'Usage: `/checkout @member tool-name`, `/checkout email@example.com tool-name`, or `/checkout request`'
       } and return
     end
 
@@ -134,12 +154,22 @@ class Slack::CommandsController < ApplicationController
   def handle_checkout_request(text)
     tool_name = text.split(/\s+/, 2)[1].to_s.strip.presence
 
-    SlackCheckoutRequestJob.perform_later(params.to_unsafe_h.stringify_keys.merge('tool_name' => tool_name))
+  def checkout_approver_for_shop?(member, shop)
+    return true if %w[admin board_member].include?(member.role) || member.manages_shop?(shop)
+    approver = member.valid_for_checkout_request? && CheckoutApprover.find_by(member_id: member.id)
+    approver && (approver.can_approve_for_shop?(shop.id) ||
+      Tool.where(shop_id: shop.id, :id.in => Array(approver.tool_ids)).exists?)
+  end
 
-    render json: {
-      response_type: 'ephemeral',
-      text: tool_name ? "Processing your request for *#{tool_name}*..." : 'Looking up eligible tools...'
-    }
+  def open_checkout_request_modal(shop, member)
+    view = SlackCheckoutRequestModal.build(shop, member)
+    Service::SlackConnector.open_modal(params[:trigger_id], view)
+    render json: { response_type: "ephemeral", text: "Opening checkout request form…" }
+  rescue ::Error::CustomError => error
+    render json: { response_type: "ephemeral", text: error.message }
+  rescue => error
+    Service::ErrorReporter.notify(error, context: { phase: "open checkout request modal", slack_user_id: params[:user_id] })
+    render json: { response_type: "ephemeral", text: "The checkout request form could not be opened. Please try again or use the Member Portal." }
   end
 
   # Verify the request actually came from Slack using signing secret
