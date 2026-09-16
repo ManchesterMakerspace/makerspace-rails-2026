@@ -216,6 +216,27 @@ module Service
       end
     end
 
+    def self.lookup_canvas_sections(canvas_id, contains_text:, section_types: nil)
+      criteria = { contains_text: contains_text }
+      criteria[:section_types] = Array(section_types) if section_types.present?
+      response = with_rate_limit_retry("canvases.sections.lookup") do
+        client.canvases_sections_lookup(
+          canvas_id: canvas_id,
+          criteria: JSON.generate(criteria)
+        )
+      end
+      response.respond_to?(:sections) ? response.sections : response["sections"]
+    end
+
+    def self.edit_canvas(canvas_id, changes)
+      with_rate_limit_retry("canvases.edit") do
+        client.canvases_edit(
+          canvas_id: canvas_id,
+          changes: JSON.generate(changes)
+        )
+      end
+    end
+
     def self.with_rate_limit_retry(operation, max_retries: SLACK_RATE_LIMIT_MAX_RETRIES)
       retries = 0
       begin

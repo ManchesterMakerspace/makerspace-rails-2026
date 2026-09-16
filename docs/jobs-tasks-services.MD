@@ -31,6 +31,13 @@ across every shop where the caller has an active checkout. Current-shop scope
 resolves either the Slack channel ID or the normalized channel name from the
 slash-command payload, matching both supported shop-channel configurations.
 
+`ToolCheckoutSlackCanvasSyncJob` incrementally updates an extant shop checkout
+canvas when one member's checkout is added or revoked. It locates the affected
+Canvas section with `canvases.sections.lookup`, applies the member and last-updated
+timestamp changes with `canvases.edit`, and falls back to rebuilding the complete
+canvas if an incremental lookup or edit fails. Calls that do not identify one
+checkout continue to perform a complete canvas rebuild.
+
 Changing a tool's out-of-service (`disabled`) state enqueues
 `ReservationSlackCanvasSyncJob` for today and/or tomorrow when an active
 individual-tool reservation overlaps those dates. This keeps operational
