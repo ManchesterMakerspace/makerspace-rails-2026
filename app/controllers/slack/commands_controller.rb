@@ -132,15 +132,14 @@ class Slack::CommandsController < ApplicationController
 
     unless tool_name
       member = find_slack_member
+      raise ::Error::UnprocessableEntity.new("Link your Slack account to a Member Portal account first") unless member
 
       unless shop && checkout_shop_channel?
         return render json: {
           response_type: "ephemeral",
-          text: member ? open_request_list(member) : checkout_shop_channel_instruction
+          text: open_request_list(member)
         }
       end
-
-      raise ::Error::UnprocessableEntity.new("Link your Slack account to a Member Portal account first") unless member
 
       view = SlackCheckoutRequestModal.build(shop, member)
       Service::SlackConnector.open_modal(params[:trigger_id], view)

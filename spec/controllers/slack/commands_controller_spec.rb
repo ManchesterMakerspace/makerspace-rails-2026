@@ -162,6 +162,20 @@ RSpec.describe Slack::CommandsController, type: :controller do
       expect(response.parsed_body.fetch("text")).to include("Bandsaw", tool.shop.name, "open checkout requests")
     end
 
+    it "returns the account-link error for an unlinked request listing" do
+      slack_user.destroy
+      allow(Service::SlackUserSync).to receive(:sync_single).with("UUNLINKED").and_return(nil)
+      request_params = { text: "request", channel_name: "general", user_id: "UUNLINKED" }
+      sign_request!(request_params)
+
+      post :checkout, params: request_params
+
+      expect(response.parsed_body.fetch("text")).to include(
+        "Link your Slack account to a Member Portal account first"
+      )
+      expect(response.parsed_body.fetch("text")).not_to include("appropriate shop channel")
+    end
+
     it "suggests volunteering as an approver when the requester has an active checkout in the shop" do
       create(:tool_checkout, member: member, tool: create(:tool, shop: shop))
       create(:tool, shop: shop)
@@ -194,6 +208,24 @@ RSpec.describe Slack::CommandsController, type: :controller do
       expect(SlackCheckoutRequestJob).not_to receive(:perform_later)
 
       post :checkout, params: { text: '@someone Bandsaw', user_id: "U123", channel_name: "woodshop" }
+
+      expect(response).to have_http_status(200)
+    end
+
+    it "passes the Slack channel ID through to normal checkout processing" do
+      shop.update!(slack_channel: "C12345678")
+      request_params = {
+        text: "#{member.email} Bandsaw",
+        user_id: "U123",
+        channel_name: "woodshop",
+        channel_id: "C12345678"
+      }
+      sign_request!(request_params)
+      expect(SlackCheckoutJob).to receive(:perform_later).with(
+        hash_including("channel_id" => "C12345678")
+      )
+
+      post :checkout, params: request_params
 
       expect(response).to have_http_status(200)
     end

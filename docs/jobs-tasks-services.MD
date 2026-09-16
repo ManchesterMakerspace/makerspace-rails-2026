@@ -20,6 +20,9 @@ resolves shops from either the Slack channel ID or normalized channel name. It u
 the same checkout-request eligibility service as the Member Portal and Slack
 modal, and rechecks tool/shop availability, membership, prerequisites, existing
 checkouts, and open requests immediately before creating a request.
+`SlackCheckoutJob` handles approver-driven `/checkout MEMBER TOOL` commands and
+also resolves the current shop from either the Slack channel ID or normalized
+channel name before creating the checkout.
 `SlackCheckoutActiveJob` handles `/checkout active [all]` by returning
 ephemeral, alphabetized checkout tables scoped to the current shop or grouped
 across every shop where the caller has an active checkout. Current-shop scope
