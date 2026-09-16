@@ -15,6 +15,7 @@ oauth_config:
     bot:
       # canvases.create, canvases.edit, canvases.access.set
       - canvases:write
+      - canvases:read
 
       # conversations.info and conversations.list for public shop channels
       - channels:read
