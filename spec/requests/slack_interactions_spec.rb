@@ -134,10 +134,6 @@ RSpec.describe "Slack interactions", type: :request do
       }
     end
 
-    def slack_http_response(klass, code)
-      klass.new("1.1", code, nil)
-    end
-
     it "converts a selected duration into the reservation end time" do
       reservation = instance_double(Reservation, title: "Lathe time", status: "approved")
       expect(ReservationService).to receive(:create!) do |arguments|
@@ -147,8 +143,6 @@ RSpec.describe "Slack interactions", type: :request do
         expect(attributes[:full_day]).to be(false)
         reservation
       end
-      allow(Net::HTTP).to receive(:post).and_return(slack_http_response(Net::HTTPOK, "200"))
-
       post "/slack/interactions", params: {
         payload: reservation_payload(duration: "hours:2.5").to_json
       }
@@ -170,8 +164,6 @@ RSpec.describe "Slack interactions", type: :request do
         expect(attributes[:full_day]).to be(true)
         reservation
       end
-      allow(Net::HTTP).to receive(:post).and_return(slack_http_response(Net::HTTPOK, "200"))
-
       post "/slack/interactions", params: {
         payload: reservation_payload(date: "2027-03-14", duration: "days:1").to_json
       }
@@ -340,23 +332,16 @@ RSpec.describe "Slack interactions", type: :request do
       post "/slack/interactions", params: { payload: payload.to_json }
     end
 
-    it "replaces the original ephemeral response after approved creation" do
+    it "queues approved outcome delivery before clearing the modal" do
       reservation = instance_double(Reservation, title: "Lathe time", status: "approved")
       allow(ReservationService).to receive(:create!).and_return(reservation)
-      expect(Net::HTTP).to receive(:post) do |uri, body, headers|
-        expect(uri.to_s).to eq(response_url)
-        expect(JSON.parse(body)).to include(
-          "response_type" => "ephemeral", "replace_original" => true,
-          "text" => include("approved")
-        )
-        expect(headers).to eq("Content-Type" => "application/json")
-        slack_http_response(Net::HTTPOK, "200")
-      end
 
       post "/slack/interactions", params: { payload: reservation_payload.to_json }
 
       expect(response.parsed_body).to eq("response_action" => "clear")
-      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+      expect(SlackReservationOutcomeJob).to have_been_enqueued.with(
+        include("approved"), response_url, "USUBMITTER"
+      )
     end
 
     { "pending" => "pending approval", "unpaid" => "payment is required",
@@ -368,47 +353,30 @@ RSpec.describe "Slack interactions", type: :request do
           effective_approval_details: details
         )
         allow(ReservationService).to receive(:create!).and_return(reservation)
-        expect(Net::HTTP).to receive(:post) do |_uri, body, _headers|
-          expect(JSON.parse(body).fetch("text")).to include(text)
-          slack_http_response(Net::HTTPOK, "200")
-        end
 
         post "/slack/interactions", params: { payload: reservation_payload.to_json }
         expect(response.parsed_body).to eq("response_action" => "clear")
+        expect(SlackReservationOutcomeJob).to have_been_enqueued.with(
+          include(text), response_url, "USUBMITTER"
+        )
       end
     end
 
-    it "falls back to a DM when response replacement is unsuccessful" do
-      reservation = instance_double(Reservation, title: "Lathe time", status: "approved")
-      allow(ReservationService).to receive(:create!).and_return(reservation)
-      allow(Net::HTTP).to receive(:post).and_return(slack_http_response(Net::HTTPBadGateway, "502"))
-
-      post "/slack/interactions", params: { payload: reservation_payload.to_json }
-
-      expect(Service::SlackConnector).to have_received(:send_slack_message)
-        .with(include("approved"), "USUBMITTER")
-      expect(Service::ErrorReporter).to have_received(:notify).with(
-        anything, context: hash_including(phase: "Slack reservation response replacement", http_status: "502")
-      )
-    end
-
-    it "reports modal closure through response replacement" do
+    it "queues modal closure outcome delivery" do
       expect(ReservationService).not_to receive(:create!)
-      expect(Net::HTTP).to receive(:post) do |_uri, body, _headers|
-        expect(JSON.parse(body).fetch("text")).to include("cancelled without submission")
-        slack_http_response(Net::HTTPOK, "200")
-      end
 
       post "/slack/interactions", params: { payload: reservation_payload(type: "view_closed").to_json }
 
       expect(response.parsed_body).to eq({})
+      expect(SlackReservationOutcomeJob).to have_been_enqueued.with(
+        include("cancelled without submission"), response_url, "USUBMITTER"
+      )
     end
 
-    it "clears the modal after creation even when replacement and DM both fail" do
+    it "clears the modal after creation even when outcome enqueueing fails" do
       reservation = instance_double(Reservation, title: "Lathe time", status: "approved")
       expect(ReservationService).to receive(:create!).and_return(reservation)
-      allow(Net::HTTP).to receive(:post).and_raise(Timeout::Error, "timed out")
-      allow(Service::SlackConnector).to receive(:send_slack_message).and_raise(StandardError, "DM failed")
+      allow(SlackReservationOutcomeJob).to receive(:perform_later).and_raise(StandardError, "queue unavailable")
 
       post "/slack/interactions", params: { payload: reservation_payload.to_json }
 

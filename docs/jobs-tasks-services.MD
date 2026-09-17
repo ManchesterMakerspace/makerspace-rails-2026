@@ -81,6 +81,14 @@ download -- both use the Active Job ID stored in the Drive file's application
 properties, rather than filename alone, so a contract signed earlier on the
 same date cannot be mistaken for the current signing attempt.
 
+Slack reservation submissions and modal closures enqueue
+`SlackReservationOutcomeJob` on the `slack` queue before acknowledging the
+interaction. The job first replaces the original slash-command response with
+an ephemeral outcome, using short HTTP connection/read/write timeouts, and
+falls back to a direct message to the submitting Slack user. Its arguments are
+suppressed from Active Job lifecycle logs because the response URL is a private,
+short-lived Slack credential. Delivery failure never rolls back a reservation.
+
 ## Admin-triggerable recurring jobs
 
 `SystemConfig::JOB_KEYS` is the source for the list shown by the admin API. A

@@ -68,7 +68,7 @@ class Slack::InteractionsController < ApplicationController
       reasons = reservation.effective_approval_details.map { |detail| "• #{detail['message']}" }
       message += "\nApproval required because:\n#{reasons.join("\n")}"
     end
-    deliver_reservation_outcome(message, metadata, payload)
+    enqueue_reservation_outcome(message, metadata, payload)
     render json: { response_action: "clear" }
   rescue ::Error::CustomError => error
     Rails.logger.warn(
@@ -185,7 +185,7 @@ class Slack::InteractionsController < ApplicationController
 
   def close_reservation(payload)
     metadata = JSON.parse(payload.dig("view", "private_metadata").to_s)
-    deliver_reservation_outcome("Reservation cancelled without submission.", metadata, payload)
+    enqueue_reservation_outcome("Reservation cancelled without submission.", metadata, payload)
     render json: {}
   rescue JSON::ParserError => error
     Service::ErrorReporter.notify(error, context: { phase: "Slack reservation modal closure" })
@@ -205,44 +205,21 @@ class Slack::InteractionsController < ApplicationController
     end
   end
 
-  def deliver_reservation_outcome(message, metadata, payload)
-    return if replace_reservation_response(metadata["response_url"], message)
-
+  def enqueue_reservation_outcome(message, metadata, payload)
     slack_user_id = payload.dig("user", "id").presence || metadata["slack_user_id"]
-    Service::SlackConnector.send_slack_message(message, slack_user_id)
+    SlackReservationOutcomeJob.perform_later(message, metadata["response_url"], slack_user_id)
   rescue => error
-    report_reservation_delivery_failure(error, {
+    report_reservation_outcome_enqueue_failure(error, {
       phase: "Slack reservation outcome delivery",
       slack_user_id: slack_user_id
     })
   end
 
-  def replace_reservation_response(response_url, message)
-    return false if response_url.blank?
-
-    uri = URI.parse(response_url)
-    response = Net::HTTP.post(
-      uri,
-      { response_type: "ephemeral", replace_original: true, text: message }.to_json,
-      "Content-Type" => "application/json"
-    )
-    return true if response.is_a?(Net::HTTPSuccess)
-
-    report_reservation_delivery_failure(
-      "Slack reservation response replacement failed",
-      { phase: "Slack reservation response replacement", http_status: response.code }
-    )
-    false
-  rescue => error
-    report_reservation_delivery_failure(error, { phase: "Slack reservation response replacement" })
-    false
-  end
-
-  def report_reservation_delivery_failure(error, context)
+  def report_reservation_outcome_enqueue_failure(error, context)
     Service::ErrorReporter.notify(error, context: context)
   rescue => reporting_error
     Rails.logger.error(
-      "[SlackReservationError] action=deliver error=#{error.class} " \
+      "[SlackReservationError] action=enqueue_outcome error=#{error.class} " \
       "reporting_error=#{reporting_error.class}"
     )
   end

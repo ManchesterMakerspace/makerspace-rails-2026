@@ -739,6 +739,12 @@ Slack user. Failure of both notification methods is reported without logging the
 private response URL and never rolls back a successfully created reservation or
 turns it into a modal validation error.
 
+Outcome delivery is queued before the interaction is acknowledged, so a slow or
+unreachable Slack response URL cannot hold the modal submission open past
+Slack's interaction deadline or encourage a duplicate submission. The delivery
+job also applies short HTTP connection, read, and write timeouts before using
+the DM fallback.
+
 The modal collects a start date/time and **Duration**, rather than a separately
 entered end time. Timed reservations offer half-hour choices through five hours
 and then whole-hour choices through 24 hours, two-hour choices through 48 hours,
