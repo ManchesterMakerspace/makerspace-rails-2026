@@ -185,6 +185,45 @@ RSpec.describe "Slack interactions", type: :request do
       )
     end
 
+    {
+      "A title is required" => "title",
+      "Reservation date is outside the booking window" => "date",
+      "Start time does not satisfy advance notice" => "start_time",
+      "The selected resource is not reservable" => "scope"
+    }.each do |message, block_id|
+      it "puts #{block_id} policy errors beside the relevant field" do
+        allow(ReservationService).to receive(:create!)
+          .and_raise(Error::UnprocessableEntity.new(message))
+
+        post "/slack/interactions", params: { payload: reservation_payload.to_json }
+
+        expect(response.parsed_body).to include(
+          "response_action" => "errors",
+          "errors" => { block_id => message }
+        )
+      end
+    end
+
+    it "shows broad fee confirmation failures in a modal alert" do
+      shop = instance_double(Shop)
+      updated_view = { type: "modal", submit: { type: "plain_text", text: "Use Member Portal" } }
+      allow(ReservationService).to receive(:create!).and_raise(
+        Error::UnprocessableEntity.new("Please review and approve the reservation fee of $12.50")
+      )
+      allow(Shop).to receive(:find).with(metadata[:shop_id]).and_return(shop)
+      expect(SlackReservationModal).to receive(:update).with(hash_including(
+        shop: shop,
+        alert_message: include("$12.50")
+      )).and_return(updated_view)
+
+      post "/slack/interactions", params: { payload: reservation_payload.to_json }
+
+      expect(response.parsed_body).to eq(
+        "response_action" => "update",
+        "view" => updated_view.deep_stringify_keys
+      )
+    end
+
     it "rebuilds the modal policy and preserves state after resource block actions" do
       shop = instance_double(Shop)
       rebuilt_view = { type: "modal", blocks: [] }
@@ -232,9 +271,9 @@ RSpec.describe "Slack interactions", type: :request do
       }]
       expect(Service::SlackConnector).to receive(:update_modal) do |_id, view, hash:|
         duration = view[:blocks].find { |candidate| candidate[:block_id] == "duration" }
-        alert = view[:blocks].find { |candidate| candidate[:block_id] == "reservation_policy" }
+        details = view[:blocks].find { |candidate| candidate[:block_id] == "reservation_policy_details" }
         expect(duration.dig(:element, :initial_option, :value)).to eq("hours:3.0")
-        expect(alert.dig(:text, :text)).to include("2 days", "6 hours", first.name, strict.name)
+        expect(details.dig(:text, :text)).to include("2 days", "6 hours", first.name, strict.name)
         expect(hash).to be_nil
       end
 
@@ -252,8 +291,8 @@ RSpec.describe "Slack interactions", type: :request do
       payload[:view][:state][:values][:scope][SlackReservationModal::SCOPE_ACTION_ID][:selected_option][:value] = "tools"
       payload[:actions] = [{ action_id: SlackReservationModal::TOOLS_ACTION_ID, selected_options: [] }]
       expect(Service::SlackConnector).to receive(:update_modal) do |_id, view, hash:|
-        expect(view).not_to have_key(:submit)
-        expect(view[:blocks].find { |candidate| candidate[:block_id] == "reservation_policy" }
+        expect(view.dig(:submit, :text)).to eq("Review selection")
+        expect(view[:blocks].find { |candidate| candidate[:block_id] == "reservation_policy_details" }
           .dig(:text, :text)).to include("Select one or more tools")
         expect(hash).to be_nil
       end
@@ -323,13 +362,35 @@ RSpec.describe "Slack interactions", type: :request do
         selected_options: [horizon, notice].map { |tool| { value: tool.id.to_s } }
       }]
       expect(Service::SlackConnector).to receive(:update_modal) do |_id, view, hash:|
-        expect(view).not_to have_key(:submit)
-        text = view[:blocks].find { |candidate| candidate[:block_id] == "reservation_policy" }.dig(:text, :text)
+        expect(view.dig(:submit, :text)).to eq("Review selection")
+        text = view[:blocks].find { |candidate| candidate[:block_id] == "reservation_policy_details" }.dig(:text, :text)
         expect(text).to include("Unavailable combination", "Today Only", "Tomorrow Only")
         expect(hash).to be_nil
       end
 
       post "/slack/interactions", params: { payload: payload.to_json }
+    end
+
+    it "rejects an incompatible tool combination against the tools input before creation" do
+      shop = create(:shop)
+      horizon = create(:tool, shop: shop, reservation_horizon_days: 0, open: true)
+      notice = create(:tool, shop: shop, prohibit_same_day_reservations: true, open: true)
+      payload = reservation_payload
+      payload[:view][:private_metadata] = metadata.merge(shop_id: shop.id.to_s).to_json
+      payload[:view][:state][:values][:scope][SlackReservationModal::SCOPE_ACTION_ID][:selected_option][:value] = "tools"
+      payload[:view][:state][:values][:tools] = {
+        SlackReservationModal::TOOLS_ACTION_ID => {
+          selected_options: [horizon, notice].map { |tool| { value: tool.id.to_s } }
+        }
+      }
+      expect(ReservationService).not_to receive(:create!)
+
+      post "/slack/interactions", params: { payload: payload.to_json }
+
+      expect(response.parsed_body).to include(
+        "response_action" => "errors",
+        "errors" => include("tools" => include("cannot be reserved together"))
+      )
     end
 
     it "queues approved outcome delivery before clearing the modal" do

@@ -37,6 +37,28 @@ class Slack::InteractionsController < ApplicationController
     metadata = JSON.parse(payload.dig("view", "private_metadata").to_s)
     state = payload.dig("view", "state", "values") || {}
     member = Member.find(metadata["member_id"])
+    scope = selected_scope(state)
+    tool_ids = selected_tool_ids(state)
+    if scope == "tools"
+      shop = Shop.find(metadata["shop_id"])
+      validate_reservation_tool_ids!(shop, member, tool_ids)
+      tools = Tool.where(:id.in => tool_ids).to_a
+      scheduling_window = ReservationPolicy.scheduling_window(tools)
+      unless scheduling_window[:compatible]
+        return render json: {
+          response_action: "errors",
+          errors: { "tools" => scheduling_window[:reason].to_s.first(150) }
+        }
+      end
+    elsif (shop = Shop.find_by(id: metadata["shop_id"]))
+      scheduling_window = ReservationPolicy.scheduling_window([shop])
+      unless scheduling_window[:compatible]
+        return render json: {
+          response_action: "errors",
+          errors: { "scope" => scheduling_window[:reason].to_s.first(150) }
+        }
+      end
+    end
     date = state.dig("date", "date", "selected_date")
     start_text = state.dig("start_time", "start_time", "selected_time")
     duration = parse_reservation_duration(state.dig("duration", "duration", "selected_option", "value"))
@@ -55,8 +77,8 @@ class Slack::InteractionsController < ApplicationController
       attributes: {
         title: state.dig("title", "title", "value"),
         shop_id: metadata["shop_id"],
-        reservation_scope: selected_scope(state),
-        tool_ids: selected_tool_ids(state),
+        reservation_scope: scope,
+        tool_ids: tool_ids,
         full_day: duration[:full_day],
         start_at: start_at,
         end_at: end_at
@@ -74,22 +96,24 @@ class Slack::InteractionsController < ApplicationController
     Rails.logger.warn(
       "[SlackReservationRejected] action=create member_id=#{member&.id} reason=#{error.message}"
     )
-    render json: {
-      response_action: "errors",
-      errors: { "duration" => error.message.to_s.first(150) }
-    }
+    field = reservation_error_field(error.message, state)
+    if field
+      render json: { response_action: "errors", errors: { field => error.message.to_s.first(150) } }
+    else
+      render_reservation_alert(payload, error.message)
+    end
+  rescue Date::Error
+    render json: { response_action: "errors", errors: { "date" => "Select a valid reservation date." } }
   rescue => error
     Rails.logger.error(
       "[SlackReservationError] action=create member_id=#{member&.id} " \
       "error=#{Service::SlackConnector.format_api_error(error, request: slack_request)}"
     )
     Honeybadger.notify(error) if defined?(Honeybadger)
-    render json: {
-      response_action: "errors",
-      errors: {
-        "duration" => "The reservation could not be created. Please verify the date and duration and use the Member Portal if the problem continues."
-      }
-    }
+    render_reservation_alert(
+      payload,
+      "The reservation could not be created. Verify the details or use the Member Portal."
+    )
   end
 
   def update_reservation_modal(payload)
@@ -181,6 +205,48 @@ class Slack::InteractionsController < ApplicationController
     else
       raise ::Error::UnprocessableEntity.new("Select a valid duration")
     end
+  end
+
+  def reservation_error_field(message, state)
+    text = message.to_s.downcase
+    return "title" if text.match?(/title|name is required/)
+    return "date" if text.match?(/date|future|horizon|booking window|same-day|same day/)
+    return "start_time" if state.key?("start_time") && text.match?(/start time|advance notice|minute increment|30.minute/)
+    return "duration" if state.key?("duration") && text.match?(/duration|end time|whole day|full.day/)
+    if text.match?(/resource|shop|tool|checkout|prerequisite|reservable|selection/)
+      return selected_scope(state) == "tools" && state.key?("tools") ? "tools" : "scope"
+    end
+
+    nil
+  end
+
+  def render_reservation_alert(payload, message)
+    metadata = JSON.parse(payload.dig("view", "private_metadata").to_s)
+    state = payload.dig("view", "state", "values") || {}
+    shop = Shop.find(metadata["shop_id"])
+    member = Member.find(metadata["member_id"])
+    tool_ids = selected_tool_ids(state)
+    validate_reservation_tool_ids!(shop, member, tool_ids) if selected_scope(state) == "tools"
+    view = SlackReservationModal.update(
+      shop: shop,
+      member: member,
+      response_url: metadata["response_url"],
+      slack_user_id: metadata["slack_user_id"],
+      reservation_scope: selected_scope(state),
+      tool_ids: tool_ids,
+      title: state.dig("title", "title", "value"),
+      date: state.dig("date", "date", "selected_date"),
+      start_time: state.dig("start_time", "start_time", "selected_time"),
+      duration: state.dig("duration", "duration", "selected_option", "value"),
+      alert_message: message
+    )
+    render json: { response_action: "update", view: view }
+  rescue => alert_error
+    Service::ErrorReporter.notify(alert_error, context: { phase: "Slack reservation error rendering" })
+    render json: {
+      response_action: "errors",
+      errors: { "scope" => "The reservation could not be created. Please use the Member Portal." }
+    }
   end
 
   def close_reservation(payload)

@@ -4298,7 +4298,7 @@
             "description": "Document not found"
           },
           "403": {
-            "description": "Forbidden — saved rental agreement belongs to another member"
+            "description": "Forbidden \u2014 saved rental agreement belongs to another member"
           }
         }
       }
@@ -5651,7 +5651,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "description": "Empty acknowledgement, modal clear action, or field validation errors",
+                  "description": "Empty acknowledgement, modal clear action, field validation errors, or a modal update containing a broad reservation error alert",
                   "additionalProperties": true
                 }
               }

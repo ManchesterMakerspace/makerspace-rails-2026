@@ -50,7 +50,7 @@ describe "Slack interactions API", type: :request do
         end
 
         schema type: :object,
-          description: "Empty acknowledgement, modal clear action, or field validation errors",
+          description: "Empty acknowledgement, modal clear action, field validation errors, or a modal update containing a broad reservation error alert",
           additionalProperties: true
 
         it "documents and acknowledges view closure payloads" do

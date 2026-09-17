@@ -38,7 +38,8 @@ RSpec.describe SlackReservationModal do
       max_reservation_duration_hours: 8.0,
       reservation_full_day: false,
       reservation_requires_approval: false,
-      reservation_prerequisite_tool_ids: []
+      reservation_prerequisite_tool_ids: [],
+      duration_fees: []
     }
     defaults[:disabled?] = false if klass == Shop
     defaults.merge!(effective_reservation_prerequisite_ids: [], allow_pending: false) if klass == Tool
@@ -51,7 +52,7 @@ RSpec.describe SlackReservationModal do
   end
 
   def policy_text(view)
-    block(view, "reservation_policy").dig(:text, :text)
+    block(view, "reservation_policy_details").dig(:text, :text)
   end
 
   def duration_values(view)
@@ -66,8 +67,36 @@ RSpec.describe SlackReservationModal do
     expect(block(view, "end_time")).to be_nil
     expect(block(view, "duration")).to be_present
     expect(block(view, "reservation_policy")).to include(type: "alert", level: "info")
+    expect(block(view, "reservation_policy").dig(:text, :text).length).to be <= 200
+    expect(block(view, "reservation_policy_details").dig(:text, :type)).to eq("mrkdwn")
+    expect(block(view, "start_time").dig(:element, :timezone)).to eq("America/New_York")
+    expect(block(view, "reservation_calculated_end").dig(:text, :text))
+      .to include("Calculated end", "America/New_York")
     expect(block(view, "scope")).to include(dispatch_action: true)
     expect(block(view, "scope").dig(:element, :action_id)).to eq("reservation_scope_changed")
+  end
+
+  it "keeps the default date synchronized when the next half hour is tomorrow" do
+    travel_to ReservationService::ZONE.local(2026, 9, 17, 23, 45) do
+      view = described_class.build(shop, member)
+
+      expect(block(view, "date").dig(:element, :initial_date)).to eq("2026-09-18")
+      expect(block(view, "start_time").dig(:element, :initial_time)).to eq("00:00")
+    end
+  end
+
+  it "previews positive fees and directs the member to the portal" do
+    allow(ReservationFeeService).to receive(:quote).and_return([
+      { resourceName: "Woodshop", name: "Hourly reservation", units: 2, amount: 12.5 }
+    ])
+    allow(ReservationFeeService).to receive(:total).and_return(12.5)
+
+    view = described_class.build(shop, member)
+
+    expect(block(view, "reservation_policy")).to include(level: "error")
+    expect(block(view, "reservation_policy").dig(:text, :text)).to include("$12.50", "Member Portal")
+    expect(block(view, "reservation_fee_preview").dig(:text, :text)).to include("Woodshop", "$12.50")
+    expect(view.dig(:submit, :text)).to eq("Use Member Portal")
   end
 
   it "builds a tool-only view and selects its first tool" do
@@ -170,7 +199,7 @@ RSpec.describe SlackReservationModal do
     expect(block(view, "duration").dig(:element, :initial_option, :value)).to eq("hours:4.0")
   end
 
-  it "omits submission for incompatible multi-tool notice and horizon policies" do
+  it "keeps a review submit action for incompatible multi-tool notice and horizon policies" do
     tools.concat([
       resource_double(Tool, name: "Immediate Window", reservation_horizon_days: 0),
       resource_double(Tool, name: "No Same Day", prohibit_same_day_reservations: true)
@@ -180,7 +209,7 @@ RSpec.describe SlackReservationModal do
       shop, member, reservation_scope: "tools", tool_ids: tools.map(&:id)
     )
 
-    expect(view).not_to have_key(:submit)
+    expect(view.dig(:submit, :text)).to eq("Review selection")
     expect(block(view, "duration")).to be_nil
     expect(policy_text(view)).to include(
       "Unavailable combination", "Immediate Window", "No Same Day", "cannot be reserved together"
@@ -198,7 +227,7 @@ RSpec.describe SlackReservationModal do
       shop, member, reservation_scope: "tools", tool_ids: tools.map(&:id)
     )
 
-    expect(view).not_to have_key(:submit)
+    expect(view.dig(:submit, :text)).to eq("Review selection")
     expect(policy_text(view)).to include("No duration is valid", "Kiln", "Short Session")
   end
 
@@ -231,7 +260,7 @@ RSpec.describe SlackReservationModal do
     travel_to ReservationService::ZONE.local(2026, 9, 17, 9, 0) do
       view = described_class.build(shop, member)
 
-      expect(view).not_to have_key(:submit)
+      expect(view.dig(:submit, :text)).to eq("Review selection")
       expect(policy_text(view)).to include("Unavailable combination", "earliest start of September 18")
     end
   end

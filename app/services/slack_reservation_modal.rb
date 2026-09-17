@@ -1,11 +1,12 @@
 class SlackReservationModal
   POLICY_TEXT_LIMIT = 2_900
+  ALERT_TEXT_LIMIT = 200
   SCOPE_ACTION_ID = "reservation_scope_changed"
   TOOLS_ACTION_ID = "reservation_tools_changed"
 
   class << self
     def build(shop, member, response_url: nil, slack_user_id: nil, reservation_scope: nil, tool_ids: nil,
-      title: nil, date: nil, start_time: nil, duration: nil)
+      title: nil, date: nil, start_time: nil, duration: nil, alert_message: nil)
       tools = reservable_tools(shop, member)
       raise ::Error::UnprocessableEntity.new("This shop has more than 100 reservable tools; use the portal") if tools.length > 100
       raise ::Error::UnprocessableEntity.new("This shop has no reservable resources") unless shop.reservable || tools.present?
@@ -33,6 +34,11 @@ class SlackReservationModal
         )
       end
       selected_duration = retained_duration(durations, duration)
+      default_start = next_half_hour
+      selected_date = valid_date(date) || default_start.to_date.iso8601
+      selected_time = valid_time(start_time) || default_start.strftime("%H:%M")
+      timing = reservation_timing(selected_date, selected_time, selected_duration)
+      fee = fee_preview(resources, timing)
 
       blocks = [
         input("title", "title", "Title", { type: "plain_text_input", initial_value: title }.compact),
@@ -54,12 +60,13 @@ class SlackReservationModal
       end
       blocks << input("date", "date", "Date", {
           type: "datepicker",
-          initial_date: valid_date(date) || Time.current.in_time_zone(ReservationService::ZONE).to_date.iso8601
+          initial_date: selected_date
         })
       unless policy[:full_day]
         blocks << input("start_time", "start_time", "Start time", {
           type: "timepicker",
-          initial_time: valid_time(start_time) || next_half_hour.strftime("%H:%M")
+          initial_time: selected_time,
+          timezone: "America/New_York"
         })
       end
       if durations.present?
@@ -70,7 +77,10 @@ class SlackReservationModal
           initial_option: selected_duration
         })
       end
-      blocks << policy_alert(shop, reservation_scope, selected_tools, member, policy, scheduling_window)
+      blocks.concat(policy_blocks(
+        shop, reservation_scope, selected_tools, member, policy, scheduling_window,
+        timing: timing, fee: fee, alert_message: alert_message
+      ))
 
       view = {
         type: "modal",
@@ -86,12 +96,19 @@ class SlackReservationModal
         close: plain("Cancel"),
         blocks: blocks
       }
-      view[:submit] = plain("Reserve") if scheduling_window[:compatible] && durations.present?
+      submit_text = if !scheduling_window[:compatible] || durations.empty?
+        "Review selection"
+      elsif fee[:total].positive?
+        "Use Member Portal"
+      else
+        "Reserve"
+      end
+      view[:submit] = plain(submit_text.first(24))
       view
     end
 
     def update(shop:, member:, response_url:, slack_user_id:, reservation_scope:, tool_ids:,
-      title:, date:, start_time:, duration:)
+      title:, date:, start_time:, duration:, alert_message: nil)
       build(
         shop,
         member,
@@ -102,7 +119,8 @@ class SlackReservationModal
         title: title,
         date: date,
         start_time: start_time,
-        duration: duration
+        duration: duration,
+        alert_message: alert_message
       )
     end
 
@@ -176,20 +194,90 @@ class SlackReservationModal
       end
     end
 
-    def policy_alert(shop, reservation_scope, tools, member, policy, scheduling_window)
-      {
+    def policy_blocks(shop, reservation_scope, tools, member, policy, scheduling_window, timing:, fee:, alert_message:)
+      incompatible = !scheduling_window[:compatible]
+      alert_text = alert_message.presence || if incompatible
+        "These resources cannot currently be reserved together. Review the conflicting rules below."
+      elsif fee[:total].positive?
+        "Estimated fee: $#{format('%.2f', fee[:total])}. Review and confirm this reservation in the Member Portal."
+      else
+        "Review the effective reservation rules and calculated end time below."
+      end
+      blocks = [{
         type: "alert",
         block_id: "reservation_policy",
-        level: "info",
-        text: plain(policy_summary(
-          shop: shop,
-          reservation_scope: reservation_scope,
-          tools: tools,
-          member: member,
-          policy: policy,
-          scheduling_window: scheduling_window
-        ))
-      }
+        level: (alert_message.present? || incompatible || fee[:total].positive?) ? "error" : "info",
+        text: plain(alert_text.to_s.first(ALERT_TEXT_LIMIT))
+      }, {
+        type: "section",
+        block_id: "reservation_policy_details",
+        text: {
+          type: "mrkdwn",
+          text: policy_summary(
+            shop: shop,
+            reservation_scope: reservation_scope,
+            tools: tools,
+            member: member,
+            policy: policy,
+            scheduling_window: scheduling_window
+          )
+        }
+      }]
+      blocks << {
+        type: "section",
+        block_id: "reservation_calculated_end",
+        text: { type: "mrkdwn", text: calculated_end_text(timing) }
+      } if timing
+      if fee[:total].positive?
+        details = fee[:lines].map do |line|
+          "• *#{line[:resourceName]}*: #{line[:units]} × #{line[:name]} ($#{format('%.2f', line[:amount])})"
+        end
+        blocks << {
+          type: "section",
+          block_id: "reservation_fee_preview",
+          text: { type: "mrkdwn", text: (["*Estimated fee: $#{format('%.2f', fee[:total])}*"] + details +
+            ["Confirm fees in the Member Portal before reserving."]).join("\n").first(POLICY_TEXT_LIMIT) }
+        }
+      end
+      blocks
+    end
+
+    def reservation_timing(date, time, selected_duration)
+      return unless selected_duration
+
+      unit, amount = selected_duration[:value].split(":", 2)
+      parsed_date = Date.iso8601(date)
+      if unit == "days"
+        start_at = ReservationService::ZONE.local(parsed_date.year, parsed_date.month, parsed_date.day)
+        { start_at: start_at, end_at: start_at.advance(days: amount.to_i), full_day: true }
+      else
+        start_at = ReservationService::ZONE.parse("#{date} #{time}")
+        { start_at: start_at, end_at: start_at + amount.to_f.hours, full_day: false }
+      end
+    rescue Date::Error, ArgumentError
+      nil
+    end
+
+    def calculated_end_text(timing)
+      ending = timing[:end_at].in_time_zone(ReservationService::ZONE)
+      label = ending.strftime("%B %-d, %Y at %-I:%M %p %Z")
+      suffix = timing[:full_day] ? " (exclusive end; whole-day reservation)" : ""
+      "*Calculated end:* #{label}#{suffix}\n*Timezone:* America/New_York"
+    end
+
+    def fee_preview(resources, timing)
+      return { lines: [], total: 0.0 } unless timing && resources.present?
+      return { lines: [], total: 0.0 } unless resources.all? { |resource| resource.respond_to?(:duration_fees) }
+
+      lines = ReservationFeeService.quote(
+        resources: resources,
+        start_at: timing[:start_at],
+        end_at: timing[:end_at],
+        full_day: timing[:full_day]
+      )
+      { lines: lines, total: ReservationFeeService.total(lines) }
+    rescue ::Error::CustomError
+      { lines: [], total: 0.0 }
     end
 
     def retained_duration(options, requested)

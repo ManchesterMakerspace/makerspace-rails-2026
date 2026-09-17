@@ -753,17 +753,27 @@ If any selected resource requires full-day reservations, Duration uses
 whole-day choices and the start is midnight in `America/New_York`; advancing the
 selected number of local dates preserves midnight boundaries across daylight-
 saving transitions. Full-day policy compatibility treats tomorrow as the
-earliest possible start, so a zero-day horizon correctly disables submission.
+earliest possible start. The time picker explicitly declares
+`America/New_York`, the date and time defaults advance together when rounding
+crosses midnight, and a read-only summary shows the calculated end date/time.
 
-An informational policy alert at the bottom of the modal summarizes the current
+The modal's `alert` block contains only a short, plain-text status within Slack's
+200-character alert limit. A separate `mrkdwn` section summarizes the current
 selection's effective booking horizon, greatest advance-notice requirement,
 same-day prohibition, shortest maximum duration, whole-day and approval
 requirements, and checkout prerequisites. When selected resources differ, the
-alert names each resource alongside the differing rules. Changing between shop
+details name each resource alongside the differing rules. Changing between shop
 and tool scope or changing selected tools refreshes both this alert and the
 available Duration choices from the same shared policy aggregation used by
-server-side reservation validation. The server still validates the submitted
-duration, and policy failures are attached to the modal's Duration field.
+server-side reservation validation. Validation errors are returned beside the
+title, date, time, resource, or duration input that caused them; broader failures
+rebuild the modal with an error alert.
+
+The initial view and every policy refresh also preview any fee implied by the
+selected resources, start, and duration. A positive preview names the fee lines,
+shows the estimated total, and directs the member to the Member Portal, where
+the fee-confirmation workflow is available; Slack does not silently submit an
+unconfirmed positive fee.
 
 Scope and tool selectors dispatch Block Kit actions with dedicated action IDs.
 Each action re-resolves the member, shop, and selected tools from persisted IDs;
@@ -776,10 +786,13 @@ start time, scope, tool selection, and
 duration. If a newly added tool lowers the duration limit, Duration is clamped
 to the greatest remaining valid choice. Removing all tools, or selecting a set
 whose minimum-notice/same-day rules make its earliest start later than the
-strictest booking horizon, removes the submit control and explains the
-incompatibility in the policy alert with the relevant resource names. Final
-submission still repeats authoritative policy validation to cover configuration
-changes and availability races after the modal was rendered.
+strictest booking horizon, changes the submit label to **Review selection** and
+explains the incompatibility in an error alert and the detailed policy section.
+The submit object remains present because Slack requires one when a view has
+input blocks. Attempting to submit an incompatible tool set returns an error on
+the tools input before creation. Final submission still repeats authoritative
+policy validation to cover configuration changes and availability races after
+the modal was rendered.
 
 When RM approval is required (including **Reservation requires RM approval** on
 any selected resource), the request stays `pending` and saves the member-confirmed
