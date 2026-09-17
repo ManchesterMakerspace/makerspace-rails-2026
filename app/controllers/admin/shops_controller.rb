@@ -11,9 +11,9 @@ class Admin::ShopsController < ApplicationController
     else
       Shop.where(:id.in => managed_shop_ids)
     end
-    shops = shops.order_by(name: :asc)
-    render json: shops.to_a, each_serializer: ShopSerializer, adapter: :attributes,
-      checkout_context: CheckoutReadContext.for_shops(shops.to_a)
+    shops = shops.order_by(name: :asc).to_a
+    render json: shops, each_serializer: ShopSerializer, adapter: :attributes,
+      checkout_context: CheckoutReadContext.for_shops(shops)
   end
 
   def create
