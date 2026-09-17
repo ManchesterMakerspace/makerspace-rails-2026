@@ -17,9 +17,15 @@ The page shares lazy catalog reads across tabs and refreshes loaded catalogs on
 mutations and window focus. Public and management catalogs remain separate.
 No persistent cache stores tool notes or authorization decisions.
 
-Deploy the declared nonunique indexes with `bundle exec rake db:mongoid:create_indexes`:
+Deploy the declared nonunique indexes with `bundle exec rake data:ensure_checkout_indexes`:
 `members(status, expirationTime)`, `tool_checkouts(member_id, revoked_at, tool_id)`,
 and `checkout_approvers(member_id)`. Existing documents need no migration.
+The task is repeatable and creates only these three indexes; it never drops
+indexes or changes documents. If a targeted index conflicts, it stops for review.
+Use this task rather than the global `db:mongoid:create_indexes` for checkout
+deployment: the global task can fail on unrelated legacy identity indexes, such
+as a full unique `cards.uid_1` conflicting with the model's partial unique index.
+That legacy index can remain in place while the checkout indexes are installed.
 
 ## Slack commands
 

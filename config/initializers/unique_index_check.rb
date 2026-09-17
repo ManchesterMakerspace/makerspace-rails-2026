@@ -11,12 +11,13 @@ Rails.application.config.after_initialize do
     tool_name_index_present = tool_indexes.any? do |index|
       keys = index['key'] || index[:key] || {}
       indexed_fields = keys.keys.map(&:to_s)
-      direction = keys['name'] || keys[:name]
+      name_direction = keys['name'] || keys[:name]
+      shop_direction = keys['shop_id'] || keys[:shop_id]
       unique = index['unique'] || index[:unique]
       collation = index['collation'] || index[:collation] || {}
 
-      indexed_fields == ['name'] &&
-        direction == 1 &&
+      indexed_fields == %w[shop_id name] &&
+        shop_direction == 1 && name_direction == 1 &&
         unique == true &&
         collation['locale'].to_s == 'en' &&
         collation['strength'].to_i == 2
@@ -24,14 +25,14 @@ Rails.application.config.after_initialize do
 
     unless tool_name_index_present
       $stderr.puts <<~WARNING
-        [unique-index-check] WARNING: The required unique index on tools.name is missing.
+        [unique-index-check] WARNING: The required unique index on tools.(shop_id, name) is missing.
         Verify collection data and create all required unique indexes with:
           bundle exec rake data:ensure_unique_indexes
       WARNING
     end
   rescue StandardError => error
     $stderr.puts <<~WARNING
-      [unique-index-check] WARNING: Unable to verify the required unique index on tools.name (#{error.class}: #{error.message}).
+      [unique-index-check] WARNING: Unable to verify the required unique index on tools.(shop_id, name) (#{error.class}: #{error.message}).
       Verify collection data and create all required unique indexes with:
         bundle exec rake data:ensure_unique_indexes
     WARNING
