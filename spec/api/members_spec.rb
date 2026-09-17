@@ -9,6 +9,7 @@ describe 'Members API', type: :request do
       parameter name: :pageNum, in: :query, type: :number, required: false
       parameter name: :orderBy, in: :query, type: :string, required: false
       parameter name: :order, in: :query, type: :string, required: false
+      parameter name: :fully_active_unexpired, in: :query, type: :boolean, required: false, description: 'Only activeMember members whose expirationTime is strictly in the future'
       parameter name: :currentMembers, in: :query, type: :boolean, required: false
       parameter name: :search, in: :query, type: :string, required: false
 

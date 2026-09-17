@@ -32,6 +32,10 @@ ephemeral, alphabetized checkout tables scoped to the current shop or grouped
 across every shop where the caller has an active checkout. Current-shop scope
 resolves either the Slack channel ID or the normalized channel name from the
 slash-command payload, matching both supported shop-channel configurations.
+The shop restriction is applied in Mongo before loading checkout rows. Tools,
+shops, and approver assignments are loaded in batches through the same
+job-scoped lookup context used by portal list serializers; there are no
+per-checkout association or approver queries.
 
 `ToolCheckoutSlackCanvasSyncJob` incrementally updates an extant shop checkout
 canvas when one member's checkout is added or revoked. It locates the affected

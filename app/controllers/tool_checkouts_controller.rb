@@ -20,7 +20,8 @@ class ToolCheckoutsController < ApplicationController
       checkouts = checkouts.where(:tool_id.in => visible_tool_ids)
     end
 
-    checkouts = checkouts.order_by(checked_out_at: :desc)
-    render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
+    checkouts = checkouts.order_by(checked_out_at: :desc).to_a
+    render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member,
+      checkout_context: CheckoutReadContext.for_checkouts(checkouts, current_member)
   end
 end

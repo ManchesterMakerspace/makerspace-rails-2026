@@ -2,8 +2,9 @@ class Admin::CheckoutApproversController < AdminController
   before_action :find_approver, only: [:update, :destroy]
 
   def index
-    approvers = CheckoutApprover.all
-    render json: approvers, each_serializer: CheckoutApproverSerializer, adapter: :attributes
+    approvers = CheckoutApprover.all.to_a
+    render json: approvers, each_serializer: CheckoutApproverSerializer, adapter: :attributes,
+      checkout_context: CheckoutReadContext.for_approvers(approvers)
   end
 
   def create

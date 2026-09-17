@@ -29,6 +29,10 @@ class MembersController < AuthenticationController
         search = base_query.where(id: current_member.id)
       end
 
+      if to_bool(search_params[:fully_active_unexpired])
+        search = search.where(status: 'activeMember', :expirationTime.gt => Time.now.to_i * 1000)
+      end
+
       @members = query_resource(search)
       if limited_checkout_approver_search
         return render_with_total_items(@members, { each_serializer: LimitedMemberSerializer, adapter: :attributes })
@@ -159,6 +163,6 @@ class MembersController < AuthenticationController
     end
 
     def search_params
-      params.permit(:current_members, :currentMembers, :format, :member, :page_num, :pageNum, :order_by, :orderBy, :order, :search)
+      params.permit(:fully_active_unexpired, :current_members, :currentMembers, :format, :member, :page_num, :pageNum, :order_by, :orderBy, :order, :search)
     end
 end
