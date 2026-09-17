@@ -20,6 +20,12 @@ RSpec.describe "Member tool checkouts", type: :request do
     )
   end
 
+  it "includes notes for an active hidden tool in the member view" do
+    hidden_tool.set(notes: "Hidden cabinet combination")
+    get "/api/tool_checkouts", params: { active: true, include_hidden: true }
+    expect(JSON.parse(response.body).first['toolNotes']).to eq("Hidden cabinet combination")
+  end
+
   describe "tool notes visibility (#189)" do
     let(:noted_tool) { create(:tool, shop: shop, notes: "Combo: 9-8-7") }
 

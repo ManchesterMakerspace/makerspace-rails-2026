@@ -21,14 +21,17 @@ class Admin::ToolCheckoutsController < ApplicationController
     end
 
     unless is_admin? || is_board_member?
-      managed_tool_ids = Tool.where(:shop_id.in => managed_shop_ids).pluck(:id).map(&:to_s)
       ordinary_tool_ids = CheckoutApprover.allowed_tool_ids_for_member(current_member.id)
-      ordinary_tool_ids &= Tool.where(:disabled.ne => true).pluck(:id).map(&:to_s)
-      checkouts = checkouts.where(:tool_id.in => (managed_tool_ids + ordinary_tool_ids).uniq)
+      authorized_tools = Tool.any_of(
+        { :shop_id.in => managed_shop_ids },
+        { :id.in => ordinary_tool_ids, :disabled.ne => true }
+      )
+      checkouts = checkouts.where(:tool_id.in => authorized_tools.pluck(:id))
     end
 
-    checkouts = checkouts.order_by(checked_out_at: :desc)
-    render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
+    checkouts = checkouts.order_by(checked_out_at: :desc).to_a
+    render json: checkouts, each_serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member,
+      checkout_context: CheckoutReadContext.for_checkouts(checkouts, current_member)
   end
 
   def create

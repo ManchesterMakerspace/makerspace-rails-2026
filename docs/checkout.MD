@@ -1,5 +1,32 @@
 # Safety checkouts
 
+## Member Portal lists
+
+“My Active Tool Checkouts” displays an accessible note tooltip beside tools with
+nonblank notes. Active checkout holders can see notes for their hidden tools;
+revoked checkouts alone do not grant note access.
+
+The roster's “Check Out Member” search sends `fully_active_unexpired=true` to
+`GET /api/members`. Mongo filters to `status: activeMember` and an expiration
+strictly later than the current Unix time in milliseconds before search paging.
+This opt-in filter does not change checkout creation or Slack eligibility.
+
+Shop, tool, approver, and checkout responses use request-scoped batched lookups.
+Shop tool counts and prerequisite labels share a Mongo `$facet` aggregation.
+The page shares lazy catalog reads across tabs and refreshes loaded catalogs on
+mutations and window focus. Public and management catalogs remain separate.
+No persistent cache stores tool notes or authorization decisions.
+
+Deploy the declared nonunique indexes with `bundle exec rake data:ensure_checkout_indexes`:
+`members(status, expirationTime)`, `tool_checkouts(member_id, revoked_at, tool_id)`,
+and `checkout_approvers(member_id)`. Existing documents need no migration.
+The task is repeatable and creates only these three indexes; it never drops
+indexes or changes documents. If a targeted index conflicts, it stops for review.
+Use this task rather than the global `db:mongoid:create_indexes` for checkout
+deployment: the global task can fail on unrelated legacy identity indexes, such
+as a full unique `cards.uid_1` conflicting with the model's partial unique index.
+That legacy index can remain in place while the checkout indexes are installed.
+
 ## Slack commands
 
 Command acknowledgements, help, and status tables are visible only to the

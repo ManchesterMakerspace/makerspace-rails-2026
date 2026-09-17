@@ -15,6 +15,14 @@ production credentials available. Examples below use:
 RAILS_ENV=production bundle exec rake TASK_NAME
 ```
 
+`data:ensure_checkout_indexes` is a manual deployment task, not recurring work.
+It creates only the nonunique checkout performance indexes on
+`members(status, expirationTime)`, `tool_checkouts(member_id, revoked_at, tool_id)`,
+and `checkout_approvers(member_id)`, using their model declarations. It can be
+rerun and never drops indexes or modifies documents. Unrelated legacy identity
+index conflicts do not block it; conflicts on one of its three targets are
+reported as errors for operator review.
+
 `SlackCheckoutRequestJob` handles named `/checkout request` commands and
 resolves shops from either the Slack channel ID or normalized channel name. It uses
 an exact, case-insensitive tool-name match so similarly named tools cannot be
@@ -32,6 +40,10 @@ ephemeral, alphabetized checkout tables scoped to the current shop or grouped
 across every shop where the caller has an active checkout. Current-shop scope
 resolves either the Slack channel ID or the normalized channel name from the
 slash-command payload, matching both supported shop-channel configurations.
+The shop restriction is applied in Mongo before loading checkout rows. Tools,
+shops, and approver assignments are loaded in batches through the same
+job-scoped lookup context used by portal list serializers; there are no
+per-checkout association or approver queries.
 
 `ToolCheckoutSlackCanvasSyncJob` incrementally updates an extant shop checkout
 canvas when one member's checkout is added or revoked. It locates the affected

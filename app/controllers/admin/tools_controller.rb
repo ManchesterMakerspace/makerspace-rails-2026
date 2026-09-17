@@ -10,21 +10,19 @@ class Admin::ToolsController < ApplicationController
   def index
     tools = params[:shop_id] ? Tool.where(shop_id: params[:shop_id]) : Tool.all
     unless is_admin? || is_board_member?
-      managed_ids = Tool.where(:shop_id.in => managed_shop_ids).pluck(:id).map(&:to_s)
       ordinary_ids = current_member.valid_for_checkout_request? ?
         CheckoutApprover.allowed_tool_ids_for_member(current_member.id) : []
-      visible_ids = (managed_ids + ordinary_ids).uniq
-      tools = tools.where(:id.in => visible_ids)
       tools = tools.any_of(
         { :shop_id.in => managed_shop_ids },
         { :id.in => ordinary_ids, :disabled.ne => true }
       )
     end
-    tools = tools.order_by(name: :asc)
+    tools = tools.order_by(name: :asc).to_a
     render json: tools,
       each_serializer: AdminToolSerializer,
       adapter: :attributes,
       scope: current_member,
+      checkout_context: CheckoutReadContext.for_tools(tools, current_member),
       management_shop_ids: managed_shop_ids,
       global_management: is_admin? || is_board_member?
   end

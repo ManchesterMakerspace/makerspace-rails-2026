@@ -108,10 +108,17 @@ RSpec.describe Member, type: :model do
   end
 
   describe ".search" do
-    let(:criteria) { double("scoped criteria") }
+    let(:selector) do
+      Member.where(id: BSON::ObjectId.new, status: 'activeMember',
+        :expirationTime.gt => Time.now.to_i * 1000).selector
+    end
+    let(:criteria) { instance_double(Mongoid::Criteria, selector: selector) }
+    let(:collection) { instance_double(Mongo::Collection) }
 
     before do
-      allow(Member).to receive_message_chain(:collection, :aggregate)
+      allow(Member).to receive(:collection).and_return(collection)
+      allow(collection).to receive(:aggregate)
+        .with(array_including({ :$match => selector }))
         .and_raise(Mongo::Error::OperationFailure.new("Atlas Search unavailable"))
     end
 
@@ -151,7 +158,8 @@ RSpec.describe Member, type: :model do
       second_member = double("second member", id: BSON::ObjectId.new)
       result_ids = [first_member.id, second_member.id]
 
-      allow(Member).to receive_message_chain(:collection, :aggregate)
+      allow(collection).to receive(:aggregate)
+        .with(array_including({ :$match => selector }))
         .and_return(result_ids.map { |id| { _id: id } })
       expect(criteria).to receive(:where)
         .with(id: { :$in => result_ids })

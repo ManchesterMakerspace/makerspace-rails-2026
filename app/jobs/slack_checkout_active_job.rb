@@ -19,11 +19,16 @@ class SlackCheckoutActiveJob < ApplicationJob
     ].compact_blank.uniq
     channel_shop = Shop.where(:slack_channel.in => channel_names).first
     all_shops = params["text"].to_s.split(/\s+/)[1].to_s.casecmp("all").zero? || channel_shop.nil?
-    checkouts = ToolCheckout.where(member_id: member.id, revoked_at: nil).to_a
-    checkouts.select! { |checkout| checkout.tool&.shop_id.to_s == channel_shop.id.to_s } unless all_shops
-
-    grouped = checkouts.group_by { |checkout| checkout.tool&.shop }.reject { |shop, _| shop.nil? }
-    grouped.select! { |shop, _| shop.id.to_s == channel_shop.id.to_s } unless all_shops
+    checkouts = ToolCheckout.where(member_id: member.id, revoked_at: nil)
+    unless all_shops
+      checkouts = checkouts.where(:tool_id.in => Tool.where(shop_id: channel_shop.id).pluck(:id))
+    end
+    checkouts = checkouts.to_a
+    context = CheckoutReadContext.for_tools(Tool.where(:id.in => checkouts.map(&:tool_id)).to_a, member)
+    grouped = checkouts.group_by do |checkout|
+      tool = context.tools[checkout.tool_id.to_s]
+      context.shops[tool&.shop_id.to_s]
+    end.reject { |shop, _| shop.nil? }
     if grouped.empty?
       scope = all_shops ? "any shop" : channel_shop.name
       return post_response(response_url, "You have no active tool checkouts in #{scope}.")
@@ -31,7 +36,7 @@ class SlackCheckoutActiveJob < ApplicationJob
 
     sections = grouped.sort_by { |shop, _| shop.name.to_s.downcase }.map do |shop, rows|
       heading = all_shops ? "*#{shop.name}* (#{shop_channel(shop)})\n" : ""
-      heading + checkout_table(member, rows)
+      heading + checkout_table(rows, context)
     end
     post_response(response_url, sections.join("\n\n"))
   rescue => error
@@ -41,25 +46,16 @@ class SlackCheckoutActiveJob < ApplicationJob
 
   private
 
-  def checkout_table(member, checkouts)
-    rows = checkouts.sort_by { |checkout| checkout.tool.name.to_s.downcase }.map do |checkout|
-      tool = checkout.tool
-      [tool.name, tool_status(tool), approver?(member, tool) ? "Yes" : "No"]
+  def checkout_table(checkouts, context)
+    rows = checkouts.sort_by { |checkout| context.tools.fetch(checkout.tool_id.to_s).name.to_s.downcase }.map do |checkout|
+      tool = context.tools.fetch(checkout.tool_id.to_s)
+      shop = context.shops[tool.shop_id.to_s]
+      [tool.name, tool.disabled? || shop&.disabled? ? "Disabled" : "Enabled", context.can_approve?(tool) ? "Yes" : "No"]
     end
     widths = ["Tool".length, "Status".length, "Approver".length]
     rows.each { |row| row.each_with_index { |value, index| widths[index] = [widths[index], value.length].max } }
     line = ->(row) { row.each_with_index.map { |value, index| value.ljust(widths[index]) }.join(" | ") }
     "```#{line.call(%w[Tool Status Approver])}\n#{widths.map { |width| "-" * width }.join("-+-")}\n#{rows.map { |row| line.call(row) }.join("\n")}```"
-  end
-
-  def tool_status(tool)
-    tool.disabled? || tool.shop&.disabled? ? "Disabled" : "Enabled"
-  end
-
-  def approver?(member, tool)
-    member.role.in?(%w[admin board_member]) || member.manages_shop?(tool.shop_id) ||
-      (!tool.disabled? && member.valid_for_checkout_request? &&
-        CheckoutApprover.find_by(member_id: member.id)&.can_approve_tool?(tool))
   end
 
   def shop_channel(shop)

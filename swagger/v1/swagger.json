@@ -4762,6 +4762,15 @@
             }
           },
           {
+            "name": "fully_active_unexpired",
+            "in": "query",
+            "required": false,
+            "description": "Only activeMember members whose expirationTime is strictly in the future",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "currentMembers",
             "in": "query",
             "required": false,

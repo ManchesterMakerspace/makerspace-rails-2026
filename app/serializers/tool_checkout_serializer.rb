@@ -3,31 +3,31 @@ class ToolCheckoutSerializer < ActiveModel::Serializer
              :revocation_reason, :signed_off_via, :approved_by_id
 
   attribute :tool_name do
-    object.tool.try(:name)
+    checkout_tool.try(:name)
   end
 
   attribute :shop_name do
-    object.tool.try(:shop).try(:name)
+    checkout_shop.try(:name)
   end
 
   attribute :shop_id do
-    object.tool.try(:shop_id)
+    checkout_tool.try(:shop_id)
   end
 
   attribute :shop_wiki_url do
-    object.tool.try(:shop).try(:effective_wiki_url)
+    checkout_shop.try(:effective_wiki_url)
   end
 
   attribute :member_name do
-    object.member.try(:fullname)
+    checkout_member.try(:fullname)
   end
 
   attribute :member_email do
-    object.member.try(:email)
+    checkout_member.try(:email)
   end
 
   attribute :approved_by_name do
-    object.approved_by.try(:fullname)
+    checkout_approved_by.try(:fullname)
   end
 
   attribute :active do
@@ -39,10 +39,30 @@ class ToolCheckoutSerializer < ActiveModel::Serializer
   # checkout approver for the tool, or a privileged member). An open,
   # not-yet-approved request or a revoked checkout does not qualify.
   attribute :tool_notes, if: :tool_notes_visible? do
-    object.tool.notes
+    checkout_tool.notes
   end
 
   def tool_notes_visible?
-    object.tool.present? && object.tool.notes_visible_to?(scope)
+    checkout_tool.present? && (checkout_context ? checkout_context.notes_visible?(checkout_tool) : checkout_tool.notes_visible_to?(scope))
+  end
+
+  def checkout_context
+    instance_options[:checkout_context]
+  end
+
+  def checkout_tool
+    checkout_context ? checkout_context.tools[object.tool_id.to_s] : object.tool
+  end
+
+  def checkout_shop
+    checkout_context ? checkout_context.shops[checkout_tool&.shop_id.to_s] : checkout_tool.try(:shop)
+  end
+
+  def checkout_member
+    checkout_context ? checkout_context.members[object.member_id.to_s] : object.member
+  end
+
+  def checkout_approved_by
+    checkout_context ? checkout_context.members[object.approved_by_id.to_s] : object.approved_by
   end
 end

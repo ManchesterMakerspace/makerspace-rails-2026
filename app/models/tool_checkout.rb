@@ -12,6 +12,8 @@ class ToolCheckout
   belongs_to :tool
   belongs_to :approved_by, class_name: "Member", optional: true
 
+  index({ member_id: 1, revoked_at: 1, tool_id: 1 })
+
   validates :member, presence: true
   validates :tool, presence: true
 
