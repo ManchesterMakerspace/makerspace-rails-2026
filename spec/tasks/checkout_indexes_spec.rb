@@ -7,6 +7,17 @@ RSpec.describe 'data:ensure_checkout_indexes' do
   before do
     Rails.application.load_tasks unless Rake::Task.task_defined?('data:ensure_checkout_indexes')
     task.reenable
+    reset_index_test_collections
+  end
+
+  after do
+    # DatabaseCleaner's deletion strategy preserves indexes. Remove this spec's
+    # deliberately incompatible indexes even when an example fails, so they
+    # cannot enforce uniqueness on unrelated specs' member fixtures.
+    reset_index_test_collections
+  end
+
+  def reset_index_test_collections
     Service::DatabaseSafety.ensure_safe_mlab_uri!(operation: 'Checkout index test collection reset')
     [Card, Member, ToolCheckout, CheckoutApprover].each { |model| model.collection.drop }
   end

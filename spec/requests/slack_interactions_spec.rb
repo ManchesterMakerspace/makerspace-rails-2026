@@ -232,6 +232,7 @@ RSpec.describe "Slack interactions", type: :request do
       expect(SlackReservationModal).to receive(:update).with(
         shop: shop,
         member: member,
+        read_context: instance_of(ReservationReadContext),
         response_url: response_url,
         slack_user_id: "UINITIATOR",
         reservation_scope: "shop",

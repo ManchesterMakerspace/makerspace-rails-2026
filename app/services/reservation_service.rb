@@ -4,7 +4,16 @@ class ReservationService
 
   class << self
     def preview(member:, attributes:, reservation: nil, actor: member)
+      ReservationTiming.measure("reservation_preview") do |metrics|
+        result = preview_result(member: member, attributes: attributes, reservation: reservation, actor: actor, metrics: metrics)
+        metrics[:outcome] = "rejected" unless result[:eligible]
+        result
+      end
+    end
+
+    def preview_result(member:, attributes:, reservation: nil, actor: member, metrics:)
       normalized = normalize(attributes, reservation)
+      metrics[:resource_count] = normalized[:reservation_scope] == "shop" ? 1 : normalized[:tool_ids].length
       if reservation && !material_edit?(reservation, normalized)
         errors = normalized[:title].blank? ? ["Title is required"] : []
         reasons = Array(reservation.approval_reasons)
@@ -39,6 +48,7 @@ class ReservationService
         maximumDurationHours: evaluation[:maximum_duration_hours]
       }
     end
+    private :preview_result
 
     def create!(member:, attributes:, source: "portal", actor: member)
       normalized = normalize(attributes)
@@ -227,6 +237,15 @@ class ReservationService
     end
 
     def evaluate(member:, attributes:, reservation: nil, actor: member)
+      ReservationTiming.measure("reservation_evaluate") do |metrics|
+        metrics[:resource_count] = attributes[:reservation_scope] == "shop" ? 1 : Array(attributes[:tool_ids]).length
+        result = evaluate_with_reads(member: member, attributes: attributes, reservation: reservation, actor: actor)
+        metrics[:outcome] = "rejected" if result[:errors].any? || result[:conflicts].any?
+        result
+      end
+    end
+
+    def evaluate_with_reads(member:, attributes:, reservation: nil, actor: member)
       member.reload if member.persisted?
       errors = []
       conflicts = []
@@ -253,6 +272,7 @@ class ReservationService
       resources = ReservationPolicy.resources(
         shop: shop, reservation_scope: attributes[:reservation_scope], tools: tools
       )
+      read_context = ReservationReadContext.new(shop: shop, member: member, resources: tools)
       policy = ReservationPolicy.aggregate(resources)
       booking_window_changed = !reservation || reservation.start_at != attributes[:start_at] ||
         reservation.shop_id.to_s != shop.id.to_s || reservation.reservation_scope != attributes[:reservation_scope] ||
@@ -277,7 +297,7 @@ class ReservationService
         errors << "Full-day reservations must run midnight to midnight" unless start_local == start_local.beginning_of_day && end_local == end_local.beginning_of_day
         errors << "Full-day reservations require a maximum duration of at least 24 hours" if resources.any? { |resource| resource.max_reservation_duration_hours < 24 }
       end
-      fee_rule_snapshot = ReservationFeeService.snapshot(attributes, reservation)
+      fee_rule_snapshot = ReservationFeeService.snapshot(attributes, reservation, resources: resources, read_context: read_context)
       fee_lines = ReservationFeeService.quote(resources: resources, start_at: attributes[:start_at], end_at: attributes[:end_at], full_day: full_day, reservation: reservation, rule_snapshot: fee_rule_snapshot)
       if (fee_lines.present? || (reservation&.fee_invoice && !reservation.fee_invoice.settled)) && ReservationFeeService.overdue_fees?(member)
         errors << "Pay all overdue shop fee invoices before making or changing a fee-incurring reservation"
@@ -356,9 +376,9 @@ class ReservationService
         member: member
       )
       unless board_override
-        checked_out_ids = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
-        missing_ids = prerequisite_ids - checked_out_ids
-        missing = Tool.where(:id.in => missing_ids).map { |tool| { id: tool.id.to_s, name: tool.name } }
+        missing_ids = prerequisite_ids.reject { |id| read_context.checked_out_tool_ids.include?(id) }
+        names = read_context.tool_names(missing_ids)
+        missing = missing_ids.filter_map { |id| { id: id, name: names[id] } if names[id] }
         if missing_ids.present?
           missing_names = missing.map { |tool| tool[:name] }.presence || missing_ids
           errors << "Missing required checkout(s): #{missing_names.join(', ')}"
