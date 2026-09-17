@@ -5611,6 +5611,93 @@
         }
       }
     },
+    "/slack/interactions": {
+      "post": {
+        "summary": "Handles signed Slack modal interactions",
+        "servers": [
+          {
+            "url": "/",
+            "description": "Application root"
+          }
+        ],
+        "tags": [
+          "SlackInteractions"
+        ],
+        "operationId": "slackInteractions",
+        "parameters": [
+          {
+            "name": "X-Slack-Signature",
+            "in": "header",
+            "required": true,
+            "description": "Slack v0 request signature",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Slack-Request-Timestamp",
+            "in": "header",
+            "required": true,
+            "description": "Unix timestamp covered by the Slack signature",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "interaction acknowledged or modal response returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Empty acknowledgement, modal clear action, or field validation errors",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Slack signature is missing, invalid, or stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "payload": {
+                    "type": "string",
+                    "pattern": "\"type\":\"(view_submission|block_actions|view_closed)\"",
+                    "description": "JSON-encoded Slack interaction. Reservation views accept view_submission, view_closed, and block_actions; block actions include actions and current view state.",
+                    "example": "{\"type\":\"block_actions\",\"user\":{\"id\":\"U12345678\"},\"actions\":[{\"action_id\":\"reservation_tools_changed\",\"selected_options\":[]}],\"view\":{\"id\":\"V12345678\",\"hash\":\"view-hash\",\"callback_id\":\"reservation_submit\",\"private_metadata\":\"{}\",\"state\":{\"values\":{}}}}"
+                  }
+                },
+                "required": [
+                  "payload"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/tool_checkout_requests": {
       "post": {
         "summary": "Requests a safety checkout",

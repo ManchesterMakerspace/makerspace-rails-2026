@@ -144,6 +144,41 @@ RSpec.describe SlackReservationModal do
     )
   end
 
+  it "uses coarser long-duration steps and never exceeds Slack's 100-option limit" do
+    allow(shop).to receive(:max_reservation_duration_hours).and_return(1_000.0)
+
+    values = duration_values(described_class.build(shop, member))
+
+    expect(values.length).to eq(100)
+    expect(values).to include("hours:24", "hours:26", "hours:48", "hours:52")
+    expect(values).not_to include("hours:25", "hours:50", "hours:53")
+  end
+
+  it "treats full-day reservations as starting no earlier than tomorrow" do
+    allow(shop).to receive_messages(
+      reservation_full_day: true,
+      max_reservation_duration_hours: 24.0,
+      reservation_horizon_days: 0,
+      minimum_advance_notice_hours: 0
+    )
+
+    travel_to ReservationService::ZONE.local(2026, 9, 17, 9, 0) do
+      view = described_class.build(shop, member)
+
+      expect(view).not_to have_key(:submit)
+      expect(policy_text(view)).to include("Unavailable combination", "earliest start of September 18")
+    end
+  end
+
+  it "caps full-day duration choices at Slack's 100-option limit" do
+    allow(shop).to receive_messages(
+      reservation_full_day: true,
+      max_reservation_duration_hours: 24.0 * 150
+    )
+
+    expect(duration_values(described_class.build(shop, member)).length).to eq(100)
+  end
+
   it "offers whole-day choices and removes the start-time input for full-day resources" do
     allow(shop).to receive_messages(reservation_full_day: true, max_reservation_duration_hours: 72.0)
 

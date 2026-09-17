@@ -741,11 +741,13 @@ turns it into a modal validation error.
 
 The modal collects a start date/time and **Duration**, rather than a separately
 entered end time. Timed reservations offer half-hour choices through five hours
-and then whole-hour choices up to the selected resources' shortest configured
-maximum. If any selected resource requires full-day reservations, Duration uses
+and then whole-hour choices through 24 hours, two-hour choices through 48 hours,
+and four-hour choices thereafter, capped at Slack's 100-option selector limit.
+If any selected resource requires full-day reservations, Duration uses
 whole-day choices and the start is midnight in `America/New_York`; advancing the
 selected number of local dates preserves midnight boundaries across daylight-
-saving transitions.
+saving transitions. Full-day policy compatibility treats tomorrow as the
+earliest possible start, so a zero-day horizon correctly disables submission.
 
 An informational policy alert at the bottom of the modal summarizes the current
 selection's effective booking horizon, greatest advance-notice requirement,

@@ -157,13 +157,15 @@ class SlackReservationModal
     def duration_options(policy)
       maximum = policy[:maximum_duration_hours].to_f
       if policy[:full_day]
-        1.upto((maximum / 24).floor).map do |days|
+        1.upto([(maximum / 24).floor, 100].min).map do |days|
           option("#{days} #{'day'.pluralize(days)}", "days:#{days}")
         end
       else
         half_hours = (1..[(maximum * 2).floor, 10].min).map { |step| step / 2.0 }
-        whole_hours = 6.upto(maximum.floor).to_a
-        (half_hours + whole_hours).map do |hours|
+        whole_hours = 6.upto([maximum.floor, 24].min).to_a
+        two_hour_steps = maximum > 24 ? 26.step([maximum.floor, 48].min, 2).to_a : []
+        four_hour_steps = maximum > 48 ? 52.step(maximum.floor, 4).to_a : []
+        (half_hours + whole_hours + two_hour_steps + four_hour_steps).first(100).map do |hours|
           option(format_hours(hours), "hours:#{hours}")
         end
       end

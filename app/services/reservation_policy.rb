@@ -25,7 +25,11 @@ class ReservationPolicy
       policy = aggregate(selected)
       notice_start = now + policy[:minimum_advance_notice_hours].hours
       earliest_start = Time.at((notice_start.to_f / 30.minutes).floor * 30.minutes).in_time_zone(ReservationService::ZONE)
-      if policy[:prohibit_same_day] && earliest_start.to_date == now.to_date
+      if policy[:full_day]
+        earliest_date = [earliest_start.to_date, now.to_date + 1.day].max
+        earliest_start = earliest_date.in_time_zone(ReservationService::ZONE)
+        earliest_start = (earliest_date + 1.day).in_time_zone(ReservationService::ZONE) if earliest_start < notice_start
+      elsif policy[:prohibit_same_day] && earliest_start.to_date == now.to_date
         earliest_start = (now.to_date + 1.day).in_time_zone(ReservationService::ZONE)
       end
       final_start_date = now.to_date + policy[:horizon_days]
