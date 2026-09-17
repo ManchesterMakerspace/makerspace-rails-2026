@@ -86,6 +86,10 @@ module Service
       return if Rails.env.test?
       client.views_open(trigger_id: trigger_id, view: view)
     end
+    def self.update_modal(view_id, view, hash: nil)
+      return if Rails.env.test?
+      client.views_update(view_id: view_id, hash: hash, view: view)
+    end
     def self.pin_slack_message(channel, ts)
       return if Rails.env.test?
       return if ts.blank?
