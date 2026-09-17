@@ -762,7 +762,11 @@ duration, and policy failures are attached to the modal's Duration field.
 Scope and tool selectors dispatch Block Kit actions with dedicated action IDs.
 Each action re-resolves the member, shop, and selected tools from persisted IDs;
 stale, disabled, non-reservable, and cross-shop tool IDs are rejected. The
-updated view preserves its title, date, start time, scope, tool selection, and
+tool selector only lists enabled, reservable tools for which the member meets
+pending-member restrictions and every effective checkout prerequisite (including
+the tool's own checkout when it is not open access). Board members retain their
+server-side prerequisite exemption. The updated view preserves its title, date,
+start time, scope, tool selection, and
 duration. If a newly added tool lowers the duration limit, Duration is clamped
 to the greatest remaining valid choice. Removing all tools, or selecting a set
 whose minimum-notice/same-day rules make its earliest start later than the

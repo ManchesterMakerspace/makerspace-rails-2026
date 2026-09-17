@@ -349,5 +349,24 @@ RSpec.describe Slack::CommandsController, type: :controller do
 
       expect(response).to have_http_status(:ok)
     end
+
+    it "only exposes enabled reservable tools whose checkout requirements are met" do
+      eligible = create(:tool, shop: shop, name: "Open Tool", open: true)
+      create(:tool, shop: shop, name: "Checkout Required", open: false)
+      create(:tool, shop: shop, name: "Disabled Tool", open: true, disabled: true)
+      create(:tool, shop: shop, name: "Not Reservable", open: true, reservable: false)
+      command = { channel_name: "woodshop", user_id: "U123", trigger_id: "trigger" }
+      sign_request!(command)
+      expect(Service::SlackConnector).to receive(:open_modal) do |_trigger_id, view|
+        tools_block = view[:blocks].find { |block| block[:block_id] == "tools" }
+        expect(tools_block.dig(:element, :options)).to contain_exactly(
+          hash_including(value: eligible.id.to_s)
+        )
+      end
+
+      post :reserve, params: command
+
+      expect(response).to have_http_status(:ok)
+    end
   end
 end

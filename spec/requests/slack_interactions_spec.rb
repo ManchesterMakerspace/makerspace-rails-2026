@@ -227,9 +227,9 @@ RSpec.describe "Slack interactions", type: :request do
 
     it "re-resolves added tools and applies their strictest rules" do
       shop = create(:shop, max_reservation_duration_hours: 8)
-      first = create(:tool, shop: shop, max_reservation_duration_hours: 8)
+      first = create(:tool, shop: shop, open: true, max_reservation_duration_hours: 8)
       strict = create(:tool, shop: shop, max_reservation_duration_hours: 3,
-        reservation_horizon_days: 2, minimum_advance_notice_hours: 6)
+        reservation_horizon_days: 2, minimum_advance_notice_hours: 6, open: true)
       payload = reservation_payload(type: "block_actions", duration: "hours:8")
       payload[:view][:private_metadata] = metadata.merge(shop_id: shop.id.to_s).to_json
       payload[:view][:id] = "VADD"
@@ -253,7 +253,7 @@ RSpec.describe "Slack interactions", type: :request do
 
     it "preserves an empty tool selection after all tools are removed" do
       shop = create(:shop)
-      create(:tool, shop: shop)
+      create(:tool, shop: shop, open: true)
       payload = reservation_payload(type: "block_actions")
       payload[:view][:private_metadata] = metadata.merge(shop_id: shop.id.to_s).to_json
       payload[:view][:id] = "VREMOVE"
@@ -301,7 +301,7 @@ RSpec.describe "Slack interactions", type: :request do
 
     it "reports views.update failures without accepting submitted option data" do
       shop = create(:shop)
-      tool = create(:tool, shop: shop)
+      tool = create(:tool, shop: shop, open: true)
       payload = reservation_payload(type: "block_actions")
       payload[:view][:private_metadata] = metadata.merge(shop_id: shop.id.to_s).to_json
       payload[:actions] = [{
@@ -321,8 +321,8 @@ RSpec.describe "Slack interactions", type: :request do
 
     it "prevents submission for incompatible horizon and notice selections" do
       shop = create(:shop)
-      horizon = create(:tool, shop: shop, name: "Today Only", reservation_horizon_days: 0)
-      notice = create(:tool, shop: shop, name: "Tomorrow Only", prohibit_same_day_reservations: true)
+      horizon = create(:tool, shop: shop, name: "Today Only", reservation_horizon_days: 0, open: true)
+      notice = create(:tool, shop: shop, name: "Tomorrow Only", prohibit_same_day_reservations: true, open: true)
       payload = reservation_payload(type: "block_actions")
       payload[:view][:private_metadata] = metadata.merge(shop_id: shop.id.to_s).to_json
       payload[:view][:state][:values][:scope][SlackReservationModal::SCOPE_ACTION_ID][:selected_option][:value] = "tools"

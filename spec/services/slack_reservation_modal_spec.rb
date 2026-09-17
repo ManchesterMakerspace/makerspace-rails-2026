@@ -1,11 +1,21 @@
 require "rails_helper"
 
 RSpec.describe SlackReservationModal do
-  let(:member) { instance_double(Member, id: BSON::ObjectId.new, status: "activeMember") }
+  let(:member) do
+    instance_double(
+      Member,
+      id: BSON::ObjectId.new,
+      status: "activeMember",
+      role: "member",
+      active_unexpired?: true
+    )
+  end
   let(:tools) { [] }
   let(:prerequisite_tools) { [] }
   let(:relation) { double("reservable tool relation") }
   let(:prerequisite_relation) { double("prerequisite relation", to_a: prerequisite_tools) }
+  let(:checkout_relation) { double("checkout relation", pluck: checked_out_tool_ids) }
+  let(:checked_out_tool_ids) { [] }
   let(:shop) { resource_double(Shop, name: "Woodshop", reservable: true) }
 
   before do
@@ -14,6 +24,7 @@ RSpec.describe SlackReservationModal do
     end
     allow(relation).to receive(:order_by).with(name: :asc).and_return(relation)
     allow(relation).to receive(:to_a).and_return(tools)
+    allow(ToolCheckout).to receive(:where).and_return(checkout_relation)
   end
 
   def resource_double(klass, overrides = {})
@@ -29,7 +40,9 @@ RSpec.describe SlackReservationModal do
       reservation_requires_approval: false,
       reservation_prerequisite_tool_ids: []
     }
+    defaults[:disabled?] = false if klass == Shop
     defaults.merge!(effective_reservation_prerequisite_ids: [], allow_pending: false) if klass == Tool
+    defaults.merge!(shop_id: shop.id, disabled?: false) if klass == Tool
     instance_double(klass, **defaults.merge(overrides))
   end
 
@@ -66,6 +79,59 @@ RSpec.describe SlackReservationModal do
     expect(block(view, "scope")[:element][:options]).to contain_exactly(hash_including(value: "tools"))
     expect(block(view, "tools")[:element][:initial_options]).to contain_exactly(hash_including(value: tools.first.id.to_s))
     expect(policy_text(view)).to include("Bandsaw")
+  end
+
+  it "hides tools whose effective checkout requirements are not met" do
+    restricted = resource_double(Tool, name: "Restricted")
+    allow(restricted).to receive(:effective_reservation_prerequisite_ids)
+      .and_return([restricted.id.to_s])
+    tools << restricted
+
+    view = described_class.build(shop, member)
+
+    expect(block(view, "tools")).to be_nil
+    expect(block(view, "scope")[:element][:options].pluck(:value)).to eq(["shop"])
+  end
+
+  it "exposes a restricted tool after the member has its required checkout" do
+    restricted = resource_double(Tool, name: "Restricted")
+    allow(restricted).to receive(:effective_reservation_prerequisite_ids)
+      .and_return([restricted.id.to_s])
+    tools << restricted
+    checked_out_tool_ids << restricted.id
+
+    view = described_class.build(shop, member)
+
+    expect(block(view, "tools")[:element][:options]).to contain_exactly(
+      hash_including(value: restricted.id.to_s)
+    )
+  end
+
+  it "hides tools with unmet explicit reservation prerequisites" do
+    prerequisite_id = BSON::ObjectId.new
+    tools << resource_double(
+      Tool,
+      name: "Advanced Tool",
+      effective_reservation_prerequisite_ids: [prerequisite_id.to_s],
+      reservation_prerequisite_tool_ids: [prerequisite_id.to_s]
+    )
+
+    expect(block(described_class.build(shop, member), "tools")).to be_nil
+  end
+
+  it "allows board members to see enabled reservable tools without checkouts" do
+    board_member = instance_double(
+      Member,
+      id: BSON::ObjectId.new,
+      status: "activeMember",
+      role: "board_member",
+      active_unexpired?: true
+    )
+    restricted = resource_double(Tool, effective_reservation_prerequisite_ids: [BSON::ObjectId.new.to_s])
+    tools << restricted
+
+    expect(block(described_class.build(shop, board_member), "tools")[:element][:options])
+      .to contain_exactly(hash_including(value: restricted.id.to_s))
   end
 
   it "supports mixed scope and applies selected-tool policies" do

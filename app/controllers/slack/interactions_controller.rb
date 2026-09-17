@@ -104,7 +104,7 @@ class Slack::InteractionsController < ApplicationController
     end
     shop = Shop.find(metadata["shop_id"])
     member = Member.find(metadata["member_id"])
-    validate_reservation_tool_ids!(shop, tool_ids) if tool_ids.present?
+    validate_reservation_tool_ids!(shop, member, tool_ids) if tool_ids.present?
     view = SlackReservationModal.update(
       shop: shop,
       member: member,
@@ -148,14 +148,19 @@ class Slack::InteractionsController < ApplicationController
     Array(selected).map { |option| option["value"] }
   end
 
-  def validate_reservation_tool_ids!(shop, tool_ids)
+  def validate_reservation_tool_ids!(shop, member, tool_ids)
     requested_ids = Array(tool_ids).map(&:to_s).uniq
-    valid_ids = Tool.where(
+    candidates = Tool.where(
       shop_id: shop.id,
       :id.in => requested_ids,
       reservable: true,
       :disabled.ne => true
-    ).pluck(:id).map(&:to_s)
+    ).to_a
+    valid_ids = ReservationPolicy.eligible_tools(
+      shop: shop,
+      member: member,
+      tools: candidates
+    ).map { |tool| tool.id.to_s }
     return if valid_ids.sort == requested_ids.sort
 
     raise ::Error::UnprocessableEntity.new("One or more selected tools are no longer reservable in this shop")

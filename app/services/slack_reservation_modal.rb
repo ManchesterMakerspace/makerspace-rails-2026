@@ -6,7 +6,7 @@ class SlackReservationModal
   class << self
     def build(shop, member, response_url: nil, slack_user_id: nil, reservation_scope: nil, tool_ids: nil,
       title: nil, date: nil, start_time: nil, duration: nil)
-      tools = reservable_tools(shop)
+      tools = reservable_tools(shop, member)
       raise ::Error::UnprocessableEntity.new("This shop has more than 100 reservable tools; use the portal") if tools.length > 100
       raise ::Error::UnprocessableEntity.new("This shop has no reservable resources") unless shop.reservable || tools.present?
 
@@ -137,8 +137,13 @@ class SlackReservationModal
 
     private
 
-    def reservable_tools(shop)
-      Tool.where(shop_id: shop.id, reservable: true, :disabled.ne => true).order_by(name: :asc).to_a
+    def reservable_tools(shop, member)
+      candidates = Tool.where(
+        shop_id: shop.id,
+        reservable: true,
+        :disabled.ne => true
+      ).order_by(name: :asc).to_a
+      ReservationPolicy.eligible_tools(shop: shop, member: member, tools: candidates)
     end
 
     def valid_scope(requested, scope_options)

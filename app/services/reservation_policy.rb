@@ -74,5 +74,27 @@ class ReservationPolicy
       names_by_id = Tool.where(:id.in => ids).to_a.index_by { |tool| tool.id.to_s }
       ids.map { |id| names_by_id[id]&.name || "Unknown tool" }
     end
+
+    def eligible_tools(shop:, member:, tools:)
+      candidates = Array(tools).select do |tool|
+        tool.shop_id.to_s == shop.id.to_s && tool.reservable && !tool.disabled?
+      end
+      return [] if shop.disabled?
+      return candidates if member.role == "board_member"
+      return [] unless member.status == "pending" || member.active_unexpired?
+
+      checked_out_ids = ToolCheckout.where(member_id: member.id, revoked_at: nil)
+        .pluck(:tool_id).map(&:to_s)
+      candidates.select do |tool|
+        next false if member.status == "pending" && !tool.allow_pending
+
+        prerequisite_ids(
+          shop: shop,
+          reservation_scope: "tools",
+          tools: [tool],
+          member: member
+        ).all? { |tool_id| checked_out_ids.include?(tool_id) }
+      end
+    end
   end
 end
