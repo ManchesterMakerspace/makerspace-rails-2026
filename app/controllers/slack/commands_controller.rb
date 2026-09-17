@@ -108,7 +108,11 @@ class Slack::CommandsController < ApplicationController
       slack_user_id: params[:user_id]
     )
     slack_request = { method: "views.open", arguments: { trigger_id: params[:trigger_id], view: view } }
-    Service::SlackConnector.open_modal(params[:trigger_id], view)
+    ReservationTiming.measure("slack_views_open") do |metrics|
+      # The initial form selects the shop or the first eligible tool.
+      metrics[:resource_count] = 1
+      Service::SlackConnector.open_modal(params[:trigger_id], view)
+    end
     render json: { response_type: "ephemeral", text: "Opening reservation form…" }
   rescue ::Error::CustomError => error
     Rails.logger.warn(

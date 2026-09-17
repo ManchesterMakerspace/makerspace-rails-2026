@@ -24,6 +24,7 @@ RSpec.describe SlackReservationModal do
     end
     allow(relation).to receive(:order_by).with(name: :asc).and_return(relation)
     allow(relation).to receive(:to_a).and_return(tools)
+    allow(prerequisite_relation).to receive(:only).with(:name).and_return(prerequisite_relation)
     allow(ToolCheckout).to receive(:where).and_return(checkout_relation)
   end
 

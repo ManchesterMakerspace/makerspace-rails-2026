@@ -117,6 +117,12 @@ class Slack::InteractionsController < ApplicationController
   end
 
   def update_reservation_modal(payload)
+    ReservationTiming.measure("slack_modal_update") do |metrics|
+      update_reservation_modal_view(payload, metrics)
+    end
+  end
+
+  def update_reservation_modal_view(payload, metrics)
     metadata = JSON.parse(payload.dig("view", "private_metadata").to_s)
     state = payload.dig("view", "state", "values") || {}
     action = payload.fetch("actions").first
@@ -128,10 +134,13 @@ class Slack::InteractionsController < ApplicationController
     end
     shop = Shop.find(metadata["shop_id"])
     member = Member.find(metadata["member_id"])
-    validate_reservation_tool_ids!(shop, member, tool_ids) if tool_ids.present?
+    metrics[:resource_count] = scope == "shop" ? 1 : tool_ids.uniq.length
+    read_context = ReservationReadContext.new(shop: shop, member: member)
+    validate_reservation_tool_ids!(shop, member, tool_ids, read_context: read_context) if tool_ids.present?
     view = SlackReservationModal.update(
       shop: shop,
       member: member,
+      read_context: read_context,
       response_url: metadata["response_url"],
       slack_user_id: metadata["slack_user_id"],
       reservation_scope: scope,
@@ -141,13 +150,15 @@ class Slack::InteractionsController < ApplicationController
       start_time: state.dig("start_time", "start_time", "selected_time"),
       duration: state.dig("duration", "duration", "selected_option", "value")
     )
-    Service::SlackConnector.update_modal(
-      payload.dig("view", "id"),
-      view,
-      hash: payload.dig("view", "hash")
-    )
+    ReservationTiming.measure("slack_views_update") do |metrics|
+      metrics[:resource_count] = scope == "shop" ? 1 : tool_ids.uniq.length
+      Service::SlackConnector.update_modal(
+        payload.dig("view", "id"), view, hash: payload.dig("view", "hash")
+      )
+    end
     render json: {}
   rescue => error
+    metrics[:outcome] = "error"
     Service::ErrorReporter.notify(error, context: { phase: "Slack reservation modal policy update" })
     render json: {}
   end
@@ -172,19 +183,20 @@ class Slack::InteractionsController < ApplicationController
     Array(selected).map { |option| option["value"] }
   end
 
-  def validate_reservation_tool_ids!(shop, member, tool_ids)
+  def validate_reservation_tool_ids!(shop, member, tool_ids, read_context: nil)
     requested_ids = Array(tool_ids).map(&:to_s).uniq
-    candidates = Tool.where(
+    candidates = read_context ? read_context.eligible_tools : Tool.where(
       shop_id: shop.id,
       :id.in => requested_ids,
       reservable: true,
       :disabled.ne => true
     ).to_a
-    valid_ids = ReservationPolicy.eligible_tools(
+    eligible = read_context ? candidates : ReservationPolicy.eligible_tools(
       shop: shop,
       member: member,
       tools: candidates
-    ).map { |tool| tool.id.to_s }
+    )
+    valid_ids = eligible.map { |tool| tool.id.to_s } & requested_ids
     return if valid_ids.sort == requested_ids.sort
 
     raise ::Error::UnprocessableEntity.new("One or more selected tools are no longer reservable in this shop")

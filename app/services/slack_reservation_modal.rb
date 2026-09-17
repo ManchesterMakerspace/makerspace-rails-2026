@@ -5,9 +5,16 @@ class SlackReservationModal
   TOOLS_ACTION_ID = "reservation_tools_changed"
 
   class << self
-    def build(shop, member, response_url: nil, slack_user_id: nil, reservation_scope: nil, tool_ids: nil,
-      title: nil, date: nil, start_time: nil, duration: nil, alert_message: nil)
-      tools = reservable_tools(shop, member)
+    def build(shop, member, **options)
+      ReservationTiming.measure("slack_modal_build") do |metrics|
+        build_view(shop, member, **options, metrics: metrics)
+      end
+    end
+
+    def build_view(shop, member, response_url: nil, slack_user_id: nil, reservation_scope: nil, tool_ids: nil,
+      title: nil, date: nil, start_time: nil, duration: nil, alert_message: nil, read_context: nil, metrics:)
+      read_context ||= ReservationReadContext.new(shop: shop, member: member)
+      tools = read_context.eligible_tools
       raise ::Error::UnprocessableEntity.new("This shop has more than 100 reservable tools; use the portal") if tools.length > 100
       raise ::Error::UnprocessableEntity.new("This shop has no reservable resources") unless shop.reservable || tools.present?
 
@@ -19,8 +26,9 @@ class SlackReservationModal
       resources = ReservationPolicy.resources(
         shop: shop, reservation_scope: reservation_scope, tools: selected_tools
       )
+      metrics[:resource_count] = resources.length
       policy = ReservationPolicy.aggregate(resources)
-      scheduling_window = ReservationPolicy.scheduling_window(resources)
+      scheduling_window = ReservationPolicy.scheduling_window(resources, policy: policy)
       durations = scheduling_window[:compatible] ? duration_options(policy) : []
       if scheduling_window[:compatible] && durations.empty?
         full_day_names = resources.select(&:reservation_full_day).map(&:name)
@@ -38,7 +46,7 @@ class SlackReservationModal
       selected_date = valid_date(date) || default_start.to_date.iso8601
       selected_time = valid_time(start_time) || default_start.strftime("%H:%M")
       timing = reservation_timing(selected_date, selected_time, selected_duration)
-      fee = fee_preview(resources, timing)
+      fee = fee_preview(resources, timing, read_context: read_context)
 
       blocks = [
         input("title", "title", "Title", { type: "plain_text_input", initial_value: title }.compact),
@@ -79,7 +87,7 @@ class SlackReservationModal
       end
       blocks.concat(policy_blocks(
         shop, reservation_scope, selected_tools, member, policy, scheduling_window,
-        timing: timing, fee: fee, alert_message: alert_message
+        timing: timing, fee: fee, alert_message: alert_message, read_context: read_context
       ))
 
       view = {
@@ -106,12 +114,14 @@ class SlackReservationModal
       view[:submit] = plain(submit_text.first(24))
       view
     end
+    private :build_view
 
     def update(shop:, member:, response_url:, slack_user_id:, reservation_scope:, tool_ids:,
-      title:, date:, start_time:, duration:, alert_message: nil)
+      title:, date:, start_time:, duration:, alert_message: nil, read_context: nil)
       build(
         shop,
         member,
+        read_context: read_context,
         response_url: response_url,
         slack_user_id: slack_user_id,
         reservation_scope: reservation_scope,
@@ -124,13 +134,13 @@ class SlackReservationModal
       )
     end
 
-    def policy_summary(shop:, reservation_scope:, tools:, member:, policy: nil, scheduling_window: nil)
+    def policy_summary(shop:, reservation_scope:, tools:, member:, policy: nil, scheduling_window: nil, read_context: nil)
       resources = ReservationPolicy.resources(
         shop: shop, reservation_scope: reservation_scope, tools: tools
       )
       policy ||= ReservationPolicy.aggregate(resources)
       return "Select one or more tools to see the effective reservation rules." if resources.empty?
-      scheduling_window ||= ReservationPolicy.scheduling_window(resources)
+      scheduling_window ||= ReservationPolicy.scheduling_window(resources, policy: policy)
 
       lines = ["*Effective reservation rules for #{resource_names(resources)}*"]
       lines << "• Book up to #{policy[:horizon_days]} #{'day'.pluralize(policy[:horizon_days])} ahead."
@@ -141,7 +151,7 @@ class SlackReservationModal
       lines << "• Manager approval is required." if policy[:requires_approval]
       lines << "• *Unavailable combination:* #{scheduling_window[:reason]}" unless scheduling_window[:compatible]
       prerequisites = ReservationPolicy.prerequisite_names(
-        shop: shop, reservation_scope: reservation_scope, tools: tools, member: member
+        shop: shop, reservation_scope: reservation_scope, tools: tools, member: member, read_context: read_context
       )
       lines << if prerequisites.present?
         "• Required active checkout(s): #{prerequisites.join(', ')}."
@@ -154,15 +164,6 @@ class SlackReservationModal
     end
 
     private
-
-    def reservable_tools(shop, member)
-      candidates = Tool.where(
-        shop_id: shop.id,
-        reservable: true,
-        :disabled.ne => true
-      ).order_by(name: :asc).to_a
-      ReservationPolicy.eligible_tools(shop: shop, member: member, tools: candidates)
-    end
 
     def valid_scope(requested, scope_options)
       values = scope_options.map { |choice| choice[:value] }
@@ -194,7 +195,7 @@ class SlackReservationModal
       end
     end
 
-    def policy_blocks(shop, reservation_scope, tools, member, policy, scheduling_window, timing:, fee:, alert_message:)
+    def policy_blocks(shop, reservation_scope, tools, member, policy, scheduling_window, timing:, fee:, alert_message:, read_context:)
       incompatible = !scheduling_window[:compatible]
       alert_text = alert_message.presence || if incompatible
         "These resources cannot currently be reserved together. Review the conflicting rules below."
@@ -219,7 +220,8 @@ class SlackReservationModal
             tools: tools,
             member: member,
             policy: policy,
-            scheduling_window: scheduling_window
+            scheduling_window: scheduling_window,
+            read_context: read_context
           )
         }
       }]
@@ -265,15 +267,17 @@ class SlackReservationModal
       "*Calculated end:* #{label}#{suffix}\n*Timezone:* America/New_York"
     end
 
-    def fee_preview(resources, timing)
+    def fee_preview(resources, timing, read_context:)
       return { lines: [], total: 0.0 } unless timing && resources.present?
       return { lines: [], total: 0.0 } unless resources.all? { |resource| resource.respond_to?(:duration_fees) }
 
+      snapshot = ReservationFeeService.snapshot({}, resources: resources, read_context: read_context)
       lines = ReservationFeeService.quote(
         resources: resources,
         start_at: timing[:start_at],
         end_at: timing[:end_at],
-        full_day: timing[:full_day]
+        full_day: timing[:full_day],
+        rule_snapshot: snapshot
       )
       { lines: lines, total: ReservationFeeService.total(lines) }
     rescue ::Error::CustomError

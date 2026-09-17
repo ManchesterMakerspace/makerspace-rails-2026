@@ -18,11 +18,11 @@ class ReservationPolicy
       }
     end
 
-    def scheduling_window(resources, now: Time.current.in_time_zone(ReservationService::ZONE))
+    def scheduling_window(resources, now: Time.current.in_time_zone(ReservationService::ZONE), policy: nil)
       selected = Array(resources)
       return { compatible: false, reason: "Select at least one reservable resource." } if selected.empty?
 
-      policy = aggregate(selected)
+      policy ||= aggregate(selected)
       notice_start = now + policy[:minimum_advance_notice_hours].hours
       earliest_start = Time.at((notice_start.to_f / 30.minutes).floor * 30.minutes).in_time_zone(ReservationService::ZONE)
       if policy[:full_day]
@@ -64,18 +64,19 @@ class ReservationPolicy
       ids
     end
 
-    def prerequisite_names(shop:, reservation_scope:, tools:, member: nil)
+    def prerequisite_names(shop:, reservation_scope:, tools:, member: nil, read_context: nil)
       ids = prerequisite_ids(
         shop: shop,
         reservation_scope: reservation_scope,
         tools: tools,
         member: member
       )
-      names_by_id = Tool.where(:id.in => ids).to_a.index_by { |tool| tool.id.to_s }
-      ids.map { |id| names_by_id[id]&.name || "Unknown tool" }
+      read_context ||= ReservationReadContext.new(resources: tools)
+      names_by_id = read_context.tool_names(ids)
+      ids.map { |id| names_by_id[id] || "Unknown tool" }
     end
 
-    def eligible_tools(shop:, member:, tools:)
+    def eligible_tools(shop:, member:, tools:, read_context: nil)
       candidates = Array(tools).select do |tool|
         tool.shop_id.to_s == shop.id.to_s && tool.reservable && !tool.disabled?
       end
@@ -83,8 +84,8 @@ class ReservationPolicy
       return candidates if member.role == "board_member"
       return [] unless member.status == "pending" || member.active_unexpired?
 
-      checked_out_ids = ToolCheckout.where(member_id: member.id, revoked_at: nil)
-        .pluck(:tool_id).map(&:to_s)
+      read_context ||= ReservationReadContext.new(shop: shop, member: member, resources: candidates)
+      checked_out_ids = read_context.checked_out_tool_ids
       candidates.select do |tool|
         next false if member.status == "pending" && !tool.allow_pending
 
