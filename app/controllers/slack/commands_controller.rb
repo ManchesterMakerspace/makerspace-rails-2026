@@ -101,7 +101,12 @@ class Slack::CommandsController < ApplicationController
       } and return
     end
 
-    view = SlackReservationModal.build(shop, member)
+    view = SlackReservationModal.build(
+      shop,
+      member,
+      response_url: params[:response_url],
+      slack_user_id: params[:user_id]
+    )
     slack_request = { method: "views.open", arguments: { trigger_id: params[:trigger_id], view: view } }
     Service::SlackConnector.open_modal(params[:trigger_id], view)
     render json: { response_type: "ephemeral", text: "Opening reservation form…" }

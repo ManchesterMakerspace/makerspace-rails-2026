@@ -3,6 +3,10 @@ require 'rails_helper'
 RSpec.describe Slack::CommandsController, type: :controller do
   let(:secret) { 'test-signing-secret' }
 
+  before do
+    allow(CloudflareRails::Importer).to receive(:cloudflare_ips).and_return([])
+  end
+
   def sign_request!(body_params)
     body = body_params.to_query
     timestamp = Time.now.to_i.to_s
@@ -312,6 +316,57 @@ RSpec.describe Slack::CommandsController, type: :controller do
 
         expect(response.parsed_body["text"]).to include("join the public Slack channel")
       end
+    end
+  end
+
+  describe "#reserve" do
+    let!(:shop) { create(:shop, slack_channel: "woodshop", reservable: true) }
+    let!(:member) { create(:member, :current) }
+
+    before do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("SLACK_SIGNING_SECRET").and_return(secret)
+      SlackUser.create!(member: member, slack_id: "U123")
+    end
+
+    it "retains the response URL and initiating user in modal metadata" do
+      command = {
+        channel_name: "woodshop", user_id: "U123", trigger_id: "trigger",
+        response_url: "https://hooks.slack.test/responses/secret"
+      }
+      sign_request!(command)
+      expect(Service::SlackConnector).to receive(:open_modal) do |trigger_id, view|
+        metadata = JSON.parse(view.fetch(:private_metadata))
+        expect(trigger_id).to eq("trigger")
+        expect(view[:notify_on_close]).to be(true)
+        expect(metadata).to include(
+          "response_url" => command[:response_url], "slack_user_id" => "U123",
+          "shop_id" => shop.id.to_s, "member_id" => member.id.to_s
+        )
+      end
+
+      post :reserve, params: command
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "only exposes enabled reservable tools whose checkout requirements are met" do
+      eligible = create(:tool, shop: shop, name: "Open Tool", open: true)
+      create(:tool, shop: shop, name: "Checkout Required", open: false)
+      create(:tool, shop: shop, name: "Disabled Tool", open: true, disabled: true)
+      create(:tool, shop: shop, name: "Not Reservable", open: true, reservable: false)
+      command = { channel_name: "woodshop", user_id: "U123", trigger_id: "trigger" }
+      sign_request!(command)
+      expect(Service::SlackConnector).to receive(:open_modal) do |_trigger_id, view|
+        tools_block = view[:blocks].find { |block| block[:block_id] == "tools" }
+        expect(tools_block.dig(:element, :options)).to contain_exactly(
+          hash_including(value: eligible.id.to_s)
+        )
+      end
+
+      post :reserve, params: command
+
+      expect(response).to have_http_status(:ok)
     end
   end
 end
