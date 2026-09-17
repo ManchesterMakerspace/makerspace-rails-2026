@@ -37,8 +37,13 @@ Provide an authorized test database through the existing `MLAB_URI` environment
 variable, then run:
 
 ```sh
-bundle exec rspec spec/benchmarks/reservation_reads_spec.rb --format progress
+bundle exec rspec spec/benchmarks/reservation_reads_spec.rb --tag benchmark --format progress
 ```
+
+The `benchmark` tag is excluded by default in `spec_helper`, including when CI
+discovers the file through `parallel_rspec spec/ -n 4`. Naming the file alone
+does not opt in; the explicit `--tag benchmark` flag is required. The ordinary
+query-count regression specs remain part of the default suite.
 
 This uses the normal test suite's database safety check and DatabaseCleaner:
 the test database is cleared. Do not run concurrently with other tests against

@@ -1,8 +1,8 @@
 require "rails_helper"
 
-# Run explicitly: bundle exec rspec spec/benchmarks/reservation_reads_spec.rb
+# Run explicitly: bundle exec rspec spec/benchmarks/reservation_reads_spec.rb --tag benchmark
 # Uses the normal test database safety/cleanup hooks. Slack network calls are mocked.
-RSpec.describe "Reservation read benchmark" do
+RSpec.describe "Reservation read benchmark", :benchmark do
   include ReservationReadMeasurement
 
   [1, 25, 100].each do |count|
