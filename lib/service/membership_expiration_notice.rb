@@ -21,6 +21,11 @@ module Service
         expired = candidates(excluded_ids, day: local_today - 1.day)
           .select { |member| member.membership_expired_notice_sent_for != member.expirationTime }
 
+        unless Rails.env.production?
+          Rails.logger.info("expiring_soon: #{member_names(expiring_soon)}")
+          Rails.logger.info("expired: #{member_names(expired)}")
+        end
+
         expiring_soon.each { |member| notify!(member, :expiring_soon) }
         expired.each { |member| notify!(member, :expired) }
 
@@ -41,6 +46,8 @@ module Service
         start_ms = day.beginning_of_day.in_time_zone(ZONE).to_i * 1000
         end_ms = (day + 1.day).beginning_of_day.in_time_zone(ZONE).to_i * 1000
 
+        Rails.logger.info("day: #{day}, start_ms: #{start_ms}, end_ms: #{end_ms}") unless Rails.env.production?
+
         Member.where(
           :firstname.ne => "Landlord", :lastname.ne => "Fob",
           :id.nin => excluded_ids,
@@ -48,6 +55,10 @@ module Service
           :expirationTime.gte => start_ms,
           :expirationTime.lt => end_ms
         ).reject(&:active_membership_subscription?)
+      end
+
+      def member_names(members)
+        members.map(&:fullname).join(',').presence || 'nil'
       end
 
       def notify!(member, kind)

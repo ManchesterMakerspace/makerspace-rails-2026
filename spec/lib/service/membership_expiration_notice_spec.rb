@@ -121,6 +121,47 @@ RSpec.describe Service::MembershipExpirationNotice do
     expect(Service::SlackConnector).not_to have_received(:send_slack_message)
   end
 
+  it "logs candidate windows and comma-delimited member names outside production" do
+    expiring_member = create(:member, firstname: "Soon", lastname: "Member", subscription: false,
+      subscription_id: nil, expirationTime: expiring_in(3))
+    expired_member = create(:member, firstname: "Past", lastname: "Member", subscription: false,
+      subscription_id: nil, expirationTime: expired_days_ago(1))
+    allow(Rails.logger).to receive(:info)
+
+    described_class.run!(at: at)
+
+    expiring_day = (at + 3.days).to_date
+    expired_day = (at - 1.day).to_date
+    expect(Rails.logger).to have_received(:info).with(
+      "day: #{expiring_day}, start_ms: #{expiring_day.beginning_of_day.in_time_zone(described_class::ZONE).to_i * 1000}, " \
+      "end_ms: #{(expiring_day + 1.day).beginning_of_day.in_time_zone(described_class::ZONE).to_i * 1000}"
+    )
+    expect(Rails.logger).to have_received(:info).with(
+      "day: #{expired_day}, start_ms: #{expired_day.beginning_of_day.in_time_zone(described_class::ZONE).to_i * 1000}, " \
+      "end_ms: #{(expired_day + 1.day).beginning_of_day.in_time_zone(described_class::ZONE).to_i * 1000}"
+    )
+    expect(Rails.logger).to have_received(:info).with("expiring_soon: #{expiring_member.fullname}")
+    expect(Rails.logger).to have_received(:info).with("expired: #{expired_member.fullname}")
+  end
+
+  it "logs nil for empty candidate lists outside production" do
+    allow(Rails.logger).to receive(:info)
+
+    described_class.run!(at: at)
+
+    expect(Rails.logger).to have_received(:info).with("expiring_soon: nil")
+    expect(Rails.logger).to have_received(:info).with("expired: nil")
+  end
+
+  it "does not log candidate details in production" do
+    allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+    allow(Rails.logger).to receive(:info)
+
+    described_class.run!(at: at)
+
+    expect(Rails.logger).not_to have_received(:info)
+  end
+
   it "reports (but does not raise past) an error sending to one member, and still sends to others" do
     failing = create(:member, subscription: false, subscription_id: nil, expirationTime: expiring_in(3))
     succeeding = create(:member, subscription: false, subscription_id: nil, expirationTime: expiring_in(3))
