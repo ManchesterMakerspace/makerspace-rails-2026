@@ -36,7 +36,12 @@ RSpec.describe Service::MembershipExpirationNotice do
   end
 
   it "does not email a member with subscription flagged true" do
-    create(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
+    member = create(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
+    reloaded = Member.find(member.id)
+    warn "[DEBUG] in-memory subscription=#{member.subscription.inspect} (#{member.subscription.class})"
+    warn "[DEBUG] reloaded subscription=#{reloaded.subscription.inspect} (#{reloaded.subscription.class})"
+    warn "[DEBUG] reloaded active_membership_subscription?=#{reloaded.active_membership_subscription?.inspect}"
+    warn "[DEBUG] reloaded status=#{reloaded.status.inspect} expirationTime=#{reloaded.expirationTime.inspect}"
 
     described_class.run!(at: at)
 
