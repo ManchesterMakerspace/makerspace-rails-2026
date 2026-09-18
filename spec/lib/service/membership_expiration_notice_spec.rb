@@ -43,6 +43,16 @@ RSpec.describe Service::MembershipExpirationNotice do
     built = build(:member, subscription: true)
     warn "[DEBUG] build(:member, subscription: true).subscription=#{built.subscription.inspect}"
 
+    plain_saved = Member.new(
+      subscription: true, firstname: "Deb", lastname: "Ug",
+      email: "debug-#{SecureRandom.hex(4)}@example.com",
+      encrypted_password: BCrypt::Password.create('password'),
+      status: 'activeMember', expirationTime: expiring_in(3)
+    )
+    plain_saved.save!(validate: false)
+    warn "[DEBUG] plain Member.new+save!(validate:false) subscription=#{plain_saved.subscription.inspect}"
+    warn "[DEBUG] plain_saved.changes after save=#{plain_saved.changes.inspect}"
+
     member = create(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
     warn "[DEBUG] in-memory subscription=#{member.subscription.inspect} (#{member.subscription.class})"
     warn "[DEBUG] member.attributes['subscription']=#{member.attributes['subscription'].inspect}"
