@@ -44,11 +44,9 @@ module Service
           :firstname.ne => "Landlord", :lastname.ne => "Fob",
           :id.nin => excluded_ids,
           :status.in => Member::ACTIVE_MEMBERSHIP_STATUSES,
-          :subscription.ne => true,
-          :subscription_id => nil,
           :expirationTime.gte => start_ms,
           :expirationTime.lt => end_ms
-        ).to_a
+        ).reject(&:active_membership_subscription?)
       end
 
       def notify!(member, kind)

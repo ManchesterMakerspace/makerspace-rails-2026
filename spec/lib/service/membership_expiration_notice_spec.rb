@@ -35,8 +35,15 @@ RSpec.describe Service::MembershipExpirationNotice do
     expect(member.reload.membership_expired_notice_sent_for).to eq(member.expirationTime)
   end
 
-  it "does not email a member with an active Braintree subscription" do
+  it "does not email a member with subscription flagged true" do
     create(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
+
+    described_class.run!(at: at)
+
+    expect(MemberMailer).not_to have_received(:membership_expiring_soon)
+  end
+
+  it "does not email a member with a Braintree subscription_id" do
     create(:member, subscription: false, subscription_id: "sub-123", expirationTime: expiring_in(3))
 
     described_class.run!(at: at)
@@ -46,7 +53,7 @@ RSpec.describe Service::MembershipExpirationNotice do
 
   it "does not email a member with an active Earned Membership" do
     member = create(:member, subscription: false, subscription_id: nil, expirationTime: expiring_in(3))
-    create(:earned_membership_no_requirements, member: member)
+    create(:earned_membership, member: member)
 
     described_class.run!(at: at)
 
@@ -83,8 +90,9 @@ RSpec.describe Service::MembershipExpirationNotice do
     described_class.run!(at: at)
     expect(MemberMailer).to have_received(:membership_expiring_soon).once
 
-    member.update_attribute(:expirationTime, expiring_in(3) + 30.days.to_i * 1000)
-    described_class.run!(at: at)
+    renewed_at = at + 30.days
+    member.update_attribute(:expirationTime, (renewed_at + 3.days).to_i * 1000)
+    described_class.run!(at: renewed_at)
 
     expect(MemberMailer).to have_received(:membership_expiring_soon).twice
   end
