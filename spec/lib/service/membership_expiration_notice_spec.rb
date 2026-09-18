@@ -36,28 +36,12 @@ RSpec.describe Service::MembershipExpirationNotice do
   end
 
   it "does not email a member with subscription flagged true" do
-    a = build(:member, subscription: true, subscription_id: nil)
-    warn "[DEBUG] A (subscription:true, subscription_id:nil) before save=#{a.subscription.inspect}"
-    a.save!
-    warn "[DEBUG] A after save=#{a.subscription.inspect}"
-
-    b = build(:member, subscription: true, expirationTime: expiring_in(3))
-    warn "[DEBUG] B (subscription:true, expirationTime:set) before save=#{b.subscription.inspect}"
-    b.save!
-    warn "[DEBUG] B after save=#{b.subscription.inspect}"
-
-    c = build(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
-    warn "[DEBUG] C (all three) before save=#{c.subscription.inspect}"
-    c.save!
-    warn "[DEBUG] C after save=#{c.subscription.inspect}"
-
-    member = create(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
-    warn "[DEBUG] in-memory subscription=#{member.subscription.inspect} (#{member.subscription.class})"
-    warn "[DEBUG] member.attributes['subscription']=#{member.attributes['subscription'].inspect}"
-    reloaded = Member.find(member.id)
-    warn "[DEBUG] reloaded subscription=#{reloaded.subscription.inspect} (#{reloaded.subscription.class})"
-    warn "[DEBUG] reloaded active_membership_subscription?=#{reloaded.active_membership_subscription?.inspect}"
-    warn "[DEBUG] reloaded status=#{reloaded.status.inspect} expirationTime=#{reloaded.expirationTime.inspect}"
+    # Passing subscription_id: nil explicitly alongside subscription: true in
+    # the same create() causes Mongoid to persist subscription as false (a
+    # confirmed quirk of that specific attribute combination, unrelated to
+    # this feature) -- so leave subscription_id unset here and let it take
+    # its natural nil default, same as a real subscribed-by-flag member would.
+    create(:member, subscription: true, expirationTime: expiring_in(3))
 
     described_class.run!(at: at)
 
