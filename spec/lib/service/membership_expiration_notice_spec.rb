@@ -36,30 +36,19 @@ RSpec.describe Service::MembershipExpirationNotice do
   end
 
   it "does not email a member with subscription flagged true" do
-    plain_new = Member.new(subscription: true)
-    warn "[DEBUG] Member.new(subscription: true).subscription=#{plain_new.subscription.inspect}"
-    warn "[DEBUG] plain_new.attributes['subscription']=#{plain_new.attributes['subscription'].inspect} key?=#{plain_new.attributes.key?('subscription')}"
+    original_setter = Member.instance_method(:subscription=)
+    Member.send(:define_method, :subscription=) do |value|
+      warn "[DEBUG] subscription= #{value.inspect} called from:\n  " + caller[0..8].join("\n  ")
+      original_setter.bind(self).call(value)
+    end
 
-    built = build(:member, subscription: true)
-    warn "[DEBUG] build(:member, subscription: true).subscription=#{built.subscription.inspect}"
-    warn "[DEBUG] built.changed_attributes before save=#{built.changed_attributes.inspect}"
-    built.save!
-    warn "[DEBUG] built.save! (same factory-built object) subscription=#{built.subscription.inspect}"
-    warn "[DEBUG] built.errors after save=#{built.errors.full_messages.inspect}"
-
-    built2 = build(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
-    built2.save!
-    warn "[DEBUG] built2 (matching attrs incl subscription_id:nil + expirationTime) save! subscription=#{built2.subscription.inspect}"
-
-    plain_saved = Member.new(
-      subscription: true, firstname: "Deb", lastname: "Ug",
-      email: "debug-#{SecureRandom.hex(4)}@example.com",
-      encrypted_password: BCrypt::Password.create('password'),
-      status: 'activeMember', expirationTime: expiring_in(3)
-    )
-    plain_saved.save!(validate: false)
-    warn "[DEBUG] plain Member.new+save!(validate:false) subscription=#{plain_saved.subscription.inspect}"
-    warn "[DEBUG] plain_saved.changes after save=#{plain_saved.changes.inspect}"
+    begin
+      built2 = build(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
+      built2.save!
+      warn "[DEBUG] built2 final subscription=#{built2.subscription.inspect}"
+    ensure
+      Member.send(:define_method, :subscription=, original_setter)
+    end
 
     member = create(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
     warn "[DEBUG] in-memory subscription=#{member.subscription.inspect} (#{member.subscription.class})"
