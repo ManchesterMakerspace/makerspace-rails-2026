@@ -48,10 +48,10 @@ enter, but can only interact with tools allowing pending members.
 | --- | --- |
 | `/checkout` | Opens the checkout menu and, outside a shop channel, an enabled-shop selector. |
 | `/checkout @member tool-name` | An authorized approver checks out the mentioned member on a tool in the current shop channel. An email address may replace the mention. |
-| `/checkout request` | In a shop channel, opens a request modal containing eligible tools and separately marks tools with an existing open request. Outside a shop channel, lists all of the caller's open requests across shops. |
+| `/checkout request` | In a shop channel, opens a request modal containing only eligible tools without an existing open request. Outside a shop channel, lists all of the caller's open requests across shops. |
 | `/checkout request tool-name` | Requests the named tool in the current shop channel after rechecking eligibility. |
-| `/checkout active` | In a shop channel, displays an alphabetized table of the caller's active checkouts there, including whether each tool is enabled and whether the caller can approve it. Outside a shop channel, behaves like `active all`. |
-| `/checkout active all` | Displays one alphabetized table per shop where the caller has an active checkout. Shops and tools are alphabetized, and every heading includes the shop's configured Slack channel. |
+| `/checkout active` | In a shop channel, lists the caller's available active checkouts using the same alphabetical ordering and detail fields as the modal. Outside a shop channel, behaves like `active all`. |
+| `/checkout active all` | Lists available active checkouts across enabled shops using the shared query and detail formatter. Each entry identifies its shop. |
 
 Members with a checkout in the current shop are encouraged to volunteer as
 checkout approvers for tools they know well. A resource manager (RM) is
@@ -79,12 +79,14 @@ availability, and rechecks ownership or current approval assignments. Option
 labels are display-only; notes come exclusively from the note input value.
 
 Open requests combine the member's own eligible requests and their authorized
-approval queue. Only the owner may edit or cancel a request. Approval and
+approval queue. Only the owner may edit or cancel a request. Owner details show tool, requested
+date and note with Edit note, Cancel request and Go back. Other members' details
+include requester and shop and offer only Approve and Go back. Approval and
 cancellation buttons open confirmation views; writes happen on submission.
 Request creation, note editing, cancellation and approval share the existing
 per-member/tool Redis request lock and revalidate inside it. Successful approval
 creates a Slack-signed-off checkout, closes the request, and invokes the existing
-checkout notifications and audit logging. Completion stays in the modal.
+checkout notifications and audit logging. Successful writes enqueue final outcome delivery and clear the modal, including when enqueueing fails.
 
 Block navigation uses `views.update` with the incoming view hash. A failed update
 is never retried without that hash; the handler attempts a separate explanatory
@@ -117,8 +119,9 @@ Board members and admins can approve every tool. RMs can approve every tool in
 the shops they manage. An additional checkout approver is a member with a
 `CheckoutApprover` record assigning one or more complete shops and/or
 individual tools; shop and tool assignments are additive. Outside those
-assignments, an additional approver has no checkout authority. The modal rejects disabled tools and shops for every role. Legacy portal/text
-approvals retain their existing RM, board and admin handling of disabled tools.
+assignments, an additional approver has no checkout authority. All creation paths reject disabled tools and shops, ineligible membership, unmet
+prerequisites and existing checkout records. Portal, textual Slack approvals and
+the modal all use `CheckoutCreation` under the same per-member/tool lock.
 
 ## Slack notifications and announcements
 
@@ -164,3 +167,21 @@ approvals retain their existing RM, board and admin handling of disabled tools.
   a board member or admin.
 - Checkout creation and revocation also write operational audit messages to
   the configured Slack logs channel.
+
+## Active checkout details and outcome delivery
+
+The modal and `/checkout active` share `listed_active_checkouts` and
+`CheckoutDisplay`. The Mongo query requires the caller's member ID, no revocation,
+and tools in the chosen shop; available tools are ordered using case-insensitive
+collation. Tools and shops are loaded in bulk. Empty lists retain Go back.
+Details recheck ownership, shop and current activity before showing tool name,
+description, authorized notes, users channel, effective wiki URL, checkout date,
+and reservability. Modal fields are truncated to Block Kit limits; textual
+responses escape user-controlled Slack formatting and bound message length.
+
+Final checkout outcomes use the original response URL asynchronously, replacing
+the initial ephemeral slash-command acknowledgement. Replacement failures fall
+back to a DM to the submitting Slack user. Enqueue, replacement and DM failures
+are reported without the response URL and never undo persisted requests or
+checkouts. Outcome job credentials are encrypted and job argument logging is
+disabled. See `docs/jobs-tasks-services.MD` for timeouts and delivery details.

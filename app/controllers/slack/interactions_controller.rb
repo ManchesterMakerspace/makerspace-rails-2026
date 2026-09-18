@@ -38,10 +38,11 @@ class Slack::InteractionsController < ApplicationController
   def checkout_modal_interaction(payload)
     workflow = SlackCheckoutWorkflow.new(payload)
     view = workflow.call
+    return render json: { response_action: "clear" } if view == :clear
     deliver_checkout_view(payload, view)
   rescue SlackCheckoutWorkflow::FieldError => error
     render json: { response_action: "errors", errors: { error.field => error.message } }
-  rescue SlackCheckoutWorkflow::Rejected => error
+  rescue SlackCheckoutWorkflow::Rejected, Error::Forbidden, Error::UnprocessableEntity => error
     view = workflow ? workflow.alert(error.message) : SlackCheckoutModal.new(metadata: { "step" => "alert" }, alert: error.message).build
     deliver_checkout_view(payload, view)
   rescue => error
@@ -358,26 +359,13 @@ class Slack::InteractionsController < ApplicationController
     error = ToolCheckoutRequestEligibility.new(member: member, tool: tool).error
     return checkout_errors("tool" => error) if error
 
-    checkout_request = ToolCheckoutRequest.new(
-      member: member, tool: tool, note: state.dig("note", "note", "value"),
-      request_date: Time.current, status: "open"
-    )
-    unless checkout_request.save
-      errors = {}
-      errors["note"] = checkout_request.errors[:note].join(", ") if checkout_request.errors[:note].present?
-      errors["tool"] = checkout_request.errors.full_messages.join(", ").first(150) if errors.empty?
-      return checkout_errors(errors)
-    end
-
-    checkout_request.announce_request
+    note = state.dig("note", "note", "value")
+    return checkout_errors("note" => "Note is too long (maximum is 128 characters)") if note && (!note.is_a?(String) || note.length > 128)
+    CheckoutRequestCreation.create!(member_id: member.id, tool_id: tool.id, shop_id: shop.id, note: note)
     begin
-      Service::SlackConnector.send_slack_message(checkout_confirmation(shop), slack_user.slack_id)
+      SlackCheckoutOutcomeJob.enqueue(checkout_confirmation(shop), metadata["response_url"], payload.dig("user", "id"))
     rescue => error
-      Service::ErrorReporter.notify(error, context: {
-        phase: "Slack checkout request confirmation",
-        checkout_request_id: checkout_request.id.to_s,
-        slack_user_id: slack_user.slack_id
-      })
+      SlackCheckoutOutcomeJob.report("enqueue", error_class: error.class.name)
     end
     render json: { response_action: "clear" }
   rescue JSON::ParserError

@@ -1,7 +1,10 @@
 require "swagger_helper"
 
 describe "Tool checkout requests API", type: :request do
-  before { allow(REDIS).to receive(:set).and_return(true) }
+  before do
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
+  end
 
   path "/tool_checkout_requests" do
     get "Lists the member's eligible open checkout requests" do
@@ -26,6 +29,7 @@ describe "Tool checkout requests API", type: :request do
     post "Requests a safety checkout" do
       tags "ToolCheckoutRequests"
       operationId "createToolCheckoutRequest"
+      description "Creation is serialized under the shared per-member/tool lock, with membership, availability, prerequisites, checkout records and open requests rechecked immediately before insertion. Lock contention returns 422."
       consumes "application/json"
       produces "application/json"
       parameter name: :request_details, in: :body, schema: {
@@ -129,6 +133,63 @@ describe "Checkout approval queue API", type: :request do
         run_test! do |response|
           expect(JSON.parse(response.body).map { |row| row.fetch("id") }).to eq([visible_request.id.to_s])
         end
+      end
+    end
+  end
+end
+
+
+describe "Checkout request mutations API", type: :request do
+  let(:member) { create(:member, :current) }
+  let(:tool) { create(:tool) }
+  let(:row) { ToolCheckoutRequest.create!(member: member, tool: tool) }
+  let(:id) { row.id.to_s }
+  before do
+    sign_in member
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
+    allow_any_instance_of(ToolCheckoutRequest).to receive(:remove_announcement)
+  end
+  path "/tool_checkout_requests/{id}" do
+    parameter name: :id, in: :path, type: :string
+    put "Edits an owned open request note" do
+      tags "ToolCheckoutRequests"
+      description "Owner and open status are rechecked inside the same member/tool lock used by approval and cancellation. Tool and shop must still be available."
+      consumes "application/json"
+      produces "application/json"
+      parameter name: :details, in: :body, schema: { type: :object, properties: { note: { type: :string, maxLength: 128 } } }
+      let(:details) { { note: "Updated note" } }
+      response "200", "note updated" do
+        schema type: :object
+        run_test! { expect(row.reload.note).to eq("Updated note") }
+      end
+      response "403", "request is no longer open or not owned by the caller" do
+        before { row.update!(status: "closed") }
+        schema "$ref" => "#/components/schemas/error"
+        run_test!
+      end
+      response "422", "note validation or checkout lock contention" do
+        let(:details) { { note: "x" * 129 } }
+        schema "$ref" => "#/components/schemas/error"
+        run_test!
+      end
+    end
+    delete "Cancels an owned open request" do
+      tags "ToolCheckoutRequests"
+      description "Cancellation and approval serialize under the same member/tool lock. A successful cancellation retains the existing announcement-removal behavior."
+      produces "application/json"
+      response "204", "request cancelled" do
+        run_test! { expect(row.reload.status).to eq("deleted") }
+      end
+      response "403", "request is no longer open or not owned by the caller" do
+        before { row.update!(status: "closed") }
+        schema "$ref" => "#/components/schemas/error"
+        run_test!
+      end
+      response "422", "another checkout mutation holds the lock" do
+        before { allow(REDIS).to receive(:set).and_return(false) }
+        schema "$ref" => "#/components/schemas/error"
+        run_test!
       end
     end
   end

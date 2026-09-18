@@ -28,6 +28,33 @@ class CheckoutInteractionQuery
     ToolCheckout.where(member_id: @member.id, revoked_at: nil, :tool_id.in => tools.pluck(:id))
   end
 
+  def listed_active_checkouts
+    return [] if SlackCheckoutModal.membership_error(@member)
+    ordered_tools = listing_tools.collation(COLLATION).order_by(name: :asc, id: :asc).includes(:shop).to_a
+      .reject { |tool| tool.shop.nil? || tool.shop.disabled? }
+    rows = ToolCheckout.where(member_id: @member.id, revoked_at: nil, :tool_id.in => ordered_tools.map(&:id)).to_a
+      .group_by(&:tool_id)
+    ordered_tools.flat_map do |tool|
+      Array(rows[tool.id]).sort_by { |row| row.id.to_s }.each { |row| row.tool = tool }
+    end
+  end
+
+  def visible_open_requests
+    ids = open_requests.pluck(:id) | open_requests(for_approval: true).pluck(:id)
+    rows = ToolCheckoutRequest.where(status: "open", :id.in => ids, :tool_id.in => listing_tools.pluck(:id))
+      .order_by(request_date: :asc, id: :asc).includes(:member, tool: :shop).to_a
+    checkouts = ToolCheckout.where(:member_id.in => rows.map(&:member_id).uniq)
+      .pluck(:member_id, :tool_id, :revoked_at).group_by(&:first)
+    rows.select do |row|
+      next false unless row.member && row.tool
+      records = checkouts.fetch(row.member_id, [])
+      ToolCheckoutRequestEligibility.new(member: row.member, tool: row.tool,
+        checkout_tool_ids: records.map { |_, tool_id, _| tool_id },
+        active_checkout_tool_ids: records.filter_map { |_, tool_id, revoked| tool_id if revoked.nil? },
+        open_request_tool_ids: []).eligible?
+    end
+  end
+
   # Personal lists and approval queues are distinct authorization contexts.
   def open_requests(for_approval: false)
     visible_tools = for_approval ? approvable_tools : tools.where(:disabled.ne => true)
@@ -44,6 +71,12 @@ class CheckoutInteractionQuery
   end
 
   private
+
+  def listing_tools
+    scope = tools.where(:disabled.ne => true, :open.ne => true,
+      :shop_id.in => enabled_shops.pluck(:id))
+    @member.status == "pending" ? scope.where(allow_pending: true) : scope
+  end
 
   def tools
     @shop ? Tool.where(shop_id: @shop.id) : Tool.all

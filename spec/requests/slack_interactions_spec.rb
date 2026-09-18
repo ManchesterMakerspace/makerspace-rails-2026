@@ -33,6 +33,8 @@ RSpec.describe "Slack interactions", type: :request do
       allow(Rails.env).to receive(:development?).and_return(true)
       SlackUser.create!(member: member, slack_id: "USUBMITTER")
       allow(Service::SlackConnector).to receive(:send_slack_message)
+      allow(REDIS).to receive(:set).and_return(true)
+      allow(REDIS).to receive(:eval).and_return(1)
     end
 
     def submit(tool_id: tool.id.to_s, shop_id: shop.id.to_s, user_id: "USUBMITTER", note: nil)
@@ -56,7 +58,7 @@ RSpec.describe "Slack interactions", type: :request do
 
       expect(response.parsed_body).to eq("response_action" => "clear")
       expect(ToolCheckoutRequest.last).to have_attributes(member_id: member.id, tool_id: tool.id, note: "Please show me the blade guard")
-      expect(Service::SlackConnector).to have_received(:send_slack_message).with(include("unpaid volunteers"), "USUBMITTER")
+      expect(SlackCheckoutOutcomeJob).to have_been_enqueued.with(include("unpaid volunteers"), kind_of(String), "USUBMITTER")
     end
 
     it "uses the submitting Slack identity instead of trusting metadata" do
@@ -67,18 +69,13 @@ RSpec.describe "Slack interactions", type: :request do
       expect(ToolCheckoutRequest.last.member_id).to eq(attacker.id)
     end
 
-    it "clears the modal when confirmation delivery fails after creation" do
-      allow(Service::SlackConnector).to receive(:send_slack_message).and_raise(StandardError, "Slack unavailable")
+    it "clears the legacy modal when outcome enqueueing fails after creation" do
+      allow(SlackCheckoutOutcomeJob).to receive(:enqueue).and_raise(StandardError, "secret response URL")
       allow(Service::ErrorReporter).to receive(:notify)
-
       submit
-
       expect(response.parsed_body).to eq("response_action" => "clear")
       expect(ToolCheckoutRequest.where(member_id: member.id, tool_id: tool.id, status: "open")).to exist
-      expect(Service::ErrorReporter).to have_received(:notify).with(
-        instance_of(StandardError),
-        context: hash_including(phase: "Slack checkout request confirmation")
-      )
+      expect(Service::ErrorReporter).to have_received(:notify).with("Slack checkout outcome enqueue failed", context: hash_including(phase: "enqueue"))
     end
 
     it "rejects a tool tampered to belong to another shop" do
@@ -230,10 +227,9 @@ RSpec.describe "Slack interactions", type: :request do
       interact(action: "checkout_back")
       expect(modal_step).to eq("request_tools")
       interact(action: "checkout_tool_select", value: tool.id.to_s)
-      expect(interact(note: "Please train me")["response_action"]).to eq("update")
+      expect(interact(note: "Please train me")["response_action"]).to eq("clear")
       expect(ToolCheckoutRequest.last).to have_attributes(member_id: member.id, tool_id: tool.id, note: "Please train me")
-      expect(modal_step).to eq("done")
-      interact(action: "checkout_back")
+      start_modal
       expect(modal_step).to eq("menu")
       expect(modal_metadata["response_url"]).to eq(response_url)
       expect(Service::SlackConnector).to have_received(:update_modal).with("VMODAL", anything, hash: "view-hash").at_least(:once)
@@ -254,7 +250,7 @@ RSpec.describe "Slack interactions", type: :request do
       expect(row.reload.note).to eq("Original")
       interact(note: "Changed")
       expect(row.reload.note).to eq("Changed")
-      interact(action: "checkout_back")
+      start_modal
       choose_request(row)
       interact(action: "checkout_cancel_request")
       expect(row.reload).to be_open
@@ -528,6 +524,60 @@ RSpec.describe "Slack interactions", type: :request do
       expect(Service::SlackConnector).to have_received(:open_modal).with("TRIGGER", hash_including(callback_id: "checkout_modal"))
       expect(Service::ErrorReporter).to have_received(:notify).with(anything, context: { phase: "checkout modal views.update" })
       expect(ToolCheckoutRequest.count).to eq(0)
+    end
+
+    it "queues replacement before clearing a successful request and never calls response HTTP inline" do
+      tool
+      start_modal
+      interact(action: "checkout_menu_select", value: "request_tools")
+      interact(action: "checkout_tool_select", value: tool.id.to_s)
+      expect(Net::HTTP).not_to receive(:start)
+      expect(SlackCheckoutOutcomeJob).to receive(:enqueue).with(include(tool.name), response_url, "UMODAL") do
+        expect(ToolCheckoutRequest.where(member_id: member.id, tool_id: tool.id)).to exist
+        true
+      end
+      expect(interact(note: "Train me")).to eq("response_action" => "clear")
+    end
+
+    it "clears an approved request even if enqueueing raises after persistence" do
+      member.update!(role: "admin")
+      row = ToolCheckoutRequest.create!(member: create(:member, :current), tool: tool)
+      start_modal
+      choose_request(row)
+      interact(action: "checkout_approve_request")
+      allow(SlackCheckoutOutcomeJob).to receive(:enqueue).and_raise(StandardError, response_url)
+      expect(interact).to eq("response_action" => "clear")
+      expect(row.reload.status).to eq("closed")
+      expect(Service::ErrorReporter).to have_received(:notify).with("Slack checkout outcome enqueue failed", context: hash_including(error_class: "StandardError"))
+    end
+
+    it "keeps owner and non-owner request actions separate and shows persisted dates" do
+      member.update!(role: "admin")
+      own = ToolCheckoutRequest.create!(member: member, tool: tool, note: "Owner note")
+      other = ToolCheckoutRequest.create!(member: create(:member, :current), tool: tool, note: "Other note")
+      start_modal
+      choose_request(own)
+      ids = @view["blocks"].flat_map { |block| Array(block["elements"]).map { |element| element["action_id"] } }
+      expect(ids).to contain_exactly("checkout_edit_note", "checkout_cancel_request", "checkout_back")
+      expect(@view.to_json).to include(own.request_date.iso8601, "Owner note")
+      start_modal
+      choose_request(other)
+      ids = @view["blocks"].flat_map { |block| Array(block["elements"]).map { |element| element["action_id"] } }
+      expect(ids).to contain_exactly("checkout_approve_request", "checkout_back")
+      expect(@view.to_json).to include(other.request_date.iso8601, other.member.fullname, shop.name, tool.name, "Other note")
+    end
+
+    it "renders bounded active details with description, notes, channel, wiki, date and reservability" do
+      tool.update!(description: "x" * 4000, notes: "Private notes", users_channel: "tools", wiki_url: "https://example.test/tool", reservable: true)
+      allow(Service::SlackConnector).to receive(:channel_member?).and_return(true)
+      checkout = create(:tool_checkout, member: member, tool: tool)
+      start_modal
+      interact(action: "checkout_menu_select", value: "active")
+      interact(action: "checkout_checkout_select", value: checkout.id.to_s)
+      content = @view["blocks"].filter_map { |block| block.dig("text", "text") }
+      expect(content.join).to include("Description:", "Private notes", "#tools", "https://example.test/tool", checkout.checked_out_at.to_date.iso8601, "Reservable: Yes")
+      expect(content.all? { |line| line.length <= 3000 }).to be(true)
+      expect(@view["blocks"].any? { |block| block["block_id"] == "checkout_navigation" }).to be(true)
     end
 
     it "refuses to update a modal without its concurrency hash" do

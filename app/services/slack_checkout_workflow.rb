@@ -33,7 +33,7 @@ class SlackCheckoutWorkflow
   def call
     load_context!
     if @payload["type"] == "view_submission"
-      submit!
+      return submit!
     else
       navigate!
     end
@@ -85,7 +85,7 @@ class SlackCheckoutWorkflow
       if step.in?(%w[request_edit request_cancel])
         reject!("Only the requester can edit or cancel this request.") unless @request.member_id == @member.id
       elsif step == "request_approve"
-        reject!("You can no longer approve this tool.") unless can_approve?(@tool)
+        reject!("You can no longer approve this tool.") unless @request.member_id != @member.id && can_approve?(@tool)
       end
     when "checkout_detail"
       @checkout = find_record(ToolCheckout, @metadata["record_id"])
@@ -102,8 +102,7 @@ class SlackCheckoutWorkflow
   end
 
   def can_approve?(tool)
-    @member.role.in?(%w[admin board_member]) || @member.manages_shop?(tool.shop_id) ||
-      (@member.valid_for_checkout_request? && CheckoutApprover.find_by(member_id: @member.id)&.can_approve_tool?(tool))
+    CheckoutCreation.authorized?(@member, tool)
   end
 
   def query
@@ -167,60 +166,33 @@ class SlackCheckoutWorkflow
     if step.in?(%w[request_new request_edit]) && (!note.nil? && (!note.is_a?(String) || note.length > 128))
       raise FieldError.new(SlackCheckoutModal::NOTE, "Note must be at most 128 characters.")
     end
-    with_lock do
-      load_context!
-      case step
-      when "request_new"
-        request = ToolCheckoutRequest.create!(member: @member, tool: @tool, note: note, request_date: Time.current)
-        notify { request.announce_request }
-        @message = "Your checkout request has been created."
-      when "request_edit"
-        @request.update!(note: note)
-        @message = "Your request note has been saved."
-      when "request_cancel"
-        @request.update!(status: "deleted")
-        notify { @request.remove_announcement }
-        @message = "Your checkout request has been cancelled."
-      when "request_approve"
-        checkout = ToolCheckout.create!(member: @request.member, tool: @tool, approved_by: @member,
-          signed_off_via: "slack", checked_out_at: Time.current)
-        # The model closes the matching request and handles channel invitations.
-        @request.update!(status: "closed", checked_out: checkout) if @request.reload.open?
-        notify { checkout.send_checkout_slack_notification }
-        notify { checkout.announce_checkout_success }
-        notify do
-          Service::AuditLogger.log(log_type: "member", event_type: "tool_checkout_created",
-            resource_type: "ToolCheckout", resource_id: checkout.id, actor: @member, subject: checkout.member,
-            after_snapshot: { tool_id: @tool.id.to_s, member_id: checkout.member_id.to_s, signed_off_via: "slack" })
+    case step
+    when "request_new"
+      CheckoutRequestCreation.create!(member_id: @member.id, tool_id: @tool.id, shop_id: @shop.id, note: note) { load_context! }
+      message = "Your checkout request for #{CheckoutDisplay.escape(@tool.name.to_s.first(200))} has been created."
+    when "request_approve"
+      CheckoutCreation.create!(actor_id: @member.id, member_id: @request.member_id,
+        tool_id: @tool.id, shop_id: @shop.id, source: "slack", request_id: @request.id) { load_context! }
+      message = "The checkout request for #{CheckoutDisplay.escape(@tool.name.to_s.first(200))} has been approved."
+    else
+      CheckoutMutationLock.with(member_id: @request.member_id, tool_id: @tool.id) do
+        load_context!
+        if step == "request_edit"
+          @request.update!(note: note)
+          message = "Your request note has been saved."
+        else
+          @request.update!(status: "deleted")
+          CheckoutCreation.notify { @request.remove_announcement }
+          message = "Your checkout request has been cancelled."
         end
-        @message = "The checkout request has been approved."
       end
     end
-    @metadata = @metadata.except("record_id").merge("step" => "done")
-  end
-
-  def with_lock
-    member_id = @request ? @request.member_id : @member.id
-    key = "checkout_request_lock/#{member_id}/#{@tool.id}"
-    token = SecureRandom.uuid
-    acquired = REDIS.set(key, token, nx: true, ex: 30)
-    reject!("This checkout is being updated. Please try again in a moment.") unless acquired
-    yield
-  ensure
-    if acquired
-      begin
-        REDIS.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
-          keys: [key], argv: [token])
-      rescue Redis::BaseError => error
-        Rails.logger.warn("[SlackCheckout] lock release failed: #{error.class}")
-      end
+    begin
+      SlackCheckoutOutcomeJob.enqueue(message, @metadata["response_url"], @payload.dig("user", "id"))
+    rescue => error
+      SlackCheckoutOutcomeJob.report("enqueue", error_class: error.class.name)
     end
-  end
-
-  def notify
-    yield
-  rescue => error
-    Service::ErrorReporter.notify(error, context: { phase: "checkout modal notification" })
+    :clear
   end
 
   def build
@@ -230,16 +202,9 @@ class SlackCheckoutWorkflow
     when "request_tools"
       options[:tools] = query.requestable_tools
     when "requests"
-      ids = query.open_requests.pluck(:id) | query.open_requests(for_approval: true).pluck(:id)
-      enabled = Tool.where(shop_id: @shop.id, :disabled.ne => true, :open.ne => true)
-      enabled = enabled.where(allow_pending: true) if @member.status == "pending"
-      enabled_ids = enabled.pluck(:id)
-      options[:requests] = ToolCheckoutRequest.where(status: "open", :id.in => ids, :tool_id.in => enabled_ids)
-        .order_by(request_date: :asc, id: :asc).includes(:member, :tool).to_a
+      options[:requests] = query.visible_open_requests.to_a
     when "active"
-      enabled = Tool.where(shop_id: @shop.id, :disabled.ne => true, :open.ne => true)
-      enabled = enabled.where(allow_pending: true) if @member.status == "pending"
-      options[:checkouts] = query.active_checkouts.where(:tool_id.in => enabled.pluck(:id)).includes(:tool).to_a
+      options[:checkouts] = query.listed_active_checkouts
     when "request_detail"
       options[:can_approve] = can_approve?(@tool)
     end

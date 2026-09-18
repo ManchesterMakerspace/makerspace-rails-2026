@@ -144,7 +144,7 @@ class Slack::CommandsController < ApplicationController
         }
       end
 
-      view = SlackCheckoutRequestModal.build(shop, member)
+      view = SlackCheckoutRequestModal.build(shop, member, response_url: params[:response_url])
       Service::SlackConnector.open_modal(params[:trigger_id], view)
       message = "Opening checkout request form…"
       if active_checkout_in_shop?(member, shop)

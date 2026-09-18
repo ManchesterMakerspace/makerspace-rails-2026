@@ -11,6 +11,7 @@ class ToolCheckout
   belongs_to :member
   belongs_to :tool
   belongs_to :approved_by, class_name: "Member", optional: true
+  attr_accessor :checkout_request_id
 
   index({ member_id: 1, revoked_at: 1, tool_id: 1 })
 
@@ -162,7 +163,9 @@ class ToolCheckout
   end
 
   def enqueue_checkout_canvas_sync
-    ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s, id.to_s, "add")
+    CheckoutCreation.notify do
+      ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s, id.to_s, "add")
+    end
   end
 
   def enqueue_checkout_canvas_sync_after_revocation
@@ -173,7 +176,9 @@ class ToolCheckout
   end
 
   def close_open_request
-    request = ToolCheckoutRequest.where(member_id: member_id, tool_id: tool_id, status: "open").first
+    requests = ToolCheckoutRequest.where(member_id: member_id, tool_id: tool_id, status: "open")
+    requests = requests.where(id: checkout_request_id) if checkout_request_id
+    request = requests.order_by(request_date: :asc, id: :asc).first
     request.update_attributes!(status: "closed", checked_out_id: id) if request
   end
 

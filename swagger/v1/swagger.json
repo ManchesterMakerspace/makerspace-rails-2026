@@ -5576,7 +5576,7 @@
                   },
                   "text": {
                     "type": "string",
-                    "description": "Empty text opens the stateful checkout menu (my checkouts, request a checkout, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Legacy text: MEMBER TOOL, request [TOOL], or active [all]."
+                    "description": "Empty text opens the stateful checkout menu (my checkouts, request a checkout, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Legacy text: MEMBER TOOL, request [TOOL], or active [all]. Active lists share the modal query and detail fields; final results replace the initial ephemeral response asynchronously, with DM fallback."
                   },
                   "trigger_id": {
                     "type": "string",
@@ -5625,7 +5625,7 @@
           "SlackInteractions"
         ],
         "operationId": "slackInteractions",
-        "description": "Callbacks: checkout_modal accepts block_actions and view_submission; checkout_request_submit accepts legacy submissions; reservation_submit also accepts view_closed. Checkout navigation calls views.update with the incoming view hash. Submissions return response_action update with a replacement modal, or errors keyed by input block ID. Checkout private_metadata is a signed, expiring contract containing member_id, optional shop_id, response_url, slack_user_id, step and optional record_id. Every transition reloads and authorizes these IDs. Display text is never an identifier. Checkout action IDs: checkout_menu_select, checkout_shop_select, checkout_tool_select, checkout_request_select, checkout_checkout_select, checkout_edit_note, checkout_cancel_request, checkout_approve_request, checkout_back. Note input block/action ID: checkout_note.",
+        "description": "Callbacks: checkout_modal accepts block_actions and view_submission; checkout_request_submit accepts legacy submissions; reservation_submit also accepts view_closed. Checkout navigation calls views.update with the incoming view hash. Successful checkout submissions enqueue replacement-first ephemeral outcome delivery and return response_action clear, even if enqueueing fails. The outcome job falls back to the submitting Slack user DM on replacement failure. Rejected submissions return response_action update with an explanatory modal, or errors keyed by input block ID. Checkout private_metadata is a signed, expiring contract containing member_id, optional shop_id, response_url, slack_user_id, step and optional record_id. Every transition reloads and authorizes these IDs. Display text is never an identifier. Checkout action IDs: checkout_menu_select, checkout_shop_select, checkout_tool_select, checkout_request_select, checkout_checkout_select, checkout_edit_note, checkout_cancel_request, checkout_approve_request, checkout_back. Note input block/action ID: checkout_note.",
         "parameters": [
           {
             "name": "X-Slack-Signature",
@@ -5779,6 +5779,7 @@
           "ToolCheckoutRequests"
         ],
         "operationId": "createToolCheckoutRequest",
+        "description": "Creation is serialized under the shared per-member/tool lock, with membership, availability, prerequisites, checkout records and open requests rechecked immediately before insertion. Lock contention returns 422.",
         "parameters": [],
         "responses": {
           "200": {
@@ -5927,6 +5928,105 @@
         }
       }
     },
+    "/tool_checkout_requests/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Edits an owned open request note",
+        "tags": [
+          "ToolCheckoutRequests"
+        ],
+        "description": "Owner and open status are rechecked inside the same member/tool lock used by approval and cancellation. Tool and shop must still be available.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "note updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "request is no longer open or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "note validation or checkout lock contention",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Cancels an owned open request",
+        "tags": [
+          "ToolCheckoutRequests"
+        ],
+        "description": "Cancellation and approval serialize under the same member/tool lock. A successful cancellation retains the existing announcement-removal behavior.",
+        "responses": {
+          "204": {
+            "description": "request cancelled"
+          },
+          "403": {
+            "description": "request is no longer open or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "another checkout mutation holds the lock",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/tool_checkouts/{id}": {
       "delete": {
         "summary": "Revokes a tool checkout",
@@ -6017,6 +6117,94 @@
                 },
                 "required": [
                   "revocation_reason"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tool_checkouts": {
+      "post": {
+        "summary": "Approves a safety checkout under the member/tool lock",
+        "tags": [
+          "AdminToolCheckouts"
+        ],
+        "operationId": "createAdminToolCheckout",
+        "description": "Rechecks the actor's current membership and admin/board, managed-shop or assigned-tool authority inside the shared member/tool lock. The target must be active and unexpired, or pending on a tool allowing pending members. The tool and shop must be enabled, require a checkout, and all prerequisites must be satisfied. Existing checkout records, unavailable resources and lock contention are rejected. The model callback closes an open request and preserves notifications, users-channel invitations and audit logging.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "checkout created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "_id": {
+                      "type": "string"
+                    },
+                    "member_id": {
+                      "type": "string"
+                    },
+                    "tool_id": {
+                      "type": "string"
+                    },
+                    "unmet_prerequisites": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 0
+                    }
+                  },
+                  "required": [
+                    "_id",
+                    "member_id",
+                    "tool_id",
+                    "unmet_prerequisites"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "membership, tool availability, prerequisites, duplicate state or lock contention prevents creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "current actor cannot approve this tool",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "member_id": {
+                    "type": "string"
+                  },
+                  "tool_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "member_id",
+                  "tool_id"
                 ]
               }
             }

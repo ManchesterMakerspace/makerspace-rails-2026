@@ -12,6 +12,7 @@ RSpec.describe 'Pending-member Safety Checkout requests', type: :request do
 
   before do
     allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
     sign_in member
   end
 

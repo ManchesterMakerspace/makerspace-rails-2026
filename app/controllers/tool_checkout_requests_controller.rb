@@ -17,42 +17,34 @@ class ToolCheckoutRequestsController < AuthenticationController
 
   def create
     tool, = PublicCatalog.tool(request_params[:tool_id], public_only: false)
-    eligibility = ToolCheckoutRequestEligibility.new(member: current_member, tool: tool)
-    if eligibility.error
-      error_class = eligibility.membership_ineligible? ? ::Error::Forbidden : ::Error::UnprocessableEntity
-      raise error_class.new(eligibility.error)
-    end
-
-    request = ToolCheckoutRequest.create!(
-      member_id: current_member.id,
-      tool_id: tool.id,
-      note: request_params[:note],
-      request_date: Time.now,
-      status: "open"
-    )
-    request.announce_request
+    request = CheckoutRequestCreation.create!(member_id: current_member.id, tool_id: tool.id,
+      shop_id: tool.shop_id, note: request_params[:note])
 
     render json: request, serializer: ToolCheckoutRequestSerializer, adapter: :attributes
   end
 
   def update
-    raise ::Error::Forbidden.new unless @request.member_id.to_s == current_member.id.to_s && @request.open?
-    raise ::Error::Forbidden.new if @request.tool.try(:disabled?)
-
-    @request.update_attributes!(request_params.slice(:note))
+    mutate_request! { @request.update_attributes!(request_params.slice(:note)) }
     render json: @request, serializer: ToolCheckoutRequestSerializer, adapter: :attributes
   end
 
   def destroy
-    raise ::Error::Forbidden.new unless @request.member_id.to_s == current_member.id.to_s && @request.open?
-    raise ::Error::Forbidden.new if @request.tool.try(:disabled?)
-
-    @request.remove_announcement
-    @request.update_attributes!(status: "deleted")
+    mutate_request! { @request.update_attributes!(status: "deleted") }
+    CheckoutCreation.notify { @request.remove_announcement }
     render json: {}, status: 204
   end
 
   private
+
+  def mutate_request!
+    CheckoutMutationLock.with(member_id: @request.member_id, tool_id: @request.tool_id) do
+      @request.reload
+      raise Error::Forbidden.new unless @request.member_id == current_member.id && @request.open?
+      tool = @request.tool
+      raise Error::Forbidden.new unless tool && !tool.disabled? && tool.shop && !tool.shop.disabled?
+      yield
+    end
+  end
 
   def request_params
     params.permit(:tool_id, :note)
@@ -60,6 +52,7 @@ class ToolCheckoutRequestsController < AuthenticationController
 
   def find_request
     @request = ToolCheckoutRequest.find(params[:id])
+    raise Error::NotFound.new unless @request
   end
 
 end

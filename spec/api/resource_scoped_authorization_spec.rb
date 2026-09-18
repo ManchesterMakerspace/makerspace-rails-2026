@@ -17,6 +17,8 @@ RSpec.describe "Resource-scoped checkout authorization", type: :request do
   end
 
   before do
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
     CheckoutApprover.create!(
       member: resource_manager,
       tool_ids: [approved_outside_tool.id.to_s]

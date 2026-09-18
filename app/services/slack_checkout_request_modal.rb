@@ -2,7 +2,7 @@ class SlackCheckoutRequestModal
   MAX_OPTIONS = 100
 
   class << self
-    def build(shop, member)
+    def build(shop, member, response_url: nil)
       tools = eligible_tools(shop, member)
       raise ::Error::UnprocessableEntity.new("This shop has no tools you can request") if tools.empty?
       raise ::Error::UnprocessableEntity.new("This shop has more than 100 eligible tools; use the Member Portal") if tools.length > MAX_OPTIONS
@@ -10,7 +10,7 @@ class SlackCheckoutRequestModal
       {
         type: "modal",
         callback_id: "checkout_request_submit",
-        private_metadata: { shop_id: shop.id.to_s }.to_json,
+        private_metadata: { shop_id: shop.id.to_s, response_url: response_url }.compact.to_json,
         title: plain("Request a checkout"),
         submit: plain("Request"),
         close: plain("Cancel"),

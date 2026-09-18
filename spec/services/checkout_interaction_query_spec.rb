@@ -83,4 +83,26 @@ RSpec.describe CheckoutInteractionQuery do
     expect(query.open_requests.options[:sort]).to eq("request_date" => 1, "_id" => 1)
     expect(query.open_requests.map(&:id)).to eq(rows.map(&:id).sort)
   end
+
+  it "orders active checkout options in Mongo and bulk-loads the same tool content for text and modal" do
+    z = create(:tool, shop: shop, name: "Zebra")
+    a = create(:tool, shop: shop, name: "alpha")
+    create(:tool_checkout, member: member, tool: z)
+    create(:tool_checkout, member: member, tool: a)
+    rows = query.listed_active_checkouts
+    expect(rows.map { |row| row.tool.name }).to eq(%w[alpha Zebra])
+    expect(CheckoutDisplay.text(rows)).to include(*rows.flat_map { |row| CheckoutDisplay.details(row).map { |line| CheckoutDisplay.escape(line) } })
+  end
+
+  it "unions own and assigned open requests without leaking other shops or ineligible requesters" do
+    assigned = create(:tool, shop: shop)
+    outside = create(:tool)
+    create(:checkout_approver, member: member, tool_ids: [assigned.id.to_s, outside.id.to_s], shop_ids: [])
+    own = ToolCheckoutRequest.create!(member: member, tool: create(:tool, shop: shop))
+    approved = ToolCheckoutRequest.create!(member: create(:member, :current), tool: assigned)
+    ToolCheckoutRequest.create!(member: create(:member, :current), tool: outside)
+    ToolCheckoutRequest.create!(member: create(:member, :expired), tool: assigned)
+    expect(query.visible_open_requests.map(&:id)).to eq([own.id, approved.id])
+  end
+
 end

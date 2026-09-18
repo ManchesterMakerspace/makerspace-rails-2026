@@ -74,7 +74,7 @@ class SlackCheckoutModal
       request_details
       buttons = []
       buttons += [["Edit note", EDIT], ["Cancel request", CANCEL]] if @request.member_id == @member.id
-      buttons << ["Approve request", APPROVE] if @can_approve
+      buttons << ["Approve", APPROVE] if @can_approve && @request.member_id != @member.id
       actions(buttons) if buttons.any?
     when "request_edit"
       request_details
@@ -87,8 +87,20 @@ class SlackCheckoutModal
     when "active"
       selector(CHECKOUT, "Your active checkout", @checkouts.map { |row| [row.tool.name, row.id.to_s] })
     when "checkout_detail"
-      section("#{@tool.name} — checked out #{@checkout.checked_out_at&.to_date}")
-      section(@tool.notes) if @tool.notes.present?
+      CheckoutDisplay.details(@checkout).each do |line|
+        if line.start_with?("Wiki: ")
+          url = line.delete_prefix("Wiki: ")
+          # Encode link delimiters instead of accepting user-provided mrkdwn.
+          url = url.gsub('|', '%7C').gsub('>', '%3E').gsub('<', '%3C').gsub('&', '&amp;')
+          if url.length <= 2800 && PublicCatalog.safe_url(line.delete_prefix("Wiki: "))
+            @blocks << { type: "section", text: { type: "mrkdwn", text: "<#{url}|Wiki>", verbatim: true } }
+          else
+            section("Use the Member Portal to open this tool's wiki link.")
+          end
+        else
+          section(line)
+        end
+      end
     end
     actions([["Go back", BACK]], block_id: "checkout_navigation") unless @metadata["step"] == "menu"
     view = { type: "modal", callback_id: CALLBACK_ID, private_metadata: self.class.encode_metadata(@metadata),
@@ -131,7 +143,12 @@ class SlackCheckoutModal
   end
 
   def request_details
-    section("#{@request.tool.name} — #{@request.member.fullname}")
+    section("Tool: #{@request.tool.name}")
+    section("Requested: #{@request.request_date&.iso8601}")
+    if @request.member_id != @member.id
+      section("Member: #{@request.member.fullname}")
+      section("Shop: #{@shop.name}")
+    end
     section(@request.note) if @request.note.present?
   end
 
