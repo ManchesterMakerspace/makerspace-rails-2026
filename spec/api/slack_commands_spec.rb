@@ -20,7 +20,7 @@ describe "Slack commands API", type: :request do
             type: :string,
             description: "Empty text opens the stateful checkout menu (my checkouts, request a checkout, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Legacy text: MEMBER TOOL, request [TOOL], or active [all]. Active lists share the modal query and detail fields; final results replace the initial ephemeral response asynchronously, with DM fallback."
           },
-          trigger_id: { type: :string, description: "Required to open the checkout modal" },
+          trigger_id: { type: :string, example: "T12345678", description: "Required to open the checkout modal (empty text or legacy request without a tool)" },
           channel_id: { type: :string },
           channel_name: { type: :string },
           user_id: { type: :string },
@@ -30,7 +30,15 @@ describe "Slack commands API", type: :request do
         required: %w[text channel_id channel_name user_id response_url]
       }
 
-      response "200", "command accepted with an ephemeral acknowledgement" do
+      response "200", "command accepted or membership/modal failure explained ephemerally" do
+        example "application/json", :menu, { response_type: "ephemeral", text: "Opening checkout menu..." },
+          "Bare /checkout", "The server calls views.open; the modal is not embedded in this HTTP response."
+        example "application/json", :active, { response_type: "ephemeral", text: "Looking up your active checkouts..." },
+          "Compatibility active command"
+        example "application/json", :expired, { response_type: "ephemeral", text: "Your membership has expired. Renew it before using checkouts." },
+          "Ineligible linked member", "No modal opens; this is distinct from an unlinked Slack account."
+        example "application/json", :open_failed, { response_type: "ephemeral", text: "The checkout menu could not be opened. Please try /checkout again." },
+          "Modal opening failed"
         let(:"X-Slack-Signature") { "v0=documented-by-signature-header" }
         let(:"X-Slack-Request-Timestamp") { Time.current.to_i.to_s }
         let(:command_details) do
@@ -57,6 +65,46 @@ describe "Slack commands API", type: :request do
             text: { type: :string }
           },
           required: %w[response_type text]
+
+        context "with a bare checkout command" do
+          let(:member) { create(:member, :current) }
+          let(:shop) { create(:shop, slack_channel: "C12345678") }
+          before do
+            shop
+            SlackUser.create!(member: member, slack_id: "U12345678")
+            allow(Service::SlackConnector).to receive(:open_modal)
+          end
+
+          it "opens the three-option menu with the configured shop fixed" do
+            post "/slack/commands/checkout", params: command_details.merge(text: "", trigger_id: "TOPEN")
+            expect(response.parsed_body).to eq("response_type" => "ephemeral", "text" => "Opening checkout menu...")
+            expect(Service::SlackConnector).to have_received(:open_modal) do |trigger, view|
+              expect(trigger).to eq("TOPEN")
+              expect(view[:callback_id]).to eq("checkout_modal")
+              menu = view[:blocks].find { |block| block[:block_id] == "checkout_menu" }
+              expect(menu.dig(:accessory, :options).map { |option| option.dig(:text, :text) }).to eq(
+                ["View my checkouts", "Request a checkout", "View open requests"])
+              expect(view[:blocks].none? { |block| block[:block_id] == "checkout_shop" }).to be(true)
+              expect(SlackCheckoutModal.decode_metadata(view[:private_metadata])).to include("shop_id" => shop.id.to_s)
+            end
+          end
+
+          it "offers shop selection outside a configured channel" do
+            post "/slack/commands/checkout", params: command_details.merge(text: "", trigger_id: "TOPEN", channel_id: "COTHER", channel_name: "general")
+            expect(response.parsed_body).to include("text" => "Opening checkout menu...")
+            expect(Service::SlackConnector).to have_received(:open_modal) do |_, view|
+              expect(view[:blocks].any? { |block| block[:block_id] == "checkout_shop" }).to be(true)
+              expect(SlackCheckoutModal.decode_metadata(view[:private_metadata])).not_to have_key("shop_id")
+            end
+          end
+
+          it "returns membership guidance without opening a modal" do
+            member.update!(status: "suspended")
+            post "/slack/commands/checkout", params: command_details.merge(text: "", trigger_id: "TOPEN")
+            expect(response.parsed_body).to eq("response_type" => "ephemeral", "text" => "Your membership is suspended. Contact the makerspace before using checkouts.")
+            expect(Service::SlackConnector).not_to have_received(:open_modal)
+          end
+        end
 
         it "returns the documented acknowledgement" do
           post "/slack/commands/checkout", params: command_details, headers: {

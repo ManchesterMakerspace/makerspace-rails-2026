@@ -17,24 +17,58 @@ The page shares lazy catalog reads across tabs and refreshes loaded catalogs on
 mutations and window focus. Public and management catalogs remain separate.
 No persistent cache stores tool notes or authorization decisions.
 
-Deploy the declared nonunique indexes with `bundle exec rake data:ensure_checkout_indexes`:
-`members(status, expirationTime)`, `tool_checkouts(member_id, revoked_at, tool_id)`,
-and `checkout_approvers(member_id)`. Existing documents need no migration.
-The task is repeatable and creates only these three indexes; it never drops
-indexes or changes documents. If a targeted index conflicts, it stops for review.
-Use this task rather than the global `db:mongoid:create_indexes` for checkout
-deployment: the global task can fail on unrelated legacy identity indexes, such
-as a full unique `cards.uid_1` conflicting with the model's partial unique index.
-That legacy index can remain in place while the checkout indexes are installed.
+## Mongo queries and deployment indexes
+
+`CheckoutInteractionQuery` scopes requestable tools in Mongo by `shop_id`,
+`disabled != true`, and `open != true`, then orders by `name` and `_id` with
+`{ locale: "en", strength: 2 }` collation. Enabled shops use the same
+case-insensitive alphabetical ordering. Existing checkout IDs, active
+prerequisite checkout IDs, and open-request tool IDs are fetched in bulk and
+passed to `ToolCheckoutRequestEligibility`; there is no per-candidate `exists?`
+or `pluck`. The policy remains the final validator immediately before insertion.
+
+Open-request queries constrain `status: "open"` and authorized member/tool IDs
+in Mongo. Eligible member IDs come from status/expiration filters, without
+loading every member. Pending IDs are paired only with tools allowing pending
+members. Visible requests are oldest first (`request_date: 1, _id: 1`), with the
+ID providing a stable tie-breaker. Bulk checkout data also removes requests with
+unmet prerequisites or an existing disqualifying checkout.
+
+Deploy all six declared nonunique indexes from the application root with:
+
+```sh
+RAILS_ENV=production bundle exec rake data:ensure_checkout_indexes
+```
+
+| Collection | Index fields, in order (all ascending) |
+| --- | --- |
+| `members` | `status, expirationTime` |
+| `tool_checkouts` | `member_id, revoked_at, tool_id` |
+| `checkout_approvers` | `member_id` |
+| `tool_checkout_requests` | `member_id, status, request_date, _id` |
+| `tool_checkout_requests` | `tool_id, status, request_date, _id` |
+| `tools` | `shop_id, name, _id, disabled, open` (case-insensitive collation) |
+
+The tool index places shop equality and name ordering before availability
+inequalities. A test-database explain comparison with 6,000 synthetic tools
+returned the same 343 results without a blocking sort for either index; including
+`open` reduced fetched documents from 514 to 343, with 601 keys examined in both
+plans. This is fixture evidence, not a production workload benchmark.
+
+The deployment task in `lib/tasks/checkout_indexes.rake` is repeatable and uses
+model declarations. It never drops indexes or changes documents. A conflict on
+a targeted index stops the task for review. Use it instead of global
+`db:mongoid:create_indexes`, which may encounter unrelated legacy identity-index
+conflicts such as `cards.uid_1`. Existing documents need no migration.
 
 ## Slack commands
 
-Command acknowledgements, help, and status tables are visible only to the
+Command acknowledgements, help, and status lists are visible only to the
 caller. The request and approval workflows can additionally send the DMs and
 channel announcements described below.
 
 Bare `/checkout` opens the same three-choice menu for members and approvers:
-View my checkouts, Request a checkout, and View open requests. In a configured
+**View my checkouts**, **Request a checkout**, and **View open requests**. In a configured
 shop channel that shop is fixed for the entire modal session. Elsewhere the
 initial view offers enabled shops in case-insensitive alphabetical order; once
 chosen, the shop cannot be switched within that session. Close and reopen the
@@ -78,15 +112,31 @@ current member link, reloads selected records, checks membership and shop/tool
 availability, and rechecks ownership or current approval assignments. Option
 labels are display-only; notes come exclusively from the note input value.
 
-Open requests combine the member's own eligible requests and their authorized
-approval queue. Only the owner may edit or cancel a request. Owner details show tool, requested
-date and note with Edit note, Cancel request and Go back. Other members' details
+Open requests combine the member's own eligible requests with this approval scope:
+
+| Acting member | Additional visible requests |
+| --- | --- |
+| Ordinary member | None |
+| Admin or board member | Every eligible request in the selected shop |
+| Resource manager | Eligible requests in the selected shop, if they manage it |
+| Assigned tool approver | Eligible requests for assigned tools or assigned shops, within the selected shop |
+
+Assignments are additive, but never expose another shop's requests in the current
+modal. Expired, inactive, revoked, suspended and otherwise ineligible requesters
+are excluded; pending requesters remain only where the tool allows pending.
+Lists are oldest first, with `_id` breaking equal request dates.
+
+Only the owner may edit or cancel a request. Owner details show tool, requested
+date and note with Edit note, Cancel request and Go back. Notes are limited to
+128 characters. Other members' details
 include requester and shop and offer only Approve and Go back. Approval and
 cancellation buttons open confirmation views; writes happen on submission.
 Request creation, note editing, cancellation and approval share the existing
 per-member/tool Redis request lock and revalidate inside it. Successful approval
 creates a Slack-signed-off checkout, closes the request, and invokes the existing
-checkout notifications and audit logging. Successful writes enqueue final outcome delivery and clear the modal, including when enqueueing fails.
+checkout notifications and audit logging. Successful writes enqueue final outcome
+delivery before returning `response_action: "clear"`, including when enqueueing
+fails. Notification failure never undoes a saved request or checkout.
 
 Block navigation uses `views.update` with the incoming view hash. A failed update
 is never retried without that hash; the handler attempts a separate explanatory
@@ -98,7 +148,8 @@ explanation. Navigation reloads records even when going back.
 
 A tool can be newly requested only when all of the following are true:
 
-- it requires a checkout and both the tool and its shop are enabled;
+- it requires a checkout (`open != true`) and both the tool and its shop are
+  enabled; disabled/hidden/out-of-service resources are unavailable;
 - the member is active and unexpired, or is pending and the tool explicitly
   permits pending members;
 - every tool ID in `Tool#prerequisite_ids` has a non-revoked checkout for the
@@ -108,7 +159,8 @@ A tool can be newly requested only when all of the following are true:
 - there is no open checkout request for that member and tool.
 
 The portal, named Slack request job, Slack modal, and Slack modal submission
-all use the same eligibility policy. Submission checks again so changes made
+all use `ToolCheckoutRequestEligibility`. Eligible tools are displayed in
+case-insensitive alphabetical order. Submission checks again so changes made
 after the modal opened cannot create an invalid request. Slack displays at
 most 100 selectable static options; when more than 100 tools are eligible it
 directs the member to the portal instead of silently omitting tools.
@@ -131,12 +183,14 @@ the modal all use `CheckoutCreation` under the same per-member/tool lock.
   enabled. It goes to the tool's `announce_channel` when configured, otherwise
   to the shop's `slack_channel`. The message identifies the member, tool, shop,
   and optional request note.
-- A successful legacy `checkout_request_submit` submission also DMs the requester to confirm that
-  unpaid volunteers process checkouts and identifies tagged resource managers
-  they can contact about becoming an assistant checkout approver. Failure to
-  deliver this confirmation does not undo the saved request.
+- A successful legacy `checkout_request_submit` submission queues a confirmation
+  explaining that unpaid volunteers process checkouts and identifying tagged
+  resource managers they can contact about becoming an assistant checkout
+  approver. It replaces the ephemeral acknowledgement first, with DM fallback;
+  delivery failure does not undo the saved request.
 - Cancelling an announced request updates that same channel message; it does
-  not post a second message or send a DM.
+  not post a second announcement. The submitting owner receives the asynchronous
+  final outcome described below, with DM fallback if replacement fails.
 
 ### Approvals
 
@@ -176,11 +230,13 @@ and tools in the chosen shop; available tools are ordered using case-insensitive
 collation. Tools and shops are loaded in bulk. Empty lists retain Go back.
 Details recheck ownership, shop and current activity before showing tool name,
 description, authorized notes, users channel, effective wiki URL, checkout date,
-and reservability. Modal fields are truncated to Block Kit limits; textual
+and reservability, plus Go back. The date comes from `checked_out_at`. Modal fields are truncated to Block Kit limits; textual
 responses escape user-controlled Slack formatting and bound message length.
 
 Final checkout outcomes use the original response URL asynchronously, replacing
-the initial ephemeral slash-command acknowledgement. Replacement failures fall
+the initial slash-command acknowledgement using `replace_original: true`,
+`response_type: "ephemeral"`, and the final text. Non-2xx responses and request
+exceptions count as replacement failures. Replacement failures fall
 back to a DM to the submitting Slack user. Enqueue, replacement and DM failures
 are reported without the response URL and never undo persisted requests or
 checkouts. Outcome job credentials are encrypted and job argument logging is

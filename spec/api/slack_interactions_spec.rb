@@ -18,18 +18,19 @@ describe "Slack interactions API", type: :request do
         properties: {
           payload: {
             type: :string,
-            pattern: '"type":"(view_submission|block_actions|view_closed)"',
+            pattern: '"type"\s*:\s*"(view_submission|block_actions|view_closed)"',
             description: "JSON-encoded Slack interaction. Reservation views accept view_submission, " \
-              "view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Block actions include actions and current view state. Checkout field errors use checkout_note.",
+              "view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Block actions include actions and current view state. Checkout field errors use checkout_note. Echo the opaque private_metadata unchanged; do not construct it from this example. Submissions supply view.state.values.checkout_note.checkout_note.value (optional string, maximum 128 characters). Menu values are active, request_tools and requests; other selectors use persisted record IDs.",
             example: {
               type: "block_actions",
               user: { id: "U12345678" },
-              actions: [{ action_id: "reservation_tools_changed", selected_options: [] }],
+              actions: [{ block_id: "checkout_menu", action_id: "checkout_menu_select",
+                selected_option: { text: { type: "plain_text", text: "View my checkouts" }, value: "active" } }],
               view: {
                 id: "V12345678",
                 hash: "view-hash",
-                callback_id: "reservation_submit",
-                private_metadata: "{}",
+                callback_id: "checkout_modal",
+                private_metadata: "<opaque signed metadata returned by views.open>",
                 state: { values: {} }
               }
             }.to_json
@@ -39,6 +40,19 @@ describe "Slack interactions API", type: :request do
       }
 
       response "200", "interaction acknowledged or modal response returned" do
+        example "application/json", :navigation, {}, "Block-action acknowledgement",
+          "The server calls views.update using view.id and view.hash; no view is returned in the HTTP acknowledgement. Failed updates also acknowledge with {}, report the failure and attempt a separate alert without retrying without the hash."
+        example "application/json", :saved, { response_action: "clear" }, "Checkout write saved",
+          "Request creation, note editing, cancellation and approval enqueue final delivery before clearing. Delivery or enqueue failure does not undo persistence."
+        example "application/json", :note_error, {
+          response_action: "errors", errors: { checkout_note: "Note must be at most 128 characters." }
+        }, "Field-specific validation"
+        example "application/json", :stale, {
+          response_action: "update", view: { type: "modal", callback_id: "checkout_modal",
+            title: { type: "plain_text", text: "Checkouts" },
+            private_metadata: "<opaque signed alert metadata>",
+            blocks: [{ type: "section", text: { type: "plain_text", text: "This shop is no longer available." } }] }
+        }, "Stale or unauthorized submission", "The replacement view explains the failure; no write is performed."
         let(:"X-Slack-Signature") { "v0=documented-by-signature-header" }
         let(:"X-Slack-Request-Timestamp") { Time.current.to_i.to_s }
         let(:interaction) do
@@ -84,7 +98,8 @@ describe "Slack interactions API", type: :request do
 
           def checkout_view(step: "menu", record_id: nil)
             metadata = { "member_id" => member.id.to_s, "shop_id" => shop.id.to_s,
-              "slack_user_id" => "UCHECKOUT", "step" => step, "record_id" => record_id }.compact
+              "slack_user_id" => "UCHECKOUT", "response_url" => "https://hooks.slack.com/commands/example",
+              "step" => step, "record_id" => record_id }.compact
             SlackCheckoutModal.new(member: member, shop: shop, tool: tool, metadata: metadata).build
               .merge(id: "VCHECKOUT", hash: "current-hash")
           end
@@ -96,6 +111,32 @@ describe "Slack interactions API", type: :request do
             post "/slack/interactions", params: { payload: payload.to_json }
             expect(response.parsed_body).to eq({})
             expect(Service::SlackConnector).to have_received(:update_modal).with("VCHECKOUT", hash_including(callback_id: "checkout_modal"), hash: "current-hash")
+          end
+
+          it "clears saved submissions after queueing replacement-first delivery" do
+            allow(REDIS).to receive(:set).and_return(true)
+            allow(REDIS).to receive(:eval).and_return(1)
+            allow(SlackCheckoutOutcomeJob).to receive(:enqueue).and_return(true)
+            allow_any_instance_of(ToolCheckoutRequest).to receive(:announce_request)
+            view = checkout_view(step: "request_new", record_id: tool.id.to_s)
+            view[:state] = { values: { checkout_note: { checkout_note: { value: "Please arrange training" } } } }
+            post "/slack/interactions", params: { payload: { type: "view_submission", user: { id: "UCHECKOUT" }, view: view }.to_json }
+            expect(response).to have_http_status(:ok)
+            expect(response.parsed_body).to eq("response_action" => "clear")
+            expect(ToolCheckoutRequest.where(member: member, tool: tool, status: "open").first.note).to eq("Please arrange training")
+            expect(SlackCheckoutOutcomeJob).to have_received(:enqueue).with(anything, "https://hooks.slack.com/commands/example", "UCHECKOUT")
+          end
+
+          it "acknowledges modal-update failure and attempts a separate alert" do
+            allow(Service::SlackConnector).to receive(:update_modal).and_raise(StandardError)
+            allow(Service::SlackConnector).to receive(:open_modal)
+            allow(Service::ErrorReporter).to receive(:notify)
+            payload = { type: "block_actions", trigger_id: "TALERT", user: { id: "UCHECKOUT" }, view: checkout_view,
+              actions: [{ action_id: "checkout_menu_select", block_id: "checkout_menu", selected_option: { value: "active" } }] }
+            post "/slack/interactions", params: { payload: payload.to_json }
+            expect(response.parsed_body).to eq({})
+            expect(Service::SlackConnector).to have_received(:update_modal).once.with("VCHECKOUT", anything, hash: "current-hash")
+            expect(Service::SlackConnector).to have_received(:open_modal).with("TALERT", hash_including(callback_id: "checkout_modal"))
           end
 
           it "returns checkout submission field errors keyed by block ID" do

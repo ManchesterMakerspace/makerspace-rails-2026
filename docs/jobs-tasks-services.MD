@@ -59,7 +59,8 @@ excluded. Long messages direct the user to the portal instead of exceeding Slack
 limits. Its result is delivered by `SlackCheckoutOutcomeJob`.
 
 `SlackCheckoutOutcomeJob` runs on the `slack` queue. Checkout modal submissions
-queue it before acknowledging success with `response_action: clear`. Legacy
+queue it after saving request creation, note editing, cancellation or approval,
+and before acknowledging success with `response_action: clear`. Legacy
 checkout, request and active-list jobs also delegate final delivery to it. It
 first posts `replace_original: true`, `response_type: "ephemeral"`, and final
 text to the original slash-command response URL. Open/read/write timeouts are

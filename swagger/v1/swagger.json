@@ -5521,9 +5521,41 @@
         ],
         "responses": {
           "200": {
-            "description": "command accepted with an ephemeral acknowledgement",
+            "description": "command accepted or membership/modal failure explained ephemerally",
             "content": {
               "application/json": {
+                "examples": {
+                  "menu": {
+                    "value": {
+                      "response_type": "ephemeral",
+                      "text": "Opening checkout menu..."
+                    },
+                    "summary": "Bare /checkout",
+                    "description": "The server calls views.open; the modal is not embedded in this HTTP response."
+                  },
+                  "active": {
+                    "value": {
+                      "response_type": "ephemeral",
+                      "text": "Looking up your active checkouts..."
+                    },
+                    "summary": "Compatibility active command"
+                  },
+                  "expired": {
+                    "value": {
+                      "response_type": "ephemeral",
+                      "text": "Your membership has expired. Renew it before using checkouts."
+                    },
+                    "summary": "Ineligible linked member",
+                    "description": "No modal opens; this is distinct from an unlinked Slack account."
+                  },
+                  "open_failed": {
+                    "value": {
+                      "response_type": "ephemeral",
+                      "text": "The checkout menu could not be opened. Please try /checkout again."
+                    },
+                    "summary": "Modal opening failed"
+                  }
+                },
                 "schema": {
                   "type": "object",
                   "properties": {
@@ -5580,7 +5612,8 @@
                   },
                   "trigger_id": {
                     "type": "string",
-                    "description": "Required to open the checkout modal"
+                    "example": "T12345678",
+                    "description": "Required to open the checkout modal (empty text or legacy request without a tool)"
                   },
                   "channel_id": {
                     "type": "string"
@@ -5651,6 +5684,53 @@
             "description": "interaction acknowledged or modal response returned",
             "content": {
               "application/json": {
+                "examples": {
+                  "navigation": {
+                    "summary": "Block-action acknowledgement",
+                    "description": "The server calls views.update using view.id and view.hash; no view is returned in the HTTP acknowledgement. Failed updates also acknowledge with {}, report the failure and attempt a separate alert without retrying without the hash."
+                  },
+                  "saved": {
+                    "value": {
+                      "response_action": "clear"
+                    },
+                    "summary": "Checkout write saved",
+                    "description": "Request creation, note editing, cancellation and approval enqueue final delivery before clearing. Delivery or enqueue failure does not undo persistence."
+                  },
+                  "note_error": {
+                    "value": {
+                      "response_action": "errors",
+                      "errors": {
+                        "checkout_note": "Note must be at most 128 characters."
+                      }
+                    },
+                    "summary": "Field-specific validation"
+                  },
+                  "stale": {
+                    "value": {
+                      "response_action": "update",
+                      "view": {
+                        "type": "modal",
+                        "callback_id": "checkout_modal",
+                        "title": {
+                          "type": "plain_text",
+                          "text": "Checkouts"
+                        },
+                        "private_metadata": "<opaque signed alert metadata>",
+                        "blocks": [
+                          {
+                            "type": "section",
+                            "text": {
+                              "type": "plain_text",
+                              "text": "This shop is no longer available."
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "summary": "Stale or unauthorized submission",
+                    "description": "The replacement view explains the failure; no write is performed."
+                  }
+                },
                 "schema": {
                   "type": "object",
                   "description": "Empty acknowledgement, modal clear action, field validation errors, or a modal update containing a checkout/reservation view or explanatory alert",
@@ -5736,9 +5816,9 @@
                 "properties": {
                   "payload": {
                     "type": "string",
-                    "pattern": "\"type\":\"(view_submission|block_actions|view_closed)\"",
-                    "description": "JSON-encoded Slack interaction. Reservation views accept view_submission, view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Block actions include actions and current view state. Checkout field errors use checkout_note.",
-                    "example": "{\"type\":\"block_actions\",\"user\":{\"id\":\"U12345678\"},\"actions\":[{\"action_id\":\"reservation_tools_changed\",\"selected_options\":[]}],\"view\":{\"id\":\"V12345678\",\"hash\":\"view-hash\",\"callback_id\":\"reservation_submit\",\"private_metadata\":\"{}\",\"state\":{\"values\":{}}}}"
+                    "pattern": "\"type\"\\s*:\\s*\"(view_submission|block_actions|view_closed)\"",
+                    "description": "JSON-encoded Slack interaction. Reservation views accept view_submission, view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Block actions include actions and current view state. Checkout field errors use checkout_note. Echo the opaque private_metadata unchanged; do not construct it from this example. Submissions supply view.state.values.checkout_note.checkout_note.value (optional string, maximum 128 characters). Menu values are active, request_tools and requests; other selectors use persisted record IDs.",
+                    "example": "{\"type\":\"block_actions\",\"user\":{\"id\":\"U12345678\"},\"actions\":[{\"block_id\":\"checkout_menu\",\"action_id\":\"checkout_menu_select\",\"selected_option\":{\"text\":{\"type\":\"plain_text\",\"text\":\"View my checkouts\"},\"value\":\"active\"}}],\"view\":{\"id\":\"V12345678\",\"hash\":\"view-hash\",\"callback_id\":\"checkout_modal\",\"private_metadata\":\"\\u003copaque signed metadata returned by views.open\\u003e\",\"state\":{\"values\":{}}}}"
                   }
                 },
                 "required": [
