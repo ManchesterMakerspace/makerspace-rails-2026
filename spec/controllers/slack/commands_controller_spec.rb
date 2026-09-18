@@ -93,11 +93,60 @@ RSpec.describe Slack::CommandsController, type: :controller do
 
     it "opens the self-service modal synchronously for an ordinary member's bare command" do
       sign_request!({ text: '', user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" })
-      expect(Service::SlackConnector).to receive(:open_modal).with("trigger", hash_including(callback_id: "checkout_request_submit"))
+      expect(Service::SlackConnector).to receive(:open_modal).with("trigger", hash_including(callback_id: "checkout_modal"))
 
       post :checkout, params: { text: '', user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" }
 
       expect(response).to have_http_status(200)
+    end
+
+    it "opens the same menu for an approver's bare command" do
+      create(:checkout_approver, member: member, shop_ids: [shop.id.to_s])
+      body = { text: "", user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" }
+      sign_request!(body)
+      expect(Service::SlackConnector).to receive(:open_modal).with("trigger", hash_including(callback_id: "checkout_modal"))
+      post :checkout, params: body
+      expect(response.parsed_body["text"]).to include("Opening checkout menu")
+    end
+
+    it "offers an enabled-shop selector outside a shop channel" do
+      allow(Service::ShopSlackChannels).to receive(:associated?).and_return(false)
+      body = { text: "", user_id: "U123", channel_name: "general", trigger_id: "trigger" }
+      sign_request!(body)
+      expect(Service::SlackConnector).to receive(:open_modal) do |_trigger, view|
+        expect(view[:blocks].map { |block| block[:block_id] }).to include("checkout_shop", "checkout_menu")
+        expect(SlackCheckoutModal.decode_metadata(view[:private_metadata])).not_to have_key("shop_id")
+      end
+      post :checkout, params: body
+    end
+
+    %w[revoked suspended inactive nonMember].each do |status|
+      it "explains #{status} membership instead of reporting an unlinked account" do
+        member.update!(status: status)
+        body = { text: "", user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" }
+        sign_request!(body)
+        expect(Service::SlackConnector).not_to receive(:open_modal)
+        post :checkout, params: body
+        expect(response.parsed_body["text"]).to eq(SlackCheckoutModal.membership_error(member))
+        expect(response.parsed_body["text"]).not_to include("Link your Slack")
+      end
+    end
+
+    it "explains an expired membership" do
+      member.update!(expirationTime: 1)
+      body = { text: "", user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" }
+      sign_request!(body)
+      expect(Service::SlackConnector).not_to receive(:open_modal)
+      post :checkout, params: body
+      expect(response.parsed_body["text"]).to include("expired")
+    end
+
+    it "admits pending members to the menu even without an expiration date" do
+      member.update!(status: "pending", expirationTime: nil)
+      body = { text: "", user_id: "U123", channel_name: "woodshop", trigger_id: "trigger" }
+      sign_request!(body)
+      expect(Service::SlackConnector).to receive(:open_modal)
+      post :checkout, params: body
     end
 
     it "opens the modal for an approver who explicitly uses '/checkout request'" do
@@ -224,10 +273,10 @@ RSpec.describe Slack::CommandsController, type: :controller do
       expect(response).to have_http_status(200)
     end
 
-    it "lists the active command in bare checkout help" do
+    it "asks an unidentified caller to link their account" do
       sign_request!({ text: "" })
       post :checkout, params: { text: "" }
-      expect(response.parsed_body.fetch("text")).to include("/checkout active [all]")
+      expect(response.parsed_body.fetch("text")).to include("Link your Slack account")
     end
 
     it "still routes a plain '/checkout @member tool' to SlackCheckoutJob" do
@@ -273,7 +322,7 @@ RSpec.describe Slack::CommandsController, type: :controller do
         allow(Service::ShopSlackChannels).to receive(:resolved).and_return(channels)
       end
 
-      ["", "request", "request Bandsaw", "@someone Bandsaw"].each do |command_text|
+      ["request", "request Bandsaw", "@someone Bandsaw"].each do |command_text|
         it "directs '#{command_text.presence || 'bare /checkout'}' to the public shop channels" do
           sign_request!(text: command_text, channel_name: "general")
 
@@ -308,10 +357,10 @@ RSpec.describe Slack::CommandsController, type: :controller do
 
       it "uses generic instructions when channel inventory is unavailable" do
         allow(Service::ShopSlackChannels).to receive(:resolved).and_raise(Redis::CannotConnectError)
-        sign_request!(text: "", channel_name: "general")
+        sign_request!(text: "@someone Bandsaw", channel_name: "general")
 
         expect do
-          post :checkout, params: { text: "", channel_name: "general" }
+          post :checkout, params: { text: "@someone Bandsaw", channel_name: "general" }
         end.not_to raise_error
 
         expect(response.parsed_body["text"]).to include("join the public Slack channel")

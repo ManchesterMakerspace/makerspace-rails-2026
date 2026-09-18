@@ -19,7 +19,7 @@ RSpec.describe 'data:ensure_checkout_indexes' do
 
   def reset_index_test_collections
     Service::DatabaseSafety.ensure_safe_mlab_uri!(operation: 'Checkout index test collection reset')
-    [Card, Member, ToolCheckout, CheckoutApprover].each { |model| model.collection.drop }
+    [Card, Member, ToolCheckout, CheckoutApprover, ToolCheckoutRequest, Tool].each { |model| model.collection.drop }
   end
 
   it 'creates only checkout indexes despite legacy identity indexes and is repeatable' do
@@ -43,6 +43,16 @@ RSpec.describe 'data:ensure_checkout_indexes' do
       matches = model.collection.indexes.to_a.select { |index| index['key'] == key }
       expect(matches.length).to eq(1)
       expect(matches.first['unique']).not_to eq(true)
+    end
+    [
+      [ToolCheckoutRequest, { 'member_id' => 1, 'status' => 1, 'request_date' => 1, '_id' => 1 }],
+      [ToolCheckoutRequest, { 'tool_id' => 1, 'status' => 1, 'request_date' => 1, '_id' => 1 }],
+      [Tool, { 'shop_id' => 1, 'name' => 1, '_id' => 1, 'disabled' => 1, 'open' => 1 }]
+    ].each do |model, key|
+      matches = model.collection.indexes.to_a.select { |index| index['key'] == key }
+      expect(matches.length).to eq(1)
+      expect(matches.first['unique']).not_to eq(true)
+      expect(matches.first.dig('collation', 'strength')).to eq(2) if model == Tool
     end
     expect(Card.collection.indexes.to_a).to eq(card_indexes)
     expect(Card.collection.find(uid: 'legacy-card').count).to eq(1)

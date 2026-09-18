@@ -56,6 +56,9 @@ class Tool
 
   index({ shop_id: 1, name: 1, _id: 1, disabled: 1 }, collation: { locale: "en", strength: 2 })
 
+  # Keep name before the inequality filters so shop-scoped name ordering can use the index.
+  index({ shop_id: 1, name: 1, _id: 1, disabled: 1, open: 1 }, collation: { locale: "en", strength: 2 })
+
   def open
     read_attribute(:open) == true
   end

@@ -1,7 +1,28 @@
 require "swagger_helper"
 
 describe "Tool checkout requests API", type: :request do
+  before { allow(REDIS).to receive(:set).and_return(true) }
+
   path "/tool_checkout_requests" do
+    get "Lists the member's eligible open checkout requests" do
+      tags "ToolCheckoutRequests"
+      description "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending."
+      produces "application/json"
+      response "200", "eligible open requests" do
+        let(:member) { create(:member, :current) }
+        let(:tool) { create(:tool) }
+        let!(:visible_request) { ToolCheckoutRequest.create!(member: member, tool: tool) }
+        before do
+          ToolCheckoutRequest.create!(member: create(:member, :current, status: "suspended"), tool: tool)
+          sign_in member
+        end
+        schema type: :array, items: { type: :object }
+        run_test! do |response|
+          expect(JSON.parse(response.body).map { |row| row.fetch("id") }).to eq([visible_request.id.to_s])
+        end
+      end
+    end
+
     post "Requests a safety checkout" do
       tags "ToolCheckoutRequests"
       operationId "createToolCheckoutRequest"
@@ -84,6 +105,30 @@ describe "Tool checkout requests API", type: :request do
 
         schema "$ref" => "#/components/schemas/error"
         run_test!
+      end
+    end
+  end
+end
+
+
+describe "Checkout approval queue API", type: :request do
+  path "/admin/tool_checkout_requests" do
+    get "Lists authorized eligible open checkout requests" do
+      tags "ToolCheckoutRequests"
+      description "Admins and board members see all tool scopes; resource managers see managed shops; valid checkout approvers see assigned enabled tools and shops. All scopes exclude inactive, expired, revoked and suspended requesters. Pending requesters require a tool allowing pending members. Defaults to request_date then id ascending."
+      produces "application/json"
+      response "200", "authorized open requests" do
+        let(:member) { create(:member, :current, role: "admin") }
+        let(:tool) { create(:tool) }
+        let!(:visible_request) { ToolCheckoutRequest.create!(member: member, tool: tool) }
+        before do
+          ToolCheckoutRequest.create!(member: create(:member, :current, status: "suspended"), tool: tool)
+          sign_in member
+        end
+        schema type: :array, items: { type: :object }
+        run_test! do |response|
+          expect(JSON.parse(response.body).map { |row| row.fetch("id") }).to eq([visible_request.id.to_s])
+        end
       end
     end
   end

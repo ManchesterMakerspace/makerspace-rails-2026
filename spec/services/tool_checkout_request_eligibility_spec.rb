@@ -46,4 +46,17 @@ RSpec.describe ToolCheckoutRequestEligibility do
     tool.update!(allow_pending: true)
     expect(eligibility).to be_eligible
   end
+
+  it "uses supplied empty and populated ID sets without querying checkout collections" do
+    tool
+    expect(ToolCheckout).not_to receive(:where)
+    expect(ToolCheckoutRequest).not_to receive(:where)
+    preloaded = described_class.new(member: member, tool: tool,
+      checkout_tool_ids: [], active_checkout_tool_ids: [prerequisite.id], open_request_tool_ids: [])
+    expect(preloaded).to be_eligible
+    missing = described_class.new(member: member, tool: tool,
+      checkout_tool_ids: [], active_checkout_tool_ids: [], open_request_tool_ids: [])
+    expect(missing.error).to include("prerequisite")
+  end
+
 end

@@ -12,6 +12,9 @@ class ToolCheckoutRequest
   belongs_to :tool
   belongs_to :checked_out, class_name: "ToolCheckout", optional: true
 
+  index({ member_id: 1, status: 1, request_date: 1, _id: 1 })
+  index({ tool_id: 1, status: 1, request_date: 1, _id: 1 })
+
   validates :member, presence: true
   validates :tool, presence: true
   validates :status, inclusion: { in: %w[open closed deleted] }
@@ -44,7 +47,7 @@ class ToolCheckoutRequest
     end
 
     sort_by = params[:order_by].presence || "request_date"
-    rows = rows.sort_by { |request| sortable_value_for(request, sort_by) }
+    rows = rows.sort_by { |request| [sortable_value_for(request, sort_by), request.id.to_s] }
     params[:order].to_s.downcase == "desc" ? rows.reverse : rows
   end
 

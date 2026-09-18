@@ -4,7 +4,10 @@ namespace :data do
     targets = [
       [Member, { status: 1, expirationTime: 1 }],
       [ToolCheckout, { member_id: 1, revoked_at: 1, tool_id: 1 }],
-      [CheckoutApprover, { member_id: 1 }]
+      [CheckoutApprover, { member_id: 1 }],
+      [ToolCheckoutRequest, { member_id: 1, status: 1, request_date: 1, _id: 1 }],
+      [ToolCheckoutRequest, { tool_id: 1, status: 1, request_date: 1, _id: 1 }],
+      [Tool, { shop_id: 1, name: 1, _id: 1, disabled: 1, open: 1 }]
     ]
 
     targets.each do |model, key|

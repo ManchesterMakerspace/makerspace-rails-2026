@@ -4298,7 +4298,7 @@
             "description": "Document not found"
           },
           "403": {
-            "description": "Forbidden \u2014 saved rental agreement belongs to another member"
+            "description": "Forbidden — saved rental agreement belongs to another member"
           }
         }
       }
@@ -5576,7 +5576,11 @@
                   },
                   "text": {
                     "type": "string",
-                    "description": "Checkout command text: MEMBER TOOL, request [TOOL], or active [all]"
+                    "description": "Empty text opens the stateful checkout menu (my checkouts, request a checkout, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Legacy text: MEMBER TOOL, request [TOOL], or active [all]."
+                  },
+                  "trigger_id": {
+                    "type": "string",
+                    "description": "Required to open the checkout modal"
                   },
                   "channel_id": {
                     "type": "string"
@@ -5588,9 +5592,6 @@
                     "type": "string"
                   },
                   "user_name": {
-                    "type": "string"
-                  },
-                  "trigger_id": {
                     "type": "string"
                   },
                   "response_url": {
@@ -5624,6 +5625,7 @@
           "SlackInteractions"
         ],
         "operationId": "slackInteractions",
+        "description": "Callbacks: checkout_modal accepts block_actions and view_submission; checkout_request_submit accepts legacy submissions; reservation_submit also accepts view_closed. Checkout navigation calls views.update with the incoming view hash. Submissions return response_action update with a replacement modal, or errors keyed by input block ID. Checkout private_metadata is a signed, expiring contract containing member_id, optional shop_id, response_url, slack_user_id, step and optional record_id. Every transition reloads and authorizes these IDs. Display text is never an identifier. Checkout action IDs: checkout_menu_select, checkout_shop_select, checkout_tool_select, checkout_request_select, checkout_checkout_select, checkout_edit_note, checkout_cancel_request, checkout_approve_request, checkout_back. Note input block/action ID: checkout_note.",
         "parameters": [
           {
             "name": "X-Slack-Signature",
@@ -5651,7 +5653,57 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "description": "Empty acknowledgement, modal clear action, field validation errors, or a modal update containing a broad reservation error alert",
+                  "description": "Empty acknowledgement, modal clear action, field validation errors, or a modal update containing a checkout/reservation view or explanatory alert",
+                  "properties": {
+                    "response_action": {
+                      "type": "string",
+                      "enum": [
+                        "clear",
+                        "update",
+                        "errors"
+                      ]
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Input block ID to validation message, including checkout_note"
+                    },
+                    "view": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "modal"
+                          ]
+                        },
+                        "callback_id": {
+                          "type": "string",
+                          "enum": [
+                            "checkout_modal",
+                            "checkout_request_submit",
+                            "reservation_submit"
+                          ]
+                        },
+                        "private_metadata": {
+                          "type": "string"
+                        },
+                        "blocks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "callback_id",
+                        "blocks"
+                      ]
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -5685,7 +5737,7 @@
                   "payload": {
                     "type": "string",
                     "pattern": "\"type\":\"(view_submission|block_actions|view_closed)\"",
-                    "description": "JSON-encoded Slack interaction. Reservation views accept view_submission, view_closed, and block_actions; block actions include actions and current view state.",
+                    "description": "JSON-encoded Slack interaction. Reservation views accept view_submission, view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Block actions include actions and current view state. Checkout field errors use checkout_note.",
                     "example": "{\"type\":\"block_actions\",\"user\":{\"id\":\"U12345678\"},\"actions\":[{\"action_id\":\"reservation_tools_changed\",\"selected_options\":[]}],\"view\":{\"id\":\"V12345678\",\"hash\":\"view-hash\",\"callback_id\":\"reservation_submit\",\"private_metadata\":\"{}\",\"state\":{\"values\":{}}}}"
                   }
                 },
@@ -5699,6 +5751,28 @@
       }
     },
     "/tool_checkout_requests": {
+      "get": {
+        "summary": "Lists the member's eligible open checkout requests",
+        "tags": [
+          "ToolCheckoutRequests"
+        ],
+        "description": "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending.",
+        "responses": {
+          "200": {
+            "description": "eligible open requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "summary": "Requests a safety checkout",
         "tags": [
@@ -5823,6 +5897,30 @@
                 "required": [
                   "tool_id"
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tool_checkout_requests": {
+      "get": {
+        "summary": "Lists authorized eligible open checkout requests",
+        "tags": [
+          "ToolCheckoutRequests"
+        ],
+        "description": "Admins and board members see all tool scopes; resource managers see managed shops; valid checkout approvers see assigned enabled tools and shops. All scopes exclude inactive, expired, revoked and suspended requesters. Pending requesters require a tool allowing pending members. Defaults to request_date then id ascending.",
+        "responses": {
+          "200": {
+            "description": "authorized open requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }

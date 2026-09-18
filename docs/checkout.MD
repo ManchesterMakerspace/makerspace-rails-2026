@@ -33,16 +33,20 @@ Command acknowledgements, help, and status tables are visible only to the
 caller. The request and approval workflows can additionally send the DMs and
 channel announcements described below.
 
-New requests and checkout approvals must be started in the configured public
-Slack channel for the relevant shop. The cross-shop request-status listing and
-`/checkout active all` remain available from channels not associated with a
-shop. If a Slack identity is not yet present locally, the command attempts a
-single identity synchronization before asking the caller to link their portal
-account.
+Bare `/checkout` opens the same three-choice menu for members and approvers:
+View my checkouts, Request a checkout, and View open requests. In a configured
+shop channel that shop is fixed for the entire modal session. Elsewhere the
+initial view offers enabled shops in case-insensitive alphabetical order; once
+chosen, the shop cannot be switched within that session. Close and reopen the
+command to choose another shop. Legacy textual approvals still require a shop
+channel. An unknown Slack identity is synchronized once before an account-link
+message is returned. Expired, revoked, suspended, inactive and otherwise
+ineligible members receive distinct membership guidance. Pending members can
+enter, but can only interact with tools allowing pending members.
 
 | Command | Behavior |
 | --- | --- |
-| `/checkout` | Shows checkout command help. |
+| `/checkout` | Opens the checkout menu and, outside a shop channel, an enabled-shop selector. |
 | `/checkout @member tool-name` | An authorized approver checks out the mentioned member on a tool in the current shop channel. An email address may replace the mention. |
 | `/checkout request` | In a shop channel, opens a request modal containing eligible tools and separately marks tools with an existing open request. Outside a shop channel, lists all of the caller's open requests across shops. |
 | `/checkout request tool-name` | Requests the named tool in the current shop channel after rechecking eligibility. |
@@ -52,6 +56,41 @@ account.
 Members with a checkout in the current shop are encouraged to volunteer as
 checkout approvers for tools they know well. A resource manager (RM) is
 implicitly an approver for every tool in each shop they manage.
+
+## Stateful Slack modal
+
+`SlackCheckoutModal` renders callback `checkout_modal`; `SlackCheckoutWorkflow`
+handles `block_actions` and `view_submission`. The legacy
+`checkout_request_submit` submission callback remains supported separately.
+
+Stable selector block IDs are `checkout_menu`, `checkout_shop`, `checkout_tool`,
+`checkout_request`, and `checkout_checkout`; their action IDs append `_select`.
+The note input uses `checkout_note` for both IDs. The `checkout_actions` block
+contains `checkout_edit_note`, `checkout_cancel_request`, and
+`checkout_approve_request` buttons when authorized. `checkout_navigation`
+contains `checkout_back`.
+
+Private metadata is integrity-protected and expires after one hour. Its payload
+contains only `member_id`, optional `shop_id`, the original `response_url`,
+`slack_user_id`, `step`, and optional `record_id`. Neither notes nor permission
+flags are cached there. Each transition checks the Slack identity against its
+current member link, reloads selected records, checks membership and shop/tool
+availability, and rechecks ownership or current approval assignments. Option
+labels are display-only; notes come exclusively from the note input value.
+
+Open requests combine the member's own eligible requests and their authorized
+approval queue. Only the owner may edit or cancel a request. Approval and
+cancellation buttons open confirmation views; writes happen on submission.
+Request creation, note editing, cancellation and approval share the existing
+per-member/tool Redis request lock and revalidate inside it. Successful approval
+creates a Slack-signed-off checkout, closes the request, and invokes the existing
+checkout notifications and audit logging. Completion stays in the modal.
+
+Block navigation uses `views.update` with the incoming view hash. A failed update
+is never retried without that hash; the handler attempts a separate explanatory
+alert and acknowledges the interaction. Submission note errors stay next to the
+note input; stale records and authorization changes replace the view with an
+explanation. Navigation reloads records even when going back.
 
 ## Request eligibility
 
@@ -78,8 +117,8 @@ Board members and admins can approve every tool. RMs can approve every tool in
 the shops they manage. An additional checkout approver is a member with a
 `CheckoutApprover` record assigning one or more complete shops and/or
 individual tools; shop and tool assignments are additive. Outside those
-assignments, an additional approver has no checkout authority. Disabled tools
-require RM, board, or admin authority.
+assignments, an additional approver has no checkout authority. The modal rejects disabled tools and shops for every role. Legacy portal/text
+approvals retain their existing RM, board and admin handling of disabled tools.
 
 ## Slack notifications and announcements
 
@@ -89,7 +128,7 @@ require RM, board, or admin authority.
   enabled. It goes to the tool's `announce_channel` when configured, otherwise
   to the shop's `slack_channel`. The message identifies the member, tool, shop,
   and optional request note.
-- A successful Slack-modal submission also DMs the requester to confirm that
+- A successful legacy `checkout_request_submit` submission also DMs the requester to confirm that
   unpaid volunteers process checkouts and identifies tagged resource managers
   they can contact about becoming an assistant checkout approver. Failure to
   deliver this confirmation does not undo the saved request.

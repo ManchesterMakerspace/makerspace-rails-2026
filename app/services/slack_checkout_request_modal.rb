@@ -31,15 +31,11 @@ class SlackCheckoutRequestModal
     end
 
     def eligible_tools(shop, member)
-      Tool.where(shop_id: shop.id, :disabled.ne => true, :open.ne => true).order_by(name: :asc).to_a.select do |tool|
-        eligible?(member, tool) &&
-          !ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists?
-      end
+      CheckoutInteractionQuery.new(member: member, shop: shop).requestable_tools
     end
 
     def eligible?(member, tool)
-      return false if tool.nil? || tool.open || tool.disabled? || tool.shop.nil? || tool.shop.disabled?
-      member.status == "pending" ? tool.allow_pending : member.active_unexpired? && member.status == "activeMember"
+      tool.present? && ToolCheckoutRequestEligibility.new(member: member, tool: tool).eligible?
     end
 
     private

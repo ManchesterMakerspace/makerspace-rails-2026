@@ -5,9 +5,7 @@ class ToolCheckoutRequestsController < AuthenticationController
   before_action :find_request, only: [:update, :destroy]
 
   def index
-    requests = ToolCheckoutRequest.where(member_id: current_member.id, status: "open")
-    visible_tool_ids = Tool.where(:disabled.ne => true).pluck(:id)
-    requests = requests.where(:tool_id.in => visible_tool_ids)
+    requests = CheckoutInteractionQuery.new(member: current_member).open_requests
 
     requests = ToolCheckoutRequest.table_query(requests, params)
     response.set_header("total-items", requests.count)

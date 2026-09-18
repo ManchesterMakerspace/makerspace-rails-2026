@@ -18,13 +18,13 @@ describe "Slack commands API", type: :request do
           command: { type: :string, example: "/checkout" },
           text: {
             type: :string,
-            description: "Checkout command text: MEMBER TOOL, request [TOOL], or active [all]"
+            description: "Empty text opens the stateful checkout menu (my checkouts, request a checkout, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Legacy text: MEMBER TOOL, request [TOOL], or active [all]."
           },
+          trigger_id: { type: :string, description: "Required to open the checkout modal" },
           channel_id: { type: :string },
           channel_name: { type: :string },
           user_id: { type: :string },
           user_name: { type: :string },
-          trigger_id: { type: :string },
           response_url: { type: :string, format: :uri }
         },
         required: %w[text channel_id channel_name user_id response_url]

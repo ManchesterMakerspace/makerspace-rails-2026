@@ -18,10 +18,21 @@ RAILS_ENV=production bundle exec rake TASK_NAME
 `data:ensure_checkout_indexes` is a manual deployment task, not recurring work.
 It creates only the nonunique checkout performance indexes on
 `members(status, expirationTime)`, `tool_checkouts(member_id, revoked_at, tool_id)`,
-and `checkout_approvers(member_id)`, using their model declarations. It can be
+`checkout_approvers(member_id)`,
+`tool_checkout_requests(member_id, status, request_date, _id)`,
+`tool_checkout_requests(tool_id, status, request_date, _id)`, and
+`tools(shop_id, name, _id, disabled, open)` (case-insensitive collation),
+using their model declarations. It can be
 rerun and never drops indexes or modifies documents. Unrelated legacy identity
-index conflicts do not block it; conflicts on one of its three targets are
+index conflicts do not block it; conflicts on one of its targets are
 reported as errors for operator review.
+
+The Tool index keeps the equality-scoped shop and case-insensitive name ordering
+before the availability inequalities. A test-database `executionStats` comparison
+with 6,000 synthetic tools across ten shops returned the same 343 tools with both
+indexes and no blocking sort. Adding `open` reduced fetched documents from 514
+to 343; both plans examined 601 keys. These fixture results justify the additional
+availability field, but are not a production workload benchmark.
 
 `SlackCheckoutRequestJob` handles named `/checkout request` commands and
 resolves shops from either the Slack channel ID or normalized channel name. It uses
