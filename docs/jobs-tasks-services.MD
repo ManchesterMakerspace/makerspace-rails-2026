@@ -72,7 +72,12 @@ Approval delivery invites the member before building its success announcement,
 preserving the manual-invitation fallback text. Each approval side effect is
 best effort so one failure does not prevent subsequent notifications or audit.
 Deleted records and request announcements whose requests are no longer open are
-ignored. Enqueue errors or aborted enqueues are reported without reversing the
+ignored. After a request announcement returns its Slack timestamp, the sender
+reloads the request. If approval or cancellation completed during the send, it
+updates that exact message to the final status, even if the terminal-state job
+already ran before the timestamp existed. Slack calls remain outside the
+member/tool mutation lock and the interaction acknowledgement path.
+Enqueue errors or aborted enqueues are reported without reversing the
 saved mutation. This job is separate from final ephemeral/DM outcome delivery;
 a working `slack` queue consumer is required for both.
 

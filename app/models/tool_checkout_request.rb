@@ -77,7 +77,20 @@ class ToolCheckoutRequest
     message = "*#{member.fullname}* requested checkout on *#{tool.name}* in *#{tool.shop.try(:name)}*."
     message += "\n> #{note}" if note.present?
     response = ::Service::SlackConnector.send_slack_message(message, channel)
-    update_attributes!(message_id: response.ts) if response.respond_to?(:ts)
+    if response.respond_to?(:ts)
+      timestamp = response.ts
+      update_attributes!(message_id: timestamp)
+      # A terminal-state notification may already have run while Slack was
+      # sending, before this timestamp existed. Reconcile this exact message,
+      # not a timestamp another worker may have subsequently stored.
+      reload
+      if status == "deleted"
+        ::Service::SlackConnector.update_slack_message(channel, timestamp,
+          "*#{member.fullname}* cancelled their checkout request for *#{tool.name}*.")
+      elsif status == "closed" && checked_out
+        ::Service::SlackConnector.update_slack_message(channel, timestamp, checked_out.checkout_success_message)
+      end
+    end
   rescue => e
     Service::ErrorReporter.notify(e)
   end
