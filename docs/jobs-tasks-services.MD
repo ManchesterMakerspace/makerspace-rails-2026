@@ -73,9 +73,13 @@ preserving the manual-invitation fallback text. Each approval side effect is
 best effort so one failure does not prevent subsequent notifications or audit.
 Deleted records and request announcements whose requests are no longer open are
 ignored. After a request announcement returns its Slack timestamp, the sender
-reloads the request. If approval or cancellation completed during the send, it
-updates that exact message to the final status, even if the terminal-state job
-already ran before the timestamp existed. Slack calls remain outside the
+atomically records its timestamp only if none exists, then reloads the request.
+Approval sends use the same first-timestamp-wins operation. If approval or
+cancellation completed during the send, the retained message is updated to the
+final status. A sender whose timestamp lost the race deletes its redundant post
+after updating the retained message, so a late request cannot overwrite an
+existing success timestamp or leave a second success announcement behind.
+Slack update/delete failures remain best-effort reported notification failures. Slack calls remain outside the
 member/tool mutation lock and the interaction acknowledgement path.
 Enqueue errors or aborted enqueues are reported without reversing the
 saved mutation. This job is separate from final ephemeral/DM outcome delivery;

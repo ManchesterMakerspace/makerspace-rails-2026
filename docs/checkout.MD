@@ -194,8 +194,9 @@ the modal all use `CheckoutCreation` under the same per-member/tool lock.
   delivery failure does not undo the saved request.
 - Cancelling an announced request updates that same channel message; it does
   not post a second announcement. If approval or cancellation races an in-flight
-  request announcement, the sender reloads the request after the send and updates
-  the returned Slack message to the final state. The submitting owner receives the asynchronous
+  request announcement, both senders atomically retain the first recorded Slack
+  timestamp. The retained message is updated to the final state, and a redundant
+  late post is deleted rather than replacing the stored success timestamp. The submitting owner receives the asynchronous
   final outcome described below, with DM fallback if replacement fails.
 
 ### Approvals

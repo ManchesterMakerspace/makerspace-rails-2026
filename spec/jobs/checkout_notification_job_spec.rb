@@ -51,11 +51,12 @@ RSpec.describe CheckoutNotificationJob do
       .with(tool.announce_channel, "request-ts", include("cancelled their checkout request"))
   end
 
-  it "reconciles approval that announces success before the request send returns" do
+  it "retains the success announcement and deletes the late request post" do
     tool.update!(announce: true, announce_channel: "requests")
     actor = create(:member, :current, :admin)
     row = ToolCheckoutRequest.create!(member: member, tool: tool)
     allow(Service::SlackConnector).to receive(:update_slack_message)
+    allow(Service::SlackConnector).to receive(:delete_slack_message)
     allow(Service::SlackConnector).to receive(:send_slack_message) do |message, _channel|
       if message.include?("requested checkout")
         checkout = ToolCheckout.create!(member: member, tool: tool, approved_by: actor,
@@ -72,8 +73,33 @@ RSpec.describe CheckoutNotificationJob do
     described_class.perform_now("request", row.id.to_s)
 
     expect(Service::SlackConnector).to have_received(:update_slack_message)
+      .with(tool.announce_channel, "approval-ts", include("has been checked out"))
+    expect(Service::SlackConnector).to have_received(:delete_slack_message).with(tool.announce_channel, "request-ts").once
+    expect(Service::SlackConnector).not_to have_received(:update_slack_message).with(anything, "request-ts", anything)
+    expect(row.reload).to have_attributes(status: "closed", message_id: "approval-ts")
+  end
+
+  it "retains the request timestamp when it arrives during a standalone success send" do
+    tool.update!(announce: true, announce_channel: "requests")
+    row = ToolCheckoutRequest.create!(member: member, tool: tool)
+    checkout = ToolCheckout.create!(member: member, tool: tool, approved_by: create(:member, :current, :admin),
+      defer_users_channel_invitation: true)
+    allow(Service::SlackConnector).to receive(:update_slack_message)
+    allow(Service::SlackConnector).to receive(:delete_slack_message)
+    allow(Service::SlackConnector).to receive(:send_slack_message) do
+      # The other worker finishes its in-flight request send while this worker
+      # is waiting for Slack to return the success post's timestamp.
+      ToolCheckoutRequest.find(row.id).register_announcement("request-ts")
+      double(ts: "approval-ts")
+    end
+
+    checkout.announce_checkout_success
+
+    expect(row.reload.message_id).to eq("request-ts")
+    expect(Service::SlackConnector).to have_received(:update_slack_message)
       .with(tool.announce_channel, "request-ts", include("has been checked out"))
-    expect(row.reload.status).to eq("closed")
+    expect(Service::SlackConnector).to have_received(:delete_slack_message)
+      .with(tool.announce_channel, "approval-ts").once
   end
 
   it "ignores records deleted before delivery" do

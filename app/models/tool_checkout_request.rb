@@ -79,20 +79,34 @@ class ToolCheckoutRequest
     response = ::Service::SlackConnector.send_slack_message(message, channel)
     if response.respond_to?(:ts)
       timestamp = response.ts
-      update_attributes!(message_id: timestamp)
+      register_announcement(timestamp)
       # A terminal-state notification may already have run while Slack was
-      # sending, before this timestamp existed. Reconcile this exact message,
-      # not a timestamp another worker may have subsequently stored.
-      reload
+      # sending. Preserve whichever announcement was recorded first and bring
+      # that message up to date before removing a redundant late post.
       if status == "deleted"
-        ::Service::SlackConnector.update_slack_message(channel, timestamp,
+        ::Service::SlackConnector.update_slack_message(channel, message_id,
           "*#{member.fullname}* cancelled their checkout request for *#{tool.name}*.")
       elsif status == "closed" && checked_out
-        ::Service::SlackConnector.update_slack_message(channel, timestamp, checked_out.checkout_success_message)
+        ::Service::SlackConnector.update_slack_message(channel, message_id, checked_out.checkout_success_message)
       end
+      discard_duplicate_announcement(channel, timestamp)
     end
   rescue => e
     Service::ErrorReporter.notify(e)
+  end
+
+  # Request and approval sends can overlap. Atomically retain the first recorded
+  # timestamp; neither path may overwrite a message already owned by the other.
+  def register_announcement(timestamp)
+    self.class.collection.find(_id: id, "$or" => [{ message_id: nil }, { message_id: "" }])
+      .find_one_and_update({ "$set" => { message_id: timestamp } })
+    reload
+  end
+
+  def discard_duplicate_announcement(channel, timestamp)
+    return if message_id.blank? || message_id == timestamp
+
+    ::Service::SlackConnector.delete_slack_message(channel, timestamp)
   end
 
   def remove_announcement

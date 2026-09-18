@@ -110,7 +110,13 @@ class ToolCheckout
       next if sent_channels.include?(channel)
       target_channel = channel
       response = ::Service::SlackConnector.send_slack_message(message, channel)
-      request.update_attributes!(message_id: response.ts) if channel == announce_channel && request && response.respond_to?(:ts)
+      if channel == announce_channel && request && response.respond_to?(:ts)
+        request.register_announcement(response.ts)
+        if request.message_id != response.ts
+          ::Service::SlackConnector.update_slack_message(channel, request.message_id, message)
+          request.discard_duplicate_announcement(channel, response.ts)
+        end
+      end
     end
   rescue => e
     Service::ErrorReporter.notify(e, context: { channel: target_channel, member_id: member_id })
