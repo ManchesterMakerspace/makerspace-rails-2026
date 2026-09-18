@@ -47,6 +47,10 @@ RSpec.describe Service::MembershipExpirationNotice do
     warn "[DEBUG] built.save! (same factory-built object) subscription=#{built.subscription.inspect}"
     warn "[DEBUG] built.errors after save=#{built.errors.full_messages.inspect}"
 
+    built2 = build(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
+    built2.save!
+    warn "[DEBUG] built2 (matching attrs incl subscription_id:nil + expirationTime) save! subscription=#{built2.subscription.inspect}"
+
     plain_saved = Member.new(
       subscription: true, firstname: "Deb", lastname: "Ug",
       email: "debug-#{SecureRandom.hex(4)}@example.com",
