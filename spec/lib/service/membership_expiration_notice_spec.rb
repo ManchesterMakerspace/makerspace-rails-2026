@@ -36,9 +36,17 @@ RSpec.describe Service::MembershipExpirationNotice do
   end
 
   it "does not email a member with subscription flagged true" do
+    plain_new = Member.new(subscription: true)
+    warn "[DEBUG] Member.new(subscription: true).subscription=#{plain_new.subscription.inspect}"
+    warn "[DEBUG] plain_new.attributes['subscription']=#{plain_new.attributes['subscription'].inspect} key?=#{plain_new.attributes.key?('subscription')}"
+
+    built = build(:member, subscription: true)
+    warn "[DEBUG] build(:member, subscription: true).subscription=#{built.subscription.inspect}"
+
     member = create(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
-    reloaded = Member.find(member.id)
     warn "[DEBUG] in-memory subscription=#{member.subscription.inspect} (#{member.subscription.class})"
+    warn "[DEBUG] member.attributes['subscription']=#{member.attributes['subscription'].inspect}"
+    reloaded = Member.find(member.id)
     warn "[DEBUG] reloaded subscription=#{reloaded.subscription.inspect} (#{reloaded.subscription.class})"
     warn "[DEBUG] reloaded active_membership_subscription?=#{reloaded.active_membership_subscription?.inspect}"
     warn "[DEBUG] reloaded status=#{reloaded.status.inspect} expirationTime=#{reloaded.expirationTime.inspect}"
@@ -100,6 +108,25 @@ RSpec.describe Service::MembershipExpirationNotice do
     described_class.run!(at: renewed_at)
 
     expect(MemberMailer).to have_received(:membership_expiring_soon).twice
+  end
+
+  it "also sends a Slack DM when the member has a linked Slack account" do
+    member = create(:member, subscription: false, subscription_id: nil, expirationTime: expiring_in(3))
+    SlackUser.create!(member_id: member.id, slack_id: "U123456")
+    allow(Service::SlackConnector).to receive(:send_slack_message)
+
+    described_class.run!(at: at)
+
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, "U123456")
+  end
+
+  it "does not attempt a Slack DM when the member has no linked Slack account" do
+    create(:member, subscription: false, subscription_id: nil, expirationTime: expiring_in(3))
+    allow(Service::SlackConnector).to receive(:send_slack_message)
+
+    described_class.run!(at: at)
+
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
   end
 
   it "reports (but does not raise past) an error sending to one member, and still sends to others" do

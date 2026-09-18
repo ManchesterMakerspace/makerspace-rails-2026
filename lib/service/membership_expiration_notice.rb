@@ -5,7 +5,8 @@ module Service
   # every existing renewal-adjacent email is driven off a Braintree
   # subscription webhook, which never fires for someone with no subscription
   # to begin with. This sends the two emails that gap is missing: a heads-up
-  # a few days before expiration, and a notice once it's passed.
+  # a few days before expiration, and a notice once it's passed. A member
+  # with a linked Slack account also gets a matching DM alongside the email.
   module MembershipExpirationNotice
     ZONE = ActiveSupport::TimeZone['America/New_York'].freeze
     REMINDER_DAYS_BEFORE = 3
@@ -57,8 +58,27 @@ module Service
           MemberMailer.membership_expired(member.id.as_json).deliver_later
           member.update_attribute(:membership_expired_notice_sent_for, member.expirationTime)
         end
+        notify_slack!(member, kind)
       rescue => error
         Service::ErrorReporter.notify(error, context: { member_id: member.id.to_s, kind: kind.to_s })
+      end
+
+      # Slack is a bonus channel alongside the email, not a replacement --
+      # skip silently for anyone who hasn't linked a Slack account.
+      def notify_slack!(member, kind)
+        slack_id = member.slack_user&.slack_id
+        return if slack_id.blank?
+
+        expiration = member.membership_expires_at&.strftime('%B %-d, %Y')
+        message = if kind == :expiring_soon
+          "Hi #{member.firstname}, your Manchester Makerspace membership expires on #{expiration}. " \
+            "Renew soon to keep your access to the space."
+        else
+          "Hi #{member.firstname}, your Manchester Makerspace membership expired on #{expiration}. " \
+            "Your access to the space is on hold until you renew."
+        end
+
+        Service::SlackConnector.send_slack_message(message, slack_id)
       end
     end
   end
