@@ -11,14 +11,16 @@ class ToolCheckout
   belongs_to :member
   belongs_to :tool
   belongs_to :approved_by, class_name: "Member", optional: true
-  attr_accessor :checkout_request_id
+  attr_accessor :checkout_request_id, :defer_users_channel_invitation
 
   index({ member_id: 1, revoked_at: 1, tool_id: 1 })
 
   validates :member, presence: true
   validates :tool, presence: true
 
-  after_create :close_open_request, :invite_member_to_users_channel, :enqueue_checkout_canvas_sync
+  after_create :close_open_request
+  after_create :invite_member_to_users_channel, unless: :defer_users_channel_invitation
+  after_create :enqueue_checkout_canvas_sync
   after_update :enqueue_checkout_canvas_sync_after_revocation
 
   def active?
@@ -219,4 +221,5 @@ class ToolCheckout
       })
     end
   end
+  public :invite_member_to_users_channel
 end

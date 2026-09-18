@@ -168,11 +168,12 @@ class SlackCheckoutWorkflow
     end
     case step
     when "request_new"
-      CheckoutRequestCreation.create!(member_id: @member.id, tool_id: @tool.id, shop_id: @shop.id, note: note) { load_context! }
+      CheckoutRequestCreation.create!(member_id: @member.id, tool_id: @tool.id,
+        shop_id: @shop.id, note: note, defer_notifications: true) { load_context! }
       message = "Your checkout request for #{CheckoutDisplay.escape(@tool.name.to_s.first(200))} has been created."
     when "request_approve"
       CheckoutCreation.create!(actor_id: @member.id, member_id: @request.member_id,
-        tool_id: @tool.id, shop_id: @shop.id, source: "slack", request_id: @request.id) { load_context! }
+        tool_id: @tool.id, shop_id: @shop.id, source: "slack", request_id: @request.id, defer_notifications: true) { load_context! }
       message = "The checkout request for #{CheckoutDisplay.escape(@tool.name.to_s.first(200))} has been approved."
     else
       CheckoutMutationLock.with(member_id: @request.member_id, tool_id: @tool.id) do
@@ -182,7 +183,7 @@ class SlackCheckoutWorkflow
           message = "Your request note has been saved."
         else
           @request.update!(status: "deleted")
-          CheckoutCreation.notify { @request.remove_announcement }
+          CheckoutNotificationJob.enqueue("cancellation", @request.id)
           message = "Your checkout request has been cancelled."
         end
       end

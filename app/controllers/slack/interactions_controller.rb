@@ -361,7 +361,7 @@ class Slack::InteractionsController < ApplicationController
 
     note = state.dig("note", "note", "value")
     return checkout_errors("note" => "Note is too long (maximum is 128 characters)") if note && (!note.is_a?(String) || note.length > 128)
-    CheckoutRequestCreation.create!(member_id: member.id, tool_id: tool.id, shop_id: shop.id, note: note)
+    CheckoutRequestCreation.create!(member_id: member.id, tool_id: tool.id, shop_id: shop.id, note: note, defer_notifications: true)
     begin
       SlackCheckoutOutcomeJob.enqueue(checkout_confirmation(shop), metadata["response_url"], payload.dig("user", "id"))
     rescue => error

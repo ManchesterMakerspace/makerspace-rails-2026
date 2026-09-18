@@ -52,12 +52,13 @@ RSpec.describe "Slack interactions", type: :request do
       post "/slack/interactions", params: { payload: payload.to_json }
     end
 
-    it "creates and announces a request with its note, then confirms receipt" do
-      allow_any_instance_of(ToolCheckoutRequest).to receive(:announce_request)
+    it "creates a request and queues its announcement and confirmation" do
+      expect_any_instance_of(ToolCheckoutRequest).not_to receive(:announce_request)
       submit(note: "Please show me the blade guard")
 
       expect(response.parsed_body).to eq("response_action" => "clear")
       expect(ToolCheckoutRequest.last).to have_attributes(member_id: member.id, tool_id: tool.id, note: "Please show me the blade guard")
+      expect(CheckoutNotificationJob).to have_been_enqueued.with("request", ToolCheckoutRequest.last.id.to_s)
       expect(SlackCheckoutOutcomeJob).to have_been_enqueued.with(include("unpaid volunteers"), kind_of(String), "USUBMITTER")
     end
 
@@ -260,8 +261,10 @@ RSpec.describe "Slack interactions", type: :request do
       expect(modal_step).to eq("requests")
       interact(action: "checkout_request_select", value: row.id.to_s)
       interact(action: "checkout_cancel_request")
+      expect_any_instance_of(ToolCheckoutRequest).not_to receive(:remove_announcement)
       interact
       expect(row.reload.status).to eq("deleted")
+      expect(CheckoutNotificationJob).to have_been_enqueued.with("cancellation", row.id.to_s)
     end
 
     it "approves an authorized request, closes it, and does not duplicate approvals on replay" do
@@ -537,6 +540,45 @@ RSpec.describe "Slack interactions", type: :request do
         true
       end
       expect(interact(note: "Train me")).to eq("response_action" => "clear")
+    end
+
+    it "acknowledges request persistence without running Slack side effects" do
+      start_modal
+      interact(action: "checkout_menu_select", value: "request_tools")
+      interact(action: "checkout_tool_select", value: tool.id.to_s)
+      expect_any_instance_of(ToolCheckoutRequest).not_to receive(:announce_request)
+      expect(Service::SlackConnector).not_to receive(:send_slack_message)
+      expect(interact(note: "Train me")).to eq("response_action" => "clear")
+      expect(CheckoutNotificationJob).to have_been_enqueued.with("request", ToolCheckoutRequest.last.id.to_s)
+    end
+
+    it "acknowledges approval before invitation, DMs, announcements or audit Slack calls" do
+      member.update!(role: "admin")
+      tool.update!(users_channel: "tool-users")
+      row = ToolCheckoutRequest.create!(member: create(:member, :current), tool: tool)
+      start_modal
+      choose_request(row)
+      interact(action: "checkout_approve_request")
+      expect_any_instance_of(ToolCheckout).not_to receive(:invite_member_to_users_channel)
+      expect_any_instance_of(ToolCheckout).not_to receive(:send_checkout_slack_notification)
+      expect_any_instance_of(ToolCheckout).not_to receive(:announce_checkout_success)
+      expect(Service::AuditLogger).not_to receive(:log)
+      expect(Service::SlackConnector).not_to receive(:send_slack_message)
+      expect(interact).to eq("response_action" => "clear")
+      expect(row.reload.status).to eq("closed")
+      expect(CheckoutNotificationJob).to have_been_enqueued.with("approval", row.checked_out_id.to_s)
+    end
+
+    it "clears a persisted approval when side-effect enqueueing fails" do
+      member.update!(role: "admin")
+      row = ToolCheckoutRequest.create!(member: create(:member, :current), tool: tool)
+      start_modal
+      choose_request(row)
+      interact(action: "checkout_approve_request")
+      allow(CheckoutNotificationJob).to receive(:perform_later).and_raise(StandardError, "queue unavailable")
+      expect(interact).to eq("response_action" => "clear")
+      expect(row.reload.status).to eq("closed")
+      expect(Service::ErrorReporter).to have_received(:notify).with("Checkout notification failed", context: { error_class: "StandardError" })
     end
 
     it "clears an approved request even if enqueueing raises after persistence" do

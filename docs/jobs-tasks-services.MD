@@ -58,6 +58,24 @@ content policy as the modal. Disabled resources and revoked checkouts are
 excluded. Long messages direct the user to the portal instead of exceeding Slack
 limits. Its result is delivered by `SlackCheckoutOutcomeJob`.
 
+`CheckoutNotificationJob` runs on the `slack` queue for modal mutations. It takes
+only an action (`request`, `approval`, or `cancellation`) and persisted record ID.
+The modal saves the mutation under the existing lock, closes the selected request
+for approvals, and enqueues side effects before clearing. Request announcements,
+cancellation announcement updates, users-channel invitations, checkout DMs,
+success announcements and creation audit logging do not call Slack in the
+interaction acknowledgement path. Legacy request-modal submissions also defer
+their announcements. Portal and textual-command creation retain their existing
+notification behavior through the shared services.
+
+Approval delivery invites the member before building its success announcement,
+preserving the manual-invitation fallback text. Each approval side effect is
+best effort so one failure does not prevent subsequent notifications or audit.
+Deleted records and request announcements whose requests are no longer open are
+ignored. Enqueue errors or aborted enqueues are reported without reversing the
+saved mutation. This job is separate from final ephemeral/DM outcome delivery;
+a working `slack` queue consumer is required for both.
+
 `SlackCheckoutOutcomeJob` runs on the `slack` queue. Checkout modal submissions
 queue it after saving request creation, note editing, cancellation or approval,
 and before acknowledging success with `response_action: clear`. Legacy

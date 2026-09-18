@@ -133,8 +133,12 @@ include requester and shop and offer only Approve and Go back. Approval and
 cancellation buttons open confirmation views; writes happen on submission.
 Request creation, note editing, cancellation and approval share the existing
 per-member/tool Redis request lock and revalidate inside it. Successful approval
-creates a Slack-signed-off checkout, closes the request, and invokes the existing
-checkout notifications and audit logging. Successful writes enqueue final outcome
+creates a Slack-signed-off checkout and closes the request synchronously.
+`CheckoutNotificationJob` then performs the users-channel invitation, checkout
+DM, success announcement and audit logging in the background. Request
+announcements (including legacy modal submissions) and cancellation announcement
+updates also run in that job. No Slack notification API call runs before the
+interaction acknowledgement. Successful writes enqueue final outcome
 delivery before returning `response_action: "clear"`, including when enqueueing
 fails. Notification failure never undoes a saved request or checkout.
 

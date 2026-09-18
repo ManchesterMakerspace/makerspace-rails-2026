@@ -1,5 +1,5 @@
 class CheckoutRequestCreation
-  def self.create!(member_id:, tool_id:, shop_id:, note: nil)
+  def self.create!(member_id:, tool_id:, shop_id:, note: nil, defer_notifications: false)
     request = CheckoutMutationLock.with(member_id: member_id, tool_id: tool_id) do
       yield if block_given?
       member = Member.find_by(id: member_id)
@@ -12,7 +12,11 @@ class CheckoutRequestCreation
       end
       ToolCheckoutRequest.create!(member: member, tool: tool, note: note, request_date: Time.current, status: "open")
     end
-    CheckoutCreation.notify { request.announce_request }
+    if defer_notifications
+      CheckoutNotificationJob.enqueue("request", request.id)
+    else
+      CheckoutCreation.notify { request.announce_request }
+    end
     request
   end
 end
