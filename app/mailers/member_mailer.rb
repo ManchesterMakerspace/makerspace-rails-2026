@@ -93,6 +93,34 @@ class MemberMailer < ApplicationMailer
          template_name: 'google_doc_email'
   end
 
+  def membership_expiring_soon(member_id)
+    @member = Member.find(member_id)
+    @google_doc_content = ::Service::EmailTemplate.render(
+      :membership_expiring_soon,
+      ::Service::EmailTemplate.common_variables(@member),
+      fallback: true,
+      format: :html
+    )
+    mail to: @member.email,
+         subject: "Your Manchester Makerspace membership expires soon",
+         template_path: 'shared',
+         template_name: 'google_doc_email'
+  end
+
+  def membership_expired(member_id)
+    @member = Member.find(member_id)
+    @google_doc_content = ::Service::EmailTemplate.render(
+      :membership_expired,
+      ::Service::EmailTemplate.common_variables(@member),
+      fallback: true,
+      format: :html
+    )
+    mail to: @member.email,
+         subject: "Your Manchester Makerspace membership has expired",
+         template_path: 'shared',
+         template_name: 'google_doc_email'
+  end
+
   def contract_updated(member_id)
     @member = Member.find(member_id)
     document_name = ::Service::GoogleDrive.get_document_name(@member, "Code of Conduct")

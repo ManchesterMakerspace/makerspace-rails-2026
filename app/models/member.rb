@@ -88,6 +88,14 @@ class Member
   field :google_provisioning_blocked_at, type: Time
   field :google_provisioning_blocked_reason, type: String
 
+  # Set to the exact expirationTime (ms) a membership-lapse notice was sent
+  # for -- not just a timestamp of when -- so a later renewal (which moves
+  # expirationTime forward) naturally makes this stale and allows a fresh
+  # notice on the member's next expiration, without needing a separate reset.
+  # See Service::MembershipExpirationNotice.
+  field :membership_expiring_soon_notice_sent_for, type: Integer
+  field :membership_expired_notice_sent_for, type: Integer
+
   search_in :email, :lastname
   search_in :firstname, index: :_firstname_keywords
 
