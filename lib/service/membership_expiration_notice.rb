@@ -1,0 +1,67 @@
+module Service
+  # Members without a recurring Braintree subscription (one-time payment,
+  # cash/check, a comped or class-granted membership, etc.) never receive any
+  # automatic email as their membership approaches or passes expirationTime --
+  # every existing renewal-adjacent email is driven off a Braintree
+  # subscription webhook, which never fires for someone with no subscription
+  # to begin with. This sends the two emails that gap is missing: a heads-up
+  # a few days before expiration, and a notice once it's passed.
+  module MembershipExpirationNotice
+    ZONE = ActiveSupport::TimeZone['America/New_York'].freeze
+    REMINDER_DAYS_BEFORE = 3
+
+    class << self
+      def run!(at: Time.current)
+        local_today = at.in_time_zone(ZONE).to_date
+        excluded_ids = earned_membership_member_ids
+
+        expiring_soon = candidates(excluded_ids, day: local_today + REMINDER_DAYS_BEFORE.days)
+          .select { |member| member.membership_expiring_soon_notice_sent_for != member.expirationTime }
+        expired = candidates(excluded_ids, day: local_today - 1.day)
+          .select { |member| member.membership_expired_notice_sent_for != member.expirationTime }
+
+        expiring_soon.each { |member| notify!(member, :expiring_soon) }
+        expired.each { |member| notify!(member, :expired) }
+
+        { expiring_soon: expiring_soon.size, expired: expired.size }
+      end
+
+      private
+
+      # A member currently earning their way to membership isn't paying at
+      # all -- EarnedMembership#existing_subscription already keeps this
+      # mutually exclusive with a Braintree subscription, so their status is
+      # tracked and acted on through that system, not this one.
+      def earned_membership_member_ids
+        EarnedMembership.where(status: 'active').distinct(:member_id)
+      end
+
+      def candidates(excluded_ids, day:)
+        start_ms = day.beginning_of_day.in_time_zone(ZONE).to_i * 1000
+        end_ms = (day + 1.day).beginning_of_day.in_time_zone(ZONE).to_i * 1000
+
+        Member.where(
+          :firstname.ne => "Landlord", :lastname.ne => "Fob",
+          :id.nin => excluded_ids,
+          :status.in => Member::ACTIVE_MEMBERSHIP_STATUSES,
+          :subscription.ne => true,
+          :subscription_id => nil,
+          :expirationTime.gte => start_ms,
+          :expirationTime.lt => end_ms
+        ).to_a
+      end
+
+      def notify!(member, kind)
+        if kind == :expiring_soon
+          MemberMailer.membership_expiring_soon(member.id.as_json).deliver_later
+          member.update_attribute(:membership_expiring_soon_notice_sent_for, member.expirationTime)
+        else
+          MemberMailer.membership_expired(member.id.as_json).deliver_later
+          member.update_attribute(:membership_expired_notice_sent_for, member.expirationTime)
+        end
+      rescue => error
+        Service::ErrorReporter.notify(error, context: { member_id: member.id.to_s, kind: kind.to_s })
+      end
+    end
+  end
+end

@@ -220,5 +220,16 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
       expect(response).to have_http_status(200)
       expect(CardExpirationCheckJob).to have_received(:perform_later)
     end
+
+    it "enqueues the membership expiration notice job" do
+      allow(MembershipExpirationNoticeJob).to receive(:perform_later)
+
+      post :run_job,
+           params: { key: "membership_expiration_notice" },
+           format: :json
+
+      expect(response).to have_http_status(200)
+      expect(MembershipExpirationNoticeJob).to have_received(:perform_later)
+    end
   end
 end
