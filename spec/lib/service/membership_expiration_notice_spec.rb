@@ -36,19 +36,20 @@ RSpec.describe Service::MembershipExpirationNotice do
   end
 
   it "does not email a member with subscription flagged true" do
-    original_setter = Member.instance_method(:subscription=)
-    Member.send(:define_method, :subscription=) do |value|
-      warn "[DEBUG] subscription= #{value.inspect} called from:\n  " + caller[0..8].join("\n  ")
-      original_setter.bind(self).call(value)
-    end
+    a = build(:member, subscription: true, subscription_id: nil)
+    warn "[DEBUG] A (subscription:true, subscription_id:nil) before save=#{a.subscription.inspect}"
+    a.save!
+    warn "[DEBUG] A after save=#{a.subscription.inspect}"
 
-    begin
-      built2 = build(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
-      built2.save!
-      warn "[DEBUG] built2 final subscription=#{built2.subscription.inspect}"
-    ensure
-      Member.send(:define_method, :subscription=, original_setter)
-    end
+    b = build(:member, subscription: true, expirationTime: expiring_in(3))
+    warn "[DEBUG] B (subscription:true, expirationTime:set) before save=#{b.subscription.inspect}"
+    b.save!
+    warn "[DEBUG] B after save=#{b.subscription.inspect}"
+
+    c = build(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
+    warn "[DEBUG] C (all three) before save=#{c.subscription.inspect}"
+    c.save!
+    warn "[DEBUG] C after save=#{c.subscription.inspect}"
 
     member = create(:member, subscription: true, subscription_id: nil, expirationTime: expiring_in(3))
     warn "[DEBUG] in-memory subscription=#{member.subscription.inspect} (#{member.subscription.class})"
