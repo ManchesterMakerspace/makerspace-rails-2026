@@ -2,14 +2,15 @@ class ToolCheckoutRequestEligibility
   attr_reader :member, :tool
 
   def self.eligible_tools(member:, shop: nil)
-    scope = Tool.where(:disabled.ne => true)
-    scope = scope.where(shop_id: shop.id) if shop
-    scope.order_by(name: :asc).select { |tool| new(member: member, tool: tool).eligible? }
+    CheckoutInteractionQuery.new(member: member, shop: shop).requestable_tools
   end
 
-  def initialize(member:, tool:)
+  def initialize(member:, tool:, checkout_tool_ids: nil, active_checkout_tool_ids: nil, open_request_tool_ids: nil)
     @member = member
     @tool = tool
+    @checkout_tool_ids = normalize_ids(checkout_tool_ids)
+    @active_checkout_tool_ids = normalize_ids(active_checkout_tool_ids)
+    @open_request_tool_ids = normalize_ids(open_request_tool_ids)
   end
 
   def eligible?
@@ -31,6 +32,10 @@ class ToolCheckoutRequestEligibility
 
   private
 
+  def normalize_ids(ids)
+    ids&.map(&:to_s)&.to_set
+  end
+
   def membership_eligible?
     member.status == "pending" ? tool.allow_pending : member.status == "activeMember" && member.active_unexpired?
   end
@@ -42,6 +47,7 @@ class ToolCheckoutRequestEligibility
   def prerequisites_met?
     required_ids = Array(tool.prerequisite_ids).map(&:to_s).reject(&:blank?).uniq
     return true if required_ids.empty?
+    return required_ids.all? { |id| @active_checkout_tool_ids.include?(id) } if @active_checkout_tool_ids
 
     checkout_ids = ToolCheckout.where(
       member_id: member.id,
@@ -52,10 +58,12 @@ class ToolCheckoutRequestEligibility
   end
 
   def checkout_exists?
+    return @checkout_tool_ids.include?(tool.id.to_s) if @checkout_tool_ids
     ToolCheckout.where(member_id: member.id, tool_id: tool.id).exists?
   end
 
   def open_request_exists?
+    return @open_request_tool_ids.include?(tool.id.to_s) if @open_request_tool_ids
     ToolCheckoutRequest.where(member_id: member.id, tool_id: tool.id, status: "open").exists?
   end
 end

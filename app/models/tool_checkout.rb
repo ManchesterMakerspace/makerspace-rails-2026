@@ -11,13 +11,16 @@ class ToolCheckout
   belongs_to :member
   belongs_to :tool
   belongs_to :approved_by, class_name: "Member", optional: true
+  attr_accessor :checkout_request_id, :defer_users_channel_invitation
 
   index({ member_id: 1, revoked_at: 1, tool_id: 1 })
 
   validates :member, presence: true
   validates :tool, presence: true
 
-  after_create :close_open_request, :invite_member_to_users_channel, :enqueue_checkout_canvas_sync
+  after_create :close_open_request
+  after_create :invite_member_to_users_channel, unless: :defer_users_channel_invitation
+  after_create :enqueue_checkout_canvas_sync
   after_update :enqueue_checkout_canvas_sync_after_revocation
 
   def active?
@@ -107,7 +110,13 @@ class ToolCheckout
       next if sent_channels.include?(channel)
       target_channel = channel
       response = ::Service::SlackConnector.send_slack_message(message, channel)
-      request.update_attributes!(message_id: response.ts) if channel == announce_channel && request && response.respond_to?(:ts)
+      if channel == announce_channel && request && response.respond_to?(:ts)
+        request.register_announcement(response.ts)
+        if request.message_id != response.ts
+          ::Service::SlackConnector.update_slack_message(channel, request.message_id, message)
+          request.discard_duplicate_announcement(channel, response.ts)
+        end
+      end
     end
   rescue => e
     Service::ErrorReporter.notify(e, context: { channel: target_channel, member_id: member_id })
@@ -162,7 +171,9 @@ class ToolCheckout
   end
 
   def enqueue_checkout_canvas_sync
-    ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s, id.to_s, "add")
+    CheckoutCreation.notify do
+      ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s, id.to_s, "add")
+    end
   end
 
   def enqueue_checkout_canvas_sync_after_revocation
@@ -173,7 +184,9 @@ class ToolCheckout
   end
 
   def close_open_request
-    request = ToolCheckoutRequest.where(member_id: member_id, tool_id: tool_id, status: "open").first
+    requests = ToolCheckoutRequest.where(member_id: member_id, tool_id: tool_id, status: "open")
+    requests = requests.where(id: checkout_request_id) if checkout_request_id
+    request = requests.order_by(request_date: :asc, id: :asc).first
     request.update_attributes!(status: "closed", checked_out_id: id) if request
   end
 
@@ -214,4 +227,5 @@ class ToolCheckout
       })
     end
   end
+  public :invite_member_to_users_channel
 end

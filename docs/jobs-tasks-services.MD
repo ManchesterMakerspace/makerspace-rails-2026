@@ -18,10 +18,21 @@ RAILS_ENV=production bundle exec rake TASK_NAME
 `data:ensure_checkout_indexes` is a manual deployment task, not recurring work.
 It creates only the nonunique checkout performance indexes on
 `members(status, expirationTime)`, `tool_checkouts(member_id, revoked_at, tool_id)`,
-and `checkout_approvers(member_id)`, using their model declarations. It can be
+`checkout_approvers(member_id)`,
+`tool_checkout_requests(member_id, status, request_date, _id)`,
+`tool_checkout_requests(tool_id, status, request_date, _id)`, and
+`tools(shop_id, name, _id, disabled, open)` (case-insensitive collation),
+using their model declarations. It can be
 rerun and never drops indexes or modifies documents. Unrelated legacy identity
-index conflicts do not block it; conflicts on one of its three targets are
+index conflicts do not block it; conflicts on one of its targets are
 reported as errors for operator review.
+
+The Tool index keeps the equality-scoped shop and case-insensitive name ordering
+before the availability inequalities. A test-database `executionStats` comparison
+with 6,000 synthetic tools across ten shops returned the same 343 tools with both
+indexes and no blocking sort. Adding `open` reduced fetched documents from 514
+to 343; both plans examined 601 keys. These fixture results justify the additional
+availability field, but are not a production workload benchmark.
 
 `SlackCheckoutRequestJob` handles named `/checkout request` commands and
 resolves shops from either the Slack channel ID or normalized channel name. It uses
@@ -33,17 +44,63 @@ checkouts, and open requests immediately before creating a request. Creation is
 serialized per member and tool so concurrent Slack deliveries cannot announce
 duplicate open requests.
 `SlackCheckoutJob` handles approver-driven `/checkout MEMBER TOOL` commands and
-also resolves the current shop from either the Slack channel ID or normalized
-channel name before creating the checkout.
-`SlackCheckoutActiveJob` handles `/checkout active [all]` by returning
-ephemeral, alphabetized checkout tables scoped to the current shop or grouped
-across every shop where the caller has an active checkout. Current-shop scope
-resolves either the Slack channel ID or the normalized channel name from the
-slash-command payload, matching both supported shop-channel configurations.
-The shop restriction is applied in Mongo before loading checkout rows. Tools,
-shops, and approver assignments are loaded in batches through the same
-job-scoped lookup context used by portal list serializers; there are no
-per-checkout association or approver queries.
+resolves the shop from the channel ID or normalized name. It delegates to
+`CheckoutCreation`, the same operation as the portal and modal. Authority,
+member eligibility, availability, prerequisites, duplicates and selected-request
+state are rechecked under the shared per-member/tool lock. `ToolCheckout` closes
+the selected request in its callback and retains users-channel invitations;
+notifications and audit logging are best effort after creation.
+
+`SlackCheckoutActiveJob` keeps `/checkout active [all]` as a compatibility alias.
+It uses `CheckoutInteractionQuery.listed_active_checkouts` and `CheckoutDisplay`,
+the same availability, alphabetical sorting, bulk association loading and detail
+content policy as the modal. Disabled resources and revoked checkouts are
+excluded. Long messages direct the user to the portal instead of exceeding Slack
+limits. Its result is delivered by `SlackCheckoutOutcomeJob`.
+
+`CheckoutNotificationJob` runs on the `slack` queue for modal mutations. It takes
+only an action (`request`, `approval`, or `cancellation`) and persisted record ID.
+The modal saves the mutation under the existing lock, closes the selected request
+for approvals, and enqueues side effects before clearing. Request announcements,
+cancellation announcement updates, users-channel invitations, checkout DMs,
+success announcements and creation audit logging do not call Slack in the
+interaction acknowledgement path. Legacy request-modal submissions also defer
+their announcements. Portal and textual-command creation retain their existing
+notification behavior through the shared services.
+
+Approval delivery invites the member before building its success announcement,
+preserving the manual-invitation fallback text. Each approval side effect is
+best effort so one failure does not prevent subsequent notifications or audit.
+Deleted records and request announcements whose requests are no longer open are
+ignored. After a request announcement returns its Slack timestamp, the sender
+atomically records its timestamp only if none exists, then reloads the request.
+Approval sends use the same first-timestamp-wins operation. If approval or
+cancellation completed during the send, the retained message is updated to the
+final status. A sender whose timestamp lost the race deletes its redundant post
+after updating the retained message, so a late request cannot overwrite an
+existing success timestamp or leave a second success announcement behind.
+Slack update/delete failures remain best-effort reported notification failures. Slack calls remain outside the
+member/tool mutation lock and the interaction acknowledgement path.
+Enqueue errors or aborted enqueues are reported without reversing the
+saved mutation. This job is separate from final ephemeral/DM outcome delivery;
+a working `slack` queue consumer is required for both.
+
+`SlackCheckoutOutcomeJob` runs on the `slack` queue. Checkout modal submissions
+queue it after saving request creation, note editing, cancellation or approval,
+and before acknowledging success with `response_action: clear`. Legacy
+checkout, request and active-list jobs also delegate final delivery to it. It
+first posts `replace_original: true`, `response_type: "ephemeral"`, and final
+text to the original slash-command response URL. Open/read/write timeouts are
+0.5/1/0.5 seconds. Non-2xx responses, invalid URLs and exceptions trigger a
+separate replacement-failure report, followed by a DM to the submitting Slack
+user. DM failures are reported separately and never escape back into persistence.
+Enqueue failures do not undo saved records or become validation errors.
+
+Outcome URLs are encrypted before job enqueueing using the application key
+generator. Argument logging is disabled for all four checkout jobs. Reports
+contain fixed messages and error class/status only, never raw exceptions, URLs
+or outcome bodies. HTTP logging filters response_url and Slack's JSON payload.
+No response-URL HTTP request occurs in the interactions controller.
 
 `ToolCheckoutSlackCanvasSyncJob` incrementally updates an extant shop checkout
 canvas when one member's checkout is added or revoked. It locates the affected
@@ -54,6 +111,8 @@ also trigger a rebuild rather than deleting a checkout from the wrong tool, and
 incremental additions omit inactive or expired members just as full rebuilds do.
 Calls that do not identify one
 checkout continue to perform a complete canvas rebuild.
+Failure to enqueue an added checkout's canvas update is reported without changing
+the saved checkout or its closed request into a failed approval.
 
 Changing a tool's out-of-service (`disabled`) state enqueues
 `ReservationSlackCanvasSyncJob` for today and/or tomorrow when an active

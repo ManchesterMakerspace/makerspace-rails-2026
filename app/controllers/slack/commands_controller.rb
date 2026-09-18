@@ -4,9 +4,10 @@
 # The payload includes: command, text, channel_name, user_id, user_name
 #
 # Response must be returned within 3 seconds (Slack timeout).
-# All processing is deferred to jobs to avoid the timeout.
+# Modal navigation runs synchronously; legacy textual operations use jobs.
 #
 # Commands:
+#   /checkout                    - opens the stateful checkout menu
 #   /checkout @member tool-name   — tool checkout, current shop channel (SlackCheckoutJob)
 #   /checkout request [tool-name] — member self-service checkout request (SlackCheckoutRequestJob)
 #   /checkout active [all]        — list the caller's active checkouts (SlackCheckoutActiveJob)
@@ -19,57 +20,24 @@ class Slack::CommandsController < ApplicationController
   before_action :verify_slack_signature
 
   def checkout
-    text = params[:text].to_s.strip
-    subcommand, argument = text.split(/\s+/, 2)
-
-    case subcommand&.downcase
-    when "active"
-      SlackCheckoutActiveJob.perform_later(params.to_unsafe_h.stringify_keys)
-      return render json: { response_type: "ephemeral", text: "Looking up your active checkouts..." }
-    when "request"
-      return handle_checkout_request(argument.to_s.strip.presence)
-    end
-
-    parts = text.split(/\s+/, 2)
-    if parts.length < 2 && params[:channel_name].blank? && params[:channel_id].blank?
-      return render json: {
-        response_type: "ephemeral",
-        text: 'Usage: `/checkout @member tool-name`, `/checkout email@example.com tool-name`, `/checkout request [tool-name]`, or `/checkout active [all]`'
-      }
-    end
-
-    shop = current_checkout_shop
-    unless shop && checkout_shop_channel?
-      return render json: { response_type: "ephemeral", text: checkout_shop_channel_instruction }
-    end
+    return legacy_checkout_command if params[:text].to_s.strip.present?
 
     member = find_slack_member
-    unless member
-      return render json: {
-        response_type: "ephemeral",
-        text: "Link your Slack account to a Member Portal account before using /checkout."
-      }
+    message = SlackCheckoutModal.membership_error(member)
+    return render json: { response_type: "ephemeral", text: message } if message
+
+    shop = current_checkout_shop
+    shop = nil unless shop && checkout_shop_channel?
+    if shop&.disabled?
+      return render json: { response_type: "ephemeral", text: "This shop is currently unavailable." }
     end
-
-    if parts.length < 2
-      return open_checkout_request_modal(shop, member) unless checkout_approver_for_shop?(member, shop)
-
-      render json: {
-        response_type: "ephemeral",
-        text: 'Usage: `/checkout @member tool-name`, `/checkout email@example.com tool-name`, `/checkout request [tool-name]`, or `/checkout active [all]`'
-      }
-      return
-    end
-
-    member_token = parts[0]
-    tool_name    = parts[1]
-
-    SlackCheckoutJob.perform_later(params.to_unsafe_h.stringify_keys)
-
-    render json: {
-      response_type: 'ephemeral',
-      text: "Processing checkout of *#{tool_name}* for *#{member_token}*..."
-    }
+    view = SlackCheckoutModal.entry(member: member, shop: shop,
+      response_url: params[:response_url], slack_user_id: params[:user_id])
+    Service::SlackConnector.open_modal(params[:trigger_id], view)
+    render json: { response_type: "ephemeral", text: "Opening checkout menu..." }
+  rescue => error
+    Service::ErrorReporter.notify(error, context: { phase: "open checkout menu" })
+    render json: { response_type: "ephemeral", text: "The checkout menu could not be opened. Please try /checkout again." }
   end
 
   def volunteer
@@ -133,6 +101,28 @@ class Slack::CommandsController < ApplicationController
 
   private
 
+  # Compatibility for explicit text commands; bare /checkout never enters here.
+  def legacy_checkout_command
+    text = params[:text].to_s.strip
+    subcommand, argument = text.split(/\s+/, 2)
+    case subcommand.downcase
+    when "active"
+      SlackCheckoutActiveJob.perform_later(params.to_unsafe_h.stringify_keys)
+      return render json: { response_type: "ephemeral", text: "Looking up your active checkouts..." }
+    when "request"
+      return handle_checkout_request(argument.to_s.strip.presence)
+    end
+
+    unless argument.present? && current_checkout_shop && checkout_shop_channel?
+      return render json: { response_type: "ephemeral", text: checkout_shop_channel_instruction }
+    end
+    unless find_slack_member
+      return render json: { response_type: "ephemeral", text: "Link your Slack account to a Member Portal account before using /checkout." }
+    end
+    SlackCheckoutJob.perform_later(params.to_unsafe_h.stringify_keys)
+    render json: { response_type: "ephemeral", text: "Processing checkout of *#{argument}* for *#{subcommand}*..." }
+  end
+
   # /checkout request [tool-name] -- member self-service, distinct from the
   # admin/approver-driven `/checkout @member tool-name` above. With no tool
   # name it opens the eligible-tool modal; a name queues the request job.
@@ -154,7 +144,7 @@ class Slack::CommandsController < ApplicationController
         }
       end
 
-      view = SlackCheckoutRequestModal.build(shop, member)
+      view = SlackCheckoutRequestModal.build(shop, member, response_url: params[:response_url])
       Service::SlackConnector.open_modal(params[:trigger_id], view)
       message = "Opening checkout request form…"
       if active_checkout_in_shop?(member, shop)
@@ -184,26 +174,9 @@ class Slack::CommandsController < ApplicationController
     render json: { response_type: "ephemeral", text: "The checkout request form could not be opened. Please try again or use the Member Portal." }
   end
 
-  def checkout_approver_for_shop?(member, shop)
-    return true if %w[admin board_member].include?(member.role) || member.manages_shop?(shop)
-
-    approver = member.valid_for_checkout_request? && CheckoutApprover.find_by(member_id: member.id)
-    approver && (approver.can_approve_for_shop?(shop.id) ||
-      Tool.where(shop_id: shop.id, :id.in => Array(approver.tool_ids)).exists?)
-  end
-
-  def open_checkout_request_modal(shop, member)
-    view = SlackCheckoutRequestModal.build(shop, member)
-    Service::SlackConnector.open_modal(params[:trigger_id], view)
-    render json: { response_type: "ephemeral", text: "Opening checkout request form…" }
-  rescue ::Error::CustomError => error
-    render json: { response_type: "ephemeral", text: error.message }
-  rescue => error
-    Service::ErrorReporter.notify(error, context: { phase: "open checkout request modal", slack_user_id: params[:user_id] })
-    render json: { response_type: "ephemeral", text: "The checkout request form could not be opened. Please try again or use the Member Portal." }
-  end
-
   def find_slack_member
+    return nil if params[:user_id].blank?
+
     slack_user = SlackUser.find_by(slack_id: params[:user_id])
     member = slack_user && Member.find_by(id: slack_user.member_id)
     return member if member
@@ -244,8 +217,7 @@ class Slack::CommandsController < ApplicationController
   end
 
   def open_request_list(member)
-    requests = ToolCheckoutRequest.where(member_id: member.id, status: "open").to_a
-      .sort_by { |request| [request.tool&.shop&.name.to_s.downcase, request.tool&.name.to_s.downcase] }
+    requests = CheckoutInteractionQuery.new(member: member).open_requests.to_a
     return "You have no open checkout requests." if requests.empty?
 
     lines = requests.map { |request| "• *#{request.tool&.name}* — #{request.tool&.shop&.name || 'Unknown shop'}" }
@@ -253,8 +225,7 @@ class Slack::CommandsController < ApplicationController
   end
 
   def active_checkout_in_shop?(member, shop)
-    tool_ids = Tool.where(shop_id: shop.id).pluck(:id)
-    ToolCheckout.where(member_id: member.id, :tool_id.in => tool_ids, revoked_at: nil).exists?
+    CheckoutInteractionQuery.new(member: member, shop: shop).active_checkouts.exists?
   end
 
   # Verify the request actually came from Slack using signing secret

@@ -2,6 +2,8 @@
 
 # Configure sensitive parameters which will be filtered from the log file.
 Rails.application.config.filter_parameters += [
+  :response_url,
+  :payload, # Slack's JSON string can contain a nested response URL.
   :password,
   :password_confirmation,
   :secret,

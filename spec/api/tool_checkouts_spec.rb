@@ -9,28 +9,17 @@ RSpec.describe 'Tool Checkouts API', type: :request do
   end
 
   before do
-    allow(REDIS).to receive(:set)
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
     allow(Service::SlackConnector).to receive(:send_slack_message)
     sign_in resource_manager
   end
 
   describe 'POST /api/admin/tool_checkouts' do
-    it 'allows resource managers to check out members on disabled tools' do
-      post '/api/admin/tool_checkouts', params: {
-        member_id: member.id.to_s,
-        tool_id: tool.id.to_s
-      }
-
-      expect(response).to have_http_status(:ok)
-      expect(ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil)).to exist
-      audit_log = AuditLog.where(
-        event_type: 'tool_checkout_created',
-        subject_id: member.id
-      ).last
-      expect(audit_log.slack_message).to include(
-        'shop: Woodshop',
-        'tool: Disabled Bandsaw'
-      )
+    it 'rejects disabled tools even for resource managers' do
+      post '/api/admin/tool_checkouts', params: { member_id: member.id.to_s, tool_id: tool.id.to_s }
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(ToolCheckout.count).to eq(0)
     end
 
     it 'allows pending members to receive a checkout for an enabled onboarding tool' do
@@ -50,7 +39,7 @@ RSpec.describe 'Tool Checkouts API', type: :request do
       expect(ToolCheckout.where(member_id: pending_member.id, tool_id: orientation.id, revoked_at: nil)).to exist
     end
 
-    it 'allows staff to issue an ordinary tool checkout to a pending member' do
+    it 'rejects an ordinary tool checkout for a pending member' do
       pending_member = create(:member, :current, status: 'pending')
       ordinary_tool = Tool.create!(name: 'Table Saw', shop: shop)
 
@@ -59,8 +48,8 @@ RSpec.describe 'Tool Checkouts API', type: :request do
         tool_id: ordinary_tool.id.to_s
       }
 
-      expect(response).to have_http_status(:ok)
-      expect(ToolCheckout.where(member_id: pending_member.id, tool_id: ordinary_tool.id, revoked_at: nil)).to exist
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(ToolCheckout.where(member_id: pending_member.id, tool_id: ordinary_tool.id, revoked_at: nil)).not_to exist
     end
   end
 
@@ -189,6 +178,49 @@ RSpec.describe 'Admin tool checkouts API', type: :request do
         before { sign_in resource_manager }
 
         schema '$ref' => '#/components/schemas/error'
+        run_test!
+      end
+    end
+  end
+end
+
+
+describe "Shared checkout creation API", type: :request do
+  path "/admin/tool_checkouts" do
+    post "Approves a safety checkout under the member/tool lock" do
+      tags "AdminToolCheckouts"
+      operationId "createAdminToolCheckout"
+      description "Rechecks the actor's current membership and admin/board, managed-shop or assigned-tool authority inside the shared member/tool lock. The target must be active and unexpired, or pending on a tool allowing pending members. The tool and shop must be enabled, require a checkout, and all prerequisites must be satisfied. Existing checkout records, unavailable resources and lock contention are rejected. The model callback closes an open request and preserves notifications, users-channel invitations and audit logging."
+      consumes "application/json"
+      produces "application/json"
+      parameter name: :checkout_details, in: :body, schema: {
+        type: :object, properties: { member_id: { type: :string }, tool_id: { type: :string } }, required: %w[member_id tool_id]
+      }
+      let(:actor) { create(:member, :current, :admin) }
+      let(:target) { create(:member, :current) }
+      let(:tool) { create(:tool) }
+      let(:checkout_details) { { member_id: target.id.to_s, tool_id: tool.id.to_s } }
+      before do
+        sign_in actor
+        allow(REDIS).to receive(:set).and_return(true)
+        allow(REDIS).to receive(:eval).and_return(1)
+        allow(Service::SlackConnector).to receive(:send_slack_message)
+      end
+      response "200", "checkout created" do
+        schema type: :object, properties: {
+          _id: { type: :string }, member_id: { type: :string }, tool_id: { type: :string },
+          unmet_prerequisites: { type: :array, items: { type: :string }, maxItems: 0 }
+        }, required: %w[_id member_id tool_id unmet_prerequisites]
+        run_test!
+      end
+      response "422", "membership, tool availability, prerequisites, duplicate state or lock contention prevents creation" do
+        before { tool.update!(disabled: true) }
+        schema "$ref" => "#/components/schemas/error"
+        run_test!
+      end
+      response "403", "current actor cannot approve this tool" do
+        let(:actor) { create(:member, :current) }
+        schema "$ref" => "#/components/schemas/error"
         run_test!
       end
     end

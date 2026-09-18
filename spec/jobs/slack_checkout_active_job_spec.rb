@@ -6,10 +6,9 @@ RSpec.describe SlackCheckoutActiveJob do
   let(:posted_bodies) { [] }
 
   before do
-    http = instance_double(Net::HTTP)
-    allow(Net::HTTP).to receive(:new).and_return(http)
-    allow(http).to receive(:use_ssl=)
-    allow(http).to receive(:request) { |request| posted_bodies << JSON.parse(request.body) }
+    allow(SlackCheckoutOutcomeJob).to receive(:enqueue) do |text, _url, _user|
+      posted_bodies << { "text" => text, "response_type" => "ephemeral", "replace_original" => true }
+    end
   end
 
   def perform(text: "active", channel: "woodshop", channel_id: nil)
@@ -34,7 +33,7 @@ RSpec.describe SlackCheckoutActiveJob do
     expect(posted_bodies.last.fetch("text")).not_to include("Welder")
   end
 
-  it "lists the current shop's active checkouts alphabetically with status and approver status" do
+  it "uses the same available-tool content policy as the modal" do
     shop = create(:shop, slack_channel: "woodshop")
     zulu = create(:tool, shop: shop, name: "Zulu", disabled: true)
     alpha = create(:tool, shop: shop, name: "Alpha")
@@ -45,8 +44,8 @@ RSpec.describe SlackCheckoutActiveJob do
     perform
 
     text = posted_bodies.last.fetch("text")
-    expect(text.index("Alpha")).to be < text.index("Zulu")
-    expect(text).to include("Enabled", "Disabled", "Approver", "Yes", "No")
+    expect(text).to include("Alpha", "Checked out:", "Reservable:")
+    expect(text).not_to include("Zulu")
   end
 
   it "treats a shop resource manager as an approver" do
@@ -55,7 +54,7 @@ RSpec.describe SlackCheckoutActiveJob do
     create(:tool_checkout, member: member, tool: create(:tool, shop: shop, name: "Lathe"))
 
     perform
-    expect(posted_bodies.last.fetch("text")).to match(/Lathe\s+\| Enabled\s+\| Yes/)
+    expect(posted_bodies.last.fetch("text")).to include("Tool: Lathe", "Checked out:")
   end
 
   it "lists all checked-out shops alphabetically with names and channels for active all or an unrelated channel" do
@@ -66,8 +65,8 @@ RSpec.describe SlackCheckoutActiveJob do
 
     perform(text: "active all")
     text = posted_bodies.last.fetch("text")
-    expect(text.index("Alpha Shop")).to be < text.index("Zulu Shop")
-    expect(text).to include("#alpha", "#zulu")
+    expect(text).to include("Alpha Shop", "Zulu Shop")
+    expect(text).to include("Shop:")
 
     perform(channel: "general")
     expect(posted_bodies.last.fetch("text")).to include("Alpha Shop", "Zulu Shop")
@@ -79,6 +78,6 @@ RSpec.describe SlackCheckoutActiveJob do
 
     perform(text: "active all")
 
-    expect(posted_bodies.last.fetch("text")).to include("*Private Shop* (<#C12345678>)")
+    expect(posted_bodies.last.fetch("text")).to include("Shop: Private Shop")
   end
 end

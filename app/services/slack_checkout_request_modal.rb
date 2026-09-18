@@ -2,7 +2,7 @@ class SlackCheckoutRequestModal
   MAX_OPTIONS = 100
 
   class << self
-    def build(shop, member)
+    def build(shop, member, response_url: nil)
       tools = eligible_tools(shop, member)
       raise ::Error::UnprocessableEntity.new("This shop has no tools you can request") if tools.empty?
       raise ::Error::UnprocessableEntity.new("This shop has more than 100 eligible tools; use the Member Portal") if tools.length > MAX_OPTIONS
@@ -10,7 +10,7 @@ class SlackCheckoutRequestModal
       {
         type: "modal",
         callback_id: "checkout_request_submit",
-        private_metadata: { shop_id: shop.id.to_s }.to_json,
+        private_metadata: { shop_id: shop.id.to_s, response_url: response_url }.compact.to_json,
         title: plain("Request a checkout"),
         submit: plain("Request"),
         close: plain("Cancel"),
@@ -31,15 +31,11 @@ class SlackCheckoutRequestModal
     end
 
     def eligible_tools(shop, member)
-      Tool.where(shop_id: shop.id, :disabled.ne => true, :open.ne => true).order_by(name: :asc).to_a.select do |tool|
-        eligible?(member, tool) &&
-          !ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists?
-      end
+      CheckoutInteractionQuery.new(member: member, shop: shop).requestable_tools
     end
 
     def eligible?(member, tool)
-      return false if tool.nil? || tool.open || tool.disabled? || tool.shop.nil? || tool.shop.disabled?
-      member.status == "pending" ? tool.allow_pending : member.active_unexpired? && member.status == "activeMember"
+      tool.present? && ToolCheckoutRequestEligibility.new(member: member, tool: tool).eligible?
     end
 
     private

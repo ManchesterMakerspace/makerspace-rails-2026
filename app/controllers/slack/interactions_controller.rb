@@ -6,6 +6,9 @@ class Slack::InteractionsController < ApplicationController
     slack_request = nil
     payload = JSON.parse(params[:payload].to_s)
     callback_id = payload.dig("view", "callback_id")
+    if callback_id == SlackCheckoutModal::CALLBACK_ID && payload["type"].in?(%w[block_actions view_submission])
+      return checkout_modal_interaction(payload)
+    end
     supported = payload["type"] == "view_submission" ||
       (payload["type"].in?(%w[view_closed block_actions]) && callback_id == "reservation_submit")
     return render json: {} unless supported
@@ -31,6 +34,46 @@ class Slack::InteractionsController < ApplicationController
   end
 
   private
+
+  def checkout_modal_interaction(payload)
+    workflow = SlackCheckoutWorkflow.new(payload)
+    view = workflow.call
+    return render json: { response_action: "clear" } if view == :clear
+    deliver_checkout_view(payload, view)
+  rescue SlackCheckoutWorkflow::FieldError => error
+    render json: { response_action: "errors", errors: { error.field => error.message } }
+  rescue SlackCheckoutWorkflow::Rejected, Error::Forbidden, Error::UnprocessableEntity => error
+    view = workflow ? workflow.alert(error.message) : SlackCheckoutModal.new(metadata: { "step" => "alert" }, alert: error.message).build
+    deliver_checkout_view(payload, view)
+  rescue => error
+    Service::ErrorReporter.notify(error, context: { phase: "checkout modal interaction" })
+    view = SlackCheckoutModal.new(metadata: { "step" => "alert" },
+      alert: "The checkout could not be updated. Reopen /checkout to check its current status before trying again.").build
+    deliver_checkout_view(payload, view)
+  end
+
+  def deliver_checkout_view(payload, view)
+    if payload["type"] == "view_submission"
+      return render json: { response_action: "update", view: view }
+    end
+    if payload.dig("view", "id").blank? || payload.dig("view", "hash").blank?
+      raise SlackCheckoutWorkflow::Rejected, "The checkout view is missing its concurrency token."
+    end
+    Service::SlackConnector.update_modal(payload.dig("view", "id"), view, hash: payload.dig("view", "hash"))
+    render json: {}
+  rescue => error
+    # Never retry views.update without its hash: the user may already have moved
+    # on in another interaction. A new alert leaves that newer view untouched.
+    Service::ErrorReporter.notify(error, context: { phase: "checkout modal views.update" })
+    begin
+      alert = SlackCheckoutModal.new(metadata: { "step" => "alert" },
+        alert: "The checkout view changed or could not be refreshed. Close this form and reopen /checkout.").build
+      Service::SlackConnector.open_modal(payload["trigger_id"], alert) if payload["trigger_id"].present?
+    rescue => fallback_error
+      Service::ErrorReporter.notify(fallback_error, context: { phase: "checkout modal update fallback" })
+    end
+    render json: {}
+  end
 
   def create_reservation(payload)
     slack_request = nil
@@ -313,36 +356,16 @@ class Slack::InteractionsController < ApplicationController
     tool_id = state.dig("tool", "tool", "selected_option", "value")
     tool = shop && Tool.where(shop_id: shop.id, :disabled.ne => true).find_by(id: tool_id)
     return checkout_errors("tool" => "That shop or tool is no longer available.") unless tool
-    unless SlackCheckoutRequestModal.eligible?(member, tool)
-      return checkout_errors("tool" => "You are not currently eligible to request this checkout.")
-    end
-    if ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists?
-      return checkout_errors("tool" => "You already have a checkout for this tool.")
-    end
-    if ToolCheckoutRequest.where(member_id: member.id, tool_id: tool.id, status: "open").exists?
-      return checkout_errors("tool" => "You already have an open request for this tool.")
-    end
+    error = ToolCheckoutRequestEligibility.new(member: member, tool: tool).error
+    return checkout_errors("tool" => error) if error
 
-    checkout_request = ToolCheckoutRequest.new(
-      member: member, tool: tool, note: state.dig("note", "note", "value"),
-      request_date: Time.current, status: "open"
-    )
-    unless checkout_request.save
-      errors = {}
-      errors["note"] = checkout_request.errors[:note].join(", ") if checkout_request.errors[:note].present?
-      errors["tool"] = checkout_request.errors.full_messages.join(", ").first(150) if errors.empty?
-      return checkout_errors(errors)
-    end
-
-    checkout_request.announce_request
+    note = state.dig("note", "note", "value")
+    return checkout_errors("note" => "Note is too long (maximum is 128 characters)") if note && (!note.is_a?(String) || note.length > 128)
+    CheckoutRequestCreation.create!(member_id: member.id, tool_id: tool.id, shop_id: shop.id, note: note, defer_notifications: true)
     begin
-      Service::SlackConnector.send_slack_message(checkout_confirmation(shop), slack_user.slack_id)
+      SlackCheckoutOutcomeJob.enqueue(checkout_confirmation(shop), metadata["response_url"], payload.dig("user", "id"))
     rescue => error
-      Service::ErrorReporter.notify(error, context: {
-        phase: "Slack checkout request confirmation",
-        checkout_request_id: checkout_request.id.to_s,
-        slack_user_id: slack_user.slack_id
-      })
+      SlackCheckoutOutcomeJob.report("enqueue", error_class: error.class.name)
     end
     render json: { response_action: "clear" }
   rescue JSON::ParserError

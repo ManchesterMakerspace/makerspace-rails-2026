@@ -12,11 +12,8 @@ RSpec.describe SlackCheckoutRequestJob do
     allow(REDIS).to receive(:set).and_return(true)
     allow(REDIS).to receive(:eval).and_return(1)
 
-    http = instance_double(Net::HTTP)
-    allow(Net::HTTP).to receive(:new).and_return(http)
-    allow(http).to receive(:use_ssl=)
-    allow(http).to receive(:request) do |req|
-      posted_bodies << JSON.parse(req.body)
+    allow(SlackCheckoutOutcomeJob).to receive(:enqueue) do |text, _url, _user|
+      posted_bodies << { "text" => text, "response_type" => "ephemeral", "replace_original" => true }
     end
   end
 
@@ -148,7 +145,7 @@ RSpec.describe SlackCheckoutRequestJob do
         "checkout_request_lock/#{member.id}/#{tool.id}",
         kind_of(String),
         nx: true,
-        ex: SlackCheckoutRequestJob::REQUEST_LOCK_TTL_SECONDS
+        ex: 30
       )
       .and_return(false)
 
