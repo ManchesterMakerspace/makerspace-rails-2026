@@ -19,7 +19,9 @@ module Service
       profile = {}
       profile[status_field] = { value: status_profile_value(member) }
 
-      client.users_profile_set(user: slack_user.slack_id, profile: profile)
+      ::Service::SlackConnector.with_rate_limit_retry("users.profile.set") do
+        client.users_profile_set(user: slack_user.slack_id, profile: profile)
+      end
       member
     rescue Slack::Web::Api::Errors::SlackError => e
       ::Service::SlackConnector.send_slack_message(
@@ -50,8 +52,9 @@ module Service
       scope = Member.where(:expirationTime.ne => nil, :expirationTime.gt => (last_run_at || Time.at(0)).to_i * 1000)
       scope = scope.where(:expirationTime.lte => now.to_i * 1000)
 
+      members = scope.to_a.shuffle
       synced_count = 0
-      scope.each do |member|
+      members.each do |member|
         next if member.nil?
         sync_one(member)
         synced_count += 1

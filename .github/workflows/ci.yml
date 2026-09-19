@@ -114,6 +114,7 @@ jobs:
           --health-retries 5
 
     env:
+      RUN_OPTIONAL_SLACK_CHECKOUT_SPECS: true
       RAILS_ENV: test
       ITEMS_PER_PAGE: 50
       SKIP_EMAILVALIDATION: "true"
