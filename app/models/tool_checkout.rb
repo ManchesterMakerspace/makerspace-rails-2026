@@ -23,6 +23,7 @@ class ToolCheckout
   after_create :close_open_request
   after_create :invite_member_to_users_channel, unless: :defer_users_channel_invitation
   after_create :enqueue_checkout_canvas_sync
+  before_update :mark_revocation_cleanup_pending
   after_update :complete_revocation_cleanup, if: :revocation_cleanup_required?
   after_update :enqueue_checkout_canvas_sync_after_revocation
 
@@ -38,11 +39,16 @@ class ToolCheckout
     revoked_at.present? && (newly_revoked? || revocation_cleanup_pending?)
   end
 
+  def mark_revocation_cleanup_pending
+    revocation_change = changes["revoked_at"]
+    return unless revocation_change && revocation_change.first.nil? && revocation_change.last.present?
+
+    self.revocation_cleanup_pending = true
+  end
+
   def complete_revocation_cleanup
-    # Persist the recovery marker before beginning any multi-document cleanup.
-    # Every step below is retry-safe, so a later update can resume after any
-    # partial failure without temporarily making the checkout active again.
-    set(revocation_cleanup_pending: true) unless revocation_cleanup_pending?
+    # The recovery marker was persisted in the same update as revoked_at.
+    # Every step below is retry-safe, so a sweep can resume any partial failure.
     CheckoutApproverVolunteering.revoke_for!(member_id: member_id, tool_id: tool_id)
     CheckoutApproverCredit.reverse!(self)
     unset(:revocation_cleanup_pending)

@@ -25,6 +25,19 @@ RSpec.describe ToolCheckout do
     expect(checkout).to be_revocation_cleanup_pending
   end
 
+  it "marks cleanup pending as part of the revocation update before cleanup starts" do
+    checkout = create(:tool_checkout)
+    allow(CheckoutApproverVolunteering).to receive(:revoke_for!) do
+      persisted = ToolCheckout.find(checkout.id)
+      expect(persisted.revoked_at).to be_present
+      expect(persisted).to be_revocation_cleanup_pending
+      raise Error::UnprocessableEntity.new("busy")
+    end
+
+    expect { checkout.update!(revoked_at: Time.current) }
+      .to raise_error(Error::UnprocessableEntity, "busy")
+  end
+
   it "resumes partial cleanup on a later update and clears the pending marker" do
     checkout = create(:tool_checkout)
     calls = 0

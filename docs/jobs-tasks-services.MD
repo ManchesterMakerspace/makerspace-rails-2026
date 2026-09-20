@@ -125,13 +125,14 @@ After a checkout's `revoked_at` value is first persisted, its model callback
 synchronously removes the member's tool-specific checkout-approver access,
 revokes open volunteer requests, and reverses any checkout-approver credit before
 returning. If cleanup fails, including from contention on the member's approver
-record, the revoked checkout retains a durable `revocation_cleanup_pending`
-marker. A subsequent update retries every idempotent cleanup step and clears the
-marker only after they all succeed; the checkout remains revoked throughout so a
-partial failure cannot restore tool authority. Credit reversals use an ID derived
-from the original credit, preventing a retry after a partial failure from
-inserting a second negative credit. A successful resumed cleanup also enqueues
-the checkout-canvas removal that the failed callback did not reach. The hourly
+record, the revoked checkout retains the durable `revocation_cleanup_pending`
+marker that was written in the same database update as `revoked_at`. A subsequent
+update retries every idempotent cleanup step and clears the marker only after they
+all succeed; the checkout remains revoked throughout so a partial failure cannot
+restore tool authority. Credit reversals use an ID derived from the original
+credit, preventing a retry after a partial failure from inserting a second
+negative credit. A successful resumed cleanup also enqueues the checkout-canvas
+removal that the failed callback did not reach. The hourly
 `MemberProvisioningReconciliationJob` automatically sweeps pending revocations;
 failures are reported and isolated per checkout so later pending records are
 still attempted and failed records remain marked for the next sweep.
