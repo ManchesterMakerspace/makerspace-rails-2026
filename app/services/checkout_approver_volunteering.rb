@@ -87,7 +87,7 @@ class CheckoutApproverVolunteering
 
   def self.deliver_decision_notification(request)
     slack_id = SlackUser.find_by(member_id: request.member_id)&.slack_id
-    return if slack_id.blank?
+    return if slack_id.blank? || request.member.direct_notifications_suppressed?
     status = request.status == "approved" ? "approved" : "declined"
     message = "Your request to approve checkouts for *#{request.tool.name}* in *#{request.tool.shop.name}* was *#{status}*."
     message += "\nRM note: #{request.decision_note}" if request.decision_note.present?

@@ -41,7 +41,7 @@ if ENV['RUN_OPTIONAL_SLACK_CHECKOUT_SPECS'] == 'true'
 
     it "encrypts job arguments before enqueueing and suppresses argument logging" do
       described_class.enqueue("Saved", url, "UACTOR")
-      job = ActiveJob::Base.queue_adapter.enqueued_jobs.find { |entry| entry[:job] == described_class }
+      job = ActiveJob::Base.queue_adapter.enqueued_jobs.reverse.find { |entry| entry[:job] == described_class }
       expect(job[:args].to_json).not_to include(url, "PRIVATE-CREDENTIAL")
       expect(described_class.encryptor.decrypt_and_verify(job[:args][1])).to eq(url)
       expect(described_class.log_arguments).to be(false)
