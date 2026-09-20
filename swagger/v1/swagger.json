@@ -5613,7 +5613,7 @@
                   "trigger_id": {
                     "type": "string",
                     "example": "T12345678",
-                    "description": "Required to open the checkout modal (empty text or legacy request without a tool)"
+                    "description": "Required to open the checkout modal (empty text, volunteer, or legacy request without a tool)"
                   },
                   "channel_id": {
                     "type": "string"
