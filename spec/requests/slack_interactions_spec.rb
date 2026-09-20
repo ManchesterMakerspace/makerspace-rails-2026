@@ -178,11 +178,11 @@ RSpec.describe "Slack interactions", type: :request do
       interact(action: "checkout_request_select", value: row.id.to_s)
     end
 
-    it "renders exactly three menu choices and binds the initiating identity and shop" do
+    it "renders all four menu choices and binds the initiating identity and shop" do
       start_modal
       options = @view.fetch("blocks").find { |block| block["block_id"] == "checkout_menu" }.dig("accessory", "options")
       expect(@view["blocks"].none? { |block| block["type"] == "input" }).to be(true)
-      expect(options.map { |option| option.dig("text", "text") }).to eq(["View my checkouts", "Request a checkout", "View open requests"])
+      expect(options.map { |option| option.dig("text", "text") }).to eq(["View my checkouts", "Request a checkout", "Volunteer to do checkouts", "View open requests"])
       expect(modal_metadata).to eq("member_id" => member.id.to_s, "shop_id" => shop.id.to_s,
         "slack_user_id" => "UMODAL", "response_url" => response_url, "step" => "menu")
       expect(@view["blocks"].map { |block| block["block_id"] }).not_to include("checkout_shop")

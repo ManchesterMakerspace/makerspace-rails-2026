@@ -36,6 +36,7 @@ conditions are included where they are part of the index contract.
 | `checkins` | None (direct collection access) | Facility check-in events used by administrative check-in and space-usage reporting. | None beyond `_id` is declared by this repository |
 | `counter` | `Counter` | Atomic `seq` values for named client sequences, with one document per sequence (for example, `_id: "tickets"`). | None |
 | `checkout_approvers` | `CheckoutApprover` | Members authorized to approve Safety Checkouts, optionally scoped to shops or tools. | None |
+| `checkout_approver_requests` | `CheckoutApproverRequest` | Open, approved, or revoked requests from checked-out members volunteering to approve checkouts for a tool. | Unique `{ member_id: 1, tool_id: 1, status: 1 }`, partial when `status` is `open` |
 | `default_permissions` | `DefaultPermission` | Default enabled/disabled values applied to member permissions. | None |
 | `earned_memberships` | `EarnedMembership` | A member's earned-membership program and its requirement/report relationships. | `{ member_id: 1 }` (deployment task) |
 | `earned_membership__report` | `EarnedMembership::Report` | Periodic earned-membership reports; report-requirement snapshots are embedded in these documents. | None |

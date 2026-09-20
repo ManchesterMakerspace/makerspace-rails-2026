@@ -10,8 +10,11 @@ class SlackCheckoutModal
   EDIT = "checkout_edit_note".freeze
   CANCEL = "checkout_cancel_request".freeze
   APPROVE = "checkout_approve_request".freeze
+  VOLUNTEER = "checkout_volunteer".freeze
+  APPROVE_VOLUNTEER = "checkout_approve_volunteer".freeze
+  DECLINE_VOLUNTEER = "checkout_decline_volunteer".freeze
   CHOICES = [["View my checkouts", "active"], ["Request a checkout", "request_tools"],
-             ["View open requests", "requests"]].freeze
+             ["Volunteer to do checkouts", "volunteer"], ["View open requests", "requests"]].freeze
   METADATA_KEYS = %w[member_id shop_id response_url slack_user_id step record_id].freeze
 
   # Integrity-protected context, not an authorization cache. A client cannot
@@ -44,11 +47,11 @@ class SlackCheckoutModal
     new(member: member, shop: shop, metadata: metadata).build
   end
 
-  def initialize(member: nil, shop: nil, metadata: {}, tools: [], requests: [], checkouts: [],
-                 tool: nil, request: nil, checkout: nil, can_approve: false, alert: nil)
+  def initialize(member: nil, shop: nil, metadata: {}, tools: [], requests: [], volunteer_requests: [], checkouts: [],
+                 tool: nil, request: nil, volunteer_request: nil, checkout: nil, can_approve: false, alert: nil)
     @member, @shop, @metadata = member, shop, metadata.slice(*METADATA_KEYS)
-    @tools, @requests, @checkouts = tools, requests, checkouts
-    @tool, @request, @checkout, @can_approve, @alert = tool, request, checkout, can_approve, alert
+    @tools, @requests, @volunteer_requests, @checkouts = tools, requests, volunteer_requests, checkouts
+    @tool, @request, @volunteer_request, @checkout, @can_approve, @alert = tool, request, volunteer_request, checkout, can_approve, alert
   end
 
   def build
@@ -60,7 +63,7 @@ class SlackCheckoutModal
     when "menu"
       shop_selector unless @shop
       selector(MENU, "What would you like to do?", CHOICES)
-    when /\Ashop_(active|request_tools|requests)\z/
+    when /\Ashop_(active|request_tools|requests|volunteer)\z/
       shop_selector
     when "request_tools"
       selector(TOOL, "Tool", @tools.map { |tool| [tool.name, tool.id.to_s] })
@@ -68,8 +71,28 @@ class SlackCheckoutModal
       section("Request a checkout on #{@tool.name}")
       note_input
       @submit = "Request"
+    when "volunteer"
+      selector(TOOL, "Checked-out tool", @tools.map { |tool| [tool.name, tool.id.to_s] })
+    when "volunteer_confirm"
+      section("Volunteer to approve checkouts for #{@tool.name}")
+      note_input
+      @submit = "Volunteer"
     when "requests"
-      selector(REQUEST, "Open request", @requests.map { |row| ["#{row.tool.name} — #{row.member.fullname}", row.id.to_s] })
+      volunteers = @volunteer_requests.map { |row| ["VOLUNTEER: #{row.tool.name} — #{row.member.fullname}", "volunteer:#{row.id}"] }
+      selector(REQUEST, "Open request", volunteers + @requests.map { |row| ["#{row.tool.name} — #{row.member.fullname}", row.id.to_s] })
+    when "volunteer_detail"
+      section("Volunteer: #{@volunteer_request.member.fullname}")
+      section("Tool: #{@volunteer_request.tool.name}")
+      section("Requested: #{@volunteer_request.request_date&.iso8601}")
+      section("Checked out: #{volunteer_checkout_date}")
+      section("Joined makerspace: #{member_join_date(@volunteer_request.member)}")
+      section("Note: #{@volunteer_request.note}") if @volunteer_request.note.present?
+      actions([["Approve volunteer", APPROVE_VOLUNTEER], ["Decline volunteer", DECLINE_VOLUNTEER]])
+    when "volunteer_approve", "volunteer_decline"
+      decision = @metadata["step"] == "volunteer_approve" ? "Approve" : "Decline"
+      section("#{decision} #{@volunteer_request.member.fullname}'s request for #{@volunteer_request.tool.name}?")
+      note_input
+      @submit = decision
     when "request_detail"
       request_details
       buttons = []
@@ -150,6 +173,15 @@ class SlackCheckoutModal
       section("Shop: #{@shop.name}")
     end
     section(@request.note) if @request.note.present?
+  end
+
+  def volunteer_checkout_date
+    ToolCheckout.where(member_id: @volunteer_request.member_id, tool_id: @volunteer_request.tool_id, revoked_at: nil)
+      .order_by(checked_out_at: :desc).first&.checked_out_at&.to_date&.iso8601 || "Unknown"
+  end
+
+  def member_join_date(member)
+    member.startDate.respond_to?(:to_date) ? member.startDate.to_date.iso8601 : member.startDate.to_s.presence || "Unknown"
   end
 
   def actions(buttons, block_id: "checkout_actions")

@@ -24,6 +24,9 @@ class CheckoutCreation
         signed_off_via: source, checked_out_at: Time.current, checkout_request_id: request&.id,
         defer_users_channel_invitation: defer_notifications)
     end
+    # This credit is deliberately silent: it is operational compensation for
+    # an additional approver, not a member-submitted volunteer-credit event.
+    CheckoutApproverCredit.award!(checkout)
     if defer_notifications
       CheckoutNotificationJob.enqueue("approval", checkout.id)
     else

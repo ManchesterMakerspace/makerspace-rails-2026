@@ -7,6 +7,7 @@ class ToolCheckout
   field :revoked_at, type: Time
   field :revocation_reason, type: String  # internal only — not shown to member
   field :signed_off_via, type: String, default: "portal"  # "portal" or "slack"
+  field :volunteer_credit_id, type: BSON::ObjectId
 
   belongs_to :member
   belongs_to :tool
@@ -22,9 +23,23 @@ class ToolCheckout
   after_create :invite_member_to_users_channel, unless: :defer_users_channel_invitation
   after_create :enqueue_checkout_canvas_sync
   after_update :enqueue_checkout_canvas_sync_after_revocation
+  after_update :revoke_checkout_approver_access, if: :newly_revoked?
+  after_update :reverse_checkout_approver_credit, if: :newly_revoked?
 
   def active?
     revoked_at.nil?
+  end
+
+  def newly_revoked?
+    previous_changes["revoked_at"]&.first.nil? && revoked_at.present?
+  end
+
+  def revoke_checkout_approver_access
+    CheckoutApproverVolunteering.revoke_for!(member_id: member_id, tool_id: tool_id)
+  end
+
+  def reverse_checkout_approver_credit
+    CheckoutApproverCredit.reverse!(self)
   end
 
   # Notify member via Slack DM when checked out

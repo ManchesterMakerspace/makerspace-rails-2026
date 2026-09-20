@@ -55,6 +55,22 @@ class CheckoutInteractionQuery
     end
   end
 
+  def volunteerable_tools
+    return [] unless @member.valid_for_checkout_request?
+    checked_out_ids = active_checkouts.pluck(:tool_id)
+    assigned_ids = CheckoutApprover.allowed_tool_ids_for_member(@member.id)
+    requested_ids = CheckoutApproverRequest.where(member_id: @member.id, status: "open").pluck(:tool_id).map(&:to_s)
+    tools.where(:id.in => checked_out_ids, :disabled.ne => true, :open.ne => true)
+      .collation(COLLATION).order_by(name: :asc, id: :asc).to_a
+      .reject { |tool| assigned_ids.include?(tool.id.to_s) || requested_ids.include?(tool.id.to_s) }
+  end
+
+  def visible_volunteer_requests
+    return CheckoutApproverRequest.none unless @shop && @member.manages_shop?(@shop.id)
+    CheckoutApproverRequest.where(status: "open", :tool_id.in => tools.pluck(:id))
+      .order_by(request_date: :asc, id: :asc).includes(:member, tool: :shop)
+  end
+
   # Personal lists and approval queues are distinct authorization contexts.
   def open_requests(for_approval: false)
     visible_tools = for_approval ? approvable_tools : tools.where(:disabled.ne => true)
