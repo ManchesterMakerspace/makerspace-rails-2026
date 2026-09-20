@@ -108,7 +108,10 @@ RSpec.describe 'Tool Checkouts API', type: :request do
 end
 
 RSpec.describe 'Admin tool checkouts API', type: :request do
-  before { allow(REDIS).to receive(:set) }
+  before do
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
+  end
 
   path '/admin/tool_checkouts/{id}' do
     delete 'Revokes a tool checkout' do
