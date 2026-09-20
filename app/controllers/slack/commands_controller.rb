@@ -151,8 +151,10 @@ class Slack::CommandsController < ApplicationController
       "• `/checkout request [tool]` — request a checkout", "• `/checkout active` (or `/checkout list`) — list this shop's active checkouts",
       "• `/checkout active all` — list active checkouts in every shop", "• `/checkout volunteer` — volunteer to approve tools you are checked out on",
       "• `/checkout help` — show this help"]
-    if member.role.in?(%w[admin board_member]) || Array(member.resource_manager_shop_ids).present? ||
-        CheckoutApprover.exists?(member_id: member.id)
+    has_role_authority = member.role.in?(%w[admin board_member]) ||
+      (member.role == "resource_manager" && Array(member.resource_manager_shop_ids).present?)
+    has_additional_authority = member.valid_for_checkout_request? && CheckoutApprover.exists?(member_id: member.id)
+    if has_role_authority || has_additional_authority
       lines << "• `/checkout @member tool` — approve a member's checkout in the tool's shop channel"
     end
     render json: { response_type: "ephemeral", text: lines.join("\n") }

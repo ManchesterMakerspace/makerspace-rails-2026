@@ -107,6 +107,20 @@ RSpec.describe CheckoutNotificationJob do
     expect { described_class.perform_now("request", BSON::ObjectId.new.to_s) }.not_to raise_error
   end
 
+  it "delivers volunteer request and decision DMs outside the interaction" do
+    create(:tool_checkout, member: member, tool: tool)
+    request = CheckoutApproverRequest.create!(member: member, tool: tool)
+    allow(CheckoutApproverVolunteering).to receive(:deliver_request_notifications)
+    allow(CheckoutApproverVolunteering).to receive(:deliver_decision_notification)
+
+    described_class.perform_now("approver_volunteer", request.id.to_s)
+    expect(CheckoutApproverVolunteering).to have_received(:deliver_request_notifications).with(request)
+
+    request.update!(status: "approved")
+    described_class.perform_now("approver_volunteer_decision", request.id.to_s)
+    expect(CheckoutApproverVolunteering).to have_received(:deliver_decision_notification).with(request)
+  end
+
   it "still audits a checkout revoked before delivery without inviting or announcing it" do
     checkout = ToolCheckout.create!(member: member, tool: tool, approved_by: create(:member, :current, :admin),
       revoked_at: Time.current, defer_users_channel_invitation: true)

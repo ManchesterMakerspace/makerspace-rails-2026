@@ -24,6 +24,14 @@ class CheckoutNotificationJob < ApplicationJob
         elsif action == "cancellation" && request.status == "deleted"
           request.remove_announcement
         end
+      when "approver_volunteer", "approver_volunteer_decision"
+        request = CheckoutApproverRequest.find_by(id: record_id)
+        return unless request && request.member && request.tool
+        if action == "approver_volunteer" && request.open?
+          CheckoutApproverVolunteering.deliver_request_notifications(request)
+        elsif action == "approver_volunteer_decision" && request.status.in?(%w[approved declined])
+          CheckoutApproverVolunteering.deliver_decision_notification(request)
+        end
       end
     end
   end

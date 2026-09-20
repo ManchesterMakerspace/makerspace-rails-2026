@@ -1,14 +1,17 @@
 class CheckoutApproverVolunteering
   def self.create!(member:, tool:, note: nil)
-    raise Error::UnprocessableEntity.new("You must have an active checkout for this tool") unless
-      ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists?
-    raise Error::UnprocessableEntity.new("Your membership must be active and current") unless member.valid_for_checkout_request?
-    if CheckoutApprover.find_by(member_id: member.id)&.can_approve_tool?(tool)
-      raise Error::UnprocessableEntity.new("You are already an approver for this tool")
-    end
+    request = CheckoutMutationLock.with(member_id: member.id, tool_id: tool.id) do
+      member.reload
+      raise Error::UnprocessableEntity.new("You must have an active checkout for this tool") unless
+        ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists?
+      raise Error::UnprocessableEntity.new("Your membership must be active and current") unless member.valid_for_checkout_request?
+      if CheckoutApprover.find_by(member_id: member.id)&.can_approve_tool?(tool)
+        raise Error::UnprocessableEntity.new("You are already an approver for this tool")
+      end
 
-    request = CheckoutApproverRequest.create!(member: member, tool: tool, note: note.presence)
-    notify_resource_managers(request)
+      CheckoutApproverRequest.create!(member: member, tool: tool, note: note.presence)
+    end
+    CheckoutNotificationJob.enqueue("approver_volunteer", request.id)
     request
   rescue Mongo::Error::OperationFailure
     raise Error::UnprocessableEntity.new("A volunteer request is already open for this tool")
@@ -18,16 +21,26 @@ class CheckoutApproverVolunteering
     approver = CheckoutMutationLock.with(member_id: request.member_id, tool_id: request.tool_id) do
       request.reload
       authorize_decision!(request, actor)
+      volunteer = Member.find_by(id: request.member_id)
+      raise Error::UnprocessableEntity.new("The volunteer's membership is no longer eligible") unless
+        volunteer&.valid_for_checkout_request?
       raise Error::UnprocessableEntity.new("The volunteer no longer has an active checkout") unless
         ToolCheckout.where(member_id: request.member_id, tool_id: request.tool_id, revoked_at: nil).exists?
 
-      record = CheckoutApprover.find_or_initialize_by(member_id: request.member_id)
-      record.tool_ids = (Array(record.tool_ids).map(&:to_s) + [request.tool_id.to_s]).uniq
-      record.save!
+      record = CheckoutApproverMutationLock.with(member_id: request.member_id) do
+        current = CheckoutApprover.find_or_initialize_by(member_id: request.member_id)
+        if current.new_record?
+          current.tool_ids = [request.tool_id.to_s]
+          current.save!
+        else
+          current.add_to_set(tool_ids: request.tool_id.to_s)
+        end
+        current
+      end
       request.update!(status: "approved", decision_note: note.presence, decided_at: Time.current)
       record
     end
-    notify_requestor(request)
+    CheckoutNotificationJob.enqueue("approver_volunteer_decision", request.id)
     approver
   end
 
@@ -37,23 +50,21 @@ class CheckoutApproverVolunteering
       authorize_decision!(request, actor)
       request.update!(status: "declined", decision_note: note.presence, decided_at: Time.current)
     end
-    notify_requestor(request)
+    CheckoutNotificationJob.enqueue("approver_volunteer_decision", request.id)
     request
   end
 
   def self.revoke_for!(member_id:, tool_id:)
     CheckoutApproverRequest.where(member_id: member_id, tool_id: tool_id, status: "open").update_all(status: "revoked")
-    approver = CheckoutApprover.find_by(member_id: member_id)
-    return unless approver
-    approver.tool_ids = Array(approver.tool_ids).reject { |id| id.to_s == tool_id.to_s }
-    if approver.tool_ids.empty? && Array(approver.shop_ids).empty?
-      approver.destroy!
-    else
-      approver.save!
+    CheckoutApproverMutationLock.with(member_id: member_id) do
+      approver = CheckoutApprover.find_by(member_id: member_id)
+      next unless approver
+      approver.pull(tool_ids: tool_id.to_s)
+      approver.destroy! if approver.tool_ids.empty? && Array(approver.shop_ids).empty?
     end
   end
 
-  def self.notify_resource_managers(request)
+  def self.deliver_request_notifications(request)
     Member.where(:role.in => %w[resource_manager admin board_member],
       :resource_manager_shop_ids.in => [request.tool.shop_id.to_s]).each do |manager|
       slack_id = SlackUser.find_by(member_id: manager.id)&.slack_id
@@ -74,7 +85,7 @@ class CheckoutApproverVolunteering
     raise Error::UnprocessableEntity.new("This volunteer request is no longer open") unless request.open?
   end
 
-  def self.notify_requestor(request)
+  def self.deliver_decision_notification(request)
     slack_id = SlackUser.find_by(member_id: request.member_id)&.slack_id
     return if slack_id.blank?
     status = request.status == "approved" ? "approved" : "declined"
@@ -99,5 +110,5 @@ class CheckoutApproverVolunteering
     member&.role.in?(%w[resource_manager admin board_member]) &&
       Array(member.resource_manager_shop_ids).map(&:to_s).include?(shop_id.to_s)
   end
-  private_class_method :notify_resource_managers, :notify_requestor, :authorize_decision!, :checkout_date, :member_join_date
+  private_class_method :authorize_decision!, :checkout_date, :member_join_date
 end

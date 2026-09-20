@@ -90,7 +90,7 @@ enter, but can only interact with tools allowing pending members.
 | `/checkout help` | Shows the commands available to the linked caller, including textual approval only for callers with approval authority. |
 
 Members with a checkout in the current shop are encouraged to volunteer as
-checkout approvers for tools they know well. The request accepts an optional note and is DM'd to each RM for
+checkout approvers for tools they know well. The request accepts an optional note and asynchronously DMs each RM for
 the containing shop with that note, the tool checkout date, and the member's join date and appears ahead of ordinary requests in that shop's **View
 open requests** list. An assigned shop RM, or an admin/board member tagged as a contact for that shop, may approve or decline it, with an optional decision note. Approval adds an
 individual-tool `CheckoutApprover` assignment. Either decision DMs the requester with the status and RM note. A resource manager (RM) is
@@ -189,7 +189,7 @@ When an additional checkout approver completes a checkout, the application
 silently creates an auto-approved `0.25` volunteer credit for that approver.
 This does not apply when the checkout is completed under admin, board-member,
 or RM authority, and it does not send the normal volunteer-credit award DM.
-The checkout retains the credit ID for auditing. If the checkout is later
+The credit also retains the checkout ID and the checkout retains the credit ID for idempotent recovery and auditing. If the checkout is later
 revoked, a silent `-0.25` reversal record offsets that exact credit and the
 original credit is marked reversed. If the original credit contributed to a Braintree discount, the normal treasurer review notification is retained even though the member-facing reversal DM remains suppressed.
 

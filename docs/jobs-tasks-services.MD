@@ -63,7 +63,10 @@ excluded. Long messages direct the user to the portal instead of exceeding Slack
 limits. Its result is delivered by `SlackCheckoutOutcomeJob`.
 
 `CheckoutNotificationJob` runs on the `slack` queue for modal mutations. It takes
-only an action (`request`, `approval`, or `cancellation`) and persisted record ID.
+an action (`request`, `approval`, `cancellation`, `approver_volunteer`, or
+`approver_volunteer_decision`) and persisted record ID. Approver-volunteer
+actions deliver shop-reviewer DMs and requester decision DMs after Slack has
+acknowledged the interaction.
 The modal saves the mutation under the existing lock, closes the selected request
 for approvals, and enqueues side effects before clearing. Request announcements,
 cancellation announcement updates, users-channel invitations, checkout DMs,

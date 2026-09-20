@@ -6,6 +6,11 @@ RSpec.describe CheckoutApproverCredit do
   let(:member) { create(:member, :current) }
   let(:approver) { create(:member, :current) }
 
+  before do
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
+  end
+
   it "silently awards 0.25 approved credits to an additional approver" do
     CheckoutApprover.create!(member: approver, tool_ids: [tool.id.to_s])
     checkout = create(:tool_checkout, member: member, tool: tool, approved_by: approver)
@@ -14,7 +19,18 @@ RSpec.describe CheckoutApproverCredit do
     credit = described_class.award!(checkout)
 
     expect(credit).to have_attributes(member_id: approver.id, issued_by_id: approver.id,
-      credit_value: 0.25, status: "approved")
+      credit_value: 0.25, status: "approved", tool_checkout_id: checkout.id)
+    expect(checkout.reload.volunteer_credit_id).to eq(credit.id)
+  end
+
+
+  it "recovers the checkout link without creating a duplicate credit" do
+    CheckoutApprover.create!(member: approver, tool_ids: [tool.id.to_s])
+    checkout = create(:tool_checkout, member: member, tool: tool, approved_by: approver)
+    credit = described_class.award!(checkout)
+    checkout.unset(:volunteer_credit_id)
+
+    expect { described_class.award!(checkout.reload) }.not_to change(VolunteerCredit, :count)
     expect(checkout.reload.volunteer_credit_id).to eq(credit.id)
   end
 

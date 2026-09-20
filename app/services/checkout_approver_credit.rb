@@ -8,19 +8,20 @@ class CheckoutApproverCredit
     return unless additional_approver?(actor, checkout.tool)
     return if checkout.volunteer_credit_id.present?
 
-    credit = VolunteerCredit.create!(
-      member_id: actor.id,
-      issued_by_id: actor.id,
-      description: "Completed checkout for #{checkout.member.fullname} on #{checkout.tool.name}",
-      credit_value: VALUE,
-      status: "approved"
-    )
+    credit = VolunteerCredit.find_or_create_by!(tool_checkout_id: checkout.id) do |row|
+      row.member_id = actor.id
+      row.issued_by_id = actor.id
+      row.description = "Completed checkout for #{checkout.member.fullname} on #{checkout.tool.name}"
+      row.credit_value = VALUE
+      row.status = "approved"
+    end
     checkout.set(volunteer_credit_id: credit.id)
     credit
   end
 
   def self.reverse!(checkout)
-    credit = VolunteerCredit.find_by(id: checkout.volunteer_credit_id)
+    credit = VolunteerCredit.find_by(id: checkout.volunteer_credit_id) ||
+      VolunteerCredit.find_by(tool_checkout_id: checkout.id)
     return unless credit&.status == "approved" && !credit.reversed
 
     now = Time.current

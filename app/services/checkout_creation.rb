@@ -20,13 +20,14 @@ class CheckoutCreation
       end
       error = ToolCheckoutRequestEligibility.new(member: member, tool: tool, open_request_tool_ids: []).error
       raise Error::UnprocessableEntity.new(error) if error
-      ToolCheckout.create!(member: member, tool: tool, approved_by: actor,
+      checkout = ToolCheckout.create!(member: member, tool: tool, approved_by: actor,
         signed_off_via: source, checked_out_at: Time.current, checkout_request_id: request&.id,
         defer_users_channel_invitation: defer_notifications)
+      # The checkout is authoritative. Credit persistence is idempotent and
+      # best-effort, but runs before this lock can admit a revocation.
+      notify { CheckoutApproverCredit.award!(checkout) }
+      checkout
     end
-    # This credit is deliberately silent: it is operational compensation for
-    # an additional approver, not a member-submitted volunteer-credit event.
-    CheckoutApproverCredit.award!(checkout)
     if defer_notifications
       CheckoutNotificationJob.enqueue("approval", checkout.id)
     else

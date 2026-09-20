@@ -34,6 +34,18 @@ RSpec.describe CheckoutCreation do
       member_id: actor.id, credit_value: 0.25, status: "approved")
   end
 
+  it "does not report a completed checkout as failed when credit persistence fails" do
+    actor.update!(role: "member")
+    CheckoutApprover.create!(member: actor, tool_ids: [tool.id.to_s])
+    allow(CheckoutApproverCredit).to receive(:award!).and_raise(StandardError)
+
+    checkout = create_checkout
+
+    expect(checkout).to be_persisted
+    expect(Service::ErrorReporter).to have_received(:notify).with(
+      "Checkout notification failed", context: { error_class: "StandardError" })
+  end
+
   it "rejects unmet and revoked prerequisites, then accepts a valid prerequisite" do
     prerequisite = create(:tool)
     tool.update!(prerequisite_ids: [prerequisite.id.to_s])

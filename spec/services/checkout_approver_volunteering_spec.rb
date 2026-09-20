@@ -20,6 +20,8 @@ RSpec.describe CheckoutApproverVolunteering do
 
     expect(request).to be_open
     expect(request.note).to eq("Happy to help")
+    expect(CheckoutNotificationJob).to have_been_enqueued.with("approver_volunteer", request.id.to_s)
+    described_class.deliver_request_notifications(request)
     expect(Service::SlackConnector).to have_received(:send_slack_message)
       .with(include(member.fullname, tool.name, "Happy to help", "2026-04-05", "2024-02-03"), "URM")
   end
@@ -35,6 +37,8 @@ RSpec.describe CheckoutApproverVolunteering do
     allow(Service::SlackConnector).to receive(:send_slack_message)
 
     request = described_class.create!(member: member, tool: tool)
+
+    described_class.deliver_request_notifications(request)
 
     contacts.each do |contact|
       expect(Service::SlackConnector).to have_received(:send_slack_message).with(include(tool.name), "U#{contact.role.upcase}")
@@ -55,6 +59,8 @@ RSpec.describe CheckoutApproverVolunteering do
 
     expect(CheckoutApprover.find_by(member_id: member.id)).to be_can_approve_tool(tool)
     expect(request.reload).to have_attributes(status: "approved", decision_note: "Welcome aboard")
+    expect(CheckoutNotificationJob).to have_been_enqueued.with("approver_volunteer_decision", request.id.to_s)
+    described_class.deliver_decision_notification(request)
     expect(Service::SlackConnector).to have_received(:send_slack_message)
       .with(include("approved", "Welcome aboard"), "UVOLUNTEER")
   end
@@ -69,8 +75,40 @@ RSpec.describe CheckoutApproverVolunteering do
 
     expect(request.reload).to have_attributes(status: "declined", decision_note: "More experience needed")
     expect(CheckoutApprover.where(member_id: member.id)).to be_empty
+    expect(CheckoutNotificationJob).to have_been_enqueued.with("approver_volunteer_decision", request.id.to_s)
+    described_class.deliver_decision_notification(request)
     expect(Service::SlackConnector).to have_received(:send_slack_message)
       .with(include("declined", "More experience needed"), "UVOLUNTEER")
+  end
+
+  it "serializes creation with checkout revocation" do
+    request = described_class.create!(member: member, tool: tool)
+
+    expect(request).to be_open
+    expect(REDIS).to have_received(:set).with(
+      "checkout_request_lock/#{member.id}/#{tool.id}", anything, nx: true, ex: 30)
+  end
+
+  it "rechecks volunteer membership before granting access" do
+    manager = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+    request = CheckoutApproverRequest.create!(member: member, tool: tool)
+    member.update!(status: "suspended")
+
+    expect { described_class.approve!(request: request, actor: manager) }
+      .to raise_error(Error::UnprocessableEntity, /membership is no longer eligible/)
+    expect(CheckoutApprover.where(member_id: member.id)).to be_empty
+  end
+
+  it "serializes approver assignments per member across different tools" do
+    manager = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+    other_tool = create(:tool, shop: shop)
+    create(:tool_checkout, member: member, tool: other_tool)
+    requests = [tool, other_tool].map { |row| CheckoutApproverRequest.create!(member: member, tool: row) }
+
+    requests.each { |request| described_class.approve!(request: request, actor: manager) }
+
+    expect(CheckoutApprover.find_by(member_id: member.id).tool_ids.map(&:to_s)).to contain_exactly(tool.id.to_s, other_tool.id.to_s)
+    expect(REDIS).to have_received(:set).with("checkout_approver_lock/#{member.id}", anything, nx: true, ex: 30).twice
   end
 
   it "rechecks request state under the decision lock before granting access" do
