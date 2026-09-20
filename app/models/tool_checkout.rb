@@ -8,6 +8,7 @@ class ToolCheckout
   field :revocation_reason, type: String  # internal only — not shown to member
   field :signed_off_via, type: String, default: "portal"  # "portal" or "slack"
   field :volunteer_credit_id, type: BSON::ObjectId
+  field :revocation_cleanup_pending, type: Boolean, default: false
 
   belongs_to :member
   belongs_to :tool
@@ -22,7 +23,7 @@ class ToolCheckout
   after_create :close_open_request
   after_create :invite_member_to_users_channel, unless: :defer_users_channel_invitation
   after_create :enqueue_checkout_canvas_sync
-  after_update :complete_revocation_cleanup, if: :newly_revoked?
+  after_update :complete_revocation_cleanup, if: :revocation_cleanup_required?
   after_update :enqueue_checkout_canvas_sync_after_revocation
 
   def active?
@@ -33,14 +34,19 @@ class ToolCheckout
     previous_changes.key?("revoked_at") && previous_changes["revoked_at"].first.nil? && revoked_at.present?
   end
 
+  def revocation_cleanup_required?
+    revoked_at.present? && (newly_revoked? || revocation_cleanup_pending?)
+  end
+
   def complete_revocation_cleanup
+    # Persist the recovery marker before beginning any multi-document cleanup.
+    # Every step below is retry-safe, so a later update can resume after any
+    # partial failure without temporarily making the checkout active again.
+    set(revocation_cleanup_pending: true) unless revocation_cleanup_pending?
     CheckoutApproverVolunteering.revoke_for!(member_id: member_id, tool_id: tool_id)
     CheckoutApproverCredit.reverse!(self)
-  rescue
-    # Mongoid does not roll back a persisted update when an after_update
-    # callback fails. Restore the transition so the caller can retry it.
-    unset(:revoked_at)
-    raise
+    unset(:revocation_cleanup_pending)
+    @completed_revocation_cleanup = true
   end
 
   # Notify member via Slack DM when checked out
@@ -193,7 +199,7 @@ class ToolCheckout
   end
 
   def enqueue_checkout_canvas_sync_after_revocation
-    return unless previous_changes.key?("revoked_at")
+    return unless previous_changes.key?("revoked_at") || @completed_revocation_cleanup
 
     action = revoked_at.present? ? "remove" : "add"
     ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s, id.to_s, action)

@@ -12,7 +12,7 @@ RSpec.describe ToolCheckout do
     expect(CheckoutApproverCredit).not_to have_received(:reverse!)
   end
 
-  it "restores the revocation transition when synchronous cleanup fails" do
+  it "preserves a durable pending cleanup marker when synchronous cleanup fails" do
     checkout = create(:tool_checkout)
     allow(CheckoutApproverVolunteering).to receive(:revoke_for!)
       .and_raise(Error::UnprocessableEntity.new("busy"))
@@ -21,6 +21,28 @@ RSpec.describe ToolCheckout do
       checkout.update!(revoked_at: Time.current)
     }.to raise_error(Error::UnprocessableEntity, "busy")
 
-    expect(checkout.reload.revoked_at).to be_nil
+    expect(checkout.reload.revoked_at).to be_present
+    expect(checkout).to be_revocation_cleanup_pending
+  end
+
+  it "resumes partial cleanup on a later update and clears the pending marker" do
+    checkout = create(:tool_checkout)
+    calls = 0
+    allow(CheckoutApproverVolunteering).to receive(:revoke_for!) do
+      calls += 1
+      raise Error::UnprocessableEntity.new("busy") if calls == 1
+    end
+    allow(CheckoutApproverCredit).to receive(:reverse!)
+
+    expect { checkout.update!(revoked_at: Time.current) }
+      .to raise_error(Error::UnprocessableEntity, "busy")
+
+    expect {
+      checkout.reload.update!(revocation_reason: "Retry cleanup")
+    }.to have_enqueued_job(ToolCheckoutSlackCanvasSyncJob).with(
+      checkout.tool.shop_id.to_s, checkout.id.to_s, "remove"
+    )
+    expect(checkout.reload).not_to be_revocation_cleanup_pending
+    expect(CheckoutApproverCredit).to have_received(:reverse!).with(checkout)
   end
 end
