@@ -1,3 +1,5 @@
+require "digest"
+
 # Awards and reverses the silent credit attached to a checkout completed by an
 # ordinary, individually assigned checkout approver.
 class CheckoutApproverCredit
@@ -25,7 +27,8 @@ class CheckoutApproverCredit
     return unless credit&.status == "approved" && !credit.reversed
 
     now = Time.current
-    VolunteerCredit.create!(
+    reversal = VolunteerCredit.find_or_initialize_by(id: reversal_id_for(credit))
+    reversal.assign_attributes(
       member_id: credit.member_id,
       issued_by_id: credit.issued_by_id,
       description: "Reversal: #{credit.description}",
@@ -37,6 +40,7 @@ class CheckoutApproverCredit
       reversed_at: now,
       earned_while_em_active: credit.earned_while_em_active
     )
+    reversal.save! if reversal.new_record?
     credit.update!(reversed: true, reversed_by_id: credit.issued_by_id, reversed_at: now)
     if credit.discount_applied
       reversed_by = Member.find_by(id: credit.issued_by_id)
@@ -50,5 +54,13 @@ class CheckoutApproverCredit
 
     CheckoutApprover.find_by(member_id: actor.id)&.can_approve_tool?(tool) || false
   end
-  private_class_method :additional_approver?
+
+  # The deterministic ObjectId makes the reversal insert uniquely keyed by the
+  # original credit. If a failure occurs before the original is marked reversed,
+  # a retry reuses the already-persisted offset instead of creating another one.
+  def self.reversal_id_for(credit)
+    digest = Digest::SHA256.hexdigest("checkout-approver-credit-reversal/#{credit.id}")
+    BSON::ObjectId.from_string(digest.first(24))
+  end
+  private_class_method :additional_approver?, :reversal_id_for
 end

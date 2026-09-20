@@ -62,6 +62,27 @@ RSpec.describe CheckoutApproverCredit do
     expect(credit.reload).to be_reversed
   end
 
+  it "reuses the same reversal after the original-credit update fails" do
+    CheckoutApprover.create!(member: approver, tool_ids: [tool.id.to_s])
+    checkout = create(:tool_checkout, member: member, tool: tool, approved_by: approver)
+    credit = described_class.award!(checkout)
+    failed_once = false
+    allow_any_instance_of(VolunteerCredit).to receive(:update!).and_wrap_original do |method, *args|
+      if method.receiver.id == credit.id && !failed_once
+        failed_once = true
+        raise StandardError, "original update failed"
+      end
+      method.call(*args)
+    end
+
+    expect { described_class.reverse!(checkout) }.to raise_error(StandardError, "original update failed")
+    expect { described_class.reverse!(checkout) }.not_to change {
+      VolunteerCredit.where(reversal_of_id: credit.id).count
+    }
+    expect(VolunteerCredit.where(reversal_of_id: credit.id).count).to eq(1)
+    expect(credit.reload).to be_reversed
+  end
+
   it "preserves treasurer review for a reversed credit that funded a discount" do
     CheckoutApprover.create!(member: approver, tool_ids: [tool.id.to_s])
     checkout = create(:tool_checkout, member: member, tool: tool, approved_by: approver)

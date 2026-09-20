@@ -136,9 +136,7 @@ RSpec.describe CheckoutApproverVolunteering do
     CheckoutApprover.create!(member: member, tool_ids: [tool.id.to_s])
     request = CheckoutApproverRequest.create!(member: member, tool: tool)
 
-    perform_enqueued_jobs(only: ToolCheckoutRevocationCleanupJob) do
-      checkout.update!(revoked_at: Time.current)
-    end
+    checkout.update!(revoked_at: Time.current)
 
     expect(CheckoutApprover.where(member_id: member.id)).to be_empty
     expect(request.reload.status).to eq("revoked")

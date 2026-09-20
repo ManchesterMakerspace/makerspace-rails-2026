@@ -22,8 +22,8 @@ class ToolCheckout
   after_create :close_open_request
   after_create :invite_member_to_users_channel, unless: :defer_users_channel_invitation
   after_create :enqueue_checkout_canvas_sync
+  after_update :complete_revocation_cleanup, if: :newly_revoked?
   after_update :enqueue_checkout_canvas_sync_after_revocation
-  after_update :enqueue_revocation_cleanup, if: :newly_revoked?
 
   def active?
     revoked_at.nil?
@@ -33,8 +33,14 @@ class ToolCheckout
     previous_changes.key?("revoked_at") && previous_changes["revoked_at"].first.nil? && revoked_at.present?
   end
 
-  def enqueue_revocation_cleanup
-    ToolCheckoutRevocationCleanupJob.perform_later(id.to_s)
+  def complete_revocation_cleanup
+    CheckoutApproverVolunteering.revoke_for!(member_id: member_id, tool_id: tool_id)
+    CheckoutApproverCredit.reverse!(self)
+  rescue
+    # Mongoid does not roll back a persisted update when an after_update
+    # callback fails. Restore the transition so the caller can retry it.
+    unset(:revoked_at)
+    raise
   end
 
   # Notify member via Slack DM when checked out
