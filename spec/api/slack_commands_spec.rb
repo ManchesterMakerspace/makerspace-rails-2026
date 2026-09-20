@@ -75,7 +75,7 @@ describe "Slack commands API", type: :request do
             allow(Service::SlackConnector).to receive(:open_modal)
           end
 
-          it "opens the three-option menu with the configured shop fixed" do
+          it "opens the four-option menu with the configured shop fixed" do
             post "/slack/commands/checkout", params: command_details.merge(text: "", trigger_id: "TOPEN")
             expect(response.parsed_body).to eq("response_type" => "ephemeral", "text" => "Opening checkout menu...")
             expect(Service::SlackConnector).to have_received(:open_modal) do |trigger, view|
@@ -83,7 +83,7 @@ describe "Slack commands API", type: :request do
               expect(view[:callback_id]).to eq("checkout_modal")
               menu = view[:blocks].find { |block| block[:block_id] == "checkout_menu" }
               expect(menu.dig(:accessory, :options).map { |option| option.dig(:text, :text) }).to eq(
-                ["View my checkouts", "Request a checkout", "View open requests"])
+                ["View my checkouts", "Request a checkout", "Volunteer to do checkouts", "View open requests"])
               expect(view[:blocks].none? { |block| block[:block_id] == "checkout_shop" }).to be(true)
               expect(SlackCheckoutModal.decode_metadata(view[:private_metadata])).to include("shop_id" => shop.id.to_s)
             end
