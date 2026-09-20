@@ -31,7 +31,7 @@ class ToolCheckout
   end
 
   def newly_revoked?
-    previous_changes["revoked_at"]&.first.nil? && revoked_at.present?
+    previous_changes.key?("revoked_at") && previous_changes["revoked_at"].first.nil? && revoked_at.present?
   end
 
   def revoke_checkout_approver_access

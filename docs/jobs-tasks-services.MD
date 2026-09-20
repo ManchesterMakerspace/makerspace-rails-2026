@@ -51,7 +51,11 @@ state are rechecked under the shared per-member/tool lock. `ToolCheckout` closes
 the selected request in its callback and retains users-channel invitations;
 notifications and audit logging are best effort after creation.
 
-`SlackCheckoutActiveJob` keeps `/checkout active [all]` as a compatibility alias.
+`SlackCheckoutActiveJob` serves `/checkout active [all]` and its `/checkout list
+[all]` alias. In a configured shop channel, the command without `all` lists
+that shop and omits the redundant shop-name line. With `all`, or when Slack's
+channel cannot be resolved to a shop, it lists checkouts across enabled shops
+and includes each shop name.
 It uses `CheckoutInteractionQuery.listed_active_checkouts` and `CheckoutDisplay`,
 the same availability, alphabetical sorting, bulk association loading and detail
 content policy as the modal. Disabled resources and revoked checkouts are

@@ -15,21 +15,28 @@ class CheckoutApproverVolunteering
   end
 
   def self.approve!(request:, actor:, note: nil)
-    authorize_decision!(request, actor)
-    raise Error::UnprocessableEntity.new("The volunteer no longer has an active checkout") unless
-      ToolCheckout.where(member_id: request.member_id, tool_id: request.tool_id, revoked_at: nil).exists?
+    approver = CheckoutMutationLock.with(member_id: request.member_id, tool_id: request.tool_id) do
+      request.reload
+      authorize_decision!(request, actor)
+      raise Error::UnprocessableEntity.new("The volunteer no longer has an active checkout") unless
+        ToolCheckout.where(member_id: request.member_id, tool_id: request.tool_id, revoked_at: nil).exists?
 
-    approver = CheckoutApprover.find_or_initialize_by(member_id: request.member_id)
-    approver.tool_ids = (Array(approver.tool_ids).map(&:to_s) + [request.tool_id.to_s]).uniq
-    approver.save!
-    request.update!(status: "approved", decision_note: note.presence, decided_at: Time.current)
+      record = CheckoutApprover.find_or_initialize_by(member_id: request.member_id)
+      record.tool_ids = (Array(record.tool_ids).map(&:to_s) + [request.tool_id.to_s]).uniq
+      record.save!
+      request.update!(status: "approved", decision_note: note.presence, decided_at: Time.current)
+      record
+    end
     notify_requestor(request)
     approver
   end
 
   def self.decline!(request:, actor:, note: nil)
-    authorize_decision!(request, actor)
-    request.update!(status: "declined", decision_note: note.presence, decided_at: Time.current)
+    CheckoutMutationLock.with(member_id: request.member_id, tool_id: request.tool_id) do
+      request.reload
+      authorize_decision!(request, actor)
+      request.update!(status: "declined", decision_note: note.presence, decided_at: Time.current)
+    end
     notify_requestor(request)
     request
   end

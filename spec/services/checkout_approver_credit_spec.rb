@@ -45,4 +45,15 @@ RSpec.describe CheckoutApproverCredit do
     expect(reversal).to have_attributes(member_id: approver.id, credit_value: -0.25, status: "reversal")
     expect(credit.reload).to be_reversed
   end
+
+  it "preserves treasurer review for a reversed credit that funded a discount" do
+    CheckoutApprover.create!(member: approver, tool_ids: [tool.id.to_s])
+    checkout = create(:tool_checkout, member: member, tool: tool, approved_by: approver)
+    credit = described_class.award!(checkout)
+    credit.update!(discount_applied: true, discount_applied_at: Time.current)
+    expect_any_instance_of(VolunteerCredit).to receive(:notify_braintree_review_needed)
+      .with(approver, "Tool checkout revoked")
+
+    described_class.reverse!(checkout)
+  end
 end

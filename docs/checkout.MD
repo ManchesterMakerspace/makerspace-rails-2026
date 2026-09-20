@@ -94,7 +94,7 @@ checkout approvers for tools they know well. The request accepts an optional not
 the containing shop with that note, the tool checkout date, and the member's join date and appears ahead of ordinary requests in that shop's **View
 open requests** list. Only an assigned shop RM may approve or decline it, with an optional decision note. Approval adds an
 individual-tool `CheckoutApprover` assignment. Either decision DMs the requester with the status and RM note. A resource manager (RM) is
-implicitly an approver for every tool in each shop they manage.
+implicitly an approver for every tool in each shop they manage. Approval and decline are serialized with the same per-member/tool lock used by checkout mutations, and the request is reloaded under that lock. Concurrent RM decisions therefore cannot both apply or leave a declined request with approver access.
 
 ## Stateful Slack modal
 
@@ -191,7 +191,7 @@ This does not apply when the checkout is completed under admin, board-member,
 or RM authority, and it does not send the normal volunteer-credit award DM.
 The checkout retains the credit ID for auditing. If the checkout is later
 revoked, a silent `-0.25` reversal record offsets that exact credit and the
-original credit is marked reversed.
+original credit is marked reversed. If the original credit contributed to a Braintree discount, the normal treasurer review notification is retained even though the member-facing reversal DM remains suppressed.
 
 A member's active checkout list appends `:a:` to tools for which that member is
 an additional checkout approver. Tool details state either that the member is

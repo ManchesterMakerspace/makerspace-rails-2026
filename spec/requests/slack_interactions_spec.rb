@@ -207,7 +207,7 @@ RSpec.describe "Slack interactions", type: :request do
 
     it "supports every menu-first shop selection and back navigation without a shop" do
       tool
-      %w[active request_tools requests].each do |destination|
+      %w[active request_tools volunteer requests].each do |destination|
         start_modal(selected_shop: nil)
         interact(action: "checkout_menu_select", value: destination)
         expect(modal_step).to eq("shop_#{destination}")
@@ -216,6 +216,23 @@ RSpec.describe "Slack interactions", type: :request do
         interact(action: "checkout_menu_select", value: destination)
         interact(action: "checkout_shop_select", value: shop.id.to_s)
         expect(modal_step).to eq(destination)
+      end
+    end
+
+    it "retains a volunteer request when backing out of either RM decision" do
+      member.update!(role: "resource_manager", resource_manager_shop_ids: [shop.id.to_s])
+      volunteer = create(:member, :current)
+      create(:tool_checkout, member: volunteer, tool: tool)
+      request = CheckoutApproverRequest.create!(member: volunteer, tool: tool)
+
+      %w[checkout_approve_volunteer checkout_decline_volunteer].each do |decision|
+        start_modal
+        interact(action: "checkout_menu_select", value: "requests")
+        interact(action: "checkout_request_select", value: "volunteer:#{request.id}")
+        interact(action: decision)
+        interact(action: "checkout_back")
+        expect(modal_step).to eq("volunteer_detail")
+        expect(modal_metadata["record_id"]).to eq(request.id.to_s)
       end
     end
 

@@ -11,8 +11,8 @@ class SlackCheckoutWorkflow
   end
 
   BACK_STEPS = {
-    "active" => "menu", "requests" => "menu", "request_tools" => "menu",
-    "shop_active" => "menu", "shop_requests" => "menu", "shop_request_tools" => "menu",
+    "active" => "menu", "requests" => "menu", "request_tools" => "menu", "volunteer" => "menu",
+    "shop_active" => "menu", "shop_requests" => "menu", "shop_request_tools" => "menu", "shop_volunteer" => "menu",
     "request_new" => "request_tools", "request_detail" => "requests",
     "request_edit" => "request_detail", "request_cancel" => "request_detail",
     "request_approve" => "request_detail", "checkout_detail" => "active",
@@ -151,7 +151,7 @@ class SlackCheckoutWorkflow
     if id == SlackCheckoutModal::BACK
       target = BACK_STEPS[step]
       reject! unless target && action["block_id"] == "checkout_navigation"
-      @metadata.delete("record_id") unless target == "request_detail"
+      @metadata.delete("record_id") unless target.in?(%w[request_detail volunteer_detail])
       @metadata["step"] = target
     elsif id == "#{SlackCheckoutModal::SHOP}_select"
       reject! unless !@shop && (step == "menu" || step.start_with?("shop_")) && action["block_id"] == SlackCheckoutModal::SHOP

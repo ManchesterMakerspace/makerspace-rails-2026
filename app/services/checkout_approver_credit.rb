@@ -37,6 +37,10 @@ class CheckoutApproverCredit
       earned_while_em_active: credit.earned_while_em_active
     )
     credit.update!(reversed: true, reversed_by_id: credit.issued_by_id, reversed_at: now)
+    if credit.discount_applied
+      reversed_by = Member.find_by(id: credit.issued_by_id)
+      credit.send(:notify_braintree_review_needed, reversed_by, "Tool checkout revoked") if reversed_by
+    end
   end
 
   def self.additional_approver?(actor, tool)
