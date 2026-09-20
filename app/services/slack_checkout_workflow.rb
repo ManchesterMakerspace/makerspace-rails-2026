@@ -99,7 +99,8 @@ class SlackCheckoutWorkflow
       @volunteer_request = find_record(CheckoutApproverRequest, @metadata["record_id"])
       reject! unless @volunteer_request&.open?
       @tool = available_tool!(@volunteer_request.tool_id)
-      reject!("Only a resource manager for this shop can review volunteers.") unless @member.manages_shop?(@shop.id)
+      reject!("You are not authorized to review volunteers for this shop.") unless
+        CheckoutApproverVolunteering.reviewer?(@member, @shop.id)
     end
   end
 

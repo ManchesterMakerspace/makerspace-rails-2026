@@ -54,7 +54,8 @@ class CheckoutApproverVolunteering
   end
 
   def self.notify_resource_managers(request)
-    Member.where(:resource_manager_shop_ids.in => [request.tool.shop_id.to_s]).each do |manager|
+    Member.where(:role.in => %w[resource_manager admin board_member],
+      :resource_manager_shop_ids.in => [request.tool.shop_id.to_s]).each do |manager|
       slack_id = SlackUser.find_by(member_id: manager.id)&.slack_id
       next if slack_id.blank? || manager.direct_notifications_suppressed?
       Service::SlackConnector.send_slack_message(
@@ -69,7 +70,7 @@ class CheckoutApproverVolunteering
 
   def self.authorize_decision!(request, actor)
     raise Error::Forbidden.new("Only a resource manager for this shop can decide this request") unless
-      actor.manages_shop?(request.tool.shop_id)
+      reviewer?(actor, request.tool.shop_id)
     raise Error::UnprocessableEntity.new("This volunteer request is no longer open") unless request.open?
   end
 
@@ -93,6 +94,10 @@ class CheckoutApproverVolunteering
   def self.member_join_date(member)
     value = member.startDate
     value.respond_to?(:to_date) ? value.to_date.iso8601 : value.to_s.presence || "Unknown"
+  end
+  def self.reviewer?(member, shop_id)
+    member&.role.in?(%w[resource_manager admin board_member]) &&
+      Array(member.resource_manager_shop_ids).map(&:to_s).include?(shop_id.to_s)
   end
   private_class_method :notify_resource_managers, :notify_requestor, :authorize_decision!, :checkout_date, :member_join_date
 end

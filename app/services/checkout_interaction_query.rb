@@ -66,7 +66,7 @@ class CheckoutInteractionQuery
   end
 
   def visible_volunteer_requests
-    return CheckoutApproverRequest.none unless @shop && @member.manages_shop?(@shop.id)
+    return CheckoutApproverRequest.none unless @shop && CheckoutApproverVolunteering.reviewer?(@member, @shop.id)
     CheckoutApproverRequest.where(status: "open", :tool_id.in => tools.pluck(:id))
       .order_by(request_date: :asc, id: :asc).includes(:member, tool: :shop)
   end

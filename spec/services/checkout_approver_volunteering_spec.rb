@@ -24,6 +24,27 @@ RSpec.describe CheckoutApproverVolunteering do
       .with(include(member.fullname, tool.name, "Happy to help", "2026-04-05", "2024-02-03"), "URM")
   end
 
+  it "notifies and authorizes tagged admin and board shop contacts" do
+    contacts = %w[admin board_member].map do |role|
+      contact = create(:member, :current, role: role, resource_manager_shop_ids: [shop.id.to_s])
+      SlackUser.create!(member: contact, slack_id: "U#{role.upcase}", slack_email: contact.email)
+      contact
+    end
+    ordinary = create(:member, :current, resource_manager_shop_ids: [shop.id.to_s])
+    SlackUser.create!(member: ordinary, slack_id: "UORDINARY", slack_email: ordinary.email)
+    allow(Service::SlackConnector).to receive(:send_slack_message)
+
+    request = described_class.create!(member: member, tool: tool)
+
+    contacts.each do |contact|
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(include(tool.name), "U#{contact.role.upcase}")
+      expect(described_class.reviewer?(contact, shop.id)).to be(true)
+    end
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, "UORDINARY")
+    described_class.approve!(request: request, actor: contacts.first)
+    expect(request.reload.status).to eq("approved")
+  end
+
   it "allows the containing shop RM to approve with a note and DMs the requestor" do
     manager = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
     SlackUser.create!(member: member, slack_id: "UVOLUNTEER", slack_email: member.email)

@@ -20,7 +20,7 @@ describe "Slack interactions API", type: :request do
             type: :string,
             pattern: '"type"\s*:\s*"(view_submission|block_actions|view_closed)"',
             description: "JSON-encoded Slack interaction. Reservation views accept view_submission, " \
-              "view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Block actions include actions and current view state. Checkout field errors use checkout_note. Echo the opaque private_metadata unchanged; do not construct it from this example. Submissions supply view.state.values.checkout_note.checkout_note.value (optional string, maximum 128 characters). Menu values are active, request_tools, volunteer and requests; other selectors use persisted record IDs.",
+              "view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Block actions include actions and current view state. Checkout field errors use checkout_note. Echo the opaque private_metadata unchanged; do not construct it from this example. Submissions supply view.state.values.checkout_note.checkout_note.value (optional string, maximum 128 characters). Menu values are active, request_tools, volunteer and requests; checkout_request_select uses a persisted request ID for checkout requests or volunteer:<request_id> for volunteer rows; other selectors use persisted record IDs.",
             example: {
               type: "block_actions",
               user: { id: "U12345678" },

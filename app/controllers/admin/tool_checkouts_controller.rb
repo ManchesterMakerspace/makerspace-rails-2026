@@ -47,7 +47,14 @@ class Admin::ToolCheckoutsController < ApplicationController
     # Only allow updating revocation fields
     if update_params[:revoked_at] || update_params[:revocation_reason]
       was_active = @checkout.revoked_at.nil?
-      @checkout.update_attributes!(update_params)
+      if was_active && update_params[:revoked_at].present?
+        CheckoutMutationLock.with(member_id: @checkout.member_id, tool_id: @checkout.tool_id) do
+          @checkout.reload
+          @checkout.update_attributes!(update_params)
+        end
+      else
+        @checkout.update_attributes!(update_params)
+      end
       if was_active && @checkout.revoked_at.present?
         @checkout.send_revocation_slack_notification
         @checkout.send_approver_revocation_slack_notification(current_member)
@@ -60,10 +67,10 @@ class Admin::ToolCheckoutsController < ApplicationController
     reason = params[:revocation_reason].presence
     raise ::Error::UnprocessableEntity.new("Revocation reason is required") unless reason
 
-    @checkout.update_attributes!(
-      revoked_at: Time.now,
-      revocation_reason: reason
-    )
+    CheckoutMutationLock.with(member_id: @checkout.member_id, tool_id: @checkout.tool_id) do
+      @checkout.reload
+      @checkout.update_attributes!(revoked_at: Time.now, revocation_reason: reason)
+    end
     @checkout.send_revocation_slack_notification
     begin
       @checkout.send_approver_revocation_slack_notification(current_member)
