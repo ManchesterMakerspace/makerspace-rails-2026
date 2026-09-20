@@ -121,6 +121,14 @@ checkout continue to perform a complete canvas rebuild.
 Failure to enqueue an added checkout's canvas update is reported without changing
 the saved checkout or its closed request into a failed approval.
 
+`ToolCheckoutRevocationCleanupJob` runs after a checkout's `revoked_at` value is
+first persisted. It removes the member's tool-specific checkout-approver access,
+revokes open volunteer requests, and reverses any checkout-approver credit. The
+steps are idempotent, and failures (including contention on the member's approver
+record) retry with polynomial backoff up to five attempts. This keeps a persisted
+revocation repairable even when another tool's approval or revocation holds the
+same member-level mutation lock.
+
 Changing a tool's out-of-service (`disabled`) state enqueues
 `ReservationSlackCanvasSyncJob` for today and/or tomorrow when an active
 individual-tool reservation overlaps those dates. This keeps operational

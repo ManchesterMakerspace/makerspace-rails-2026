@@ -81,6 +81,17 @@ RSpec.describe CheckoutApproverVolunteering do
       .with(include("declined", "More experience needed"), "UVOLUNTEER")
   end
 
+  it "does not DM a volunteer whose direct notifications became suppressed" do
+    SlackUser.create!(member: member, slack_id: "UVOLUNTEER", slack_email: member.email)
+    request = CheckoutApproverRequest.create!(member: member, tool: tool, status: "approved")
+    member.update!(status: "suspended")
+    allow(Service::SlackConnector).to receive(:send_slack_message)
+
+    described_class.deliver_decision_notification(request)
+
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+  end
+
   it "serializes creation with checkout revocation" do
     request = described_class.create!(member: member, tool: tool)
 
@@ -125,7 +136,9 @@ RSpec.describe CheckoutApproverVolunteering do
     CheckoutApprover.create!(member: member, tool_ids: [tool.id.to_s])
     request = CheckoutApproverRequest.create!(member: member, tool: tool)
 
-    checkout.update!(revoked_at: Time.current)
+    perform_enqueued_jobs(only: ToolCheckoutRevocationCleanupJob) do
+      checkout.update!(revoked_at: Time.current)
+    end
 
     expect(CheckoutApprover.where(member_id: member.id)).to be_empty
     expect(request.reload.status).to eq("revoked")

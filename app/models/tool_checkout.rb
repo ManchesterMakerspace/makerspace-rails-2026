@@ -23,8 +23,7 @@ class ToolCheckout
   after_create :invite_member_to_users_channel, unless: :defer_users_channel_invitation
   after_create :enqueue_checkout_canvas_sync
   after_update :enqueue_checkout_canvas_sync_after_revocation
-  after_update :revoke_checkout_approver_access, if: :newly_revoked?
-  after_update :reverse_checkout_approver_credit, if: :newly_revoked?
+  after_update :enqueue_revocation_cleanup, if: :newly_revoked?
 
   def active?
     revoked_at.nil?
@@ -34,12 +33,8 @@ class ToolCheckout
     previous_changes.key?("revoked_at") && previous_changes["revoked_at"].first.nil? && revoked_at.present?
   end
 
-  def revoke_checkout_approver_access
-    CheckoutApproverVolunteering.revoke_for!(member_id: member_id, tool_id: tool_id)
-  end
-
-  def reverse_checkout_approver_credit
-    CheckoutApproverCredit.reverse!(self)
+  def enqueue_revocation_cleanup
+    ToolCheckoutRevocationCleanupJob.perform_later(id.to_s)
   end
 
   # Notify member via Slack DM when checked out
