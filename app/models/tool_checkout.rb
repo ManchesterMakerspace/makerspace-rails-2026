@@ -49,6 +49,28 @@ class ToolCheckout
     @completed_revocation_cleanup = true
   end
 
+  def retry_revocation_cleanup!
+    return unless revoked_at.present? && revocation_cleanup_pending?
+
+    complete_revocation_cleanup
+    enqueue_checkout_canvas_sync_after_revocation
+  end
+
+  def self.recover_pending_revocation_cleanups!
+    where(revocation_cleanup_pending: true, :revoked_at.ne => nil).each do |checkout|
+      checkout.retry_revocation_cleanup!
+    rescue => error
+      begin
+        Service::ErrorReporter.notify(error, context: {
+          phase: "recover checkout revocation cleanup",
+          checkout_id: checkout.id.to_s
+        })
+      rescue => report_error
+        Rails.logger.error("[CheckoutRevocationCleanup] reporting failed: #{report_error.class}")
+      end
+    end
+  end
+
   # Notify member via Slack DM when checked out
   def send_checkout_slack_notification
     slack_user = SlackUser.find_by(member_id: self.member_id)

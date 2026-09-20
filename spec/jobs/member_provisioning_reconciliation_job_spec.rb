@@ -2,6 +2,7 @@ require "rails_helper"
 
 RSpec.describe MemberProvisioningReconciliationJob, type: :job do
   before do
+    allow(ToolCheckout).to receive(:recover_pending_revocation_cleanups!)
     allow(Service::MemberProvisioning).to receive(:reconcile_all!)
     allow(SystemConfig).to receive(:record_run)
   end
@@ -9,6 +10,7 @@ RSpec.describe MemberProvisioningReconciliationJob, type: :job do
   it "runs the reconciliation sweep and records a successful automated-job run" do
     described_class.perform_now
 
+    expect(ToolCheckout).to have_received(:recover_pending_revocation_cleanups!)
     expect(Service::MemberProvisioning).to have_received(:reconcile_all!)
     expect(SystemConfig).to have_received(:record_run)
       .with("member_provisioning_reconciliation", success: true)

@@ -45,4 +45,18 @@ RSpec.describe ToolCheckout do
     expect(checkout.reload).not_to be_revocation_cleanup_pending
     expect(CheckoutApproverCredit).to have_received(:reverse!).with(checkout)
   end
+
+  it "automatically sweeps durable pending cleanup without another checkout update" do
+    checkout = create(:tool_checkout, revoked_at: Time.current, revocation_cleanup_pending: true)
+    allow(CheckoutApproverVolunteering).to receive(:revoke_for!)
+    allow(CheckoutApproverCredit).to receive(:reverse!)
+
+    expect {
+      described_class.recover_pending_revocation_cleanups!
+    }.to have_enqueued_job(ToolCheckoutSlackCanvasSyncJob).with(
+      checkout.tool.shop_id.to_s, checkout.id.to_s, "remove"
+    )
+
+    expect(checkout.reload).not_to be_revocation_cleanup_pending
+  end
 end
