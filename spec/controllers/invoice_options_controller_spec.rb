@@ -65,17 +65,15 @@ RSpec.describe InvoiceOptionsController, type: :controller do
   end
 
   describe "GET #signup" do
-    it "returns only enabled member subscription options with active promotions" do
+    it "returns enabled member options, recurring or one-time, with active promotions" do
       standard = create(:invoice_option, plan_id: "standard")
+      one_time = create(:invoice_option, plan_id: nil)
       future_promotion = create(
         :invoice_option,
         plan_id: "future-promotion",
         promotion_end_date: Time.utc(2026, 7, 28)
       )
       create(:invoice_option, plan_id: "disabled", disabled: true)
-      create(:invoice_option, plan_id: nil)
-      create(:invoice_option, plan_id: "")
-      create(:invoice_option, plan_id: "   ")
       create(:invoice_option, plan_id: "rental", resource_class: "rental")
       create(
         :invoice_option,
@@ -91,6 +89,7 @@ RSpec.describe InvoiceOptionsController, type: :controller do
       expect(response.media_type).to eq "application/json"
       expect(JSON.parse(response.body).pluck("id")).to contain_exactly(
         standard.id.to_s,
+        one_time.id.to_s,
         future_promotion.id.to_s
       )
     end
