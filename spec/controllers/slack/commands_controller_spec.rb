@@ -273,6 +273,26 @@ RSpec.describe Slack::CommandsController, type: :controller do
       expect(response).to have_http_status(200)
     end
 
+    it "shows textual approval help only when the caller currently has authority" do
+      approver = create(:checkout_approver, member: member, tool_ids: [tool.id.to_s])
+
+      body = { text: "help", user_id: "U123" }
+      sign_request!(body)
+      post :checkout, params: body
+      expect(response.parsed_body.fetch("text")).to include("/checkout @member tool")
+
+      member.update!(member_contract_signed_date: nil, resource_manager_shop_ids: [shop.id.to_s])
+      sign_request!(body)
+      post :checkout, params: body
+      expect(response.parsed_body.fetch("text")).not_to include("/checkout @member tool")
+
+      approver.destroy!
+      member.update!(role: "resource_manager", resource_manager_shop_ids: [])
+      sign_request!(body)
+      post :checkout, params: body
+      expect(response.parsed_body.fetch("text")).not_to include("/checkout @member tool")
+    end
+
     it "asks an unidentified caller to link their account" do
       sign_request!({ text: "" })
       post :checkout, params: { text: "" }

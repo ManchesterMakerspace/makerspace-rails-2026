@@ -47,10 +47,16 @@ class Admin::ToolCheckoutsController < ApplicationController
     # Only allow updating revocation fields
     if update_params[:revoked_at] || update_params[:revocation_reason]
       was_active = @checkout.revoked_at.nil?
-      @checkout.update_attributes!(update_params)
-      if was_active && @checkout.revoked_at.present?
-        @checkout.send_revocation_slack_notification
-        @checkout.send_approver_revocation_slack_notification(current_member)
+      if was_active && update_params[:revoked_at].present?
+        CheckoutApproverMutationLock.with(member_id: @checkout.member_id) do
+          CheckoutMutationLock.with(member_id: @checkout.member_id, tool_id: @checkout.tool_id) do
+            @checkout.reload
+            @checkout.approver_mutation_lock_held = true
+            @checkout.update_attributes!(update_params.merge(revoked_by_id: current_member.id))
+          end
+        end
+      else
+        @checkout.update_attributes!(update_params)
       end
     end
     render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
@@ -60,33 +66,13 @@ class Admin::ToolCheckoutsController < ApplicationController
     reason = params[:revocation_reason].presence
     raise ::Error::UnprocessableEntity.new("Revocation reason is required") unless reason
 
-    @checkout.update_attributes!(
-      revoked_at: Time.now,
-      revocation_reason: reason
-    )
-    @checkout.send_revocation_slack_notification
-    begin
-      @checkout.send_approver_revocation_slack_notification(current_member)
-    rescue => error
-      ::Service::ErrorReporter.notify(error, context: {
-        phase: 'notify original approver of checkout revocation',
-        checkout_id: @checkout.id.to_s
-      })
+    CheckoutApproverMutationLock.with(member_id: @checkout.member_id) do
+      CheckoutMutationLock.with(member_id: @checkout.member_id, tool_id: @checkout.tool_id) do
+        @checkout.reload
+        @checkout.approver_mutation_lock_held = true
+        @checkout.update_attributes!(revoked_at: Time.now, revocation_reason: reason, revoked_by_id: current_member.id)
+      end
     end
-    @checkout.remove_member_from_users_channel
-
-    ::Service::AuditLogger.log(
-      log_type:       'member',
-      event_type:     'tool_checkout_revoked',
-      resource_type:  'ToolCheckout',
-      resource_id:    @checkout.id,
-      actor:          current_member,
-      subject:        @checkout.member,
-      after_snapshot: { tool_id: @checkout.tool_id.to_s, revocation_reason: reason,
-                        shop_name: @checkout.tool.shop.name, tool_name: @checkout.tool.name },
-      message_details: "shop: #{@checkout.tool.shop.name}, tool: #{@checkout.tool.name}",
-      slack_channel:  ::Service::SlackConnector.logs_channel
-    )
 
     render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
   end

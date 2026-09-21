@@ -67,8 +67,8 @@ Command acknowledgements, help, and status lists are visible only to the
 caller. The request and approval workflows can additionally send the DMs and
 channel announcements described below.
 
-Bare `/checkout` opens the same three-choice menu for members and approvers:
-**View my checkouts**, **Request a checkout**, and **View open requests**. In a configured
+Bare `/checkout` opens the same four-choice menu for members and approvers:
+**View my checkouts**, **Request a checkout**, **Volunteer to do checkouts**, and **View open requests**. In a configured
 shop channel that shop is fixed for the entire modal session. Elsewhere the
 initial view offers enabled shops in case-insensitive alphabetical order; once
 chosen, the shop cannot be switched within that session. Close and reopen the
@@ -84,12 +84,17 @@ enter, but can only interact with tools allowing pending members.
 | `/checkout @member tool-name` | An authorized approver checks out the mentioned member on a tool in the current shop channel. An email address may replace the mention. |
 | `/checkout request` | In a shop channel, opens a request modal containing only eligible tools without an existing open request. Outside a shop channel, lists all of the caller's open requests across shops. |
 | `/checkout request tool-name` | Requests the named tool in the current shop channel after rechecking eligibility. |
-| `/checkout active` | In a shop channel, lists the caller's available active checkouts using the same alphabetical ordering and detail fields as the modal. Outside a shop channel, behaves like `active all`. |
+| `/checkout active` or `/checkout list` | In a shop channel, lists the caller's available active checkouts using the same alphabetical ordering and detail fields as the modal, without the redundant shop line. Outside a shop channel, behaves like `active all`. |
 | `/checkout active all` | Lists available active checkouts across enabled shops using the shared query and detail formatter. Each entry identifies its shop. |
+| `/checkout volunteer` | Opens the volunteer flow. A member in good standing may request approver access for any tool on which they have an active checkout. |
+| `/checkout help` | Shows the commands available to the linked caller, including textual approval only for callers with approval authority. |
 
 Members with a checkout in the current shop are encouraged to volunteer as
-checkout approvers for tools they know well. A resource manager (RM) is
-implicitly an approver for every tool in each shop they manage.
+checkout approvers for tools they know well. The request accepts an optional note and asynchronously DMs each RM for
+the containing shop with that note, the tool checkout date, and the member's join date and appears ahead of ordinary requests in that shop's **View
+open requests** list. An assigned shop RM, or an admin/board member tagged as a contact for that shop, may approve or decline it, with an optional decision note. Approval adds an
+individual-tool `CheckoutApprover` assignment. Either decision DMs the requester with the status and RM note. A resource manager (RM) is
+implicitly an approver for every tool in each shop they manage. Approval and decline are serialized with the same per-member/tool lock used by checkout mutations, and the request is reloaded under that lock. Concurrent reviewer decisions therefore cannot both apply or leave a declined request with approver access, and checkout revocation uses that same lock so it cannot race a grant.
 
 ## Stateful Slack modal
 
@@ -101,7 +106,8 @@ Stable selector block IDs are `checkout_menu`, `checkout_shop`, `checkout_tool`,
 `checkout_request`, and `checkout_checkout`; their action IDs append `_select`.
 The note input uses `checkout_note` for both IDs. The `checkout_actions` block
 contains `checkout_edit_note`, `checkout_cancel_request`, and
-`checkout_approve_request` buttons when authorized. `checkout_navigation`
+`checkout_approve_request` buttons when authorized, plus
+`checkout_approve_volunteer` for an RM reviewing a volunteer. `checkout_navigation`
 contains `checkout_back`.
 
 Private metadata is integrity-protected and expires after one hour. Its payload
@@ -179,6 +185,23 @@ assignments, an additional approver has no checkout authority. All creation path
 prerequisites and existing checkout records. Portal, textual Slack approvals and
 the modal all use `CheckoutCreation` under the same per-member/tool lock.
 
+When an additional checkout approver completes a checkout, the application
+silently creates an auto-approved `0.25` volunteer credit for that approver.
+This does not apply when the checkout is completed under admin, board-member,
+or RM authority, and it does not send the normal volunteer-credit award DM.
+The credit also retains the checkout ID and the checkout retains the credit ID for idempotent recovery and auditing. If the checkout is later
+revoked, a silent `-0.25` reversal record offsets that exact credit and the
+original credit is marked reversed. If the original credit contributed to a Braintree discount, the normal treasurer review notification is retained even though the member-facing reversal DM remains suppressed.
+
+A member's active checkout list appends `:a:` to tools for which that member is
+an additional checkout approver. Tool details state either that the member is
+an approver or that an approver volunteer request is pending. Non-reservable
+tools omit `Reservable: No`; reservable tools still show `Reservable: Yes`.
+
+Revoking a checkout also removes that member's individual approver assignment
+for the tool and marks open volunteer requests for that member/tool as revoked.
+Shop-wide assignments are not altered; an otherwise-empty approver record is removed.
+
 ## Slack notifications and announcements
 
 ### Requests
@@ -198,6 +221,13 @@ the modal all use `CheckoutCreation` under the same per-member/tool lock.
   timestamp. The retained message is updated to the final state, and a redundant
   late post is deleted rather than replacing the stored success timestamp. The submitting owner receives the asynchronous
   final outcome described below, with DM fallback if replacement fails.
+
+- Creating an approver volunteer request DMs every assigned RM for the tool's
+  shop, identifying the volunteer, tool, shop, optional note, checkout date, and
+  makerspace join date and directing the RM to **View open requests**. Suppressed or unlinked RM notifications are skipped, and a
+  delivery failure does not undo the saved request.
+- Approving or declining a volunteer request sends the requester a DM with the
+  resulting status and the RM's optional decision note.
 
 ### Approvals
 
@@ -237,7 +267,7 @@ and tools in the chosen shop; available tools are ordered using case-insensitive
 collation. Tools and shops are loaded in bulk. Empty lists retain Go back.
 Details recheck ownership, shop and current activity before showing tool name,
 description, authorized notes, users channel, effective wiki URL, checkout date,
-and reservability, plus Go back. The date comes from `checked_out_at`. Modal fields are truncated to Block Kit limits; textual
+reservability when true, and approver or pending-volunteer status, plus Go back. The date comes from `checked_out_at`. Modal fields are truncated to Block Kit limits; textual
 responses escape user-controlled Slack formatting and bound message length.
 
 Final checkout outcomes use the original response URL asynchronously, replacing

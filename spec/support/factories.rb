@@ -454,6 +454,12 @@ FactoryBot.define do
     tool_ids { [] }
   end
 
+  factory :checkout_approver_request do
+    association :member
+    association :tool
+    status { "open" }
+  end
+
   factory :reservation do
     association :member
     association :shop

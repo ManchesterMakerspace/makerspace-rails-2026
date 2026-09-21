@@ -105,4 +105,16 @@ RSpec.describe CheckoutInteractionQuery do
     expect(query.visible_open_requests.map(&:id)).to eq([own.id, approved.id])
   end
 
+  it "shows volunteer requests to tagged admin and board shop contacts" do
+    tool = create(:tool, shop: shop)
+    volunteer = create(:member, :current)
+    create(:tool_checkout, member: volunteer, tool: tool)
+    request = CheckoutApproverRequest.create!(member: volunteer, tool: tool)
+
+    %w[admin board_member].each do |role|
+      member.update!(role: role, resource_manager_shop_ids: [shop.id.to_s])
+      expect(query.visible_volunteer_requests.map(&:id)).to eq([request.id])
+    end
+  end
+
 end

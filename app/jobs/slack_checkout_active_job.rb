@@ -14,9 +14,10 @@ class SlackCheckoutActiveJob < ApplicationJob
     return deliver(params, error) if error
     names = [params["channel_id"], params["channel_name"], Service::SlackChannelCache.normalize_name(params["channel_name"])].compact_blank
     shop = Shop.where(:slack_channel.in => names).first
-    shop = nil if params["text"].to_s.split(/\s+/)[1].to_s.casecmp("all").zero?
+    show_all = params["text"].to_s.split(/\s+/)[1].to_s.casecmp("all").zero? || shop.nil?
+    shop = nil if show_all
     rows = CheckoutInteractionQuery.new(member: member, shop: shop).listed_active_checkouts
-    deliver(params, CheckoutDisplay.text(rows))
+    deliver(params, CheckoutDisplay.text(rows, include_shop: show_all))
   rescue => error
     SlackCheckoutOutcomeJob.report("active checkouts", error_class: error.class.name)
     deliver(params, "Something went wrong looking up your active checkouts. Please use the Member Portal.")

@@ -7,11 +7,15 @@ class ToolCheckout
   field :revoked_at, type: Time
   field :revocation_reason, type: String  # internal only — not shown to member
   field :signed_off_via, type: String, default: "portal"  # "portal" or "slack"
+  field :volunteer_credit_id, type: BSON::ObjectId
+  field :revocation_cleanup_pending, type: Boolean, default: false
+  field :revoked_by_id, type: BSON::ObjectId
+  field :revocation_cleanup_completed_steps, type: Array, default: []
 
   belongs_to :member
   belongs_to :tool
   belongs_to :approved_by, class_name: "Member", optional: true
-  attr_accessor :checkout_request_id, :defer_users_channel_invitation
+  attr_accessor :checkout_request_id, :defer_users_channel_invitation, :approver_mutation_lock_held
 
   index({ member_id: 1, revoked_at: 1, tool_id: 1 })
 
@@ -21,10 +25,73 @@ class ToolCheckout
   after_create :close_open_request
   after_create :invite_member_to_users_channel, unless: :defer_users_channel_invitation
   after_create :enqueue_checkout_canvas_sync
+  before_update :mark_revocation_cleanup_pending
+  after_update :complete_revocation_cleanup, if: :revocation_cleanup_required?
   after_update :enqueue_checkout_canvas_sync_after_revocation
 
   def active?
     revoked_at.nil?
+  end
+
+  def newly_revoked?
+    previous_changes.key?("revoked_at") && previous_changes["revoked_at"].first.nil? && revoked_at.present?
+  end
+
+  def revocation_cleanup_required?
+    revoked_at.present? && (newly_revoked? || revocation_cleanup_pending?)
+  end
+
+  def mark_revocation_cleanup_pending
+    revocation_change = changes["revoked_at"]
+    return unless revocation_change && revocation_change.first.nil? && revocation_change.last.present?
+
+    self.revocation_cleanup_pending = true
+  end
+
+  def complete_revocation_cleanup
+    # The recovery marker was persisted in the same update as revoked_at.
+    # Every step below is retry-safe, so a sweep can resume any partial failure.
+    CheckoutApproverVolunteering.revoke_for!(member_id: member_id, tool_id: tool_id,
+      approver_lock_held: approver_mutation_lock_held)
+    CheckoutApproverCredit.reverse!(self)
+    complete_revocation_side_effects if revoked_by_id.present?
+    unset(:revocation_cleanup_pending)
+    @completed_revocation_cleanup = true
+  end
+
+  def retry_revocation_cleanup!
+    return unless revoked_at.present? && revocation_cleanup_pending?
+
+    complete_revocation_cleanup
+    enqueue_checkout_canvas_sync_after_revocation
+  end
+
+  def self.recover_pending_revocation_cleanups!
+    where(revocation_cleanup_pending: true, :revoked_at.ne => nil).each do |checkout|
+      checkout.retry_revocation_cleanup!
+    rescue => error
+      begin
+        Service::ErrorReporter.notify(error, context: {
+          phase: "recover checkout revocation cleanup",
+          checkout_id: checkout.id.to_s
+        })
+      rescue => report_error
+        Rails.logger.error("[CheckoutRevocationCleanup] reporting failed: #{report_error.class}")
+      end
+    end
+  end
+
+  def complete_revocation_side_effects
+    complete_revocation_step("member_notified") { send_revocation_slack_notification }
+    complete_revocation_step("approver_notified") do
+      send_approver_revocation_slack_notification(Member.find_by(id: revoked_by_id))
+    rescue => error
+      Service::ErrorReporter.notify(error, context: {
+        phase: "notify original approver of checkout revocation", checkout_id: id.to_s
+      })
+    end
+    complete_revocation_step("users_channel_removed") { remove_member_from_users_channel }
+    complete_revocation_step("audit_logged") { log_revocation_audit }
   end
 
   # Notify member via Slack DM when checked out
@@ -156,6 +223,29 @@ class ToolCheckout
 
   private
 
+  def complete_revocation_step(step)
+    return if Array(revocation_cleanup_completed_steps).include?(step)
+
+    yield
+    add_to_set(revocation_cleanup_completed_steps: step)
+  end
+
+  def log_revocation_audit
+    return if AuditLog.where(event_type: "tool_checkout_revoked", resource_id: id).exists?
+
+    actor = Member.find_by(id: revoked_by_id)
+    raise "Missing revocation actor for checkout #{id}" unless actor
+
+    ::Service::AuditLogger.log(
+      log_type: "member", event_type: "tool_checkout_revoked", resource_type: "ToolCheckout",
+      resource_id: id, actor: actor, subject: member,
+      after_snapshot: { tool_id: tool_id.to_s, revocation_reason: revocation_reason,
+                        shop_name: tool.shop.name, tool_name: tool.name },
+      message_details: "shop: #{tool.shop.name}, tool: #{tool.name}",
+      slack_channel: ::Service::SlackConnector.logs_channel
+    )
+  end
+
   def currently_approves_tool?(approver)
     approver.role.in?(%w[admin board_member]) || approver.manages_shop?(tool.shop_id) ||
       (!tool.disabled? && approver.valid_for_checkout_request? &&
@@ -177,7 +267,7 @@ class ToolCheckout
   end
 
   def enqueue_checkout_canvas_sync_after_revocation
-    return unless previous_changes.key?("revoked_at")
+    return unless previous_changes.key?("revoked_at") || @completed_revocation_cleanup
 
     action = revoked_at.present? ? "remove" : "add"
     ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s, id.to_s, action)

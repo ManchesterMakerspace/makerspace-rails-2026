@@ -24,6 +24,40 @@ RSpec.describe CheckoutCreation do
     expect(REDIS).to have_received(:set).with("checkout_request_lock/#{member.id}/#{tool.id}", anything, nx: true, ex: 30)
   end
 
+  it "awards a silent quarter credit when an additional approver completes a checkout" do
+    actor.update!(role: "member")
+    CheckoutApprover.create!(member: actor, tool_ids: [tool.id.to_s])
+
+    checkout = create_checkout
+
+    expect(VolunteerCredit.find(checkout.reload.volunteer_credit_id)).to have_attributes(
+      member_id: actor.id, credit_value: 0.25, status: "approved")
+  end
+
+  it "serializes and revalidates an additional approver's authority before insertion" do
+    actor.update!(role: "member")
+    assignment = CheckoutApprover.create!(member: actor, tool_ids: [tool.id.to_s])
+
+    expect { create_checkout { assignment.destroy! } }.to raise_error(Error::Forbidden)
+
+    expect(ToolCheckout.count).to eq(0)
+    expect(REDIS).to have_received(:set).with(
+      "checkout_approver_lock/#{actor.id}", anything, nx: true, ex: 30
+    )
+  end
+
+  it "does not report a completed checkout as failed when credit persistence fails" do
+    actor.update!(role: "member")
+    CheckoutApprover.create!(member: actor, tool_ids: [tool.id.to_s])
+    allow(CheckoutApproverCredit).to receive(:award!).and_raise(StandardError)
+
+    checkout = create_checkout
+
+    expect(checkout).to be_persisted
+    expect(Service::ErrorReporter).to have_received(:notify).with(
+      "Checkout notification failed", context: { error_class: "StandardError" })
+  end
+
   it "rejects unmet and revoked prerequisites, then accepts a valid prerequisite" do
     prerequisite = create(:tool)
     tool.update!(prerequisite_ids: [prerequisite.id.to_s])
