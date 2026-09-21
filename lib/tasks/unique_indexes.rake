@@ -224,5 +224,19 @@ namespace :data do
       collection.indexes.create_one(member_id: 1)
       puts "#{collection_name}.member_id: non-unique index enabled"
     end
+
+    # These constraints make the volunteer workflow's retry-safe writes
+    # enforceable by MongoDB rather than relying only on application checks.
+    [
+      [CheckoutApproverRequest, { member_id: 1, tool_id: 1, status: 1 }],
+      [VolunteerCredit, { tool_checkout_id: 1 }]
+    ].each do |model, key|
+      specification = model.index_specifications.find { |index| index.key.stringify_keys == key.stringify_keys }
+      raise "Missing unique index declaration on #{model.collection_name}: #{key}" unless specification
+      raise "Expected unique index on #{model.collection_name}: #{key}" unless specification.options[:unique]
+
+      model.collection.indexes.create_one(specification.key, specification.options)
+      puts "#{model.collection_name}: unique workflow index ensured (#{key.keys.join(', ')})"
+    end
   end
 end

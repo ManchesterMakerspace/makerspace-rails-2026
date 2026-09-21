@@ -132,6 +132,18 @@ RSpec.describe CheckoutApproverVolunteering do
     expect(CheckoutApprover.where(member_id: member.id)).to be_empty
   end
 
+  it "removes a newly granted assignment when recording approval fails" do
+    manager = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+    request = CheckoutApproverRequest.create!(member: member, tool: tool)
+    allow(request).to receive(:update!).and_raise(Mongo::Error::SocketError, "write failed")
+
+    expect { described_class.approve!(request: request, actor: manager) }
+      .to raise_error(Mongo::Error::SocketError, "write failed")
+
+    expect(CheckoutApprover.where(member_id: member.id)).to be_empty
+    expect(request.reload).to be_open
+  end
+
   it "revokes tool approver access and open requests when checkout is revoked" do
     CheckoutApprover.create!(member: member, tool_ids: [tool.id.to_s])
     request = CheckoutApproverRequest.create!(member: member, tool: tool)

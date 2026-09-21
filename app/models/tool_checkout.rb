@@ -9,6 +9,8 @@ class ToolCheckout
   field :signed_off_via, type: String, default: "portal"  # "portal" or "slack"
   field :volunteer_credit_id, type: BSON::ObjectId
   field :revocation_cleanup_pending, type: Boolean, default: false
+  field :revoked_by_id, type: BSON::ObjectId
+  field :revocation_cleanup_completed_steps, type: Array, default: []
 
   belongs_to :member
   belongs_to :tool
@@ -51,6 +53,7 @@ class ToolCheckout
     # Every step below is retry-safe, so a sweep can resume any partial failure.
     CheckoutApproverVolunteering.revoke_for!(member_id: member_id, tool_id: tool_id)
     CheckoutApproverCredit.reverse!(self)
+    complete_revocation_side_effects if revoked_by_id.present?
     unset(:revocation_cleanup_pending)
     @completed_revocation_cleanup = true
   end
@@ -75,6 +78,19 @@ class ToolCheckout
         Rails.logger.error("[CheckoutRevocationCleanup] reporting failed: #{report_error.class}")
       end
     end
+  end
+
+  def complete_revocation_side_effects
+    complete_revocation_step("member_notified") { send_revocation_slack_notification }
+    complete_revocation_step("approver_notified") do
+      send_approver_revocation_slack_notification(Member.find_by(id: revoked_by_id))
+    rescue => error
+      Service::ErrorReporter.notify(error, context: {
+        phase: "notify original approver of checkout revocation", checkout_id: id.to_s
+      })
+    end
+    complete_revocation_step("users_channel_removed") { remove_member_from_users_channel }
+    complete_revocation_step("audit_logged") { log_revocation_audit }
   end
 
   # Notify member via Slack DM when checked out
@@ -205,6 +221,29 @@ class ToolCheckout
   end
 
   private
+
+  def complete_revocation_step(step)
+    return if Array(revocation_cleanup_completed_steps).include?(step)
+
+    yield
+    add_to_set(revocation_cleanup_completed_steps: step)
+  end
+
+  def log_revocation_audit
+    return if AuditLog.where(event_type: "tool_checkout_revoked", resource_id: id).exists?
+
+    actor = Member.find_by(id: revoked_by_id)
+    raise "Missing revocation actor for checkout #{id}" unless actor
+
+    ::Service::AuditLogger.log(
+      log_type: "member", event_type: "tool_checkout_revoked", resource_type: "ToolCheckout",
+      resource_id: id, actor: actor, subject: member,
+      after_snapshot: { tool_id: tool_id.to_s, revocation_reason: revocation_reason,
+                        shop_name: tool.shop.name, tool_name: tool.name },
+      message_details: "shop: #{tool.shop.name}, tool: #{tool.name}",
+      slack_channel: ::Service::SlackConnector.logs_channel
+    )
+  end
 
   def currently_approves_tool?(approver)
     approver.role.in?(%w[admin board_member]) || approver.manages_shop?(tool.shop_id) ||

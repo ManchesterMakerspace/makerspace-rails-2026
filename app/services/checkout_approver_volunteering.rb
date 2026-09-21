@@ -29,15 +29,24 @@ class CheckoutApproverVolunteering
 
       record = CheckoutApproverMutationLock.with(member_id: request.member_id) do
         current = CheckoutApprover.find_or_initialize_by(member_id: request.member_id)
+        already_assigned = Array(current.tool_ids).map(&:to_s).include?(request.tool_id.to_s)
         if current.new_record?
           current.tool_ids = [request.tool_id.to_s]
           current.save!
         else
           current.add_to_set(tool_ids: request.tool_id.to_s)
         end
+        begin
+          request.update!(status: "approved", decision_note: note.presence, decided_at: Time.current)
+        rescue
+          unless already_assigned
+            current.pull(tool_ids: request.tool_id.to_s)
+            current.destroy! if current.tool_ids.empty? && Array(current.shop_ids).empty?
+          end
+          raise
+        end
         current
       end
-      request.update!(status: "approved", decision_note: note.presence, decided_at: Time.current)
       record
     end
     CheckoutNotificationJob.enqueue("approver_volunteer_decision", request.id)

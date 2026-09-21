@@ -27,6 +27,13 @@ rerun and never drops indexes or modifies documents. Unrelated legacy identity
 index conflicts do not block it; conflicts on one of its targets are
 reported as errors for operator review.
 
+`data:ensure_unique_indexes` runs in the release phase for both buildpack and
+container deployments. In addition to the core identity constraints, it installs
+the partial unique indexes that permit only one open checkout-approver request
+per member/tool and only one volunteer credit per tool checkout. Deployments stop
+for operator review when existing duplicate data prevents either constraint from
+being created.
+
 The Tool index keeps the equality-scoped shop and case-insensitive name ordering
 before the availability inequalities. A test-database `executionStats` comparison
 with 6,000 synthetic tools across ten shops returned the same 343 tools with both

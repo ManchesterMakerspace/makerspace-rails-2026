@@ -102,6 +102,26 @@ RSpec.describe 'data:ensure_unique_indexes' do
     end
   end
 
+  it 'creates the unique checkout volunteer workflow indexes' do
+    CheckoutApproverRequest.collection.drop
+    VolunteerCredit.collection.drop
+
+    expect { task.invoke }.not_to raise_error
+
+    request_index = CheckoutApproverRequest.collection.indexes.to_a.find do |index|
+      index.fetch('key', {}).keys == %w[member_id tool_id status]
+    end
+    credit_index = VolunteerCredit.collection.indexes.to_a.find do |index|
+      index.fetch('key', {}).keys == ['tool_checkout_id']
+    end
+    expect(request_index).to include('unique' => true)
+    expect(request_index.fetch('partialFilterExpression')).to eq('status' => 'open')
+    expect(credit_index).to include('unique' => true)
+    expect(credit_index.fetch('partialFilterExpression')).to eq(
+      'tool_checkout_id' => { '$type' => 'objectId' }
+    )
+  end
+
   it 'creates and recognizes a case-insensitive unique tool-name index scoped per shop' do
     Tool.delete_all
     shop_a_id = BSON::ObjectId.new

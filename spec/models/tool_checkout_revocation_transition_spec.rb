@@ -72,4 +72,26 @@ RSpec.describe ToolCheckout do
 
     expect(checkout.reload).not_to be_revocation_cleanup_pending
   end
+
+  it "recovers durable controller revocation side effects before clearing the marker" do
+    actor = create(:member, :admin, :current)
+    checkout = create(:tool_checkout, revoked_at: Time.current, revocation_reason: "Unsafe use",
+      revoked_by_id: actor.id, revocation_cleanup_pending: true)
+    allow(CheckoutApproverVolunteering).to receive(:revoke_for!)
+    allow(CheckoutApproverCredit).to receive(:reverse!)
+    allow(checkout).to receive(:send_revocation_slack_notification)
+    allow(checkout).to receive(:send_approver_revocation_slack_notification)
+    allow(checkout).to receive(:remove_member_from_users_channel)
+
+    checkout.retry_revocation_cleanup!
+
+    expect(checkout).to have_received(:send_revocation_slack_notification)
+    expect(checkout).to have_received(:send_approver_revocation_slack_notification).with(actor)
+    expect(checkout).to have_received(:remove_member_from_users_channel)
+    expect(AuditLog.where(event_type: "tool_checkout_revoked", resource_id: checkout.id)).to exist
+    expect(checkout.reload.revocation_cleanup_completed_steps).to contain_exactly(
+      "member_notified", "approver_notified", "users_channel_removed", "audit_logged"
+    )
+    expect(checkout).not_to be_revocation_cleanup_pending
+  end
 end
