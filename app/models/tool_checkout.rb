@@ -15,7 +15,7 @@ class ToolCheckout
   belongs_to :member
   belongs_to :tool
   belongs_to :approved_by, class_name: "Member", optional: true
-  attr_accessor :checkout_request_id, :defer_users_channel_invitation
+  attr_accessor :checkout_request_id, :defer_users_channel_invitation, :approver_mutation_lock_held
 
   index({ member_id: 1, revoked_at: 1, tool_id: 1 })
 
@@ -51,7 +51,8 @@ class ToolCheckout
   def complete_revocation_cleanup
     # The recovery marker was persisted in the same update as revoked_at.
     # Every step below is retry-safe, so a sweep can resume any partial failure.
-    CheckoutApproverVolunteering.revoke_for!(member_id: member_id, tool_id: tool_id)
+    CheckoutApproverVolunteering.revoke_for!(member_id: member_id, tool_id: tool_id,
+      approver_lock_held: approver_mutation_lock_held)
     CheckoutApproverCredit.reverse!(self)
     complete_revocation_side_effects if revoked_by_id.present?
     unset(:revocation_cleanup_pending)

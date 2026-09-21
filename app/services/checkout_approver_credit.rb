@@ -27,6 +27,8 @@ class CheckoutApproverCredit
     return unless credit&.status == "approved" && !credit.reversed
 
     now = Time.current
+    reversed_by = Member.find_by(id: checkout.revoked_by_id) || Member.find_by(id: credit.issued_by_id)
+    reversed_by_id = reversed_by&.id || credit.issued_by_id
     reversal = VolunteerCredit.find_or_initialize_by(id: reversal_id_for(credit))
     reversal.assign_attributes(
       member_id: credit.member_id,
@@ -36,14 +38,13 @@ class CheckoutApproverCredit
       status: "reversal",
       reversal_of_id: credit.id,
       reversal_reason: "Tool checkout revoked",
-      reversed_by_id: credit.issued_by_id,
+      reversed_by_id: reversed_by_id,
       reversed_at: now,
       earned_while_em_active: credit.earned_while_em_active
     )
     reversal.save! if reversal.new_record?
-    credit.update!(reversed: true, reversed_by_id: credit.issued_by_id, reversed_at: now)
+    credit.update!(reversed: true, reversed_by_id: reversed_by_id, reversed_at: now)
     if credit.discount_applied
-      reversed_by = Member.find_by(id: credit.issued_by_id)
       credit.send(:notify_braintree_review_needed, reversed_by, "Tool checkout revoked") if reversed_by
     end
   end

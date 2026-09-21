@@ -93,4 +93,20 @@ RSpec.describe CheckoutApproverCredit do
 
     described_class.reverse!(checkout)
   end
+
+  it "attributes reversal and treasurer review to the persisted revoking actor" do
+    revoker = create(:member, :current, :admin)
+    CheckoutApprover.create!(member: approver, tool_ids: [tool.id.to_s])
+    checkout = create(:tool_checkout, member: member, tool: tool, approved_by: approver,
+      revoked_by_id: revoker.id)
+    credit = described_class.award!(checkout)
+    credit.update!(discount_applied: true, discount_applied_at: Time.current)
+    expect_any_instance_of(VolunteerCredit).to receive(:notify_braintree_review_needed)
+      .with(revoker, "Tool checkout revoked")
+
+    described_class.reverse!(checkout)
+
+    expect(credit.reload.reversed_by_id).to eq(revoker.id)
+    expect(VolunteerCredit.find_by(reversal_of_id: credit.id).reversed_by_id).to eq(revoker.id)
+  end
 end

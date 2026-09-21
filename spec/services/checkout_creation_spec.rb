@@ -34,6 +34,18 @@ RSpec.describe CheckoutCreation do
       member_id: actor.id, credit_value: 0.25, status: "approved")
   end
 
+  it "serializes and revalidates an additional approver's authority before insertion" do
+    actor.update!(role: "member")
+    assignment = CheckoutApprover.create!(member: actor, tool_ids: [tool.id.to_s])
+
+    expect { create_checkout { assignment.destroy! } }.to raise_error(Error::Forbidden)
+
+    expect(ToolCheckout.count).to eq(0)
+    expect(REDIS).to have_received(:set).with(
+      "checkout_approver_lock/#{actor.id}", anything, nx: true, ex: 30
+    )
+  end
+
   it "does not report a completed checkout as failed when credit persistence fails" do
     actor.update!(role: "member")
     CheckoutApprover.create!(member: actor, tool_ids: [tool.id.to_s])

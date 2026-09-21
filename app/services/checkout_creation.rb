@@ -7,7 +7,29 @@ class CheckoutCreation
   end
 
   def self.create!(actor_id:, member_id:, tool_id:, shop_id:, source:, request_id: nil, defer_notifications: false)
-    checkout = CheckoutMutationLock.with(member_id: member_id, tool_id: tool_id) do
+    actor = Member.find_by(id: actor_id)
+    tool = Tool.find_by(id: tool_id)
+    create_checkout = -> do
+      create_under_checkout_lock(actor_id: actor_id, member_id: member_id, tool_id: tool_id,
+        shop_id: shop_id, source: source, request_id: request_id,
+        defer_notifications: defer_notifications) { yield if block_given? }
+    end
+    checkout = if additional_approver_authority_required?(actor, tool)
+      CheckoutApproverMutationLock.with(member_id: actor_id, &create_checkout)
+    else
+      create_checkout.call
+    end
+    if defer_notifications
+      CheckoutNotificationJob.enqueue("approval", checkout.id)
+    else
+      deliver_notifications(checkout)
+    end
+    checkout
+  end
+
+  def self.create_under_checkout_lock(actor_id:, member_id:, tool_id:, shop_id:, source:, request_id:,
+    defer_notifications:)
+    CheckoutMutationLock.with(member_id: member_id, tool_id: tool_id) do
       yield if block_given? # Recheck the initiating Slack identity under the same lock.
       actor = Member.find_by(id: actor_id)
       member = Member.find_by(id: member_id)
@@ -28,12 +50,6 @@ class CheckoutCreation
       notify { CheckoutApproverCredit.award!(checkout) }
       checkout
     end
-    if defer_notifications
-      CheckoutNotificationJob.enqueue("approval", checkout.id)
-    else
-      deliver_notifications(checkout)
-    end
-    checkout
   end
 
   def self.deliver_notifications(checkout, invite: false)
@@ -63,4 +79,9 @@ class CheckoutCreation
       Rails.logger.warn("[Checkout] notification reporting failed")
     end
   end
+
+  def self.additional_approver_authority_required?(actor, tool)
+    actor && tool && !actor.role.in?(%w[admin board_member]) && !actor.manages_shop?(tool.shop_id)
+  end
+  private_class_method :create_under_checkout_lock, :additional_approver_authority_required?
 end

@@ -48,9 +48,12 @@ class Admin::ToolCheckoutsController < ApplicationController
     if update_params[:revoked_at] || update_params[:revocation_reason]
       was_active = @checkout.revoked_at.nil?
       if was_active && update_params[:revoked_at].present?
-        CheckoutMutationLock.with(member_id: @checkout.member_id, tool_id: @checkout.tool_id) do
-          @checkout.reload
-          @checkout.update_attributes!(update_params.merge(revoked_by_id: current_member.id))
+        CheckoutApproverMutationLock.with(member_id: @checkout.member_id) do
+          CheckoutMutationLock.with(member_id: @checkout.member_id, tool_id: @checkout.tool_id) do
+            @checkout.reload
+            @checkout.approver_mutation_lock_held = true
+            @checkout.update_attributes!(update_params.merge(revoked_by_id: current_member.id))
+          end
         end
       else
         @checkout.update_attributes!(update_params)
@@ -63,9 +66,12 @@ class Admin::ToolCheckoutsController < ApplicationController
     reason = params[:revocation_reason].presence
     raise ::Error::UnprocessableEntity.new("Revocation reason is required") unless reason
 
-    CheckoutMutationLock.with(member_id: @checkout.member_id, tool_id: @checkout.tool_id) do
-      @checkout.reload
-      @checkout.update_attributes!(revoked_at: Time.now, revocation_reason: reason, revoked_by_id: current_member.id)
+    CheckoutApproverMutationLock.with(member_id: @checkout.member_id) do
+      CheckoutMutationLock.with(member_id: @checkout.member_id, tool_id: @checkout.tool_id) do
+        @checkout.reload
+        @checkout.approver_mutation_lock_held = true
+        @checkout.update_attributes!(revoked_at: Time.now, revocation_reason: reason, revoked_by_id: current_member.id)
+      end
     end
 
     render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member

@@ -63,13 +63,18 @@ class CheckoutApproverVolunteering
     request
   end
 
-  def self.revoke_for!(member_id:, tool_id:)
+  def self.revoke_for!(member_id:, tool_id:, approver_lock_held: false)
     CheckoutApproverRequest.where(member_id: member_id, tool_id: tool_id, status: "open").update_all(status: "revoked")
-    CheckoutApproverMutationLock.with(member_id: member_id) do
+    mutation = -> do
       approver = CheckoutApprover.find_by(member_id: member_id)
       next unless approver
       approver.pull(tool_ids: tool_id.to_s)
       approver.destroy! if approver.tool_ids.empty? && Array(approver.shop_ids).empty?
+    end
+    if approver_lock_held
+      mutation.call
+    else
+      CheckoutApproverMutationLock.with(member_id: member_id, &mutation)
     end
   end
 
