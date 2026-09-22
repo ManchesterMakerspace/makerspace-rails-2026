@@ -19,13 +19,9 @@ class Member
   # account's email no matter what that other validation did. Remove just
   # this validator (Devise's presence/format checks stay) in favor of
   # validate_email_not_taken_by_an_active_member below.
-  UNIQUENESS_VALIDATOR_CLASSES = [
-    ActiveModel::Validations::UniquenessValidator,
-    Mongoid::Validatable::UniquenessValidator
-  ].freeze
-  _validators[:email].reject! { |validator| UNIQUENESS_VALIDATOR_CLASSES.any? { |klass| validator.is_a?(klass) } }
+  _validators[:email].reject! { |validator| validator.is_a?(Mongoid::Validatable::UniquenessValidator) }
   _validate_callbacks.each do |callback|
-    next unless UNIQUENESS_VALIDATOR_CLASSES.any? { |klass| callback.raw_filter.is_a?(klass) }
+    next unless callback.raw_filter.is_a?(Mongoid::Validatable::UniquenessValidator)
     next unless Array(callback.raw_filter.attributes) == [:email]
 
     _validate_callbacks.delete(callback)
