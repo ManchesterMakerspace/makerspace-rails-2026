@@ -735,6 +735,11 @@ RSpec.describe Member, type: :model do
         expect(member.eligible_for_soft_delete?).to be true
       end
 
+      it "is eligible when status is active (the default) but no expirationTime was ever set" do
+        member = create(:member, status: "activeMember", expirationTime: nil)
+        expect(member.eligible_for_soft_delete?).to be true
+      end
+
       it "is not eligible when status is active and unexpired" do
         member = create(:member, status: "activeMember", expirationTime: 1.day.from_now.to_i * 1000)
         expect(member.eligible_for_soft_delete?).to be false
