@@ -19,12 +19,22 @@ class Member
   # account's email no matter what that other validation did. Remove just
   # this validator (Devise's presence/format checks stay) in favor of
   # validate_email_not_taken_by_an_active_member below.
-  _validators[:email].reject! { |validator| validator.is_a?(Mongoid::Validatable::UniquenessValidator) }
-  _validate_callbacks.each do |callback|
-    next unless callback.raw_filter.is_a?(Mongoid::Validatable::UniquenessValidator)
-    next unless Array(callback.raw_filter.attributes) == [:email]
+  # Wrapped defensively: this reaches into ActiveSupport::Callbacks
+  # internals, which have already broken across Rails versions once in this
+  # exact spot. A failure here should degrade to Devise's validator still
+  # (incorrectly) running -- an isolated, debuggable test failure -- rather
+  # than raising at class-load time and taking down every spec/request that
+  # touches Member.
+  begin
+    _validators[:email].reject! { |validator| validator.is_a?(Mongoid::Validatable::UniquenessValidator) }
+    _validate_callbacks.each do |callback|
+      next unless callback.filter.is_a?(Mongoid::Validatable::UniquenessValidator)
+      next unless Array(callback.filter.attributes) == [:email]
 
-    _validate_callbacks.delete(callback)
+      _validate_callbacks.delete(callback)
+    end
+  rescue => error
+    Rails.logger.warn("[Member] Failed to remove Devise's built-in email uniqueness validator: #{error.class}: #{error.message}") if defined?(Rails) && Rails.logger
   end
 
   # Overrides Devise::Models::Timeoutable#timeout_in so the idle-timeout
