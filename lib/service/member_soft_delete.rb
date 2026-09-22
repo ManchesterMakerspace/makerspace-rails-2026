@@ -5,6 +5,15 @@ module Service
   # log, etc.) keeps resolving, but it's excluded from normal queries via
   # Member's default_scope and its email frees up for reuse. Never sends any
   # notification to the member -- this is an internal cleanup action.
+  #
+  # This is NOT how you revoke a member's access. Revocation is done by
+  # changing the `status` field on their member profile page (e.g. to
+  # "revoked"), which blocks their email from being reused for a new
+  # signup -- the opposite of what soft-delete does. Soft-delete is only for
+  # cleaning up a duplicate/abandoned account, and refuses to run at all on
+  # a member with an active, unexpired membership or a live subscription
+  # (see Member#eligible_for_soft_delete?), so it can't be used as a
+  # shortcut for revocation even by mistake.
   module MemberSoftDelete
     class ActiveMembershipError < StandardError; end
     class AlreadyDeletedError < StandardError; end
