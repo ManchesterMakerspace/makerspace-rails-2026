@@ -27,7 +27,8 @@ RSpec.describe MembersController, type: :controller do
         expect(ids).not_to include(ghost.id.as_json)
       end
 
-      it "includes soft-deleted members when show_deleted is requested" do
+      it "shows only soft-deleted members when show_deleted is requested" do
+        visible = create(:member)
         ghost = create(:member)
         ghost.update_attribute(:merged_at, Time.current)
 
@@ -35,6 +36,7 @@ RSpec.describe MembersController, type: :controller do
 
         ids = JSON.parse(response.body).map { |m| m['id'] }
         expect(ids).to include(ghost.id.as_json)
+        expect(ids).not_to include(visible.id.as_json)
       end
 
       it "filters to current members when current_members param is true" do
