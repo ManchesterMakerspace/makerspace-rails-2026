@@ -114,7 +114,7 @@ class Member
 
   validates :firstname, presence: true
   validates :lastname, presence: true
-  validates :email, uniqueness: { conditions: -> { where(merged_at: nil) } }
+  validate :validate_email_not_taken_by_an_active_member
   validates :email, email_deliverability: true, unless: :skip_email_deliverability_validation
   validates :cardID, uniqueness: true, allow_nil: true
   validates_inclusion_of :status, in: ["activeMember", "pending", "nonMember", "revoked", "inactive", "suspended"]
@@ -450,6 +450,21 @@ class Member
 
   def normalize_email
     self.email = self.email.to_s.strip.downcase
+  end
+
+  # A plain `uniqueness: { conditions: -> { ... } }` validation option isn't
+  # reliably honored here (verified against Mongoid 8.1.12 -- the check
+  # still fires against a merged_at member), so this is spelled out
+  # explicitly instead: excludes soft-deleted ("ghost") members from the
+  # uniqueness check, both from Member's own default_scope (bypassed via
+  # unscoped, matching the real Mongo partial index below) and by requiring
+  # merged_at: nil directly. The real enforcement is that Mongo index --
+  # this is just the friendly pre-save error message.
+  def validate_email_not_taken_by_an_active_member
+    return if email.blank?
+
+    conflict = Member.unscoped.where(email: email, merged_at: nil).where(:id.ne => id).exists?
+    errors.add(:email, :taken) if conflict
   end
 
   def normalize_group_name
