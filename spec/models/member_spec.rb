@@ -53,7 +53,19 @@ RSpec.describe Member, type: :model do
     it "accepts pending as a valid member status" do
       expect(build(:member, status: 'pending')).to be_valid
     end
-    it { is_expected.to validate_uniqueness_of(:email) }
+    # Not validate_uniqueness_of(:email) -- that matcher looks for a
+    # registered uniqueness validator by type, but email uniqueness is
+    # deliberately enforced by a custom validate method instead (see
+    # validate_email_not_taken_by_an_active_member and the "soft delete"
+    # describe block below), so the duplicate-email behavior is exercised
+    # there instead of via type introspection here.
+    it "rejects a duplicate email" do
+      create(:member, email: "duplicate@example.com")
+      duplicate = build(:member, email: "duplicate@example.com")
+
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:email]).to include("has already been taken")
+    end
     it { is_expected.to have_many(:access_cards).as_inverse_of(:member) }
   end
 
