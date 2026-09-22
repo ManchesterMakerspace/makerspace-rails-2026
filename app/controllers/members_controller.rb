@@ -3,7 +3,15 @@ class MembersController < AuthenticationController
     before_action :set_member, only: [:show, :update]
 
     def index
-      base_query = Member.includes(:access_cards).includes(:earned_membership).includes(:slack_user).includes(:mailtrap_event)
+      # Soft-deleted ("ghost") members are hidden by Member's default_scope
+      # everywhere else; only admins/board members explicitly opting in to
+      # see them (e.g. to restore one, or check whether an email is already
+      # in use by a ghost) bypass it here -- and see *only* ghosts, not a
+      # mixed list, so this is a distinct view rather than an additive filter.
+      show_deleted = (is_admin? || is_board_member?) &&
+        to_bool(search_params[:show_deleted] || search_params[:showDeleted])
+      member_scope = show_deleted ? Member.unscoped.where(:merged_at.ne => nil) : Member
+      base_query = member_scope.includes(:access_cards).includes(:earned_membership).includes(:slack_user).includes(:mailtrap_event)
 
       limited_checkout_approver_search = false
 
@@ -163,6 +171,6 @@ class MembersController < AuthenticationController
     end
 
     def search_params
-      params.permit(:fully_active_unexpired, :current_members, :currentMembers, :format, :member, :page_num, :pageNum, :order_by, :orderBy, :order, :search)
+      params.permit(:fully_active_unexpired, :current_members, :currentMembers, :show_deleted, :showDeleted, :format, :member, :page_num, :pageNum, :order_by, :orderBy, :order, :search)
     end
 end

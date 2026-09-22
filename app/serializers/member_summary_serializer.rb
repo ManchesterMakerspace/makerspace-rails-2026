@@ -18,6 +18,7 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :resource_manager_shop_ids,
              :slack_manual_deactivation_required,
              :firebase_uid,
+             :merged_at,
              :paid_pending_start
 
   attribute :provisioning, if: :include_provisioning?

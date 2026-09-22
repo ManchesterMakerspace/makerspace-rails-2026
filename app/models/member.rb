@@ -12,6 +12,31 @@ class Member
   devise :database_authenticatable, :registerable,
          :recoverable, :rememberable, :timeoutable, :validatable
 
+  # Devise's :validatable module adds its own unconditional
+  # validates_uniqueness_of(:email) with no knowledge of merged_at -- it ran
+  # independently of (and in addition to) any uniqueness validation written
+  # below, silently blocking a returning member from reusing a soft-deleted
+  # account's email no matter what that other validation did. Remove just
+  # this validator (Devise's presence/format checks stay) in favor of
+  # validate_email_not_taken_by_an_active_member below.
+  # Wrapped defensively: this reaches into ActiveSupport::Callbacks
+  # internals, which have already broken across Rails versions once in this
+  # exact spot. A failure here should degrade to Devise's validator still
+  # (incorrectly) running -- an isolated, debuggable test failure -- rather
+  # than raising at class-load time and taking down every spec/request that
+  # touches Member.
+  begin
+    _validators[:email].reject! { |validator| validator.is_a?(Mongoid::Validatable::UniquenessValidator) }
+    _validate_callbacks.each do |callback|
+      next unless callback.filter.is_a?(Mongoid::Validatable::UniquenessValidator)
+      next unless Array(callback.filter.attributes) == [:email]
+
+      _validate_callbacks.delete(callback)
+    end
+  rescue => error
+    Rails.logger.warn("[Member] Failed to remove Devise's built-in email uniqueness validator: #{error.class}: #{error.message}") if defined?(Rails) && Rails.logger
+  end
+
   # Overrides Devise::Models::Timeoutable#timeout_in so the idle-timeout
   # duration is looked up fresh from SystemConfig on every request, instead
   # of being fixed once at boot (see config/initializers/devise.rb). This
@@ -96,12 +121,25 @@ class Member
   field :membership_expiring_soon_notice_sent_for, type: Integer
   field :membership_expired_notice_sent_for, type: Integer
 
+  # Soft-delete marker for a "ghost" account -- a duplicate signup (e.g. a
+  # member who couldn't access their original account/email and created a
+  # second one) rather than a real membership-lifecycle state like revoked
+  # or inactive. Kept as its own field, deliberately independent of `status`,
+  # so it doesn't interact with membership reporting/analytics or the
+  # expiration-notice job. The record itself is never deleted -- audit
+  # history, invoices, etc. all keep resolving -- it's just excluded from
+  # normal queries by the default_scope below and its email frees up for
+  # reuse. See Service::MemberSoftDelete.
+  field :merged_at, type: Time
+
+  default_scope -> { where(merged_at: nil) }
+
   search_in :email, :lastname
   search_in :firstname, index: :_firstname_keywords
 
   validates :firstname, presence: true
   validates :lastname, presence: true
-  validates :email, uniqueness: true
+  validate :validate_email_not_taken_by_an_active_member
   validates :email, email_deliverability: true, unless: :skip_email_deliverability_validation
   validates :cardID, uniqueness: true, allow_nil: true
   validates_inclusion_of :status, in: ["activeMember", "pending", "nonMember", "revoked", "inactive", "suspended"]
@@ -109,7 +147,7 @@ class Member
 
   index({ email: 1 }, {
     unique: true,
-    partial_filter_expression: { email: { '$type' => 'string' } }
+    partial_filter_expression: { email: { '$type' => 'string' }, merged_at: nil }
   })
   index({ customer_id: 1 }, {
     unique: true,
@@ -174,6 +212,27 @@ class Member
 
   # Searches members using Atlas $search if available, falls back to case-insensitive
   # regex queries for local/CI environments where Atlas Search is not supported.
+  # Explicit ID lookups (admin detail pages, restoring a soft-deleted
+  # account, background jobs resolving a stored member_id, etc.) must find a
+  # member regardless of merged_at -- only ordinary listing/search queries
+  # should respect the default_scope above. Mirrors SlackUser's identical
+  # override for the same reason.
+  def self.find(*ids)
+    unscoped.find(*ids)
+  end
+
+  # A member is only eligible for soft-delete ("ghost" cleanup) when they
+  # have no live Braintree subscription -- even one not yet reflected in
+  # status/expirationTime -- and are not currently an active, unexpired
+  # member. Deliberately conservative: this is for cleaning up duplicate/
+  # abandoned signups, not for removing a real, currently-paying member.
+  def eligible_for_soft_delete?
+    return false if active_membership_subscription?
+    return true unless active_membership_status?
+
+    expirationTime.present? && expirationTime <= (Time.current.to_i * 1000)
+  end
+
   # Regex.escape prevents special characters from breaking the query.
   # Returns Mongoid criteria matching members by full name "Firstname Lastname"
   # Used as fallback when Atlas Search is unavailable (local/CI).
@@ -416,6 +475,21 @@ class Member
 
   def normalize_email
     self.email = self.email.to_s.strip.downcase
+  end
+
+  # A plain `uniqueness: { conditions: -> { ... } }` validation option isn't
+  # reliably honored here (verified against Mongoid 8.1.12 -- the check
+  # still fires against a merged_at member), so this is spelled out
+  # explicitly instead: excludes soft-deleted ("ghost") members from the
+  # uniqueness check, both from Member's own default_scope (bypassed via
+  # unscoped, matching the real Mongo partial index below) and by requiring
+  # merged_at: nil directly. The real enforcement is that Mongo index --
+  # this is just the friendly pre-save error message.
+  def validate_email_not_taken_by_an_active_member
+    return if email.blank?
+
+    conflict = Member.unscoped.where(email: email, merged_at: nil).where(:id.ne => id).exists?
+    errors.add(:email, :taken) if conflict
   end
 
   def normalize_group_name
