@@ -15,6 +15,11 @@ class Admin::ToolsController < ApplicationController
       Rails.logger.warn(
         "[DEBUG tools#index] member=#{current_member&.email} role=#{current_member&.role} " \
         "valid_for_checkout_request?=#{current_member&.valid_for_checkout_request?} " \
+        "active_unexpired?=#{current_member&.active_unexpired?} " \
+        "active_membership_status?=#{current_member&.active_membership_status?} " \
+        "status=#{current_member&.status.inspect} expirationTime=#{current_member&.expirationTime.inspect} " \
+        "now_ms=#{Time.now.to_i * 1000} " \
+        "member_contract_signed_date=#{current_member&.member_contract_signed_date.inspect} " \
         "managed_shop_ids=#{managed_shop_ids.inspect} ordinary_ids=#{ordinary_ids.inspect} " \
         "resource_manager_shop_ids=#{current_member&.resource_manager_shop_ids.inspect} " \
         "checkout_approver=#{CheckoutApprover.find_by(member_id: current_member&.id)&.attributes.inspect}"
