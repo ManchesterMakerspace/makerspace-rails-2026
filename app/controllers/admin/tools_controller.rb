@@ -12,12 +12,20 @@ class Admin::ToolsController < ApplicationController
     unless is_admin? || is_board_member?
       ordinary_ids = current_member.valid_for_checkout_request? ?
         CheckoutApprover.allowed_tool_ids_for_member(current_member.id) : []
+      Rails.logger.warn(
+        "[DEBUG tools#index] member=#{current_member&.email} role=#{current_member&.role} " \
+        "valid_for_checkout_request?=#{current_member&.valid_for_checkout_request?} " \
+        "managed_shop_ids=#{managed_shop_ids.inspect} ordinary_ids=#{ordinary_ids.inspect} " \
+        "resource_manager_shop_ids=#{current_member&.resource_manager_shop_ids.inspect} " \
+        "checkout_approver=#{CheckoutApprover.find_by(member_id: current_member&.id)&.attributes.inspect}"
+      )
       tools = tools.any_of(
         { :shop_id.in => managed_shop_ids },
         { :id.in => ordinary_ids, :disabled.ne => true }
       )
     end
     tools = tools.order_by(name: :asc).to_a
+    Rails.logger.warn("[DEBUG tools#index] returning #{tools.size} tools: #{tools.map(&:name).inspect}")
     render json: tools,
       each_serializer: AdminToolSerializer,
       adapter: :attributes,
