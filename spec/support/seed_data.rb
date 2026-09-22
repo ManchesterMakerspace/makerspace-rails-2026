@@ -77,13 +77,29 @@ class SeedData
 
   private
 
+  # Seed data is meant to model an "always active" fixture, but is only
+  # generated once per environment rather than freshly on every E2E run.
+  # A plain `create` with a hardcoded `Time.now + 1.year` expiration will
+  # eventually go stale (and silently break checkout-eligibility-dependent
+  # E2E specs) once real time closes that year-long gap. Refresh the
+  # expiration on every seed run instead of only setting it at creation.
+  def upsert_seed_member(factory, *traits, email:, expirationTime: nil, **attrs)
+    existing = Member.unscoped.find_by(email: email)
+    if existing
+      existing.update!(expirationTime: expirationTime) if expirationTime
+      existing
+    else
+      create(factory, *traits, email: email, expirationTime: expirationTime, **attrs)
+    end
+  end
+
   # ── E2E Members (unchanged) ───────────────────────────────────────────────
 
   def create_members
     create_expired_members
     create_admins
     MEMBER_COUNT.times do |n|
-      create(:member,
+      upsert_seed_member(:member,
         email:          "basic_member#{n}@test.com",
         firstname:      "Basic",
         lastname:       "Member#{n}",
@@ -91,7 +107,7 @@ class SeedData
       )
     end
     MEMBER_COUNT.times do |n|
-      create(:member,
+      upsert_seed_member(:member,
         email:          "paypal_member#{n}@test.com",
         firstname:      "PayPal",
         lastname:       "Member#{n}",
@@ -122,7 +138,7 @@ class SeedData
 
   def create_board_members
     MEMBER_COUNT.times do |n|
-      create(:member, :board_member,
+      upsert_seed_member(:member, :board_member,
         email:          "board_member#{n}@test.com",
         firstname:      "Board",
         lastname:       "Member#{n}",
@@ -133,7 +149,7 @@ class SeedData
 
   def create_resource_managers
     MEMBER_COUNT.times do |n|
-      create(:member, :resource_manager,
+      upsert_seed_member(:member, :resource_manager,
         email:          "rm_member#{n}@test.com",
         firstname:      "Resource",
         lastname:       "Manager#{n}",
