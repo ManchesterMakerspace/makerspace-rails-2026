@@ -12,6 +12,25 @@ class Member
   devise :database_authenticatable, :registerable,
          :recoverable, :rememberable, :timeoutable, :validatable
 
+  # Devise's :validatable module adds its own unconditional
+  # validates_uniqueness_of(:email) with no knowledge of merged_at -- it ran
+  # independently of (and in addition to) any uniqueness validation written
+  # below, silently blocking a returning member from reusing a soft-deleted
+  # account's email no matter what that other validation did. Remove just
+  # this validator (Devise's presence/format checks stay) in favor of
+  # validate_email_not_taken_by_an_active_member below.
+  UNIQUENESS_VALIDATOR_CLASSES = [
+    ActiveModel::Validations::UniquenessValidator,
+    Mongoid::Validatable::UniquenessValidator
+  ].freeze
+  _validators[:email].reject! { |validator| UNIQUENESS_VALIDATOR_CLASSES.any? { |klass| validator.is_a?(klass) } }
+  _validate_callbacks.each do |callback|
+    next unless UNIQUENESS_VALIDATOR_CLASSES.any? { |klass| callback.raw_filter.is_a?(klass) }
+    next unless Array(callback.raw_filter.attributes) == [:email]
+
+    _validate_callbacks.delete(callback)
+  end
+
   # Overrides Devise::Models::Timeoutable#timeout_in so the idle-timeout
   # duration is looked up fresh from SystemConfig on every request, instead
   # of being fixed once at boot (see config/initializers/devise.rb). This
