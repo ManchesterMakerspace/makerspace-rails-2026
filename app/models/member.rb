@@ -223,14 +223,18 @@ class Member
 
   # A member is only eligible for soft-delete ("ghost" cleanup) when they
   # have no live Braintree subscription -- even one not yet reflected in
-  # status/expirationTime -- and are not currently an active, unexpired
-  # member. Deliberately conservative: this is for cleaning up duplicate/
-  # abandoned signups, not for removing a real, currently-paying member.
+  # status/expirationTime -- and are not currently an active member with a
+  # live, unexpired term. `status` defaults to "activeMember" for every new
+  # signup regardless of whether it ever really started, so a blank
+  # expirationTime (no fob ever registered, no term to interrupt) counts as
+  # eligible here too -- that's the common shape of exactly the duplicate/
+  # abandoned signup this exists to clean up, not an active member with a
+  # future expiration.
   def eligible_for_soft_delete?
     return false if active_membership_subscription?
     return true unless active_membership_status?
 
-    expirationTime.present? && expirationTime <= (Time.current.to_i * 1000)
+    expirationTime.blank? || expirationTime <= (Time.current.to_i * 1000)
   end
 
   # Regex.escape prevents special characters from breaking the query.
