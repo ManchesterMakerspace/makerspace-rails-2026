@@ -678,4 +678,60 @@ RSpec.describe Member, type: :model do
       expect(member.household_role).to be_nil
     end
   end
+
+  describe "soft delete (merged_at)" do
+    it "hides a soft-deleted member from default queries" do
+      active = create(:member)
+      ghost = create(:member)
+      ghost.update_attribute(:merged_at, Time.current)
+
+      expect(Member.where(id: active.id).first).to eq(active)
+      expect(Member.where(id: ghost.id).first).to be_nil
+      expect(Member.unscoped.where(id: ghost.id).first).to eq(ghost)
+    end
+
+    it "still finds a soft-deleted member by id via Member.find" do
+      ghost = create(:member)
+      ghost.update_attribute(:merged_at, Time.current)
+
+      expect(Member.find(ghost.id)).to eq(ghost)
+    end
+
+    it "allows a new member to reuse a soft-deleted member's email" do
+      email = generate(:email)
+      ghost = create(:member, email: email)
+      ghost.update_attribute(:merged_at, Time.current)
+
+      expect { create(:member, email: email) }.not_to raise_error
+    end
+
+    it "still rejects a duplicate email between two active members" do
+      email = generate(:email)
+      create(:member, email: email)
+
+      expect { create(:member, email: email) }.to raise_error(Mongoid::Errors::Validations)
+    end
+
+    describe "#eligible_for_soft_delete?" do
+      it "is eligible when status is not active" do
+        member = create(:member, status: "inactive")
+        expect(member.eligible_for_soft_delete?).to be true
+      end
+
+      it "is eligible when status is active but expirationTime has passed" do
+        member = create(:member, status: "activeMember", expirationTime: 1.day.ago.to_i * 1000)
+        expect(member.eligible_for_soft_delete?).to be true
+      end
+
+      it "is not eligible when status is active and unexpired" do
+        member = create(:member, status: "activeMember", expirationTime: 1.day.from_now.to_i * 1000)
+        expect(member.eligible_for_soft_delete?).to be false
+      end
+
+      it "is not eligible when a live subscription exists regardless of status/expiration" do
+        member = create(:member, status: "inactive", subscription: true, expirationTime: 1.day.ago.to_i * 1000)
+        expect(member.eligible_for_soft_delete?).to be false
+      end
+    end
+  end
 end

@@ -96,12 +96,25 @@ class Member
   field :membership_expiring_soon_notice_sent_for, type: Integer
   field :membership_expired_notice_sent_for, type: Integer
 
+  # Soft-delete marker for a "ghost" account -- a duplicate signup (e.g. a
+  # member who couldn't access their original account/email and created a
+  # second one) rather than a real membership-lifecycle state like revoked
+  # or inactive. Kept as its own field, deliberately independent of `status`,
+  # so it doesn't interact with membership reporting/analytics or the
+  # expiration-notice job. The record itself is never deleted -- audit
+  # history, invoices, etc. all keep resolving -- it's just excluded from
+  # normal queries by the default_scope below and its email frees up for
+  # reuse. See Service::MemberSoftDelete.
+  field :merged_at, type: Time
+
+  default_scope -> { where(merged_at: nil) }
+
   search_in :email, :lastname
   search_in :firstname, index: :_firstname_keywords
 
   validates :firstname, presence: true
   validates :lastname, presence: true
-  validates :email, uniqueness: true
+  validates :email, uniqueness: { conditions: -> { where(merged_at: nil) } }
   validates :email, email_deliverability: true, unless: :skip_email_deliverability_validation
   validates :cardID, uniqueness: true, allow_nil: true
   validates_inclusion_of :status, in: ["activeMember", "pending", "nonMember", "revoked", "inactive", "suspended"]
@@ -109,7 +122,7 @@ class Member
 
   index({ email: 1 }, {
     unique: true,
-    partial_filter_expression: { email: { '$type' => 'string' } }
+    partial_filter_expression: { email: { '$type' => 'string' }, merged_at: nil }
   })
   index({ customer_id: 1 }, {
     unique: true,
@@ -174,6 +187,27 @@ class Member
 
   # Searches members using Atlas $search if available, falls back to case-insensitive
   # regex queries for local/CI environments where Atlas Search is not supported.
+  # Explicit ID lookups (admin detail pages, restoring a soft-deleted
+  # account, background jobs resolving a stored member_id, etc.) must find a
+  # member regardless of merged_at -- only ordinary listing/search queries
+  # should respect the default_scope above. Mirrors SlackUser's identical
+  # override for the same reason.
+  def self.find(*ids)
+    unscoped.find(*ids)
+  end
+
+  # A member is only eligible for soft-delete ("ghost" cleanup) when they
+  # have no live Braintree subscription -- even one not yet reflected in
+  # status/expirationTime -- and are not currently an active, unexpired
+  # member. Deliberately conservative: this is for cleaning up duplicate/
+  # abandoned signups, not for removing a real, currently-paying member.
+  def eligible_for_soft_delete?
+    return false if active_membership_subscription?
+    return true unless active_membership_status?
+
+    expirationTime.present? && expirationTime <= (Time.current.to_i * 1000)
+  end
+
   # Regex.escape prevents special characters from breaking the query.
   # Returns Mongoid criteria matching members by full name "Firstname Lastname"
   # Used as fallback when Atlas Search is unavailable (local/CI).

@@ -35,8 +35,11 @@ module Service
         facets.keys.to_h { |key| [key.to_sym, facet_count(result, key)] }
       end
 
+      # merged_at: nil excludes soft-deleted ("ghost"/duplicate) accounts --
+      # built with a raw Mongoid::Criteria rather than Member.all, so it
+      # doesn't automatically inherit Member's default_scope.
       def self.query_not_landlord(base = Mongoid::Criteria.new(Member))
-        base.where(:firstname.ne => "Landlord", :lastname.ne => "Fob")
+        base.where(:firstname.ne => "Landlord", :lastname.ne => "Fob", merged_at: nil)
       end
 
       # All members current and in good standing
@@ -144,7 +147,7 @@ module Service
       # Counts memberships at each month-end boundary with one database round-trip.
       # Member#startDate is a BSON datetime, while expirationTime is Unix time in
       # milliseconds; keep both representations explicit throughout the pipeline.
-      def self.active_members_by_month(start_date:, end_date:, base: Mongoid::Criteria.new(Member), statuses: nil, boundary: :end)
+      def self.active_members_by_month(start_date:, end_date:, base: Mongoid::Criteria.new(Member).where(merged_at: nil), statuses: nil, boundary: :end)
         months = month_boundaries(start_date, end_date, boundary)
         return [] if months.empty?
 

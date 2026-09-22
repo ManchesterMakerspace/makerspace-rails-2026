@@ -32,6 +32,7 @@ namespace :data do
     targets.each do |model, field, collation|
       duplicate_pipeline = [
         ({ '$match' => { 'invalidated_at' => nil } } if model == SlackUser && %i[member_id slack_email].include?(field)),
+        ({ '$match' => { 'merged_at' => nil } } if model == Member && field == :email),
         {
           '$group' => {
             '_id' => "$#{field}",
@@ -86,6 +87,13 @@ namespace :data do
             'invalidated_at' => nil
           }
         end
+        if model == Member && field == :email
+          filter = index['partialFilterExpression'] || index[:partialFilterExpression] || {}
+          next false unless filter == {
+            'email' => { '$type' => 'string' },
+            'merged_at' => nil
+          }
+        end
         next true if collation.nil?
 
         index_collation = index['collation'] || index[:collation] || {}
@@ -113,6 +121,11 @@ namespace :data do
         index_options[:partial_filter_expression] = {
           field => { '$type' => field_type },
           invalidated_at: nil
+        }
+      elsif model == Member && field == :email
+        index_options[:partial_filter_expression] = {
+          field => { '$type' => 'string' },
+          merged_at: nil
         }
       else
         index_options[:partial_filter_expression] = { field => { '$type' => 'string' } }

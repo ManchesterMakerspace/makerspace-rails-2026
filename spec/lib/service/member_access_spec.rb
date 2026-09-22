@@ -129,6 +129,49 @@ RSpec.describe Service::MemberAccess do
     end
   end
 
+  describe '.full_deprovision' do
+    it 'cancels a live subscription, revokes access, silences emails, and rotates the session token' do
+      member = create(:member, subscription_id: 'sub-123')
+      original_session_token = member.session_token
+      gateway = double('gateway')
+
+      allow(Service::BraintreeGateway).to receive(:connect_gateway).and_return(gateway)
+      allow(BraintreeService::Subscription).to receive(:cancel)
+      allow(described_class).to receive(:revoke)
+
+      described_class.full_deprovision(member)
+
+      expect(BraintreeService::Subscription).to have_received(:cancel).with(gateway, 'sub-123')
+      expect(described_class).to have_received(:revoke).with(member)
+      expect(member.reload.silence_emails).to be true
+      expect(member.reload.session_token).not_to eq(original_session_token)
+    end
+
+    it 'skips subscription cancellation when there is no subscription_id' do
+      member = create(:member, subscription_id: nil)
+      allow(described_class).to receive(:revoke)
+      allow(BraintreeService::Subscription).to receive(:cancel)
+
+      described_class.full_deprovision(member)
+
+      expect(BraintreeService::Subscription).not_to have_received(:cancel)
+    end
+
+    it 'alerts instead of raising when subscription cancellation fails' do
+      member = create(:member, subscription_id: 'sub-456')
+      allow(Service::BraintreeGateway).to receive(:connect_gateway).and_return(double('gateway'))
+      allow(BraintreeService::Subscription).to receive(:cancel).and_raise(StandardError.new('braintree down'))
+      allow(described_class).to receive(:revoke)
+      allow(Service::SlackConnector).to receive(:send_slack_message)
+
+      expect { described_class.full_deprovision(member) }.not_to raise_error
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+        /Error cancelling subscription.*braintree down/,
+        Service::SlackConnector.logs_channel
+      )
+    end
+  end
+
   describe '.revoke_gdrive_folder' do
     let(:member) { create(:member, firstname: 'Revoked', lastname: 'Member') }
     let(:drive) { instance_double(Google::Apis::DriveV3::DriveService) }

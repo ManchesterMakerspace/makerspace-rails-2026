@@ -10,6 +10,37 @@ module Service
       results
     end
 
+    # Full teardown of a member's access: cancel any live Braintree
+    # subscription, revoke Drive/Slack (see #revoke above), silence outgoing
+    # email/Slack notifications, and rotate the session token to invalidate
+    # any active portal sessions. Used both when a member's status is set to
+    # revoked and when an account is soft-deleted (see Service::MemberSoftDelete)
+    # -- kept as one method so the two flows can't quietly drift apart.
+    def self.full_deprovision(member)
+      if member.subscription_id
+        begin
+          ::BraintreeService::Subscription.cancel(::Service::BraintreeGateway.connect_gateway, member.subscription_id)
+        rescue => e
+          ::Service::SlackConnector.send_slack_message(
+            "⚠️ Error cancelling subscription for #{member.fullname}: #{e.message}",
+            ::Service::SlackConnector.logs_channel
+          )
+        end
+      end
+
+      begin
+        revoke(member)
+      rescue => e
+        ::Service::SlackConnector.send_slack_message(
+          "⚠️ Error revoking Drive/Slack access for #{member.fullname}: #{e.message}",
+          ::Service::SlackConnector.logs_channel
+        )
+      end
+
+      member.update_attribute(:silence_emails, true)
+      member.update_attribute(:session_token, SecureRandom.hex)
+    end
+
     # ── Google Drive ──────────────────────────────────────────────────────────
 
     def self.revoke_gdrive_folder(member, folder_id, label)

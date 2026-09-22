@@ -15,6 +15,28 @@ RSpec.describe MembersController, type: :controller do
         expect(parsed_response.last).to have_key("provisioning")
       end
 
+      it "hides soft-deleted members by default" do
+        visible = create(:member)
+        ghost = create(:member)
+        ghost.update_attribute(:merged_at, Time.current)
+
+        get :index, params: {}, format: :json
+
+        ids = JSON.parse(response.body).map { |m| m['id'] }
+        expect(ids).to include(visible.id.as_json)
+        expect(ids).not_to include(ghost.id.as_json)
+      end
+
+      it "includes soft-deleted members when show_deleted is requested" do
+        ghost = create(:member)
+        ghost.update_attribute(:merged_at, Time.current)
+
+        get :index, params: { show_deleted: true }, format: :json
+
+        ids = JSON.parse(response.body).map { |m| m['id'] }
+        expect(ids).to include(ghost.id.as_json)
+      end
+
       it "filters to current members when current_members param is true" do
         create(:member, :expired)
         create(:member, :current)
