@@ -11,6 +11,14 @@
     }
   ],
   "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "_member-interface_session",
+        "description": "Rails member session cookie obtained after sign-in."
+      }
+    },
     "schemas": {
       "MemberStatus": {
         "type": "string",
@@ -113,6 +121,9 @@
           },
           "uid": {
             "type": "string"
+          },
+          "memberId": {
+            "type": "string"
           }
         },
         "required": [
@@ -120,7 +131,8 @@
           "holder",
           "expiry",
           "validity",
-          "uid"
+          "uid",
+          "memberId"
         ]
       },
       "RejectionCard": {
@@ -2656,6 +2668,73 @@
         }
       }
     },
+    "/admin/cards/by_uid": {
+      "get": {
+        "summary": "Gets an access card by its NFC UID",
+        "tags": [
+          "Cards"
+        ],
+        "operationId": "adminGetCardByUid",
+        "description": "Requires an authenticated member with the admin or board_member role.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "card found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Card"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "card not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "user unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "user unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/cards/new": {
       "get": {
         "summary": "Initiate new card creation",
@@ -2806,6 +2885,83 @@
             }
           },
           "required": true
+        }
+      },
+      "delete": {
+        "summary": "Removes a lost fob or unassigns a fob from an expired/revoked member",
+        "tags": [
+          "Cards"
+        ],
+        "operationId": "adminRemoveCard",
+        "description": "Requires an authenticated member with the admin or board_member role. Removal is limited to lost fobs and fobs assigned to expired or revoked members.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-XSRF-TOKEN",
+            "in": "header",
+            "required": true,
+            "description": "Decoded value of the XSRF-TOKEN cookie obtained from a safe request such as GET /config.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "fob removed"
+          },
+          "422": {
+            "description": "active fob cannot be removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "user unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "user unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "card not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -3461,6 +3617,92 @@
               "schema": {
                 "title": "updateMemberDetails",
                 "$ref": "#/components/schemas/AdminUpdateMemberDetails"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/admin/rejections": {
+      "post": {
+        "summary": "Records an unknown scanned card UID as a rejection",
+        "tags": [
+          "Cards"
+        ],
+        "operationId": "adminCreateRejection",
+        "description": "Requires an authenticated member with the admin or board_member role.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-XSRF-TOKEN",
+            "in": "header",
+            "required": true,
+            "description": "Decoded value of the XSRF-TOKEN cookie obtained from a safe request such as GET /config.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "rejection recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RejectionCard"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "user unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "user unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "UID is blank or already belongs to a card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid"
+                ]
               }
             }
           },
@@ -4209,6 +4451,63 @@
           },
           "404": {
             "description": "invoice not found"
+          }
+        }
+      }
+    },
+    "/config": {
+      "get": {
+        "summary": "Gets public runtime client configuration",
+        "tags": [
+          "Configuration"
+        ],
+        "operationId": "getClientConfig",
+        "responses": {
+          "200": {
+            "description": "configuration found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "firebase_api_key": {
+                      "type": "string"
+                    },
+                    "firebase_project_id": {
+                      "type": "string"
+                    },
+                    "firebase_auth_domain": {
+                      "type": "string"
+                    },
+                    "firebase_auth_type": {
+                      "type": "string"
+                    },
+                    "firebase_app_id": {
+                      "type": "string"
+                    },
+                    "firebase_web_client_id": {
+                      "type": "string"
+                    },
+                    "wiki_url": {
+                      "type": "string"
+                    },
+                    "app_domain": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "firebase_api_key",
+                    "firebase_project_id",
+                    "firebase_auth_domain",
+                    "firebase_auth_type",
+                    "firebase_app_id",
+                    "firebase_web_client_id",
+                    "wiki_url",
+                    "app_domain"
+                  ]
+                }
+              }
+            }
           }
         }
       }

@@ -1,6 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Admin::CardsController, type: :controller do
+  before { allow(CloudflareRails::Importer).to receive(:cloudflare_ips).and_return([]) }
 
   let(:member) { create(:member) }
   let(:other_member) { create(:member) }
@@ -8,28 +9,28 @@ RSpec.describe Admin::CardsController, type: :controller do
   let(:valid_attributes) {
     {
       member_id: member.id,
-      uid: 'A146HG'
+      uid: '04A1B2C3'
     }
   }
 
   let(:duplicate_member_card) {
     {
       member_id: member.id,
-      uid: 'KJK08'
+      uid: '04A1B2C4'
     }
   }
 
   let(:second_member_card) {
     {
       member_id: member.id,
-      uid: 'PID08'
+      uid: '04A1B2C5'
     }
   }
 
   let(:different_member_cards) {
     {
       member_id: other_member.id,
-      uid: 'BBH81'
+      uid: '04A1B2C6'
     }
   }
 
@@ -105,7 +106,7 @@ RSpec.describe Admin::CardsController, type: :controller do
         }
         let(:missing_member_attributes) {
           {
-            uid: '12345'
+            uid: '04A1B2C7'
           }
         }
         it "does not create new card without uid" do
@@ -138,7 +139,7 @@ RSpec.describe Admin::CardsController, type: :controller do
         let(:valid_lost_attributes) {
           {
             member_id: member.id,
-            uid: 'A146HG',
+            uid: '04A1B2C3',
             card_location: 'lost'
           }
         }
@@ -146,7 +147,7 @@ RSpec.describe Admin::CardsController, type: :controller do
         let(:valid_stolen_attributes) {
           {
             member_id: member.id,
-            uid: 'A146HG',
+            uid: '04A1B2C3',
             card_location: 'stolen'
           }
         }
@@ -173,6 +174,42 @@ RSpec.describe Admin::CardsController, type: :controller do
           expect(response.media_type).to eq "application/json"
           expect(parsed_response['id']).to eq(Card.last.id.to_s)
         end
+      end
+    end
+
+    describe "DELETE #destroy" do
+      it "forgets a lost fob and records an audit event" do
+        card = Card.create!(valid_attributes)
+        card.set(validity: 'lost')
+
+        expect { delete :destroy, params: { id: card.id }, format: :json }
+          .to change(Card, :count).by(-1)
+
+        entry = AuditLog.where(resource_id: card.id, event_type: 'lost_card_forgotten').last
+        expect(response).to have_http_status(:no_content)
+        expect(entry).to be_present
+        expect(entry.actor_id).to be_present
+      end
+
+      it "unassigns a revoked member's fob and clears the legacy cardID" do
+        card = Card.create!(valid_attributes)
+        member.set(status: 'revoked', cardID: card.uid)
+
+        expect { delete :destroy, params: { id: card.id }, format: :json }
+          .to change(Card, :count).by(-1)
+
+        expect(response).to have_http_status(:no_content)
+        expect(member.reload.cardID).to be_nil
+        expect(AuditLog.where(resource_id: card.id, event_type: 'card_unassigned')).to exist
+      end
+
+      it "does not remove an active fob" do
+        card = Card.create!(valid_attributes)
+
+        expect { delete :destroy, params: { id: card.id }, format: :json }
+          .not_to change(Card, :count)
+
+        expect(response).to have_http_status(422)
       end
     end
   end

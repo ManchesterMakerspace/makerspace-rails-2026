@@ -1,17 +1,22 @@
 class Card
   include Mongoid::Document
+
+  UID_SEPARATOR_PATTERN = /[:\-\s]/
+
   field :uid #Member's CardID as string
   field :holder, type: String #Member's name
   field :expiry, type: Integer #Member's expirationTime
   field :validity, type: String #Member's Status
   attr_accessor :card_location, :skip_provisioning_enqueue
 
+  before_validation :normalize_uid
   before_create :set_expiration, :set_holder
   before_update :set_expiration
   after_create :activate_pending_member, :update_rejection_card, :settle_open_member_invoices, :enqueue_member_provisioning
   after_update :enqueue_member_provisioning
 
   validates :uid, presence: true, uniqueness: true
+  validate :normalized_uid_uniqueness
 
   index({ uid: 1 }, {
     unique: true,
@@ -45,7 +50,29 @@ class Card
     self.save!
   end
 
+  def self.normalize_uid(value)
+    value.to_s.upcase.gsub(UID_SEPARATOR_PATTERN, '')
+  end
+
+  # Match canonical UIDs as well as legacy records stored with separators.
+  def self.with_normalized_uid(value)
+    normalized = normalize_uid(value)
+    separator = '[:\\-\\s]*'
+    pattern = normalized.each_char.map { |character| Regexp.escape(character) }.join(separator)
+    any_of({ uid: normalized }, { uid: /\A#{pattern}\z/i })
+  end
+
   private
+  def normalize_uid
+    self.uid = self.class.normalize_uid(uid)
+  end
+
+  def normalized_uid_uniqueness
+    return if uid.blank? || !self.class.with_normalized_uid(uid).where(:id.ne => id).exists?
+
+    errors.add(:uid, :taken, value: uid)
+  end
+
   def activate_pending_member
     return unless member&.status == 'pending'
 

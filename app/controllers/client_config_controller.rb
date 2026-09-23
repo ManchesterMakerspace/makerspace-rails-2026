@@ -23,6 +23,8 @@ class ClientConfigController < ApplicationController
       firebase_project_id: firebase_project_id,
       firebase_auth_domain: firebase_auth_domain,
       firebase_auth_type: firebase_auth_type,
+      firebase_app_id: ENV["FIREBASE_APP_ID"].to_s,
+      firebase_web_client_id: ENV["FIREBASE_WEB_CLIENT_ID"].to_s,
       wiki_url: WikiUrlBuilder.base_url,
       app_domain: ENV["APP_DOMAIN"].to_s.strip
     }

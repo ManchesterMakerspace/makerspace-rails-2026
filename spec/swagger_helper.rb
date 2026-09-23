@@ -25,8 +25,9 @@ RSpec.configure do |config|
           enum: ["activeMember", "pending", "expired", "inactive", "lost", "nonMember", "revoked", "stolen"]
         },
         uid: { type: :string },
+        memberId: { type: :string },
       },
-      required: [:id, :holder, :expiry, :validity, :uid]
+      required: [:id, :holder, :expiry, :validity, :uid, :memberId]
     },
     RejectionCard: {
       type: :object,
@@ -1036,6 +1037,14 @@ RSpec.configure do |config|
         { url: '/api', description: 'API base path' }
       ],
       components: {
+        securitySchemes: {
+          cookieAuth: {
+            type: :apiKey,
+            in: :cookie,
+            name: '_member-interface_session',
+            description: 'Rails member session cookie obtained after sign-in.'
+          }
+        },
         schemas: {
           MemberStatus: {
             type: :string,

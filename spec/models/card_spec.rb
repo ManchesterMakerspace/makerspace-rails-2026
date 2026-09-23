@@ -30,6 +30,29 @@ RSpec.describe Card, type: :model do
     expect(build(:card)).to be_valid
   end
 
+  it "normalizes the UID before persisting a card" do
+    card = create(:card, member: member, uid: '04:a1-b2 c3')
+
+    expect(card.reload.uid).to eq('04A1B2C3')
+  end
+
+  it "finds legacy UIDs stored with separators" do
+    card = create(:card, member: member, uid: '04A1B2C3')
+    card.set(uid: '04:a1-b2 c3')
+
+    expect(Card.with_normalized_uid('04A1B2C3').first).to eq(card)
+  end
+
+  it "rejects a canonical UID that duplicates a legacy separated UID" do
+    existing = create(:card, member: member, uid: '04A1B2C3')
+    existing.set(uid: '04:a1-b2 c3')
+
+    duplicate = build(:card, uid: '04A1B2C3')
+
+    expect(duplicate).not_to be_valid
+    expect(duplicate.errors[:uid]).to be_present
+  end
+
   context "public methods" do
     it "Correctly identifies is_active" do
       expect(card.is_active?).to be_truthy

@@ -39,6 +39,42 @@ class Admin::CardsController < AdminController
     render json: @cards, adapter: :attributes and return
   end
 
+  # Looks up a physical access card without exposing the cards collection to
+  # clients. This is used by trusted board/admin NFC readers.
+  def by_uid
+    uid = Card.normalize_uid(params.require(:uid))
+    @card = Card.with_normalized_uid(uid).first
+    raise ::Mongoid::Errors::DocumentNotFound.new(Card, { uid: uid }) if @card.nil?
+
+    render json: @card, adapter: :attributes and return
+  end
+
+  def destroy
+    card = Card.find(params[:id])
+    raise ::Mongoid::Errors::DocumentNotFound.new(Card, { id: params[:id] }) if card.nil?
+    member = card.member
+    event_type = removal_event_type(card, member)
+    raise ::Error::UnprocessableEntity.new('Only lost fobs or fobs assigned to expired/revoked members can be removed') unless event_type
+
+    before = card.attributes.dup
+    member.unset(:cardID) if member.cardID.to_s == card.uid.to_s
+    card.destroy!
+
+    ::Service::AuditLogger.log(
+      log_type: 'member',
+      event_type: event_type,
+      resource_type: 'Card',
+      resource_id: card.id,
+      actor: current_member,
+      subject: member,
+      before_snapshot: before,
+      after_snapshot: nil,
+      message_details: "UID #{card.uid} removed"
+    )
+
+    head :no_content
+  end
+
   def update
     @card = Card.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(Card, { id: params[:id] }) if @card.nil?
@@ -74,5 +110,10 @@ class Admin::CardsController < AdminController
   def card_query_params
     params.require(:member_id)
     params.permit(:member_id)
+  end
+
+  def removal_event_type(card, member)
+    return 'lost_card_forgotten' if card.validity == 'lost'
+    return 'card_unassigned' if %w[expired revoked].include?(member.status) || %w[expired revoked].include?(card.validity)
   end
 end
