@@ -13,7 +13,10 @@ RSpec.describe "Checkout requestor annotations", type: :request do
   end
 
   annotation_schema = { type: :string, nullable: true, description: "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop." }
-  response_schema = { type: :object, properties: { requestorAnnotation: annotation_schema }, required: ["requestorAnnotation"] }
+  response_schemas = {
+    "shops" => { '$ref' => '#/components/schemas/Shop' },
+    "tools" => { '$ref' => '#/components/schemas/Tool' }
+  }
   duration_fee_schema = {
     type: :object,
     properties: {
@@ -59,7 +62,7 @@ RSpec.describe "Checkout requestor annotations", type: :request do
           let(:id) { resource == "shops" ? shop.id.to_s : tool.id.to_s }
           let(:settings) { { requestor_annotation: " Updated instructions " } }
           response "200", "annotation saved" do
-            schema response_schema
+            schema response_schemas.fetch(resource)
             run_test! { |response| expect(JSON.parse(response.body)["requestorAnnotation"]).to eq("Updated instructions") }
           end
           response "403", "outside managed shop" do
@@ -77,7 +80,7 @@ RSpec.describe "Checkout requestor annotations", type: :request do
         produces "application/json"
         before { tool }
         response "200", "catalog" do
-          schema type: :array, items: response_schema
+          schema type: :array, items: response_schemas.fetch(resource)
           run_test!
         end
       end
@@ -94,7 +97,7 @@ RSpec.describe "Checkout requestor annotations", type: :request do
         let(:member) { create(:member, :admin, :current) }
         let(:settings) { { name: "Annotated resource", shop_id: shop.id.to_s, requestor_annotation: "Instructions" } }
         response "200", "created" do
-          schema response_schema
+          schema response_schemas.fetch(resource)
           run_test! { |response| expect(JSON.parse(response.body)["requestorAnnotation"]).to eq("Instructions") }
         end
       end
@@ -104,10 +107,11 @@ RSpec.describe "Checkout requestor annotations", type: :request do
   path "/shops" do
     get "Lists shops with their default checkout requestor annotations" do
       tags "Checkouts"
+      description "Requires a signed-in member."
       produces "application/json"
       before { shop }
       response "200", "shops" do
-        schema type: :array, items: response_schema
+        schema type: :array, items: response_schemas.fetch("shops")
         run_test!
       end
     end
@@ -124,7 +128,7 @@ RSpec.describe "Checkout requestor annotations", type: :request do
       let(:id) { tool.id.to_s }
       let(:settings) { { requestor_annotation: "Tool instructions", name: "Must not change" } }
       response "200", "annotation updated" do
-        schema response_schema
+        schema response_schemas.fetch("tools")
         run_test! do |response|
           expect(JSON.parse(response.body)["requestorAnnotation"]).to eq("Tool instructions")
           expect(tool.reload.name).not_to eq("Must not change")
