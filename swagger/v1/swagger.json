@@ -977,6 +977,10 @@
               "name": {
                 "type": "string"
               },
+              "requestorAnnotation": {
+                "type": "string",
+                "nullable": true
+              },
               "wikiUrl": {
                 "type": "string",
                 "format": "uri"
@@ -1015,13 +1019,25 @@
               "resourceEmail": {
                 "type": "string",
                 "x-nullable": true
+              },
+              "floorName": {
+                "type": "string"
+              },
+              "capacity": {
+                "type": "integer"
+              },
+              "toolCount": {
+                "type": "integer",
+                "minimum": 0
               }
             },
             "required": [
               "id",
               "name",
+              "requestorAnnotation",
               "wikiUrl",
-              "reservable"
+              "reservable",
+              "toolCount"
             ]
           }
         ]
@@ -1043,6 +1059,10 @@
               "name": {
                 "type": "string"
               },
+              "requestorAnnotation": {
+                "type": "string",
+                "nullable": true
+              },
               "wikiUrl": {
                 "type": "string",
                 "format": "uri"
@@ -1060,6 +1080,9 @@
                 "type": "string",
                 "x-nullable": true
               },
+              "open": {
+                "type": "boolean"
+              },
               "disabled": {
                 "type": "boolean"
               },
@@ -1067,17 +1090,73 @@
                 "type": "boolean",
                 "default": false
               },
+              "announce": {
+                "type": "boolean"
+              },
+              "announceChannel": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "usersChannel": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "prerequisiteIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "prerequisiteNames": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "effectiveReservationPrerequisiteIds": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
+              },
+              "reservationPrerequisiteNames": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "shopName": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string",
+                "x-nullable": true,
+                "description": "Present only when the member may view operational notes."
+              },
+              "unmetPrerequisiteIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Present when availability is evaluated for a signed-in member."
+              },
+              "unmetPrerequisiteNames": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Present when availability is evaluated for a signed-in member."
+              },
+              "requestable": {
+                "type": "boolean",
+                "description": "Present when availability is evaluated for a signed-in member."
               }
             },
             "required": [
               "id",
               "shopId",
               "name",
+              "requestorAnnotation",
               "wikiUrl",
               "reservable"
             ]
@@ -6026,7 +6105,7 @@
             "description": "Document not found"
           },
           "403": {
-            "description": "Forbidden — saved rental agreement belongs to another member"
+            "description": "Forbidden \u2014 saved rental agreement belongs to another member"
           }
         }
       }
@@ -6236,17 +6315,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "requestorAnnotation": {
-                      "type": "string",
-                      "nullable": true,
-                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
-                    }
-                  },
-                  "required": [
-                    "requestorAnnotation"
-                  ]
+                  "$ref": "#/components/schemas/Shop"
                 }
               }
             }
@@ -6362,17 +6431,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "requestorAnnotation": {
-                      "type": "string",
-                      "nullable": true,
-                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
-                    }
-                  },
-                  "required": [
-                    "requestorAnnotation"
-                  ]
+                  "$ref": "#/components/schemas/Shop"
                 }
               }
             }
@@ -6491,17 +6550,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "properties": {
-                      "requestorAnnotation": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
-                      }
-                    },
-                    "required": [
-                      "requestorAnnotation"
-                    ]
+                    "$ref": "#/components/schemas/Shop"
                   }
                 }
               }
@@ -6522,17 +6571,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "requestorAnnotation": {
-                      "type": "string",
-                      "nullable": true,
-                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
-                    }
-                  },
-                  "required": [
-                    "requestorAnnotation"
-                  ]
+                  "$ref": "#/components/schemas/Shop"
                 }
               }
             }
@@ -6660,17 +6699,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "requestorAnnotation": {
-                      "type": "string",
-                      "nullable": true,
-                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
-                    }
-                  },
-                  "required": [
-                    "requestorAnnotation"
-                  ]
+                  "$ref": "#/components/schemas/Tool"
                 }
               }
             }
@@ -6803,17 +6832,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "requestorAnnotation": {
-                      "type": "string",
-                      "nullable": true,
-                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
-                    }
-                  },
-                  "required": [
-                    "requestorAnnotation"
-                  ]
+                  "$ref": "#/components/schemas/Tool"
                 }
               }
             }
@@ -6949,17 +6968,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "properties": {
-                      "requestorAnnotation": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
-                      }
-                    },
-                    "required": [
-                      "requestorAnnotation"
-                    ]
+                    "$ref": "#/components/schemas/Tool"
                   }
                 }
               }
@@ -6980,17 +6989,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "requestorAnnotation": {
-                      "type": "string",
-                      "nullable": true,
-                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
-                    }
-                  },
-                  "required": [
-                    "requestorAnnotation"
-                  ]
+                  "$ref": "#/components/schemas/Tool"
                 }
               }
             }
@@ -7126,17 +7125,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "properties": {
-                      "requestorAnnotation": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
-                      }
-                    },
-                    "required": [
-                      "requestorAnnotation"
-                    ]
+                    "$ref": "#/components/schemas/Shop"
                   }
                 }
               }
@@ -7169,17 +7158,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "requestorAnnotation": {
-                      "type": "string",
-                      "nullable": true,
-                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
-                    }
-                  },
-                  "required": [
-                    "requestorAnnotation"
-                  ]
+                  "$ref": "#/components/schemas/Tool"
                 }
               }
             }
