@@ -1,6 +1,6 @@
 # Keyfobbit
 
-A deliberately small Android NFC utility for authorized MakeICT board members and administrators. It signs into the existing Rails API with a password or Google/Firebase, supports the portal's TOTP challenge, enables Android NFC reader mode, accepts MIFARE Classic tags, and looks up the scanned UID. A card result can open its associated member record, while an unknown UID can be recorded in the rejections collection.
+A deliberately small Android NFC utility for authorized board members and administrators. It signs into the existing Rails API with a password or Google/Firebase, supports the portal's TOTP challenge, enables Android NFC reader mode, accepts MIFARE Classic tags, and looks up the scanned UID. A card result can open its associated member record, while an unknown UID can be recorded in the rejections collection.
 
 ## Build
 
