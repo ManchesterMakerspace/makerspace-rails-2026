@@ -22,22 +22,22 @@ describe 'Admin::Rejections API', type: :request do
       response '201', 'rejection recorded' do
         before { sign_in admin }
         schema '$ref' => '#/components/schemas/RejectionCard'
-        let(:rejectionDetails) { { uid: '04A1B2C3D4' } }
+        let(:rejectionDetails) { { uid: '04:a1-b2 c3' } }
         run_test! do
-          expect(RejectionCard.where(uid: '04A1B2C3D4').count).to eq(1)
+          expect(RejectionCard.where(uid: '04A1B2C3').count).to eq(1)
         end
       end
 
       response '403', 'user unauthorized' do
         before { sign_in basic }
         schema '$ref' => '#/components/schemas/error'
-        let(:rejectionDetails) { { uid: '04A1B2C3D4' } }
+        let(:rejectionDetails) { { uid: '04A1B2C3' } }
         run_test!
       end
 
       response '401', 'user unauthenticated' do
         schema '$ref' => '#/components/schemas/error'
-        let(:rejectionDetails) { { uid: '04A1B2C3D4' } }
+        let(:rejectionDetails) { { uid: '04A1B2C3' } }
         run_test!
       end
 

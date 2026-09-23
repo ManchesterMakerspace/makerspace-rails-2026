@@ -27,6 +27,7 @@ final class ApiClient {
 
     Response post(String path, JSONObject json) throws IOException { return request("POST", path, json); }
     Response get(String path) throws IOException { return request("GET", path, null); }
+    Response delete(String path) throws IOException { return request("DELETE", path, null); }
 
     private Response request(String method, String path, JSONObject json) throws IOException {
         if (!method.equals("GET") && cookies.csrfToken() == null) {
@@ -41,11 +42,13 @@ final class ApiClient {
         connection.setRequestProperty("Accept", "application/json");
         String cookieHeader = cookies.header();
         if (!cookieHeader.isEmpty()) connection.setRequestProperty("Cookie", cookieHeader);
+        if (!method.equals("GET")) {
+            String csrfToken = cookies.csrfToken();
+            if (csrfToken != null) connection.setRequestProperty("X-XSRF-TOKEN", csrfToken);
+        }
         if (json != null) {
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            String csrfToken = cookies.csrfToken();
-            if (csrfToken != null) connection.setRequestProperty("X-XSRF-TOKEN", csrfToken);
             try (OutputStream out = connection.getOutputStream()) {
                 out.write(json.toString().getBytes(StandardCharsets.UTF_8));
             }

@@ -2886,6 +2886,74 @@
           },
           "required": true
         }
+      },
+      "delete": {
+        "summary": "Removes a lost fob or unassigns a fob from an expired/revoked member",
+        "tags": [
+          "Cards"
+        ],
+        "operationId": "adminRemoveCard",
+        "description": "Requires an authenticated member with the admin or board_member role. Removal is limited to lost fobs and fobs assigned to expired or revoked members.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "fob removed"
+          },
+          "422": {
+            "description": "active fob cannot be removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "user unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "user unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "card not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/admin/earned_memberships/{id}/reports": {
