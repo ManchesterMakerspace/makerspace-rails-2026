@@ -79,7 +79,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
             } catch (Exception ignored) { }
             runNetwork(() -> api.post("/api/members/sign_in", request), response -> {
                 signIn.setEnabled(true);
-                if (response.status == 202 && response.body.optBoolean("totpRequired")) showTotp();
+                if (response.status == 202 && response.body.optBoolean("totp_required")) showTotp();
                 else completeAuthentication(response);
             });
         });
@@ -139,7 +139,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         JSONObject request = new JSONObject();
         try { request.put("idToken", token); } catch (Exception ignored) { }
         runNetwork(() -> api.post("/api/auth/firebase_login", request), response -> {
-            if (response.status == 202 && response.body.optBoolean("totpRequired")) showTotp();
+            if (response.status == 202 && response.body.optBoolean("totp_required")) showTotp();
             else completeAuthentication(response);
         });
     }
@@ -222,17 +222,36 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         }
         if (response.status < 200 || response.status >= 300) { status.setText(response.message()); return; }
         JSONObject card = response.body;
+        String cardId = card.optString("id");
         String memberId = card.optString("memberId");
-        if (memberId.isEmpty()) memberId = card.optJSONObject("member") == null ? "" : card.optJSONObject("member").optString("id");
+        JSONObject member = card.optJSONObject("member");
+        if (memberId.isEmpty()) memberId = member == null ? "" : member.optString("id");
+        String validity = card.optString("validity", "—");
+        String memberStatus = member == null ? "" : member.optString("status");
         String details = "UID: " + card.optString("uid", uid) + "\nHolder: " + card.optString("holder", "—") +
-                "\nValidity: " + card.optString("validity", "—") + "\nExpiry: " + card.optString("expiry", "—");
+                "\nValidity: " + validity + "\nExpiry: " + card.optString("expiry", "—");
         AlertDialog.Builder dialog = new AlertDialog.Builder(this).setTitle("Card found").setMessage(details).setNegativeButton("Scan another", null);
         if (!memberId.isEmpty()) {
             String id = memberId;
             dialog.setPositiveButton("View member", (d, w) -> fetchMember(id));
         }
+        if (validity.equals("lost")) {
+            dialog.setNeutralButton("Forget Lost Fob", (d, w) -> removeCard(cardId, uid, "Lost fob forgotten."));
+        } else if (memberStatus.equals("expired") || memberStatus.equals("revoked") ||
+                validity.equals("expired") || validity.equals("revoked")) {
+            dialog.setNeutralButton("Unassign Fob", (d, w) -> removeCard(cardId, uid, "Fob unassigned."));
+        }
         dialog.show();
         status.setText("Ready for another card.");
+    }
+
+    private void removeCard(String cardId, String uid, String successMessage) {
+        if (cardId.isEmpty()) { status.setText("Cannot remove fob: card ID is missing."); return; }
+        status.setText("Removing fob…");
+        runNetwork(() -> api.delete("/api/admin/cards/" + urlEncode(cardId)), response -> {
+            if (response.status == 204) status.setText(successMessage + " UID " + uid);
+            else status.setText(response.message());
+        });
     }
 
     private void addRejection(String uid) {

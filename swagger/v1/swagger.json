@@ -11,6 +11,14 @@
     }
   ],
   "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "_member-interface_session",
+        "description": "Rails member session cookie obtained after sign-in."
+      }
+    },
     "schemas": {
       "MemberStatus": {
         "type": "string",
@@ -2667,6 +2675,12 @@
           "Cards"
         ],
         "operationId": "adminGetCardByUid",
+        "description": "Requires an authenticated member with the admin or board_member role.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "uid",
@@ -2871,6 +2885,83 @@
             }
           },
           "required": true
+        }
+      },
+      "delete": {
+        "summary": "Removes a lost fob or unassigns a fob from an expired/revoked member",
+        "tags": [
+          "Cards"
+        ],
+        "operationId": "adminRemoveCard",
+        "description": "Requires an authenticated member with the admin or board_member role. Removal is limited to lost fobs and fobs assigned to expired or revoked members.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-XSRF-TOKEN",
+            "in": "header",
+            "required": true,
+            "description": "Decoded value of the XSRF-TOKEN cookie obtained from a safe request such as GET /config.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "fob removed"
+          },
+          "422": {
+            "description": "active fob cannot be removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "user unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "user unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "card not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -3540,7 +3631,23 @@
           "Cards"
         ],
         "operationId": "adminCreateRejection",
-        "parameters": [],
+        "description": "Requires an authenticated member with the admin or board_member role.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-XSRF-TOKEN",
+            "in": "header",
+            "required": true,
+            "description": "Decoded value of the XSRF-TOKEN cookie obtained from a safe request such as GET /config.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "201": {
             "description": "rejection recorded",
