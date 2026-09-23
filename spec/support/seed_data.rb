@@ -465,9 +465,14 @@ class SeedData
   end
 
   def reconnect_member(member, customer, subscription, invoice_option)
+    # Braintree's sandbox is external and persists across seed runs (unlike
+    # Mongo/Redis, which are fresh every run) -- a reused subscription's
+    # paid_through_date reflects whenever it last actually billed in the
+    # sandbox, not "now". Trusting it here can leave a freshly-seeded fixture
+    # already expired relative to the current run's wall-clock time.
     member.update!(
       customer_id: customer.id, subscription_id: subscription.id,
-      subscription: true, expirationTime: subscription.paid_through_date.to_time.to_i * 1000
+      subscription: true, expirationTime: (Time.now + invoice_option.quantity.months).to_i * 1000
     )
     Invoice.create!(
       member: member, name: invoice_option.name, description: invoice_option.description,
