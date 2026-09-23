@@ -4,6 +4,7 @@ class Tool
   include ActiveModel::Serializers::JSON
 
   field :name, type: String
+  field :requestor_annotation, type: String
   field :wiki_url, type: String
   field :gdrive_id, type: String
   field :description, type: String
@@ -65,6 +66,10 @@ class Tool
 
   def checkout_request_error(member)
     ToolCheckoutRequestEligibility.new(member: member, tool: self).error
+  end
+
+  def effective_requestor_annotation
+    requestor_annotation.presence || shop&.requestor_annotation.presence
   end
 
   def disabled
@@ -145,6 +150,7 @@ class Tool
   end
 
   def normalize_external_fields
+    self.requestor_annotation = requestor_annotation.to_s.strip.presence
     self.wiki_url = wiki_url.to_s.strip.presence
     self.gdrive_id = gdrive_id.to_s.strip.presence
     self.announce_channel =
