@@ -96,6 +96,8 @@ class ToolCheckoutRequest
   end
 
   def notify_requestor
+    return if member.direct_notifications_suppressed?
+
     slack_id = member.slack_user&.slack_id
     return if slack_id.blank?
 

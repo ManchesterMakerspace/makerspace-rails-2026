@@ -14,25 +14,58 @@ RSpec.describe "Checkout requestor annotations", type: :request do
 
   annotation_schema = { type: :string, nullable: true, description: "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop." }
   response_schema = { type: :object, properties: { requestorAnnotation: annotation_schema }, required: ["requestorAnnotation"] }
+  duration_fee_schema = {
+    type: :object,
+    properties: {
+      invoice_option_id: { type: :string }, minimum_hours: { type: :number },
+      maximum_hours: { type: :number }, full_day: { type: :boolean }
+    }
+  }
+  reservation_properties = {
+    reservable: { type: :boolean }, max_concurrent_reservations: { type: :integer },
+    reservation_horizon_days: { type: :integer }, minimum_advance_notice_hours: { type: :number },
+    prohibit_same_day_reservations: { type: :boolean }, reservation_full_day: { type: :boolean },
+    max_reservation_duration_hours: { type: :number }, reservation_requires_approval: { type: :boolean },
+    reservation_prerequisite_tool_ids: { type: :array, items: { type: :string } },
+    duration_fees: { type: :array, items: duration_fee_schema }
+  }
+  shop_properties = reservation_properties.merge(
+    name: { type: :string }, requestor_annotation: annotation_schema, wiki_url: { type: :string, nullable: true },
+    gdrive_id: { type: :string, nullable: true }, slack_channel: { type: :string, nullable: true },
+    disabled: { type: :boolean }, color_id: { type: :string }, floor_name: { type: :string },
+    capacity: { type: :integer }
+  )
+  tool_properties = reservation_properties.merge(
+    name: { type: :string }, shop_id: { type: :string }, requestor_annotation: annotation_schema,
+    wiki_url: { type: :string, nullable: true }, gdrive_id: { type: :string, nullable: true },
+    description: { type: :string, nullable: true }, open: { type: :boolean }, disabled: { type: :boolean },
+    announce: { type: :boolean }, announce_channel: { type: :string, nullable: true },
+    users_channel: { type: :string, nullable: true }, allow_pending: { type: :boolean },
+    prerequisite_ids: { type: :array, items: { type: :string } }
+  )
 
   %w[shops tools].each do |resource|
     path "/admin/#{resource}/{id}" do
       parameter name: :id, in: :path, type: :string
-      put "Updates #{resource.singularize} settings, including the requestor annotation" do
-        tags "Checkouts"
-        description "Signed-in owning-shop resource managers, admins and board members may update settings. Additional approvers use the dedicated tool annotation endpoint."
-        consumes "application/json"
-        produces "application/json"
-        parameter name: :settings, in: :body, schema: { type: :object, properties: { requestor_annotation: annotation_schema } }
-        let(:id) { resource == "shops" ? shop.id.to_s : tool.id.to_s }
-        let(:settings) { { requestor_annotation: " Updated instructions " } }
-        response "200", "annotation saved" do
-          schema response_schema
-          run_test! { |response| expect(JSON.parse(response.body)["requestorAnnotation"]).to eq("Updated instructions") }
-        end
-        response "403", "outside managed shop" do
-          let(:member) { create(:member, :resource_manager, :current, resource_manager_shop_ids: [create(:shop).id.to_s]) }
-          run_test!
+      %i[put patch].each do |verb|
+        public_send(verb, "Updates #{resource.singularize} settings, including the requestor annotation") do
+          tags "Checkouts"
+          description "Signed-in owning-shop resource managers, admins and board members may update settings. Additional approvers use the dedicated tool annotation endpoint."
+          consumes "application/json"
+          produces "application/json"
+          parameter name: :settings, in: :body, schema: {
+            type: :object, properties: resource == "shops" ? shop_properties : tool_properties
+          }
+          let(:id) { resource == "shops" ? shop.id.to_s : tool.id.to_s }
+          let(:settings) { { requestor_annotation: " Updated instructions " } }
+          response "200", "annotation saved" do
+            schema response_schema
+            run_test! { |response| expect(JSON.parse(response.body)["requestorAnnotation"]).to eq("Updated instructions") }
+          end
+          response "403", "outside managed shop" do
+            let(:member) { create(:member, :resource_manager, :current, resource_manager_shop_ids: [create(:shop).id.to_s]) }
+            run_test!
+          end
         end
       end
     end
@@ -54,7 +87,9 @@ RSpec.describe "Checkout requestor annotations", type: :request do
         consumes "application/json"
         produces "application/json"
         parameter name: :settings, in: :body, schema: {
-          type: :object, properties: { name: { type: :string }, shop_id: { type: :string }, requestor_annotation: annotation_schema }, required: ["name"]
+          type: :object,
+          properties: resource == "shops" ? shop_properties : tool_properties,
+          required: resource == "shops" ? ["name"] : ["name", "shop_id"]
         }
         let(:member) { create(:member, :admin, :current) }
         let(:settings) { { name: "Annotated resource", shop_id: shop.id.to_s, requestor_annotation: "Instructions" } }
