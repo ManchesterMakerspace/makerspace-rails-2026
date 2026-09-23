@@ -25,8 +25,9 @@ RSpec.configure do |config|
           enum: ["activeMember", "pending", "expired", "inactive", "lost", "nonMember", "revoked", "stolen"]
         },
         uid: { type: :string },
+        memberId: { type: :string },
       },
-      required: [:id, :holder, :expiry, :validity, :uid]
+      required: [:id, :holder, :expiry, :validity, :uid, :memberId]
     },
     RejectionCard: {
       type: :object,

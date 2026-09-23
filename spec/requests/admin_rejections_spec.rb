@@ -1,6 +1,8 @@
 require 'rails_helper'
 
 RSpec.describe 'Admin rejections', type: :request do
+  before { allow(CloudflareRails::Importer).to receive(:cloudflare_ips).and_return([]) }
+
   let(:member)       { create(:member) }
   let(:other_member) { create(:member) }
   let!(:member_card) { create(:card, member: member, uid: 'member-card-uid') }
@@ -10,6 +12,25 @@ RSpec.describe 'Admin rejections', type: :request do
 
   def request_rejections(uids, time_range: {})
     get '/api/admin/rejections', params: { uids: uids.to_json }.merge(time_range)
+  end
+
+  describe 'POST /api/admin/rejections' do
+    it 'allows a board member to record an unknown scanned UID' do
+      sign_in create(:member, :board_member)
+
+      post '/api/admin/rejections', params: { uid: 'unknown-nfc-uid' }, as: :json
+
+      expect(response).to have_http_status(:created)
+      expect(RejectionCard.where(uid: 'unknown-nfc-uid', validity: 'rejected')).to exist
+    end
+
+    it 'does not record a UID that already belongs to a card' do
+      sign_in create(:member, :admin)
+
+      post '/api/admin/rejections', params: { uid: member_card.uid }, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+    end
   end
 
   context 'as a regular member' do

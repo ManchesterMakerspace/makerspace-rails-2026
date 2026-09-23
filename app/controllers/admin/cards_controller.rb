@@ -39,6 +39,15 @@ class Admin::CardsController < AdminController
     render json: @cards, adapter: :attributes and return
   end
 
+  # Looks up a physical access card without exposing the cards collection to
+  # clients. This is used by trusted board/admin NFC readers.
+  def by_uid
+    @card = Card.where(uid: params.require(:uid)).first
+    raise ::Mongoid::Errors::DocumentNotFound.new(Card, { uid: params[:uid] }) if @card.nil?
+
+    render json: @card, adapter: :attributes and return
+  end
+
   def update
     @card = Card.find(params[:id])
     raise ::Mongoid::Errors::DocumentNotFound.new(Card, { id: params[:id] }) if @card.nil?

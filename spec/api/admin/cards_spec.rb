@@ -3,6 +3,46 @@ require 'swagger_helper'
 describe 'Admin::AccessCards API', type: :request do
   let(:admin) { create(:member, :admin) }
   let(:basic) { create(:member) }
+  before { allow(CloudflareRails::Importer).to receive(:cloudflare_ips).and_return([]) }
+
+  path '/admin/cards/by_uid' do
+    get 'Gets an access card by its NFC UID' do
+      tags 'Cards'
+      operationId 'adminGetCardByUid'
+      produces 'application/json'
+      parameter name: :uid, in: :query, type: :string, required: true
+
+      response '200', 'card found' do
+        before { sign_in admin }
+        schema '$ref' => '#/components/schemas/Card'
+        let!(:card) { create(:card, member: basic, uid: '04A1B2C3D4') }
+        let(:uid) { card.uid }
+        run_test! do |response|
+          expect(JSON.parse(response.body)['memberId']).to eq(basic.id.to_s)
+        end
+      end
+
+      response '404', 'card not found' do
+        before { sign_in admin }
+        schema '$ref' => '#/components/schemas/error'
+        let(:uid) { 'UNKNOWN' }
+        run_test!
+      end
+
+      response '403', 'user unauthorized' do
+        before { sign_in basic }
+        schema '$ref' => '#/components/schemas/error'
+        let(:uid) { '04A1B2C3D4' }
+        run_test!
+      end
+
+      response '401', 'user unauthenticated' do
+        schema '$ref' => '#/components/schemas/error'
+        let(:uid) { '04A1B2C3D4' }
+        run_test!
+      end
+    end
+  end
 
   path '/admin/cards/new' do 
     get 'Initiate new card creation' do 

@@ -113,6 +113,9 @@
           },
           "uid": {
             "type": "string"
+          },
+          "memberId": {
+            "type": "string"
           }
         },
         "required": [
@@ -120,7 +123,8 @@
           "holder",
           "expiry",
           "validity",
-          "uid"
+          "uid",
+          "memberId"
         ]
       },
       "RejectionCard": {
@@ -2656,6 +2660,67 @@
         }
       }
     },
+    "/admin/cards/by_uid": {
+      "get": {
+        "summary": "Gets an access card by its NFC UID",
+        "tags": [
+          "Cards"
+        ],
+        "operationId": "adminGetCardByUid",
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "card found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Card"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "card not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "user unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "user unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/cards/new": {
       "get": {
         "summary": "Initiate new card creation",
@@ -3468,6 +3533,76 @@
         }
       }
     },
+    "/admin/rejections": {
+      "post": {
+        "summary": "Records an unknown scanned card UID as a rejection",
+        "tags": [
+          "Cards"
+        ],
+        "operationId": "adminCreateRejection",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "rejection recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RejectionCard"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "user unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "user unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "UID is blank or already belongs to a card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid"
+                ]
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/admin/rentals": {
       "get": {
         "summary": "Gets a list of rentals",
@@ -4209,6 +4344,63 @@
           },
           "404": {
             "description": "invoice not found"
+          }
+        }
+      }
+    },
+    "/config": {
+      "get": {
+        "summary": "Gets public runtime client configuration",
+        "tags": [
+          "Configuration"
+        ],
+        "operationId": "getClientConfig",
+        "responses": {
+          "200": {
+            "description": "configuration found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "firebase_api_key": {
+                      "type": "string"
+                    },
+                    "firebase_project_id": {
+                      "type": "string"
+                    },
+                    "firebase_auth_domain": {
+                      "type": "string"
+                    },
+                    "firebase_auth_type": {
+                      "type": "string"
+                    },
+                    "firebase_app_id": {
+                      "type": "string"
+                    },
+                    "firebase_web_client_id": {
+                      "type": "string"
+                    },
+                    "wiki_url": {
+                      "type": "string"
+                    },
+                    "app_domain": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "firebase_api_key",
+                    "firebase_project_id",
+                    "firebase_auth_domain",
+                    "firebase_auth_type",
+                    "firebase_app_id",
+                    "firebase_web_client_id",
+                    "wiki_url",
+                    "app_domain"
+                  ]
+                }
+              }
+            }
           }
         }
       }
