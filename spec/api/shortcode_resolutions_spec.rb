@@ -1,7 +1,7 @@
 require "swagger_helper"
 
 RSpec.describe "Shortcode resolution API", type: :request do
-  path "/api/shortcodes/{code}" do
+  path "/shortcodes/{code}" do
     get "Resolve a printed Makerspace short URL" do
       tags "Shortcodes"
       produces "application/json"
