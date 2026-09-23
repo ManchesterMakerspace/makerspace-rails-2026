@@ -9,6 +9,8 @@ describe 'Admin::Rejections API', type: :request do
     post 'Records an unknown scanned card UID as a rejection' do
       tags 'Cards'
       operationId 'adminCreateRejection'
+      description 'Requires an authenticated member with the admin or board_member role.'
+      security [cookieAuth: []]
       consumes 'application/json'
       produces 'application/json'
       parameter name: :rejectionDetails, in: :body, required: true, schema: {

@@ -11,6 +11,14 @@
     }
   ],
   "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "_member-interface_session",
+        "description": "Rails member session cookie obtained after sign-in."
+      }
+    },
     "schemas": {
       "MemberStatus": {
         "type": "string",
@@ -2667,6 +2675,12 @@
           "Cards"
         ],
         "operationId": "adminGetCardByUid",
+        "description": "Requires an authenticated member with the admin or board_member role.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "uid",
@@ -3540,6 +3554,12 @@
           "Cards"
         ],
         "operationId": "adminCreateRejection",
+        "description": "Requires an authenticated member with the admin or board_member role.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {

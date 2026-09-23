@@ -4,6 +4,7 @@ import org.json.JSONObject;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.util.*;
 
 final class ApiClient {
     static final class Response {
@@ -17,7 +18,7 @@ final class ApiClient {
     }
 
     private final String baseUrl;
-    private String cookie;
+    private final CookieJar cookies = new CookieJar();
 
     ApiClient(String baseUrl) {
         String clean = baseUrl.trim();
@@ -28,31 +29,34 @@ final class ApiClient {
     Response get(String path) throws IOException { return request("GET", path, null); }
 
     private Response request(String method, String path, JSONObject json) throws IOException {
+        if (!method.equals("GET") && cookies.csrfToken() == null) {
+            // Rails issues the CSRF cookie on safe requests. Bootstrap it before
+            // the first login write as well as reusing refreshed tokens later.
+            request("GET", "/api/config", null);
+        }
         HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + path).openConnection();
         connection.setRequestMethod(method);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(15000);
         connection.setRequestProperty("Accept", "application/json");
-        if (cookie != null) connection.setRequestProperty("Cookie", cookie);
+        String cookieHeader = cookies.header();
+        if (!cookieHeader.isEmpty()) connection.setRequestProperty("Cookie", cookieHeader);
         if (json != null) {
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            String csrfToken = cookies.csrfToken();
+            if (csrfToken != null) connection.setRequestProperty("X-XSRF-TOKEN", csrfToken);
             try (OutputStream out = connection.getOutputStream()) {
                 out.write(json.toString().getBytes(StandardCharsets.UTF_8));
             }
         }
         int status = connection.getResponseCode();
-        captureCookie(connection.getHeaderField("Set-Cookie"));
+        cookies.capture(connection.getHeaderFields());
         InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
         String text = read(stream);
         connection.disconnect();
         try { return new Response(status, text.isEmpty() ? new JSONObject() : new JSONObject(text)); }
         catch (Exception malformed) { return new Response(status, new JSONObject()); }
-    }
-
-    private void captureCookie(String header) {
-        if (header == null || header.isEmpty()) return;
-        cookie = header.split(";", 2)[0];
     }
 
     private static String read(InputStream stream) throws IOException {

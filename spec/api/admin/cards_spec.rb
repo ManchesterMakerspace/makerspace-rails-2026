@@ -9,6 +9,8 @@ describe 'Admin::AccessCards API', type: :request do
     get 'Gets an access card by its NFC UID' do
       tags 'Cards'
       operationId 'adminGetCardByUid'
+      description 'Requires an authenticated member with the admin or board_member role.'
+      security [cookieAuth: []]
       produces 'application/json'
       parameter name: :uid, in: :query, type: :string, required: true
 

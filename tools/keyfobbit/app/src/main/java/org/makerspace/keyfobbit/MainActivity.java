@@ -79,7 +79,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
             } catch (Exception ignored) { }
             runNetwork(() -> api.post("/api/members/sign_in", request), response -> {
                 signIn.setEnabled(true);
-                if (response.status == 202 && response.body.optBoolean("totpRequired")) showTotp();
+                if (response.status == 202 && response.body.optBoolean("totp_required")) showTotp();
                 else completeAuthentication(response);
             });
         });
@@ -139,7 +139,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         JSONObject request = new JSONObject();
         try { request.put("idToken", token); } catch (Exception ignored) { }
         runNetwork(() -> api.post("/api/auth/firebase_login", request), response -> {
-            if (response.status == 202 && response.body.optBoolean("totpRequired")) showTotp();
+            if (response.status == 202 && response.body.optBoolean("totp_required")) showTotp();
             else completeAuthentication(response);
         });
     }

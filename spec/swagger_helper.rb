@@ -1037,6 +1037,14 @@ RSpec.configure do |config|
         { url: '/api', description: 'API base path' }
       ],
       components: {
+        securitySchemes: {
+          cookieAuth: {
+            type: :apiKey,
+            in: :cookie,
+            name: '_member-interface_session',
+            description: 'Rails member session cookie obtained after sign-in.'
+          }
+        },
         schemas: {
           MemberStatus: {
             type: :string,
