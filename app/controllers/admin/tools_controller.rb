@@ -1,10 +1,11 @@
 class Admin::ToolsController < ApplicationController
   before_action :authenticate_member!
   before_action :authorize_index, only: [:index]
-  before_action :find_tool, only: [:update, :destroy, :notes]
+  before_action :find_tool, only: [:update, :destroy, :notes, :requestor_annotation]
   before_action :authorize_create, only: [:create]
   before_action :authorize_manage, only: [:update, :destroy]
   before_action :authorize_notes, only: [:notes]
+  before_action :authorize_annotation, only: [:requestor_annotation]
   before_action :prevent_move_with_active_reservations, only: [:update]
 
   def index
@@ -89,6 +90,17 @@ class Admin::ToolsController < ApplicationController
     render json: @tool, serializer: ToolSerializer, adapter: :attributes, scope: current_member
   end
 
+  def requestor_annotation
+    before = @tool.requestor_annotation
+    @tool.update_attributes!(params.permit(:requestor_annotation))
+    ::Service::AuditLogger.log(
+      log_type: 'portal', event_type: 'tool_requestor_annotation_updated',
+      resource_type: 'Tool', resource_id: @tool.id, actor: current_member,
+      field_changes: { 'requestor_annotation' => [before, @tool.requestor_annotation] }
+    )
+    render json: @tool, serializer: ToolSerializer, adapter: :attributes, scope: current_member
+  end
+
   def destroy
     if current_or_future_blocking_reservations.exists?
       raise ::Error::Conflict.new("Cancel future reservations before deleting this tool")
@@ -120,7 +132,7 @@ class Admin::ToolsController < ApplicationController
   private
 
   def tool_params
-    params.permit(:open, :name, :wiki_url, :gdrive_id, :description, :shop_id, :disabled, :announce,
+    params.permit(:open, :name, :requestor_annotation, :wiki_url, :gdrive_id, :description, :shop_id, :disabled, :announce,
       :announce_channel, :users_channel, :reservable, :allow_pending,
       :max_concurrent_reservations, :reservation_horizon_days,
       :minimum_advance_notice_hours, :prohibit_same_day_reservations, :reservation_full_day, :max_reservation_duration_hours, :reservation_requires_approval,
@@ -157,6 +169,10 @@ class Admin::ToolsController < ApplicationController
 
   def authorize_notes
     raise ::Error::Forbidden.new("User is not authorized to set notes for this tool") unless can_approve_checkout_for_tool?(@tool)
+  end
+
+  def authorize_annotation
+    raise ::Error::Forbidden.new("User cannot edit this tool's requestor annotation") unless can_approve_checkout_for_tool?(@tool)
   end
 
   def authorize_manage

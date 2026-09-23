@@ -21,6 +21,7 @@ class CheckoutNotificationJob < ApplicationJob
         return unless request && request.member && request.tool
         if action == "request" && request.open?
           request.announce_request
+          request.notify_requestor
         elsif action == "cancellation" && request.status == "deleted"
           request.remove_announcement
         end

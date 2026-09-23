@@ -4,6 +4,7 @@ class Shop
   include ActiveModel::Serializers::JSON
 
   field :name, type: String
+  field :requestor_annotation, type: String
   field :wiki_url, type: String
   field :gdrive_id, type: String
   field :slack_channel, type: String  # e.g. "shop-woodworking" — used for slash command routing
@@ -64,6 +65,7 @@ class Shop
   private
 
   def normalize_external_fields
+    self.requestor_annotation = requestor_annotation.to_s.strip.presence
     self.wiki_url = wiki_url.to_s.strip.presence
     self.gdrive_id = gdrive_id.to_s.strip.presence
     self.slack_channel = Service::SlackChannelCache.normalize_name(slack_channel).presence

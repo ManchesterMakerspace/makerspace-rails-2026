@@ -1,4 +1,5 @@
 class ToolSerializer < ActiveModel::Serializer
+  attribute :requestor_annotation
   attributes :open, :id, :name, :wiki_url, :gdrive_id, :description, :disabled,
              :allow_pending, :announce,
              :announce_channel, :users_channel, :shop_id, :prerequisite_ids,

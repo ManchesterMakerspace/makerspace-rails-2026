@@ -5366,6 +5366,406 @@
         }
       }
     },
+    "/admin/shops/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Updates shop settings, including the requestor annotation",
+        "tags": [
+          "Checkouts"
+        ],
+        "description": "Signed-in owning-shop resource managers, admins and board members may update settings. Additional approvers use the dedicated tool annotation endpoint.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "annotation saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requestorAnnotation": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                    }
+                  },
+                  "required": [
+                    "requestorAnnotation"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "outside managed shop"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestor_annotation": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/shops": {
+      "get": {
+        "summary": "Lists managed shops with requestor annotations",
+        "tags": [
+          "Checkouts"
+        ],
+        "description": "Requires a signed-in shop manager, admin or board member. Tool lists also admit eligible additional approvers and are scoped to their assigned tools.",
+        "responses": {
+          "200": {
+            "description": "catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "requestorAnnotation": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                      }
+                    },
+                    "required": [
+                      "requestorAnnotation"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Creates a shop with an optional requestor annotation",
+        "tags": [
+          "Checkouts"
+        ],
+        "description": "Shop creation requires admin or board access. Tool creation also allows the owning shop's resource managers.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requestorAnnotation": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                    }
+                  },
+                  "required": [
+                    "requestorAnnotation"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "shop_id": {
+                    "type": "string"
+                  },
+                  "requestor_annotation": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tools/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Updates tool settings, including the requestor annotation",
+        "tags": [
+          "Checkouts"
+        ],
+        "description": "Signed-in owning-shop resource managers, admins and board members may update settings. Additional approvers use the dedicated tool annotation endpoint.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "annotation saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requestorAnnotation": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                    }
+                  },
+                  "required": [
+                    "requestorAnnotation"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "outside managed shop"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestor_annotation": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tools": {
+      "get": {
+        "summary": "Lists managed tools with requestor annotations",
+        "tags": [
+          "Checkouts"
+        ],
+        "description": "Requires a signed-in shop manager, admin or board member. Tool lists also admit eligible additional approvers and are scoped to their assigned tools.",
+        "responses": {
+          "200": {
+            "description": "catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "requestorAnnotation": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                      }
+                    },
+                    "required": [
+                      "requestorAnnotation"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Creates a tool with an optional requestor annotation",
+        "tags": [
+          "Checkouts"
+        ],
+        "description": "Shop creation requires admin or board access. Tool creation also allows the owning shop's resource managers.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requestorAnnotation": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                    }
+                  },
+                  "required": [
+                    "requestorAnnotation"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "shop_id": {
+                    "type": "string"
+                  },
+                  "requestor_annotation": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shops": {
+      "get": {
+        "summary": "Lists shops with their default checkout requestor annotations",
+        "tags": [
+          "Checkouts"
+        ],
+        "responses": {
+          "200": {
+            "description": "shops",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "requestorAnnotation": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                      }
+                    },
+                    "required": [
+                      "requestorAnnotation"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tools/{id}/requestor_annotation": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "summary": "Updates only the tool's annotation for requestors",
+        "tags": [
+          "Checkouts"
+        ],
+        "description": "Requires a signed-in owning-shop resource manager, admin, board member, or eligible additional approver assigned to this tool or its shop. Other tool settings cannot be changed through this endpoint.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "annotation updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requestorAnnotation": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                    }
+                  },
+                  "required": [
+                    "requestorAnnotation"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "unrelated member or approver"
+          },
+          "404": {
+            "description": "tool not found"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestor_annotation": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                  }
+                },
+                "required": [
+                  "requestor_annotation"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/reservations/agenda": {
       "get": {
         "summary": "Public 24-hour reservation agenda",
@@ -5658,7 +6058,7 @@
           "SlackInteractions"
         ],
         "operationId": "slackInteractions",
-        "description": "Callbacks: checkout_modal accepts block_actions and view_submission; checkout_request_submit accepts legacy submissions; reservation_submit also accepts view_closed. Checkout navigation calls views.update with the incoming view hash. Successful checkout submissions persist under the member/tool lock and enqueue request/cancellation announcements or approval invitations, DMs, success announcements and audit logging; these Slack side effects, including volunteer-review and decision DMs, run in CheckoutNotificationJob outside the acknowledgement path. Submissions also enqueue replacement-first ephemeral outcome delivery and return response_action clear, even if enqueueing fails. The outcome job falls back to the submitting Slack user DM on replacement failure. Rejected submissions return response_action update with an explanatory modal, or errors keyed by input block ID. Checkout private_metadata is a signed, expiring contract containing member_id, optional shop_id, response_url, slack_user_id, step and optional record_id. Every transition reloads and authorizes these IDs. Display text is never an identifier. Checkout action IDs: checkout_menu_select, checkout_shop_select, checkout_tool_select, checkout_request_select, checkout_checkout_select, checkout_edit_note, checkout_cancel_request, checkout_approve_request, checkout_approve_volunteer, checkout_decline_volunteer, checkout_back. Note input block/action ID: checkout_note.",
+        "description": "Callbacks: checkout_modal accepts block_actions and view_submission; checkout_request_submit accepts legacy submissions; reservation_submit also accepts view_closed. Checkout navigation calls views.update with the incoming view hash. Successful checkout submissions persist under the member/tool lock and enqueue request/cancellation announcements or approval invitations, DMs, success announcements and audit logging; request submissions also DM the linked requestor with the tool annotation or shop fallback; these Slack side effects, including volunteer-review and decision DMs, run in CheckoutNotificationJob outside the acknowledgement path. Submissions also enqueue replacement-first ephemeral outcome delivery and return response_action clear, even if enqueueing fails. The outcome job falls back to the submitting Slack user DM on replacement failure. Rejected submissions return response_action update with an explanatory modal, or errors keyed by input block ID. Checkout private_metadata is a signed, expiring contract containing member_id, optional shop_id, response_url, slack_user_id, step and optional record_id. Every transition reloads and authorizes these IDs. Display text is never an identifier. Checkout action IDs: checkout_menu_select, checkout_shop_select, checkout_tool_select, checkout_request_select, checkout_checkout_select, checkout_edit_note, checkout_cancel_request, checkout_approve_request, checkout_approve_volunteer, checkout_decline_volunteer, checkout_back. Note input block/action ID: checkout_note.",
         "parameters": [
           {
             "name": "X-Slack-Signature",
@@ -5836,7 +6236,7 @@
         "tags": [
           "ToolCheckoutRequests"
         ],
-        "description": "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending.",
+        "description": "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending. requestorAnnotation is the current tool annotation, falling back to its shop, or null.",
         "responses": {
           "200": {
             "description": "eligible open requests",
@@ -5845,7 +6245,13 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object"
+                    "type": "object",
+                    "properties": {
+                      "requestorAnnotation": {
+                        "type": "string",
+                        "nullable": true
+                      }
+                    }
                   }
                 }
               }
@@ -5859,7 +6265,7 @@
           "ToolCheckoutRequests"
         ],
         "operationId": "createToolCheckoutRequest",
-        "description": "Creation is serialized under the shared per-member/tool lock, with membership, availability, prerequisites, checkout records and open requests rechecked immediately before insertion. Lock contention returns 422.",
+        "description": "Creation is serialized under the shared per-member/tool lock, with membership, availability, prerequisites, checkout records and open requests rechecked immediately before insertion. Lock contention returns 422. Successful submission sends a Slack DM to the linked requestor including the tool annotation, or the shop annotation when the tool has none.",
         "parameters": [],
         "responses": {
           "200": {
@@ -5897,6 +6303,10 @@
                       "type": "string"
                     },
                     "note": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "requestorAnnotation": {
                       "type": "string",
                       "nullable": true
                     },

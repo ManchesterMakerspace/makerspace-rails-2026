@@ -173,6 +173,7 @@ Rails.application.routes.draw do
         resources :tools, only: [:index, :create, :update, :destroy] do
           member do
             patch :notes
+            patch :requestor_annotation
           end
         end
         resources :tool_checkouts, only: [:index, :create, :destroy]
