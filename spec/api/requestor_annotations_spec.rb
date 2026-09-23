@@ -107,6 +107,7 @@ RSpec.describe "Checkout requestor annotations", type: :request do
   path "/shops" do
     get "Lists shops with their default checkout requestor annotations" do
       tags "Checkouts"
+      description "Requires a signed-in member."
       produces "application/json"
       before { shop }
       response "200", "shops" do

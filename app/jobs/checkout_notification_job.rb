@@ -19,8 +19,8 @@ class CheckoutNotificationJob < ApplicationJob
       when "request", "cancellation"
         request = ToolCheckoutRequest.find_by(id: record_id)
         return unless request && request.member && request.tool
-        if action == "request" && request.open?
-          request.announce_request
+        if action == "request"
+          request.announce_request if request.open?
           request.notify_requestor
         elsif action == "cancellation" && request.status == "deleted"
           request.remove_announcement
