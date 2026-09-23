@@ -13,19 +13,15 @@ class Admin::RejectionsController < AuthenticationController
   def create
     raise ::Error::Forbidden.new unless is_admin? || is_board_member?
 
-    uid = normalize_uid(params.require(:uid))
+    uid = Card.normalize_uid(params.require(:uid))
     raise ::Error::UnprocessableEntity.new('uid must not be blank') if uid.blank?
-    raise ::Error::UnprocessableEntity.new('Card already exists') if Card.where(uid: uid).exists?
+    raise ::Error::UnprocessableEntity.new('Card already exists') if Card.with_normalized_uid(uid).exists?
 
     rejection = RejectionCard.create!(uid: uid, validity: 'rejected', timeOf: Time.current)
     render json: rejection.attributes, status: :created
   end
 
   private
-
-  def normalize_uid(uid)
-    uid.to_s.upcase.gsub(/[:\-\s]/, '')
-  end
 
   def result_limit
     Integer(params[:limit] || DEFAULT_LIMIT).tap do |limit|

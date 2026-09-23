@@ -13,6 +13,9 @@ describe 'Admin::Rejections API', type: :request do
       security [cookieAuth: []]
       consumes 'application/json'
       produces 'application/json'
+      parameter name: :'X-XSRF-TOKEN', in: :header, type: :string, required: true,
+                description: 'Decoded value of the XSRF-TOKEN cookie obtained from a safe request such as GET /config.'
+      let(:'X-XSRF-TOKEN') { 'documented-csrf-token' }
       parameter name: :rejectionDetails, in: :body, required: true, schema: {
         type: :object,
         properties: { uid: { type: :string } },

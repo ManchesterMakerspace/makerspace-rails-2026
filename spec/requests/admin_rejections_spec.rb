@@ -26,8 +26,9 @@ RSpec.describe 'Admin rejections', type: :request do
 
     it 'does not record a UID that already belongs to a card' do
       sign_in create(:member, :admin)
+      member_card.set(uid: '04:a1-b2 c3')
 
-      post '/api/admin/rejections', params: { uid: member_card.uid }, as: :json
+      post '/api/admin/rejections', params: { uid: '04A1B2C3' }, as: :json
 
       expect(response).to have_http_status(:unprocessable_content)
     end

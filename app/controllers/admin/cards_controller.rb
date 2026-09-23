@@ -42,8 +42,8 @@ class Admin::CardsController < AdminController
   # Looks up a physical access card without exposing the cards collection to
   # clients. This is used by trusted board/admin NFC readers.
   def by_uid
-    uid = normalize_uid(params.require(:uid))
-    @card = Card.where(uid: uid).first
+    uid = Card.normalize_uid(params.require(:uid))
+    @card = Card.with_normalized_uid(uid).first
     raise ::Mongoid::Errors::DocumentNotFound.new(Card, { uid: uid }) if @card.nil?
 
     render json: @card, adapter: :attributes and return
@@ -110,10 +110,6 @@ class Admin::CardsController < AdminController
   def card_query_params
     params.require(:member_id)
     params.permit(:member_id)
-  end
-
-  def normalize_uid(uid)
-    uid.to_s.upcase.gsub(/[:\-\s]/, '')
   end
 
   def removal_event_type(card, member)

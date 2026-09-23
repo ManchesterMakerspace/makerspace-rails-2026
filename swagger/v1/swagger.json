@@ -2907,6 +2907,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-XSRF-TOKEN",
+            "in": "header",
+            "required": true,
+            "description": "Decoded value of the XSRF-TOKEN cookie obtained from a safe request such as GET /config.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3628,7 +3637,17 @@
             "cookieAuth": []
           }
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "X-XSRF-TOKEN",
+            "in": "header",
+            "required": true,
+            "description": "Decoded value of the XSRF-TOKEN cookie obtained from a safe request such as GET /config.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "201": {
             "description": "rejection recorded",

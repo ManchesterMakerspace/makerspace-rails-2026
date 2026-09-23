@@ -17,8 +17,10 @@ describe 'Admin::AccessCards API', type: :request do
       response '200', 'card found' do
         before { sign_in admin }
         schema '$ref' => '#/components/schemas/Card'
-        let!(:card) { create(:card, member: basic, uid: '04A1B2C3') }
-        let(:uid) { '04:a1-b2 c3' }
+        let!(:card) do
+          create(:card, member: basic, uid: '04A1B2C3').tap { |record| record.set(uid: '04:a1-b2 c3') }
+        end
+        let(:uid) { '04A1B2C3' }
         run_test! do |response|
           expect(JSON.parse(response.body)['memberId']).to eq(basic.id.to_s)
         end
@@ -244,6 +246,9 @@ describe 'Admin::AccessCards API', type: :request do
       description 'Requires an authenticated member with the admin or board_member role. Removal is limited to lost fobs and fobs assigned to expired or revoked members.'
       security [cookieAuth: []]
       parameter name: :id, in: :path, type: :string, required: true
+      parameter name: :'X-XSRF-TOKEN', in: :header, type: :string, required: true,
+                description: 'Decoded value of the XSRF-TOKEN cookie obtained from a safe request such as GET /config.'
+      let(:'X-XSRF-TOKEN') { 'documented-csrf-token' }
 
       response '204', 'fob removed' do
         before { sign_in admin }
