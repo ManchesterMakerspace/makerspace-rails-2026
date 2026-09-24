@@ -50,3 +50,7 @@ end
 every :day, at: '9am' do
   runner "MembershipExpirationNoticeJob.perform_later"
 end
+
+every :day, at: '9:15am' do
+  runner "FixTicketAssigneeExpirationJob.perform_later"
+end

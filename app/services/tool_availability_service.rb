@@ -4,10 +4,12 @@ class ToolAvailabilityService
     proxy = ToolScope.new(tool.shop_id, tool)
     raise Error::Forbidden.new unless FixTicketPolicy.new(actor, proxy).staff?
     raise Error::UnprocessableEntity.new('out_of_service must be a boolean') unless [true, false].include?(value)
+    changed = false
     ReservationService.send(:with_shop_locks, [tool.shop_id]) do
       previous = !!tool.reload.out_of_service
       if previous != value
         tool.update!(out_of_service: value)
+        changed = true
         Service::AuditLogger.log(log_type: 'portal', event_type: 'tool_availability_changed',
           resource_type: 'Tool', resource_id: tool.id, actor: actor,
           field_changes: { 'out_of_service' => [previous, value] })
@@ -18,6 +20,12 @@ class ToolAvailabilityService
       .uniq.group_by(&:first).each do |shop_id, targets|
         ReservationSlackCanvasSyncJob.perform_later(shop_id, targets.map { |(_, date)| date.iso8601 })
       end
+    # Existing reservation holders need to hear it directly -- the canvas
+    # refresh above only updates a shared board, and only staff otherwise see
+    # this affected list (in the response below, for their own review).
+    if changed && value && affected.exists?
+      ToolOutageNotificationJob.perform_later(tool.id.to_s, affected.pluck(:id))
+    end
     { outOfService: value, affectedReservations: affected.order_by(start_at: :asc).limit(100).map { |r| { id: r.id.to_s, startAt: r.start_at, endAt: r.end_at } },
       affectedCount: affected.count }
   end
