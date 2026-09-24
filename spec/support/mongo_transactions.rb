@@ -15,8 +15,10 @@ module SpecMongoTransactions
   end
 end
 
-RSpec.configure do |config|
-  config.prepend_before(:each, requires_transactions: true) do
-    skip 'Optional: requires MongoDB transactions (replica set or supported sharded cluster)' unless SpecMongoTransactions.available?
+if defined?(RSpec)
+  RSpec.configure do |config|
+    config.prepend_before(:each, requires_transactions: true) do
+      skip 'Optional: requires MongoDB transactions (replica set or supported sharded cluster)' unless SpecMongoTransactions.available?
+    end
   end
 end

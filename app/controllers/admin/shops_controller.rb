@@ -157,7 +157,7 @@ class Admin::ShopsController < ApplicationController
 
   def shop_params
     params.permit(
-      :name, :wiki_url, :gdrive_id, :slack_channel, :disabled, :reservable,
+      :name, :requestor_annotation, :wiki_url, :gdrive_id, :slack_channel, :disabled, :reservable,
       :max_concurrent_reservations, :reservation_horizon_days,
       :minimum_advance_notice_hours, :prohibit_same_day_reservations, :reservation_full_day, :max_reservation_duration_hours, :reservation_requires_approval,
       :color_id, :floor_name, :capacity,

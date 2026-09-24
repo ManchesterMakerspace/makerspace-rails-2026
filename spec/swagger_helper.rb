@@ -462,6 +462,7 @@ RSpec.configure do |config|
             resourceManagers: { type: :array, items: { '$ref' => '#/components/schemas/FixPerson' } },
             id: { type: :string },
             name: { type: :string },
+            requestorAnnotation: { type: :string, nullable: true },
             wikiUrl: { type: :string, format: :uri },
             wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
             gdriveId: { type: :string, 'x-nullable': true },
@@ -470,9 +471,12 @@ RSpec.configure do |config|
             colorId: { type: :string, pattern: '^\d+$', 'x-nullable': true },
             reservationPrerequisiteNames: { type: :array, items: { type: :string } },
             googleResourceId: { type: :string, 'x-nullable': true },
-            resourceEmail: { type: :string, 'x-nullable': true }
+            resourceEmail: { type: :string, 'x-nullable': true },
+            floorName: { type: :string },
+            capacity: { type: :integer },
+            toolCount: { type: :integer, minimum: 0 }
           },
-          required: [:id, :name, :wikiUrl, :reservable]
+          required: [:id, :name, :requestorAnnotation, :wikiUrl, :reservable, :toolCount]
         }
       ]
     },
@@ -485,16 +489,29 @@ RSpec.configure do |config|
             id: { type: :string },
             shopId: { type: :string },
             name: { type: :string },
+            requestorAnnotation: { type: :string, nullable: true },
             wikiUrl: { type: :string, format: :uri },
             wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
             gdriveId: { type: :string, 'x-nullable': true },
             description: { type: :string, 'x-nullable': true },
+            open: { type: :boolean },
             disabled: { type: :boolean },
             outOfService: { type: :boolean, default: false },
             allowPending: { type: :boolean, default: false },
-            effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } }
+            announce: { type: :boolean },
+            announceChannel: { type: :string, 'x-nullable': true },
+            usersChannel: { type: :string, 'x-nullable': true },
+            prerequisiteIds: { type: :array, items: { type: :string } },
+            prerequisiteNames: { type: :array, items: { type: :string } },
+            effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } },
+            reservationPrerequisiteNames: { type: :array, items: { type: :string } },
+            shopName: { type: :string },
+            notes: { type: :string, 'x-nullable': true, description: "Present only when the member may view operational notes." },
+            unmetPrerequisiteIds: { type: :array, items: { type: :string }, description: "Present when availability is evaluated for a signed-in member." },
+            unmetPrerequisiteNames: { type: :array, items: { type: :string }, description: "Present when availability is evaluated for a signed-in member." },
+            requestable: { type: :boolean, description: "Present when availability is evaluated for a signed-in member." }
           },
-          required: [:id, :shopId, :name, :wikiUrl, :reservable]
+          required: [:id, :shopId, :name, :requestorAnnotation, :wikiUrl, :reservable]
         }
       ]
     },

@@ -42,6 +42,7 @@ Rails.application.routes.draw do
   get '/reservations/agenda', to: 'reservation_agendas#index'
 
   scope :api, defaults: { format: :json } do
+    get "/shortcodes/:code", to: "shortcode_resolutions#show"
     post "/shortcodes", to: "shortcodes#create"
     devise_for :members, skip: [:registrations], controllers: { sessions: "sessions" }
     devise_scope :member do
@@ -193,6 +194,7 @@ Rails.application.routes.draw do
         resources :tools, only: [:index, :create, :update, :destroy] do
           member do
             patch :notes
+            patch :requestor_annotation
           end
         end
         resources :tool_checkouts, only: [:index, :create, :destroy]
