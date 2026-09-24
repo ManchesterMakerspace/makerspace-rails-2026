@@ -20,7 +20,7 @@ RSpec.describe 'Bounty resource visibility', type: :request do
   end
   before do
     ActiveJob::Base.queue_adapter = :test
-    allow(REDIS).to receive(:set)
+    allow(REDIS).to receive(:set).and_return(true)
   end
 
   path '/volunteer/bounties.{format}' do

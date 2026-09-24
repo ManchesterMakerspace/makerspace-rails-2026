@@ -5,7 +5,7 @@ class CheckoutReadContext
 
   def initialize(viewer = nil)
     @viewer = viewer
-    @tools, @shops, @members, @names, @counts = {}, {}, {}, {}, {}
+    @tools, @shops, @members, @names, @counts, @resource_managers = {}, {}, {}, {}, {}, {}
     @checked_out_tool_ids = Set.new
     if viewer
       @approver = CheckoutApprover.find_by(member_id: viewer.id)
@@ -22,6 +22,7 @@ class CheckoutReadContext
     context = new
     context.load_shops(shops)
     context.load_catalog(shops: shops)
+    context.load_resource_managers(shops.map(&:id))
     context
   end
 
@@ -69,6 +70,22 @@ class CheckoutReadContext
 
   def tools_for(ids)
     Array(ids).map(&:to_s).filter_map { |id| tools[id] }
+  end
+
+  # Batched to avoid a per-shop query in ShopSerializer#resource_managers.
+  def load_resource_managers(shop_ids)
+    ids = shop_ids.map(&:to_s).uniq
+    @resource_managers = ids.index_with { [] }
+    Member.shop_resource_manager_candidates.where(:resource_manager_shop_ids.in => ids)
+      .only(:firstname, :lastname, :resource_manager_shop_ids).each do |member|
+        Array(member.resource_manager_shop_ids).map(&:to_s).each do |shop_id|
+          (@resource_managers[shop_id] ||= []) << { id: member.id.to_s, name: member.fullname } if ids.include?(shop_id)
+        end
+      end
+  end
+
+  def resource_managers_for(shop)
+    @resource_managers.fetch(shop.id.to_s, nil)
   end
 
   # Counts and prerequisite labels share a single bounded catalog scan.

@@ -7,7 +7,7 @@ RSpec.describe 'Checkout response contracts', type: :request do
   let(:request_record) { ToolCheckoutRequest.create!(member_id: member.id, tool_id: tool.id, note: 'Training please', request_date: Time.current, status: 'open') }
   before do
     sign_in member
-    allow(REDIS).to receive(:set)
+    allow(REDIS).to receive(:set).and_return(true)
     allow_any_instance_of(ToolCheckout).to receive(:send_checkout_slack_notification)
     allow_any_instance_of(ToolCheckout).to receive(:announce_checkout_success)
     allow_any_instance_of(ToolCheckout).to receive(:send_revocation_slack_notification)

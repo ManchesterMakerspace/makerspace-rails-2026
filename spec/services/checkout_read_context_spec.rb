@@ -39,7 +39,7 @@ RSpec.describe CheckoutReadContext do
     rows = [shop, create(:shop)]
     expected = serialize(rows, ShopSerializer)
     context = nil
-    expect(reads { context = described_class.for_shops(rows) }).to eq(['aggregate'])
+    expect(reads { context = described_class.for_shops(rows) }).to eq(['aggregate', 'find'])
     expect(reads { expect(serialize(rows, ShopSerializer, checkout_context: context)).to eq(expected) }).to be_empty
     expect(context.tool_count(rows.last)).to eq(0)
     expect(described_class.for_shops([]).shops).to be_empty

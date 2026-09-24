@@ -7,7 +7,7 @@ RSpec.describe 'Shop Resource Manager assignments', type: :request do
   before do
     ActiveJob::Base.queue_adapter = :test
     sign_in member
-    allow(REDIS).to receive(:set)
+    allow(REDIS).to receive(:set).and_return(true)
   end
   path '/admin/shops/resource_manager_options' do
     get 'List Resource Managers, Admins and Board members for shop assignment (admin/board only)' do

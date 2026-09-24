@@ -8,7 +8,7 @@ RSpec.describe 'Repair ticket catalog references', type: :request do
   before do
     ActiveJob::Base.queue_adapter = :test
     sign_in member
-    allow(REDIS).to receive(:set)
+    allow(REDIS).to receive(:set).and_return(true)
   end
   path '/admin/tools' do
     post 'Create a tool with a name unique within its shop' do

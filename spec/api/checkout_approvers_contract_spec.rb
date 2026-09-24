@@ -5,7 +5,7 @@ RSpec.describe 'Checkout approver contracts', type: :request do
   let(:shop) { create(:shop) }
   let(:tool) { create(:tool, shop: shop, out_of_service: true) }
   let(:approver) { CheckoutApprover.create!(member_id: member.id, shop_ids: [shop.id.to_s], tool_ids: [tool.id.to_s]) }
-  before { sign_in member; allow(REDIS).to receive(:set) }
+  before { sign_in member; allow(REDIS).to receive(:set).and_return(true) }
   path '/admin/checkout_approvers' do
     get 'List checkout approvers including per-tool availability' do
       tags 'Tool checkouts'

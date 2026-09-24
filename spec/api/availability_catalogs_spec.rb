@@ -6,7 +6,7 @@ RSpec.describe 'Availability and volunteer credit catalogs', type: :request do
   before do
     sign_in member
     ActiveJob::Base.queue_adapter = :test
-    allow(REDIS).to receive(:set)
+    allow(REDIS).to receive(:set).and_return(true)
   end
 
   path '/reservation_catalog' do
