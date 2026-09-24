@@ -51,6 +51,8 @@
   "oauth_config": {
     "scopes": {
       "bot": [
+        "app_mentions:read",
+        "canvases:read",
         "canvases:write",
         "channels:join",
         "channels:manage",
@@ -63,8 +65,11 @@
         "groups:read",
         "groups:write",
         "groups:write.invites",
+        "im:read",
+        "mpim:read",
         "pins:write",
         "team:read",
+        "users.profile:read",
         "users:read",
         "users:read.email",
         "channels:history",

@@ -1,18 +1,26 @@
 class ReservationFeeService
   class << self
-    def snapshot(attributes, reservation = nil)
-      resources = attributes[:reservation_scope] == "shop" ? Shop.where(id: attributes[:shop_id]).to_a : Tool.where(:id.in => attributes[:tool_ids]).to_a
+    def snapshot(attributes, reservation = nil, resources: nil, read_context: nil)
+      resources ||= attributes[:reservation_scope] == "shop" ? Shop.where(id: attributes[:shop_id]).to_a : Tool.where(:id.in => attributes[:tool_ids]).to_a
+      read_context ||= ReservationReadContext.new
+      saved_rules = resources.to_h { |resource| [resource.id.to_s, saved_resource_rules(resource, reservation)] }
+      option_ids = resources.flat_map do |resource|
+        next [] if saved_rules[resource.id.to_s]
+
+        Array(resource.duration_fees).map { |raw| raw.to_h.stringify_keys["invoice_option_id"] }
+      end
+      options = read_context.invoice_options(option_ids)
       history = Array(reservation&.fee_rule_snapshot)
       if reservation
         original_ids = reservation.reservation_scope == "shop" ? [reservation.shop_id] : Array(reservation.tool_ids)
         history += original_ids.map { |id| { "resourceId" => id.to_s, "rules" => [] } }
       end
       selected = resources.map do |resource|
-        existing = saved_resource_rules(resource, reservation)
+        existing = saved_rules[resource.id.to_s]
         next existing if existing
         rules = Array(resource.duration_fees).map do |raw|
           rule = raw.to_h.stringify_keys
-          option = InvoiceOption.where(id: rule["invoice_option_id"], resource_class: "fee", disabled: false).first
+          option = options[rule["invoice_option_id"].to_s]
           rule.merge("name" => option&.name, "amount" => option&.amount)
         end
         { "resourceId" => resource.id.to_s, "rules" => rules }

@@ -1,6 +1,6 @@
 class Admin::MembersController < AdminController
   include Service::GoogleDrive
-  before_action :set_member, only: [:update, :update_password, :send_password_reset, :invite_google_drive, :invite_slack]
+  before_action :set_member, only: [:update, :update_password, :send_password_reset, :invite_google_drive, :invite_slack, :soft_delete, :restore]
 
   def create
     permitted_params = get_camel_case_params(create_member_params())
@@ -146,38 +146,37 @@ class Admin::MembersController < AdminController
     render json: { message: e.message }, status: :unprocessable_content and return
   end
 
+  # POST /api/admin/members/:id/soft_delete
+  # Marks a duplicate/abandoned ("ghost") account as deleted -- revokes its
+  # access, hides it from normal member queries, and frees its email for
+  # reuse. Refuses to run on a currently-active, unexpired, or subscribed
+  # member. Never notifies the member.
+  def soft_delete
+    ::Service::MemberSoftDelete.delete!(@member, actor: current_member)
+    render json: @member, serializer: MemberSerializer, adapter: :attributes,
+      include_provisioning: true and return
+  rescue Service::MemberSoftDelete::ActiveMembershipError, Service::MemberSoftDelete::AlreadyDeletedError => e
+    render json: { message: e.message }, status: :unprocessable_content and return
+  end
+
+  # POST /api/admin/members/:id/restore
+  # Un-deletes a soft-deleted account. Does not re-provision Drive/Slack
+  # access or restore a cancelled subscription -- those go through the
+  # normal invite/renewal flows once restored.
+  def restore
+    ::Service::MemberSoftDelete.restore!(@member, actor: current_member)
+    render json: @member, serializer: MemberSerializer, adapter: :attributes,
+      include_provisioning: true and return
+  rescue Service::MemberSoftDelete::NotDeletedError => e
+    render json: { message: e.message }, status: :unprocessable_content and return
+  end
+
   private
 
   # Cancel subscription, revoke Drive/Slack access, and invalidate all sessions
   # when a member's status is set to revoked.
   def handle_revocation
-    # Cancel Braintree subscription if present
-    if @member.subscription_id
-      begin
-        ::BraintreeService::Subscription.cancel(connect_gateway, @member.subscription_id)
-      rescue => e
-        ::Service::SlackConnector.send_slack_message(
-          "⚠️ Error cancelling subscription for revoked member #{@member.fullname}: #{e.message}",
-          ::Service::SlackConnector.logs_channel
-        )
-      end
-    end
-
-    # Revoke Google Drive and Slack access
-    begin
-      Service::MemberAccess.revoke(@member)
-    rescue => e
-      ::Service::SlackConnector.send_slack_message(
-        "⚠️ Error revoking Drive/Slack access for #{@member.fullname}: #{e.message}",
-        ::Service::SlackConnector.logs_channel
-      )
-    end
-
-    # Keep marketing mail silenced; revoked status suppresses direct member email/Slack notifications.
-    @member.update_attribute(:silence_emails, true)
-
-    # Rotate session token to invalidate any active portal sessions
-    invalidate_member_sessions
+    Service::MemberAccess.full_deprovision(@member)
   end
 
   # Rotate session token to invalidate any active portal sessions

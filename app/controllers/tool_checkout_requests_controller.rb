@@ -5,9 +5,7 @@ class ToolCheckoutRequestsController < AuthenticationController
   before_action :find_request, only: [:update, :destroy]
 
   def index
-    requests = ToolCheckoutRequest.where(member_id: current_member.id, status: "open")
-    visible_tool_ids = Tool.where(:disabled.ne => true).pluck(:id)
-    requests = requests.where(:tool_id.in => visible_tool_ids)
+    requests = CheckoutInteractionQuery.new(member: current_member).open_requests
 
     requests = ToolCheckoutRequest.table_query(requests, params)
     response.set_header("total-items", requests.count)
@@ -19,51 +17,34 @@ class ToolCheckoutRequestsController < AuthenticationController
 
   def create
     tool, = PublicCatalog.tool(request_params[:tool_id], public_only: false)
-    raise ::Error::UnprocessableEntity.new("No checkout required") if tool.open
-    eligible = if current_member.status == 'pending'
-      tool.allow_pending
-    else
-      current_member.active_unexpired? && current_member.status == 'activeMember'
-    end
-    unless eligible
-      raise ::Error::Forbidden.new(
-        "Your membership must first be activated and you must complete your Orientation checkout before requesting this Safety Checkout"
-      )
-    end
-    raise ::Error::Forbidden.new if tool.disabled?
-    raise ::Error::UnprocessableEntity.new("A checkout record already exists for this tool") if ToolCheckout.where(member_id: current_member.id, tool_id: tool.id).exists?
-    raise ::Error::UnprocessableEntity.new("An open request already exists for this tool") if ToolCheckoutRequest.where(member_id: current_member.id, tool_id: tool.id, status: "open").exists?
-
-    request = ToolCheckoutRequest.create!(
-      member_id: current_member.id,
-      tool_id: tool.id,
-      note: request_params[:note],
-      request_date: Time.now,
-      status: "open"
-    )
-    request.announce_request
+    request = CheckoutRequestCreation.create!(member_id: current_member.id, tool_id: tool.id,
+      shop_id: tool.shop_id, note: request_params[:note])
 
     render json: request, serializer: ToolCheckoutRequestSerializer, adapter: :attributes
   end
 
   def update
-    raise ::Error::Forbidden.new unless @request.member_id.to_s == current_member.id.to_s && @request.open?
-    raise ::Error::Forbidden.new if @request.tool.try(:disabled?)
-
-    @request.update_attributes!(request_params.slice(:note))
+    mutate_request! { @request.update_attributes!(request_params.slice(:note)) }
     render json: @request, serializer: ToolCheckoutRequestSerializer, adapter: :attributes
   end
 
   def destroy
-    raise ::Error::Forbidden.new unless @request.member_id.to_s == current_member.id.to_s && @request.open?
-    raise ::Error::Forbidden.new if @request.tool.try(:disabled?)
-
-    @request.remove_announcement
-    @request.update_attributes!(status: "deleted")
+    mutate_request! { @request.update_attributes!(status: "deleted") }
+    CheckoutCreation.notify { @request.remove_announcement }
     render json: {}, status: 204
   end
 
   private
+
+  def mutate_request!
+    CheckoutMutationLock.with(member_id: @request.member_id, tool_id: @request.tool_id) do
+      @request.reload
+      raise Error::Forbidden.new unless @request.member_id == current_member.id && @request.open?
+      tool = @request.tool
+      raise Error::Forbidden.new unless tool && !tool.disabled? && tool.shop && !tool.shop.disabled?
+      yield
+    end
+  end
 
   def request_params
     params.permit(:tool_id, :note)
@@ -71,6 +52,7 @@ class ToolCheckoutRequestsController < AuthenticationController
 
   def find_request
     @request = ToolCheckoutRequest.find(params[:id])
+    raise Error::NotFound.new unless @request
   end
 
 end

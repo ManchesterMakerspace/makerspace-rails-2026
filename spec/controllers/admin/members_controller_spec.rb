@@ -138,6 +138,56 @@ RSpec.describe Admin::MembersController, type: :controller do
       end
     end
 
+    describe "POST #soft_delete" do
+      it "soft-deletes an eligible member and returns it" do
+        member = create(:member, status: "inactive")
+
+        post :soft_delete, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(200)
+        expect(member.reload.merged_at).to be_present
+      end
+
+      it "refuses to delete a currently active, unexpired member" do
+        member = create(:member, status: "activeMember", expirationTime: 1.month.from_now.to_i * 1000)
+
+        post :soft_delete, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+        expect(JSON.parse(response.body)["message"]).to match(/active.*membership|live subscription/i)
+        expect(member.reload.merged_at).to be_nil
+      end
+
+      it "refuses to delete an already-deleted member" do
+        member = create(:member, status: "inactive")
+        member.update_attribute(:merged_at, Time.current)
+
+        post :soft_delete, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+      end
+    end
+
+    describe "POST #restore" do
+      it "restores a soft-deleted member" do
+        member = create(:member, status: "inactive")
+        member.update_attribute(:merged_at, Time.current)
+
+        post :restore, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(200)
+        expect(member.reload.merged_at).to be_nil
+      end
+
+      it "refuses to restore a member that isn't deleted" do
+        member = create(:member, status: "inactive")
+
+        post :restore, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(422)
+      end
+    end
+
     describe "PUT #update" do
       context "with valid params" do
         let(:new_attributes) {

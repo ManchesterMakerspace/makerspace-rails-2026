@@ -244,6 +244,30 @@ RSpec.describe Service::ReservationSlackCanvas do
     end
   end
 
+  it "warns when an individually reserved tool is out of service" do
+    travel_to(zone.local(2026, 7, 24, 8, 15)) do
+      tool.update!(disabled: true)
+      create(
+        :reservation,
+        member: member,
+        shop: shop,
+        title: "Plane boards",
+        reservation_scope: "tools",
+        tool_ids: [tool.id.to_s],
+        start_at: zone.local(2026, 7, 24, 9, 0),
+        end_at: zone.local(2026, 7, 24, 10, 0),
+        status: "approved"
+      )
+
+      described_class.sync!(shop, dates: ["2026-07-24"])
+
+      expect(Service::SlackConnector).to have_received(:replace_canvas).with(
+        "FTODAY",
+        a_string_including("Planer (OUT OF SERVICE)")
+      )
+    end
+  end
+
   it "grants canvas ownership to admins, board members, and assigned resource managers" do
     admin = create(:member, :admin)
     board = create(:member, :board_member)

@@ -83,6 +83,31 @@ RSpec.describe Service::SlackConnector do
     described_class.replace_canvas("F123", "# Woodshop Reservations")
   end
 
+  it "looks up canvas sections containing text" do
+    expect(client).to receive(:canvases_sections_lookup).with(
+      canvas_id: "F123",
+      criteria: JSON.generate(contains_text: "Table Saw", section_types: ["h3"])
+    ).and_return(double(sections: [double(id: "S123")]))
+
+    sections = described_class.lookup_canvas_sections(
+      "F123",
+      contains_text: "Table Saw",
+      section_types: ["h3"]
+    )
+
+    expect(sections.first.id).to eq("S123")
+  end
+
+  it "applies targeted canvas changes" do
+    changes = [{ operation: "delete", section_id: "S123" }]
+    expect(client).to receive(:canvases_edit).with(
+      canvas_id: "F123",
+      changes: JSON.generate(changes)
+    )
+
+    described_class.edit_canvas("F123", changes)
+  end
+
   it "includes Slack's HTTP status and response body in API errors" do
     response = double(
       status: 400,

@@ -11,6 +11,7 @@ class VolunteerCredit
   field :task_id,       type: BSON::ObjectId, default: nil
   # Restricted provenance: never expose this mapping through general credit APIs.
   field :ticket_id, type: FixTicketId
+  field :tool_checkout_id, type: BSON::ObjectId, default: nil
 
   # Credit details
   field :description,   type: String
@@ -57,6 +58,8 @@ class VolunteerCredit
   index({ member_id: 1 })
   index({ status: 1 })
   index({ created_at: 1 })
+  index({ tool_checkout_id: 1 }, unique: true,
+    partial_filter_expression: { tool_checkout_id: { "$type" => "objectId" } })
   index({ status: 1, created_at: 1 })
 
   # ── Scopes ────────────────────────────────────────────────────────────────

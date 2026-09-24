@@ -18,7 +18,9 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :resource_manager_shop_ids,
              :slack_manual_deactivation_required,
              :firebase_uid,
-             :paid_pending_start
+             :merged_at,
+             :paid_pending_start,
+             :startDate
 
   attribute :provisioning, if: :include_provisioning?
 
@@ -117,14 +119,18 @@ class MemberSummarySerializer < ActiveModel::Serializer
     instance_options[:include_provisioning] == true
   end
 
-  # True when a membership payment has settled for this member but nothing
-  # ever attached that payment to a subscription or expiration -- i.e. the
-  # member shows as "N/A" (not simply "Not started", which already means a
-  # subscription exists and is just waiting on its first payment/fob) despite
-  # having actually paid. This should never happen in the normal signup flow;
-  # it's a defensive signal for a broken Braintree webhook/linkage.
+  # True when a member has paid (a live subscription, or a settled invoice)
+  # but their membership hasn't actually started yet (no expirationTime) --
+  # covers both:
+  #   - the common, expected case: a real Braintree subscription exists and
+  #     is just waiting on the member's first fob registration.
+  #   - the anomalous case: a payment settled but nothing ever attached it
+  #     to a subscription or expiration at all -- a defensive signal for a
+  #     broken Braintree webhook/linkage, which should never happen in the
+  #     normal signup flow.
   def paid_pending_start
-    return false if object.subscription_id.present? || object.expirationTime.present?
+    return false if object.expirationTime.present?
+    return true if object.subscription_id.present?
 
     Invoice.where(
       resource_class: 'member',

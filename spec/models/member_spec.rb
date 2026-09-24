@@ -53,7 +53,19 @@ RSpec.describe Member, type: :model do
     it "accepts pending as a valid member status" do
       expect(build(:member, status: 'pending')).to be_valid
     end
-    it { is_expected.to validate_uniqueness_of(:email) }
+    # Not validate_uniqueness_of(:email) -- that matcher looks for a
+    # registered uniqueness validator by type, but email uniqueness is
+    # deliberately enforced by a custom validate method instead (see
+    # validate_email_not_taken_by_an_active_member and the "soft delete"
+    # describe block below), so the duplicate-email behavior is exercised
+    # there instead of via type introspection here.
+    it "rejects a duplicate email" do
+      create(:member, email: "duplicate@example.com")
+      duplicate = build(:member, email: "duplicate@example.com")
+
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:email]).to include("has already been taken")
+    end
     it { is_expected.to have_many(:access_cards).as_inverse_of(:member) }
   end
 
@@ -108,10 +120,17 @@ RSpec.describe Member, type: :model do
   end
 
   describe ".search" do
-    let(:criteria) { double("scoped criteria") }
+    let(:selector) do
+      Member.where(id: BSON::ObjectId.new, status: 'activeMember',
+        :expirationTime.gt => Time.now.to_i * 1000).selector
+    end
+    let(:criteria) { instance_double(Mongoid::Criteria, selector: selector) }
+    let(:collection) { instance_double(Mongo::Collection) }
 
     before do
-      allow(Member).to receive_message_chain(:collection, :aggregate)
+      allow(Member).to receive(:collection).and_return(collection)
+      allow(collection).to receive(:aggregate)
+        .with(array_including({ :$match => selector }))
         .and_raise(Mongo::Error::OperationFailure.new("Atlas Search unavailable"))
     end
 
@@ -151,7 +170,8 @@ RSpec.describe Member, type: :model do
       second_member = double("second member", id: BSON::ObjectId.new)
       result_ids = [first_member.id, second_member.id]
 
-      allow(Member).to receive_message_chain(:collection, :aggregate)
+      allow(collection).to receive(:aggregate)
+        .with(array_including({ :$match => selector }))
         .and_return(result_ids.map { |id| { _id: id } })
       expect(criteria).to receive(:where)
         .with(id: { :$in => result_ids })
@@ -668,6 +688,67 @@ RSpec.describe Member, type: :model do
       orphaned_id = BSON::ObjectId.new.to_s
       member = create(:member, groupName: orphaned_id)
       expect(member.household_role).to be_nil
+    end
+  end
+
+  describe "soft delete (merged_at)" do
+    it "hides a soft-deleted member from default queries" do
+      active = create(:member)
+      ghost = create(:member)
+      ghost.update_attribute(:merged_at, Time.current)
+
+      expect(Member.where(id: active.id).first).to eq(active)
+      expect(Member.where(id: ghost.id).first).to be_nil
+      expect(Member.unscoped.where(id: ghost.id).first).to eq(ghost)
+    end
+
+    it "still finds a soft-deleted member by id via Member.find" do
+      ghost = create(:member)
+      ghost.update_attribute(:merged_at, Time.current)
+
+      expect(Member.find(ghost.id)).to eq(ghost)
+    end
+
+    it "allows a new member to reuse a soft-deleted member's email" do
+      email = generate(:email)
+      ghost = create(:member, email: email)
+      ghost.update_attribute(:merged_at, Time.current)
+
+      expect { create(:member, email: email) }.not_to raise_error
+    end
+
+    it "still rejects a duplicate email between two active members" do
+      email = generate(:email)
+      create(:member, email: email)
+
+      expect { create(:member, email: email) }.to raise_error(Mongoid::Errors::Validations)
+    end
+
+    describe "#eligible_for_soft_delete?" do
+      it "is eligible when status is not active" do
+        member = create(:member, status: "inactive")
+        expect(member.eligible_for_soft_delete?).to be true
+      end
+
+      it "is eligible when status is active but expirationTime has passed" do
+        member = create(:member, status: "activeMember", expirationTime: 1.day.ago.to_i * 1000)
+        expect(member.eligible_for_soft_delete?).to be true
+      end
+
+      it "is eligible when status is active (the default) but no expirationTime was ever set" do
+        member = create(:member, status: "activeMember", expirationTime: nil)
+        expect(member.eligible_for_soft_delete?).to be true
+      end
+
+      it "is not eligible when status is active and unexpired" do
+        member = create(:member, status: "activeMember", expirationTime: 1.day.from_now.to_i * 1000)
+        expect(member.eligible_for_soft_delete?).to be false
+      end
+
+      it "is not eligible when a live subscription exists regardless of status/expiration" do
+        member = create(:member, status: "inactive", subscription: true, expirationTime: 1.day.ago.to_i * 1000)
+        expect(member.eligible_for_soft_delete?).to be false
+      end
     end
   end
 end

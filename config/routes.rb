@@ -230,6 +230,8 @@ Rails.application.routes.draw do
             post :send_password_reset
             post :invite_slack
             post :invite_google_drive
+            post :soft_delete
+            post :restore
             get  'mailtrap_events', to: 'members/mailtrap_events#index'
           end
         end

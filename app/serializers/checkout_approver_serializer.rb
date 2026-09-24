@@ -1,25 +1,33 @@
 class CheckoutApproverSerializer < ActiveModel::Serializer
-  attribute(:out_of_service_tool_names) { loaded_tools.select(&:out_of_service).map(&:name) }
+  attribute(:out_of_service_tool_names) do
+    scoped_tools.select(&:out_of_service).map(&:name)
+  end
   attribute :tools do
-    loaded_tools.map { |tool| { id: tool.id.to_s, name: tool.name, shopId: tool.shop_id.to_s, outOfService: !!tool.out_of_service } }
+    scoped_tools.map { |tool| { id: tool.id.to_s, name: tool.name, shopId: tool.shop_id.to_s, outOfService: !!tool.out_of_service } }
   end
   attributes :id, :member_id, :shop_ids, :tool_ids
 
   attribute :member_name do
-    object.member.try(:fullname)
+    (checkout_context ? checkout_context.members[object.member_id.to_s] : object.member).try(:fullname)
   end
 
   attribute :member_email do
-    object.member.try(:email)
+    (checkout_context ? checkout_context.members[object.member_id.to_s] : object.member).try(:email)
   end
 
   attribute :shop_names do
-    object.shops.map(&:name)
+    checkout_context ? checkout_context.shop_names(object.shop_ids) : object.shops.map(&:name)
   end
 
   attribute :tool_names do
-    loaded_tools.map(&:name)
+    checkout_context ? checkout_context.names(object.tool_ids) : object.tools.map(&:name)
   end
 
-  def loaded_tools = @loaded_tools ||= object.tools.to_a
+  def checkout_context
+    instance_options[:checkout_context]
+  end
+
+  def scoped_tools
+    checkout_context ? checkout_context.tools_for(object.tool_ids) : object.tools.to_a
+  end
 end

@@ -4,7 +4,16 @@ class ReservationService
 
   class << self
     def preview(member:, attributes:, reservation: nil, actor: member)
+      ReservationTiming.measure("reservation_preview") do |metrics|
+        result = preview_result(member: member, attributes: attributes, reservation: reservation, actor: actor, metrics: metrics)
+        metrics[:outcome] = "rejected" unless result[:eligible]
+        result
+      end
+    end
+
+    def preview_result(member:, attributes:, reservation: nil, actor: member, metrics:)
       normalized = normalize(attributes, reservation)
+      metrics[:resource_count] = normalized[:reservation_scope] == "shop" ? 1 : normalized[:tool_ids].length
       if reservation && !material_edit?(reservation, normalized)
         errors = normalized[:title].blank? ? ["Title is required"] : []
         reasons = Array(reservation.approval_reasons)
@@ -39,6 +48,7 @@ class ReservationService
         maximumDurationHours: evaluation[:maximum_duration_hours]
       }
     end
+    private :preview_result
 
     def create!(member:, attributes:, source: "portal", actor: member)
       normalized = normalize(attributes)
@@ -227,6 +237,15 @@ class ReservationService
     end
 
     def evaluate(member:, attributes:, reservation: nil, actor: member)
+      ReservationTiming.measure("reservation_evaluate") do |metrics|
+        metrics[:resource_count] = attributes[:reservation_scope] == "shop" ? 1 : Array(attributes[:tool_ids]).length
+        result = evaluate_with_reads(member: member, attributes: attributes, reservation: reservation, actor: actor)
+        metrics[:outcome] = "rejected" if result[:errors].any? || result[:conflicts].any?
+        result
+      end
+    end
+
+    def evaluate_with_reads(member:, attributes:, reservation: nil, actor: member)
       member.reload if member.persisted?
       errors = []
       conflicts = []
@@ -250,23 +269,27 @@ class ReservationService
       end
       tools = attributes[:reservation_scope] == "tools" ?
         Tool.where(shop_id: shop.id, :id.in => attributes[:tool_ids]).to_a : []
-      resources = attributes[:reservation_scope] == "shop" ? [shop] : tools
+      resources = ReservationPolicy.resources(
+        shop: shop, reservation_scope: attributes[:reservation_scope], tools: tools
+      )
+      read_context = ReservationReadContext.new(shop: shop, member: member, resources: tools)
+      policy = ReservationPolicy.aggregate(resources)
       booking_window_changed = !reservation || reservation.start_at != attributes[:start_at] ||
         reservation.shop_id.to_s != shop.id.to_s || reservation.reservation_scope != attributes[:reservation_scope] ||
         reservation.tool_ids.map(&:to_s).sort != attributes[:tool_ids].map(&:to_s).sort
       unless actor.role.in?(%w[admin board_member]) || actor.manages_shop?(shop)
         if booking_window_changed && attributes[:start_at] && resources.present?
           now = Time.current.in_time_zone(ZONE)
-          notice = resources.map(&:minimum_advance_notice_hours).max.to_f
+          notice = policy[:minimum_advance_notice_hours]
           cutoff = Time.at(((now + notice.hours).to_f / 30.minutes).floor * 30.minutes).in_time_zone(ZONE)
           errors << "Minimum advance notice is #{notice} hours; earliest start is #{cutoff.strftime('%B %-d, %Y at %H:%M')}" if attributes[:start_at] < cutoff
-          if resources.any?(&:prohibit_same_day_reservations) && attributes[:start_at].in_time_zone(ZONE).to_date == now.to_date
+          if policy[:prohibit_same_day] && attributes[:start_at].in_time_zone(ZONE).to_date == now.to_date
             errors << "Same day reservations are prohibited for this resource"
           end
         end
       end
       full_day = attributes[:full_day]
-      errors << "This resource requires full-day reservations" if resources.any?(&:reservation_full_day) && !full_day
+      errors << "This resource requires full-day reservations" if policy[:full_day] && !full_day
       if full_day && attributes[:start_at] && attributes[:end_at]
         start_local = attributes[:start_at].in_time_zone(ZONE)
         end_local = attributes[:end_at].in_time_zone(ZONE)
@@ -274,7 +297,7 @@ class ReservationService
         errors << "Full-day reservations must run midnight to midnight" unless start_local == start_local.beginning_of_day && end_local == end_local.beginning_of_day
         errors << "Full-day reservations require a maximum duration of at least 24 hours" if resources.any? { |resource| resource.max_reservation_duration_hours < 24 }
       end
-      fee_rule_snapshot = ReservationFeeService.snapshot(attributes, reservation)
+      fee_rule_snapshot = ReservationFeeService.snapshot(attributes, reservation, resources: resources, read_context: read_context)
       fee_lines = ReservationFeeService.quote(resources: resources, start_at: attributes[:start_at], end_at: attributes[:end_at], full_day: full_day, reservation: reservation, rule_snapshot: fee_rule_snapshot)
       if (fee_lines.present? || (reservation&.fee_invoice && !reservation.fee_invoice.settled)) && ReservationFeeService.overdue_fees?(member)
         errors << "Pay all overdue shop fee invoices before making or changing a fee-incurring reservation"
@@ -320,13 +343,13 @@ class ReservationService
       if attributes[:start_at].present? && attributes[:end_at].present? && resources.present?
         start_date = attributes[:start_at].in_time_zone(ZONE).to_date
         today = Time.current.in_time_zone(ZONE).to_date
-        strict_horizon = resources.map(&:reservation_horizon_days).min
+        strict_horizon = policy[:horizon_days]
         unless board_override
           errors << "Reservation is outside the allowed booking window" if start_date > today + strict_horizon
         end
 
         duration_hours = ReservationFeeService.duration_hours(attributes[:start_at], attributes[:end_at], full_day)
-        strict_duration = board_override ? 72.0 : resources.map(&:max_reservation_duration_hours).min.to_f
+        strict_duration = board_override ? 72.0 : policy[:maximum_duration_hours]
         errors << "Reservation exceeds the maximum duration" if duration_hours > strict_duration
         blackout_window_valid = duration_hours.positive? &&
           duration_hours <= strict_duration
@@ -352,19 +375,16 @@ class ReservationService
         end
       end
 
-      prerequisite_ids = if attributes[:reservation_scope] == "shop"
-        Array(shop.reservation_prerequisite_tool_ids).map(&:to_s)
-      else
-        tools.flat_map(&:effective_reservation_prerequisite_ids).uniq
-      end
-      if member.status == 'pending'
-        explicit_ids = attributes[:reservation_scope] == 'shop' ? Array(shop.reservation_prerequisite_tool_ids).map(&:to_s) : tools.flat_map { |tool| Array(tool.reservation_prerequisite_tool_ids).map(&:to_s) }
-        prerequisite_ids -= tools.select(&:allow_pending).map { |tool| tool.id.to_s } - explicit_ids
-      end
+      prerequisite_ids = ReservationPolicy.prerequisite_ids(
+        shop: shop,
+        reservation_scope: attributes[:reservation_scope],
+        tools: tools,
+        member: member
+      )
       unless board_override
-        checked_out_ids = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
-        missing_ids = prerequisite_ids - checked_out_ids
-        missing = Tool.where(:id.in => missing_ids).map { |tool| { id: tool.id.to_s, name: tool.name } }
+        missing_ids = prerequisite_ids.reject { |id| read_context.checked_out_tool_ids.include?(id) }
+        names = read_context.tool_names(missing_ids)
+        missing = missing_ids.filter_map { |id| { id: id, name: names[id] } if names[id] }
         if missing_ids.present?
           missing_names = missing.map { |tool| tool[:name] }.presence || missing_ids
           errors << "Missing required checkout(s): #{missing_names.join(', ')}"
@@ -395,7 +415,7 @@ class ReservationService
         end
       end
 
-      if !board_override && resources.any?(&:reservation_requires_approval)
+      if !board_override && policy[:requires_approval]
         approval_reasons << "resource_requires_approval"
         approval_details << approval_detail(
           "resource_requires_approval",
@@ -479,7 +499,7 @@ class ReservationService
 
       return 72.0 if board_reservation_override?(member)
 
-      configured_max = resources.map(&:max_reservation_duration_hours).min.to_f
+      configured_max = ReservationPolicy.aggregate(resources)[:maximum_duration_hours]
       if !full_day && !member.active_membership_subscription? && member.membership_expires_at.present?
         membership_max = (member.membership_expires_at - start_at) / 1.hour
         configured_max = [configured_max, membership_max].min

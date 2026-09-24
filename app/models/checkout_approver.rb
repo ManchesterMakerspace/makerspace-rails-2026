@@ -4,6 +4,8 @@ class CheckoutApprover
 
   belongs_to :member
 
+  index({ member_id: 1 })
+
   # Array of Shop IDs this approver can sign off checkouts for
   field :shop_ids, type: Array, default: []
   # Optional individual Tool IDs. Shop assignments and tool assignments are additive.

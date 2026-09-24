@@ -10,7 +10,7 @@ class ShopSerializer < ActiveModel::Serializer
              :color_id, :google_resource_id, :resource_email, :floor_name, :capacity
 
   attribute :tool_count do
-    object.tools.count
+    checkout_context ? checkout_context.tool_count(object) : object.tools.count
   end
 
   attribute :wiki_url_override do
@@ -28,6 +28,10 @@ class ShopSerializer < ActiveModel::Serializer
   end
 
   def reservation_prerequisite_names
-    object.reservation_prerequisites.map(&:name)
+    checkout_context ? checkout_context.names(object.reservation_prerequisite_tool_ids) : object.reservation_prerequisites.map(&:name)
+  end
+
+  def checkout_context
+    instance_options[:checkout_context]
   end
 end

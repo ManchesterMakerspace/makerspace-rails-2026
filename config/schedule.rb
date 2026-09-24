@@ -46,3 +46,7 @@ end
 every :day, at: '8am' do
   runner "VolunteerEventReminderJob.perform_later"
 end
+
+every :day, at: '9am' do
+  runner "MembershipExpirationNoticeJob.perform_later"
+end

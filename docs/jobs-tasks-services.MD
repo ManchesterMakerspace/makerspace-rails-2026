@@ -51,6 +51,140 @@ production credentials available. Examples below use:
 RAILS_ENV=production bundle exec rake TASK_NAME
 ```
 
+`data:ensure_checkout_indexes` is a manual deployment task, not recurring work.
+It creates only the nonunique checkout performance indexes on
+`members(status, expirationTime)`, `tool_checkouts(member_id, revoked_at, tool_id)`,
+`checkout_approvers(member_id)`,
+`tool_checkout_requests(member_id, status, request_date, _id)`,
+`tool_checkout_requests(tool_id, status, request_date, _id)`, and
+`tools(shop_id, name, _id, disabled, open)` (case-insensitive collation),
+using their model declarations. It can be
+rerun and never drops indexes or modifies documents. Unrelated legacy identity
+index conflicts do not block it; conflicts on one of its targets are
+reported as errors for operator review.
+
+`data:ensure_unique_indexes` runs in the release phase for both buildpack and
+container deployments. In addition to the core identity constraints, it installs
+the partial unique indexes that permit only one open checkout-approver request
+per member/tool and only one volunteer credit per tool checkout. Deployments stop
+for operator review when existing duplicate data prevents either constraint from
+being created.
+
+The Tool index keeps the equality-scoped shop and case-insensitive name ordering
+before the availability inequalities. A test-database `executionStats` comparison
+with 6,000 synthetic tools across ten shops returned the same 343 tools with both
+indexes and no blocking sort. Adding `open` reduced fetched documents from 514
+to 343; both plans examined 601 keys. These fixture results justify the additional
+availability field, but are not a production workload benchmark.
+
+`SlackCheckoutRequestJob` handles named `/checkout request` commands and
+resolves shops from either the Slack channel ID or normalized channel name. It uses
+an exact, case-insensitive tool-name match so similarly named tools cannot be
+selected ambiguously, then applies the same checkout-request eligibility service
+as the Member Portal and Slack
+modal, and rechecks tool/shop availability, membership, prerequisites, existing
+checkouts, and open requests immediately before creating a request. Creation is
+serialized per member and tool so concurrent Slack deliveries cannot announce
+duplicate open requests.
+`SlackCheckoutJob` handles approver-driven `/checkout MEMBER TOOL` commands and
+resolves the shop from the channel ID or normalized name. It delegates to
+`CheckoutCreation`, the same operation as the portal and modal. Authority,
+member eligibility, availability, prerequisites, duplicates and selected-request
+state are rechecked under the shared per-member/tool lock. `ToolCheckout` closes
+the selected request in its callback and retains users-channel invitations;
+notifications and audit logging are best effort after creation.
+
+`SlackCheckoutActiveJob` serves `/checkout active [all]` and its `/checkout list
+[all]` alias. In a configured shop channel, the command without `all` lists
+that shop and omits the redundant shop-name line. With `all`, or when Slack's
+channel cannot be resolved to a shop, it lists checkouts across enabled shops
+and includes each shop name.
+It uses `CheckoutInteractionQuery.listed_active_checkouts` and `CheckoutDisplay`,
+the same availability, alphabetical sorting, bulk association loading and detail
+content policy as the modal. Disabled resources and revoked checkouts are
+excluded. Long messages direct the user to the portal instead of exceeding Slack
+limits. Its result is delivered by `SlackCheckoutOutcomeJob`.
+
+`CheckoutNotificationJob` runs on the `slack` queue for modal mutations. It takes
+an action (`request`, `approval`, `cancellation`, `approver_volunteer`, or
+`approver_volunteer_decision`) and persisted record ID. Approver-volunteer
+actions deliver shop-reviewer DMs and requester decision DMs after Slack has
+acknowledged the interaction.
+The modal saves the mutation under the existing lock, closes the selected request
+for approvals, and enqueues side effects before clearing. Request announcements,
+cancellation announcement updates, users-channel invitations, checkout DMs,
+success announcements and creation audit logging do not call Slack in the
+interaction acknowledgement path. Legacy request-modal submissions also defer
+their announcements. Portal and textual-command creation retain their existing
+notification behavior through the shared services.
+
+Approval delivery invites the member before building its success announcement,
+preserving the manual-invitation fallback text. Each approval side effect is
+best effort so one failure does not prevent subsequent notifications or audit.
+Deleted records and request announcements whose requests are no longer open are
+ignored. After a request announcement returns its Slack timestamp, the sender
+atomically records its timestamp only if none exists, then reloads the request.
+Approval sends use the same first-timestamp-wins operation. If approval or
+cancellation completed during the send, the retained message is updated to the
+final status. A sender whose timestamp lost the race deletes its redundant post
+after updating the retained message, so a late request cannot overwrite an
+existing success timestamp or leave a second success announcement behind.
+Slack update/delete failures remain best-effort reported notification failures. Slack calls remain outside the
+member/tool mutation lock and the interaction acknowledgement path.
+Enqueue errors or aborted enqueues are reported without reversing the
+saved mutation. This job is separate from final ephemeral/DM outcome delivery;
+a working `slack` queue consumer is required for both.
+
+`SlackCheckoutOutcomeJob` runs on the `slack` queue. Checkout modal submissions
+queue it after saving request creation, note editing, cancellation or approval,
+and before acknowledging success with `response_action: clear`. Legacy
+checkout, request and active-list jobs also delegate final delivery to it. It
+first posts `replace_original: true`, `response_type: "ephemeral"`, and final
+text to the original slash-command response URL. Open/read/write timeouts are
+0.5/1/0.5 seconds. Non-2xx responses, invalid URLs and exceptions trigger a
+separate replacement-failure report, followed by a DM to the submitting Slack
+user. DM failures are reported separately and never escape back into persistence.
+Enqueue failures do not undo saved records or become validation errors.
+
+Outcome URLs are encrypted before job enqueueing using the application key
+generator. Argument logging is disabled for all four checkout jobs. Reports
+contain fixed messages and error class/status only, never raw exceptions, URLs
+or outcome bodies. HTTP logging filters response_url and Slack's JSON payload.
+No response-URL HTTP request occurs in the interactions controller.
+
+`ToolCheckoutSlackCanvasSyncJob` incrementally updates an extant shop checkout
+canvas when one member's checkout is added or revoked. It locates the affected
+Canvas section with `canvases.sections.lookup`, applies the member and last-updated
+timestamp changes with `canvases.edit`, and falls back to rebuilding the complete
+canvas if an incremental lookup or edit fails. Ambiguous member-section matches
+also trigger a rebuild rather than deleting a checkout from the wrong tool, and
+incremental additions omit inactive or expired members just as full rebuilds do.
+Calls that do not identify one
+checkout continue to perform a complete canvas rebuild.
+Failure to enqueue an added checkout's canvas update is reported without changing
+the saved checkout or its closed request into a failed approval.
+
+After a checkout's `revoked_at` value is first persisted, its model callback
+synchronously removes the member's tool-specific checkout-approver access,
+revokes open volunteer requests, and reverses any checkout-approver credit before
+returning. If cleanup fails, including from contention on the member's approver
+record, the revoked checkout retains the durable `revocation_cleanup_pending`
+marker that was written in the same database update as `revoked_at`. A subsequent
+update retries every idempotent cleanup step and clears the marker only after they
+all succeed; the checkout remains revoked throughout so a partial failure cannot
+restore tool authority. Credit reversals use an ID derived from the original
+credit, preventing a retry after a partial failure from inserting a second
+negative credit. A successful resumed cleanup also enqueues the checkout-canvas
+removal that the failed callback did not reach. The hourly
+`MemberProvisioningReconciliationJob` automatically sweeps pending revocations;
+failures are reported and isolated per checkout so later pending records are
+still attempted and failed records remain marked for the next sweep.
+
+Changing a tool's out-of-service (`disabled`) state enqueues
+`ReservationSlackCanvasSyncJob` for today and/or tomorrow when an active
+individual-tool reservation overlaps those dates. This keeps operational
+reservation canvases synchronized with tool outages and restorations.
+
 The admin endpoint **enqueues** an Active Job and returns before it completes.
 Its `key` parameter is the value in the **Admin key** column below. The
 application must have a working Active Job queue consumer for those requests.
@@ -72,6 +206,14 @@ download -- both use the Active Job ID stored in the Drive file's application
 properties, rather than filename alone, so a contract signed earlier on the
 same date cannot be mistaken for the current signing attempt.
 
+Slack reservation submissions and modal closures enqueue
+`SlackReservationOutcomeJob` on the `slack` queue before acknowledging the
+interaction. The job first replaces the original slash-command response with
+an ephemeral outcome, using short HTTP connection/read/write timeouts, and
+falls back to a direct message to the submitting Slack user. Its arguments are
+suppressed from Active Job lifecycle logs because the response URL is a private,
+short-lived Slack credential. Delivery failure never rolls back a reservation.
+
 ## Admin-triggerable recurring jobs
 
 `SystemConfig::JOB_KEYS` is the source for the list shown by the admin API. A
@@ -81,7 +223,7 @@ job wrapper records `job_status_<admin key>` with a completion time and
 | Admin key | Task displayed by API | Manual command | Purpose and effect |
 | --- | --- | --- | --- |
 | `slack_sync` | `slack:sync_users` | `RAILS_ENV=production bundle exec rake slack:sync_users` | Reads the Slack workspace user list and creates or updates local `SlackUser` identities by matching email addresses to members. It reports created, updated, and unmatched counts to the logs channel. When `slack_sync_enabled` is true, both the task and job wrapper record status. When it is false, the direct task skips and leaves the previous admin-visible status untouched; the job wrapper records the skipped invocation as a success. |
-| `slack_profile_sync` | `slack:sync_profiles` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'SlackProfileSyncJob.perform_now'`. | Performs an expiration-only incremental sync. It selects members whose `expirationTime` is after the saved `slack_profile_sync_last_run_at` checkpoint and at or before the run time, then attempts to write `Expired` to their Slack custom-profile field. On the first run, the lower bound is the Unix epoch. It does **not** reconcile active members or unrelated member-status changes. `slack_profile_sync_enabled` can skip the work. The API-displayed `slack:sync_profiles` task does not exist. See the partial-success warning below before relying on its count or status. |
+| `slack_profile_sync` | `slack:sync_profiles` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'SlackProfileSyncJob.perform_now'`. | Performs an expiration-only incremental sync. It selects members whose `expirationTime` is after the saved `slack_profile_sync_last_run_at` checkpoint and at or before the run time, randomizes that materialized list to distribute calls across members, then attempts to write `Expired` to their Slack custom-profile field. A Slack 429 response pauses the affected update for its `Retry-After` duration and is retried up to five times. On the first run, the lower bound is the Unix epoch. It does **not** reconcile active members or unrelated member-status changes. `slack_profile_sync_enabled` can skip the work. The API-displayed `slack:sync_profiles` task does not exist. See the partial-success warning below before relying on its count or status. |
 | `slack_channel_cache` | `slack:refresh_public_channel_cache` | `RAILS_ENV=production bundle exec rake slack:refresh_public_channel_cache` | Rebuilds Redis lookups for active public Slack channels, atomically promotes the staged cache, removes stale live entries, and stores cache metadata. The task calls the job synchronously, so it records status. |
 | `member_review` | `member_review` | `RAILS_ENV=production bundle exec rake member_review` | On Sunday in production, compiles membership exceptions (orientation, no purchase, PayPal, missing contracts, and expired members with rentals), notifies affected members where applicable, queues contract emails, and posts a report to Member Relations. On other production days it exits successfully without a report. Only the job wrapper records status. |
 | `invoice_review` | `invoice_review` | `RAILS_ENV=production bundle exec rake invoice_review` | On Sunday in production, reports weekly invoice creation/settlement plus past-due, pending-settlement, and pending-refund cases to the treasurer. On other production days it exits successfully without a report. Only the job wrapper records status. |
@@ -89,6 +231,7 @@ job wrapper records `job_status_<admin key>` with a completion time and
 | `db_backup` | `db:backup` | `RAILS_ENV=production bundle exec rake backup` | Runs `mongodump` against `MLAB_URI`, writes a dated archive below `dump/`, uploads it to the configured Google Drive backup folder, removes the temporary MongoDB config file, and reports to the logs channel. The API-displayed and Whenever-scheduled name `db:backup` does not currently exist; the working task is `backup`. Only the job wrapper records status. |
 | `card_expiration_check` | `card_on_file_expiration_check` | `RAILS_ENV=production bundle exec rake card_on_file_expiration_check` | Finds active subscribers whose Braintree cards expire in the current Eastern-time month, caches the affected count and card types in Redis until next month, DMs members who have Slack identities, and reports every affected member to Member Relations. Only the job wrapper records status. |
 | `reservation_canvas_rebuild` | `reservations:rebuild_slack_canvases` | `RAILS_ENV=production bundle exec rake reservations:rebuild_slack_canvases` | Processes every shop, but rebuilds today's and tomorrow's reservation canvases only when the shop already has either canvas or has a blocking reservation/blackout in that two-day window. Thus it does not provision empty reservation canvases for an inactive shop. It creates a missing daily canvas when the shop qualifies, refreshes agendas and owner access, and stores its ID. Slack does not attach a newly created canvas to the shop channel header; after its first build, a channel manager must manually attach each daily canvas to its respective shop channel with Slack's **+** button. For every shop, including shops skipped by the reservation path, the command calls volunteer-canvas synchronization with `create_if_needed: true` and owner-access synchronization. That call still leaves a shop unchanged when it has no Slack channel (or the channel cannot be resolved), and it creates a missing volunteer canvas only when the shop has at least one claimable top-level task or active event dated today or later. The command also rebuilds every recorded checkout canvas; it warns the interface-log Slack channel and writes an audit entry for a failed checkout canvas before continuing to the next shop. It retries reservation Slack rate limits and fails after collecting reservation/volunteer failures. Only the job wrapper records status. |
+| `membership_expiration_notice` | `membership_expiration_notice` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'MembershipExpirationNoticeJob.perform_now'`. | Finds active, non-landlord members with no Braintree subscription (`subscription` not true and `subscription_id` blank) and no active Earned Membership whose `expirationTime` falls exactly 3 days out, and emails each a renewal reminder; separately finds the same population whose `expirationTime` fell exactly 1 day ago and emails an expired notice. Each email is sent at most once per expiration -- the sent state is keyed to the exact `expirationTime` value, so it resets automatically once the member renews to a new date. Only the job wrapper records status. |
 
 ### Triggering through the admin API
 
@@ -122,9 +265,10 @@ values and would use the chosen scheduler's timezone.
 | Daily at 02:00 | Rake `db:backup` | `RAILS_ENV=production bundle exec rake backup` | Intended to perform the database backup described above. **The configured task name is currently invalid**, because only `backup` is defined. |
 | Daily at 07:00 | `SlackProfileSyncJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'SlackProfileSyncJob.perform_now'` | Performs the Slack profile synchronization described above. The scheduled form enqueues it. |
 | Monthly at 03:15 | Rake `slack:refresh_public_channel_cache` | `RAILS_ENV=production bundle exec rake slack:refresh_public_channel_cache` | Refreshes the public-channel Redis cache described above. Whenever's `1.month` interval is translated by Whenever; verify the generated crontab when deploying. |
-| Hourly | `MemberProvisioningReconciliationJob.perform_now` | `RAILS_ENV=production bundle exec rails runner 'MemberProvisioningReconciliationJob.perform_now'` | Reconciles initialized members with live Slack state, promotes eligible Slack guests, and periodically revalidates/provisions Google Drive access when Drive invitations are enabled. Errors are isolated per member and reported without aborting the complete scan. |
+| Hourly | `MemberProvisioningReconciliationJob.perform_now` | `RAILS_ENV=production bundle exec rails runner 'MemberProvisioningReconciliationJob.perform_now'` | First retries durable pending checkout-revocation cleanup, isolating and reporting failures per checkout, then reconciles initialized members with live Slack state, promotes eligible Slack guests, and periodically revalidates/provisions Google Drive access when Drive invitations are enabled. Provisioning errors are isolated per member and reported without aborting the complete scan. |
 | At 08:00 on the first of each month | `CardExpirationCheckJob.perform_later` | `RAILS_ENV=production bundle exec rake card_on_file_expiration_check` | Runs the monthly card-expiration workflow described above. The Rake command performs the service but does not update the admin job status. |
 | Daily at 08:00 | `VolunteerEventReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'` | Finds open volunteer events whose date has passed and attempts to post a reminder for each to the pending-volunteer Slack channel. Individual delivery errors are reported and do not stop later events. The job records success after the scan completes even if one or every delivery failed, so its status does not represent delivery success. This template job is not exposed in the admin jobs list. |
+| Daily at 09:00 | `MembershipExpirationNoticeJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'MembershipExpirationNoticeJob.perform_now'` | Runs the membership-expiration-notice workflow described above. |
 
 ## Recurring production Rake tasks not installed by Whenever
 
@@ -173,12 +317,13 @@ synchronous diagnostic invocation where one is useful.
 | Service | Manual invocation | Purpose and effect |
 | --- | --- | --- |
 | `Service::SlackUserSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackUserSync.sync_all'` | Implements bulk Slack identity synchronization. It observes `slack_sync_enabled`; use the Rake task for normal operations and Slack reporting. |
-| `Service::SlackProfileSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackProfileSync.sync_all'` | Performs the checkpointed expiration-only Slack profile update described above and observes `slack_profile_sync_enabled`. It is not a full profile-status reconciliation, and its returned count includes selected members whose Slack update failed. This is currently the only direct implementation behind the admin profile-sync job. |
+| `Service::SlackProfileSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackProfileSync.sync_all'` | Performs the checkpointed expiration-only Slack profile update described above and observes `slack_profile_sync_enabled`. Eligible members are materialized and shuffled before updates begin, and each profile update honors Slack's `Retry-After` delay for rate-limit responses, retrying up to five times. It is not a full profile-status reconciliation, and its returned count includes selected members whose Slack update failed after retries. This is currently the only direct implementation behind the admin profile-sync job. |
 | `Service::SlackChannelCache.rebuild!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackChannelCache.rebuild!'` | Rebuilds and swaps the Redis public-channel cache. Prefer the Rake task, which also records admin-visible status through its job. |
 | `Service::MemberProvisioning.reconcile_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::MemberProvisioning.reconcile_all!'` | Implements hourly Slack/Drive reconciliation. It can change remote Slack membership and Google Drive permissions; it is not a read-only audit. |
 | `Service::CardExpirationCheck.run!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::CardExpirationCheck.run!'` | Performs the Braintree query, Redis cache update, member DMs, and Member Relations notifications. Prefer the job if admin-visible status is required. |
 | `Service::ReservationSlackCanvas.rebuild_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::ReservationSlackCanvas.rebuild_all!'` | Rebuilds the two rolling reservation canvases only for shops with an existing daily canvas or relevant blocking reservation/blackout; it does not create empty canvases for other shops. It calls volunteer-canvas synchronization for every shop, but a shop needs a resolvable Slack channel, and a missing volunteer canvas is created only when a claimable top-level task or current/future active event exists. Newly created reservation canvases require manual attachment to their Slack shop-channel headers. Prefer the Rake task or job for the normal operational path. |
 | `Service::GoogleDrive.upload_backup` | Do not call alone; use `RAILS_ENV=production bundle exec rake backup`. | Uploads the archive created by the backup task to Google Drive. Calling it directly requires an existing archive filename and does not create a database dump. |
+| `Service::MembershipExpirationNotice.run!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::MembershipExpirationNotice.run!'` | Performs the daily membership-expiration-notice scan and email sends described above. Outside production, it logs each candidate date window and the comma-delimited names (or `nil`) in the expiring-soon and expired lists. Prefer the job if admin-visible status is required. |
 
 ## Operational cautions
 
@@ -189,7 +334,9 @@ synchronous diagnostic invocation where one is useful.
   runs even though Slack was not updated. After correcting the Slack error,
   retry that member directly with `RAILS_ENV=production bundle exec rails
   runner 'pp Service::SlackProfileSync.sync_one(Member.find("MEMBER_ID"))'` and
-  confirm that it returns the member rather than `nil`. Rewinding the global
+  confirm that it returns the member rather than `nil`. Rate-limit responses
+  are first retried up to five times using Slack's requested delay; this warning
+  applies if those retries are exhausted. Rewinding the global
   checkpoint is an alternative only when deliberately replaying all expirations
   in that interval and accepting duplicate updates.
 - Manual Rake invocations of `member_review`, `invoice_review`, `gc`, `backup`,

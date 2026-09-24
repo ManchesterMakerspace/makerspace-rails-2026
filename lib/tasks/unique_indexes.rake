@@ -32,6 +32,7 @@ namespace :data do
     targets.each do |model, field, collation|
       duplicate_pipeline = [
         ({ '$match' => { 'invalidated_at' => nil } } if model == SlackUser && %i[member_id slack_email].include?(field)),
+        ({ '$match' => { 'merged_at' => nil } } if model == Member && field == :email),
         {
           '$group' => {
             '_id' => "$#{field}",
@@ -86,6 +87,13 @@ namespace :data do
             'invalidated_at' => nil
           }
         end
+        if model == Member && field == :email
+          filter = index['partialFilterExpression'] || index[:partialFilterExpression] || {}
+          next false unless filter == {
+            'email' => { '$type' => 'string' },
+            'merged_at' => nil
+          }
+        end
         next true if collation.nil?
 
         index_collation = index['collation'] || index[:collation] || {}
@@ -113,6 +121,11 @@ namespace :data do
         index_options[:partial_filter_expression] = {
           field => { '$type' => field_type },
           invalidated_at: nil
+        }
+      elsif model == Member && field == :email
+        index_options[:partial_filter_expression] = {
+          field => { '$type' => 'string' },
+          merged_at: nil
         }
       else
         index_options[:partial_filter_expression] = { field => { '$type' => 'string' } }
@@ -228,5 +241,19 @@ namespace :data do
     # Keep compound uniqueness and repair lookup/outbox indexes with the same
     # release-time entry point as core indexes. MongoDB rejects duplicate data.
     [FixTicket, FixTicketEvent, FixTicketReveal].each(&:create_indexes)
+
+    # These constraints make the volunteer workflow's retry-safe writes
+    # enforceable by MongoDB rather than relying only on application checks.
+    [
+      [CheckoutApproverRequest, { member_id: 1, tool_id: 1, status: 1 }],
+      [VolunteerCredit, { tool_checkout_id: 1 }]
+    ].each do |model, key|
+      specification = model.index_specifications.find { |index| index.key.stringify_keys == key.stringify_keys }
+      raise "Missing unique index declaration on #{model.collection_name}: #{key}" unless specification
+      raise "Expected unique index on #{model.collection_name}: #{key}" unless specification.options[:unique]
+
+      model.collection.indexes.create_one(specification.key, specification.options)
+      puts "#{model.collection_name}: unique workflow index ensured (#{key.keys.join(', ')})"
+    end
   end
 end

@@ -419,7 +419,9 @@ module Service
       def resource_names(reservation)
         return "Entire shop" if reservation.reservation_scope == "shop"
 
-        reservation.tools.map { |tool| tool.out_of_service? ? "#{tool.name} (OUT OF SERVICE — unavailable)" : tool.name }.join(", ")
+        reservation.tools.map do |tool|
+          tool.disabled? || tool.out_of_service? ? "#{tool.name} (OUT OF SERVICE)" : tool.name
+        end.join(", ")
       end
 
       def escape_markdown(value)

@@ -15,15 +15,17 @@ class ToolSerializer < ActiveModel::Serializer
   end
 
   def wiki_url
-    object.effective_wiki_url
+    return object.effective_wiki_url unless checkout_context
+
+    object.wiki_url.to_s.strip.presence || WikiUrlBuilder.tool_url(checkout_context.shops[object.shop_id.to_s]&.name, object.name)
   end
 
   attribute :reservation_prerequisite_names do
-    object.reservation_prerequisites.map(&:name)
+    checkout_context ? checkout_context.names(object.effective_reservation_prerequisite_ids) : object.reservation_prerequisites.map(&:name)
   end
 
   attribute :shop_name do
-    object.shop.try(:name)
+    checkout_context ? checkout_context.shops[object.shop_id.to_s]&.name : object.shop.try(:name)
   end
 
   # Sensitive (e.g. lock combo) -- only present for privileged members,
@@ -34,21 +36,22 @@ class ToolSerializer < ActiveModel::Serializer
   end
 
   def notes_visible?
-    object.notes_visible_to?(scope)
+    checkout_context ? checkout_context.notes_visible?(object) : object.notes_visible_to?(scope)
   end
 
   attribute :prerequisite_names do
-    object.prerequisites.map(&:name)
+    checkout_context ? checkout_context.names(object.prerequisite_ids) : object.prerequisites.map(&:name)
   end
 
   attribute :unmet_prerequisite_ids, if: :include_availability? do
-    checked_out_tool_ids = ToolCheckout.where(member_id: scope.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
+    checked_out_tool_ids = checkout_context ? checkout_context.checked_out_tool_ids : ToolCheckout.where(member_id: scope.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
     object.prerequisite_ids.map(&:to_s).reject { |pid| checked_out_tool_ids.include?(pid) }
   end
 
   attribute :unmet_prerequisite_names, if: :include_availability? do
-    unmet_ids = object.prerequisite_ids.map(&:to_s) - ToolCheckout.where(member_id: scope.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
-    Tool.where(:id.in => unmet_ids).map(&:name)
+    checked_out_ids = checkout_context ? checkout_context.checked_out_tool_ids.to_a : ToolCheckout.where(member_id: scope.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
+    unmet_ids = object.prerequisite_ids.map(&:to_s) - checked_out_ids
+    checkout_context ? checkout_context.names(unmet_ids) : Tool.where(:id.in => unmet_ids).map(&:name)
   end
 
   attribute :requestable, if: :include_availability? do
@@ -57,5 +60,9 @@ class ToolSerializer < ActiveModel::Serializer
 
   def include_availability?
     scope.present?
+  end
+
+  def checkout_context
+    instance_options[:checkout_context]
   end
 end

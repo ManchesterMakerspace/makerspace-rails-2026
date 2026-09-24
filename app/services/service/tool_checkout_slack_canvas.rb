@@ -60,18 +60,35 @@ module Service
             lines << "Pre-requisites: #{prerequisites.join(', ')}" if prerequisites.present?
           end
 
+          lines << checkout_list_heading(tool)
           active_checkout_members(tool).each do |member|
             marker = checkout_approver?(member, tool) ? ":ballot_box_with_check:" : ":white_check_mark:"
-            slack_id = SlackUser.find_by(member_id: member.id)&.slack_id
-            reference = slack_id.present? ? "![](@#{slack_id})" : escape_markdown(member.fullname)
-            lines << "- #{marker} #{reference}"
+            lines << "- #{marker} #{canvas_member_name(member)}"
           end
         end
 
-        lines.concat([
-          "",
-          "_Last updated #{Time.current.in_time_zone(ReservationService::ZONE).strftime('%B %-d, %Y at %H:%M %Z')}._"
-        ]).join("\n")
+        lines.concat(["", last_updated_line]).join("\n")
+      end
+
+      def sync_checkout!(checkout, action:)
+        shop = checkout.tool.shop
+        return sync!(shop) if shop.checkout_canvas_id.blank?
+
+        with_canvas_lock(shop.id) do
+          shop.reload
+          canvas_id = shop.checkout_canvas_id.presence
+          raise "Checkout canvas is not available" if canvas_id.blank?
+
+          changes = action.to_s == "remove" ? removal_changes(canvas_id, checkout) : addition_changes(canvas_id, checkout)
+          changes << timestamp_change(canvas_id)
+          Service::SlackConnector.edit_canvas(canvas_id, changes)
+        end
+      rescue => error
+        Rails.logger.warn(
+          "[ToolCheckoutSlackCanvas] incremental edit failed; rebuilding " \
+          "shop_id=#{shop.id} checkout_id=#{checkout.id} error=#{Service::SlackConnector.format_api_error(error)}"
+        )
+        sync!(shop)
       end
 
       def enqueue_for_members(member_ids)
@@ -109,6 +126,72 @@ module Service
       end
 
       private
+
+      def addition_changes(canvas_id, checkout)
+        return [] unless checkout.member.active_unexpired?
+
+        tool_section = lookup_section!(canvas_id, checkout_list_lookup_text(checkout.tool))
+        [{
+          operation: "insert_after",
+          section_id: section_id(tool_section),
+          document_content: { type: "markdown", markdown: checkout_line(checkout) }
+        }]
+      end
+
+      def removal_changes(canvas_id, checkout)
+        checkout_section = lookup_section!(canvas_id, checkout_line(checkout), require_unique: true)
+        [{ operation: "delete", section_id: section_id(checkout_section) }]
+      end
+
+      def timestamp_change(canvas_id)
+        timestamp_section = lookup_section!(canvas_id, "Last updated")
+        {
+          operation: "replace",
+          section_id: section_id(timestamp_section),
+          document_content: { type: "markdown", markdown: last_updated_line }
+        }
+      end
+
+      def lookup_section!(canvas_id, text, section_types: nil, require_unique: false)
+        sections = Service::SlackConnector.lookup_canvas_sections(
+          canvas_id,
+          contains_text: text,
+          section_types: section_types
+        )
+        sections = Array(sections)
+        if require_unique && sections.size != 1
+          raise "Expected one Canvas section for #{text.inspect}, found #{sections.size}"
+        end
+        section = sections.first
+        raise "Canvas section not found for #{text.inspect}" if section.nil? || section_id(section).blank?
+
+        section
+      end
+
+      def section_id(section)
+        return section.section_id if section.respond_to?(:section_id)
+        return section.id if section.respond_to?(:id)
+
+        section["section_id"] || section[:section_id] || section["id"] || section[:id]
+      end
+
+      def checkout_line(checkout)
+        member = checkout.member
+        marker = checkout_approver?(member, checkout.tool) ? ":ballot_box_with_check:" : ":white_check_mark:"
+        "- #{marker} #{canvas_member_name(member)}"
+      end
+
+      def checkout_list_heading(tool)
+        "**#{escape_markdown(checkout_list_lookup_text(tool))}**"
+      end
+
+      def checkout_list_lookup_text(tool)
+        "Current checkouts for #{tool.name}:"
+      end
+
+      def last_updated_line
+        "_Last updated #{Time.current.in_time_zone(ReservationService::ZONE).strftime('%B %-d, %Y at %H:%M %Z')}._"
+      end
 
       def create_and_cache_canvas!(shop, channel_id)
         canvas_id = Service::SlackConnector.create_canvas(
@@ -148,6 +231,19 @@ module Service
       def checkout_approver?(member, tool)
         member.manages_shop?(tool.shop) ||
           CheckoutApprover.find_by(member_id: member.id)&.can_approve_tool?(tool)
+      end
+
+      def canvas_member_name(member)
+        slack_name = SlackUser.find_by(member_id: member.id)&.name
+        sanitize_member_name(slack_name).presence || sanitize_member_name(member.fullname)
+      end
+
+      def sanitize_member_name(value)
+        value.to_s
+          .gsub(/[^\x00-\x7F]/, "")
+          .gsub(/[\\`*_{}\[\]()#+\-.!|>@]/, "")
+          .gsub(/\s+/, " ")
+          .strip
       end
 
       def escape_markdown(value)

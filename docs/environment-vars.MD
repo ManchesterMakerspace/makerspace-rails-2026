@@ -16,7 +16,7 @@ required to use the feature or task named in its purpose.
 | Variable | Secret? | Development | Test | Production | Purpose | Source |
 | --- | --- | --- | --- | --- | --- | --- |
 | `APP_DOMAIN` | No | Optional; absent uses `http://localhost:${PORT:-3002}`. | Optional; absent uses `http://localhost:${PORT:-3002}`. | **Required** by `ENV.fetch`; no default. The image build argument defaults to `members.manchestermakerspace.org`, but that build-time value is not persisted as a runtime variable. | Canonical application/mail URL and allowed host. | [production config](../config/environments/production.rb) |
-| `MLAB_URI` | Yes | Required for the default Mongoid client; no application default. | Required for the default client; `TEST_ENV_NUMBER` is appended. | Required for the default Mongoid client; no application default. | MongoDB connection URI, including the backup task. | — |
+| `MLAB_URI` | Yes | Required for the default Mongoid client; no application default. | Required for the default client; `TEST_ENV_NUMBER` is appended. | Required for the default Mongoid client; no application default. | MongoDB connection URI, including the backup task. It also overrides `mongo.uri` for the checkins extraction tool; that tool needs neither when reading `--input-file`. | [checkins extraction tool](../tools/analysis/checkins-extract.py) |
 | `SECRET_KEY_BASE` | Yes | Optional; defaults to the literal development key in `config/secrets.yml`. | Optional; defaults to the literal test key. | Required for secure Rails signing; the configuration supplies no fallback. `SECRET_KEY_BASE_DUMMY=1` is used only while Docker precompiles assets. | Rails cookie/message signing key. | [secrets config](../config/secrets.yml) |
 
 ## Optional variables
@@ -131,6 +131,7 @@ fallback can use the repository template when retrieval fails.
 | `DOC_VOLUNTEER_DISCOUNT_ERROR_ID` | `DOC_HOUSEHOLD_DISBANDED_PRIMARY_ID` | `DOC_HOUSEHOLD_DISBANDED_SECONDARY_ID` |
 | `DOC_HOUSEHOLD_DISBANDED_ADMIN_ID` | `DOC_MEMBER_REVIEW_ORIENTATION_ID` | `DOC_MEMBER_REVIEW_NO_PURCHASE_ID` |
 | `DOC_MEMBER_REVIEW_PAYPAL_ID` | `DOC_MEMBER_REVIEW_MISSING_CONTRACT_ID` | `DOC_MEMBER_REVIEW_EXPIRED_RENTAL_ID` |
+| `EMAIL_MEMBERSHIP_EXPIRING_SOON_ID` | `EMAIL_MEMBERSHIP_EXPIRED_ID` | |
 
 Comment-only environment examples are intentionally excluded because
 executable code does not retrieve them.

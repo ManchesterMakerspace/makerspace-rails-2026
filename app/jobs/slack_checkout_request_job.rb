@@ -1,11 +1,12 @@
 class SlackCheckoutRequestJob < ApplicationJob
   queue_as :default
-
-  MAX_TOOL_LIST = 40
+  self.log_arguments = false
 
   def perform(params)
+    @slack_user_id = params['user_id']
     response_url     = params['response_url']
     channel_name     = params['channel_name']
+    channel_id       = params['channel_id']
     invoker_slack_id = params['user_id']
     tool_name        = params['tool_name'].to_s.strip.presence
 
@@ -20,7 +21,12 @@ class SlackCheckoutRequestJob < ApplicationJob
       return
     end
 
-    shop = Shop.find_by(slack_channel: Service::SlackChannelCache.normalize_name(channel_name)) || Shop.find_by(slack_channel: channel_name)
+    channel_names = [
+      channel_id,
+      channel_name,
+      Service::SlackChannelCache.normalize_name(channel_name)
+    ].compact_blank.uniq
+    shop = Shop.where(:slack_channel.in => channel_names).first
     unless shop
       post_response(response_url, :ephemeral, "No shop is configured for ##{channel_name}. Run `/checkout request` from a shop channel.")
       return
@@ -28,28 +34,16 @@ class SlackCheckoutRequestJob < ApplicationJob
 
     return list_eligible_tools(response_url, invoker, shop) if tool_name.nil?
 
-    tool = Tool.where(shop_id: shop.id, :disabled.ne => true).find_by(name: /#{Regexp.escape(tool_name)}/i)
+    tool = Tool.where(shop_id: shop.id).find_by(name: /\A#{Regexp.escape(tool_name)}\z/i)
     unless tool
-      tool_list = Tool.where(shop_id: shop.id, :disabled.ne => true).pluck(:name).join(', ')
+      tool_list = ToolCheckoutRequestEligibility.eligible_tools(member: invoker, shop: shop).map(&:name).join(', ')
       post_response(response_url, :ephemeral, "No eligible tool matching '#{tool_name}' in #{shop.name}. Available: #{tool_list.presence || 'none'}")
-      return
-    end
-
-    if tool.open || tool.shop.nil? || tool.shop.disabled?
-      post_response(response_url, :ephemeral, tool.open ? "No checkout required" : "Tool unavailable")
-      return
-    end
-
-    existing_checkout = ToolCheckout.where(member_id: invoker.id, tool_id: tool.id, revoked_at: nil).first
-    if existing_checkout
-      existing_checkout.send_notes_slack_notification
-      post_response(response_url, :ephemeral, "You're already checked out on *#{tool.name}*#{tool.notes.present? ? ' — notes re-sent via DM.' : '.'}")
       return
     end
 
     create_request(response_url, invoker, tool)
   rescue => e
-    Service::ErrorReporter.notify(e, context: { phase: 'slack checkout request', invoker_slack_id: invoker_slack_id, tool_name: tool_name })
+    SlackCheckoutOutcomeJob.report("request", error_class: e.class.name)
     post_response(response_url, :ephemeral, 'Something went wrong processing your request. Please try again or use the Member Portal.')
   end
 
@@ -61,65 +55,25 @@ class SlackCheckoutRequestJob < ApplicationJob
     Member.find(slack_user.member_id)
   end
 
-  def eligible?(member, tool)
-    return false if tool.open || tool.disabled? || tool.shop.nil? || tool.shop.disabled?
-    if member.status == 'pending'
-      tool.allow_pending
-    else
-      member.active_unexpired? && member.status == 'activeMember'
-    end
-  end
-
   def list_eligible_tools(response_url, invoker, shop)
-    tools = Tool.where(shop_id: shop.id, :disabled.ne => true).order_by(name: :asc).select { |tool| eligible?(invoker, tool) }.first(MAX_TOOL_LIST)
+    tools = ToolCheckoutRequestEligibility.eligible_tools(member: invoker, shop: shop)
     if tools.empty?
       post_response(response_url, :ephemeral, "No eligible tools found in #{shop.name}. Your membership must be active (or, if pending, the tool must allow pending members) before requesting a checkout.")
       return
     end
 
-    lines = tools.map do |tool|
-      checked_out = ToolCheckout.where(member_id: invoker.id, tool_id: tool.id, revoked_at: nil).exists?
-      "• #{tool.name}#{checked_out ? ' _(already checked out — resends notes)_' : ''}"
-    end
+    lines = tools.map { |tool| "• #{tool.name}" }
     post_response(response_url, :ephemeral, "*Eligible tools:*\n#{lines.join("\n")}\n\nUse `/checkout request <tool name>` to request one.")
   end
 
   def create_request(response_url, invoker, tool)
-    unless eligible?(invoker, tool)
-      post_response(response_url, :ephemeral, "Your membership must first be activated and you must complete your Orientation checkout before requesting *#{tool.name}*.")
-      return
-    end
-
-    if ToolCheckoutRequest.where(member_id: invoker.id, tool_id: tool.id, status: 'open').exists?
-      post_response(response_url, :ephemeral, "You already have an open request for *#{tool.name}*.")
-      return
-    end
-
-    request = ToolCheckoutRequest.create!(
-      member_id: invoker.id,
-      tool_id: tool.id,
-      request_date: Time.now,
-      status: 'open'
-    )
-    request.announce_request
-
-    post_response(response_url, :ephemeral, "Requested checkout on *#{tool.name}*. An approver will be notified.")
+    CheckoutRequestCreation.create!(member_id: invoker.id, tool_id: tool.id, shop_id: tool.shop_id)
+    post_response(response_url, :ephemeral, "Requested checkout on #{CheckoutDisplay.escape(tool.name)}. An approver will be notified.")
+  rescue Error::CustomError => error
+    post_response(response_url, :ephemeral, error.message)
   end
 
-  def post_response(response_url, response_type, text)
-    return if response_url.blank?
-
-    uri  = URI.parse(response_url)
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = uri.scheme == 'https'
-    req  = Net::HTTP::Post.new(uri.request_uri, 'Content-Type' => 'application/json')
-    req.body = { response_type: response_type, text: text }.to_json
-    http.request(req)
-  rescue => err
-    Service::ErrorReporter.notify('Slack checkout request: failed to post response to response_url', context: {
-      error: err.message,
-      response_url: response_url,
-      text: text
-    })
+  def post_response(response_url, _response_type, text)
+    SlackCheckoutOutcomeJob.enqueue(text, response_url, @slack_user_id)
   end
 end

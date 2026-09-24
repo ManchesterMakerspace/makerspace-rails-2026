@@ -2,17 +2,21 @@ class Admin::CheckoutApproversController < AdminController
   before_action :find_approver, only: [:update, :destroy]
 
   def index
-    approvers = CheckoutApprover.all
-    render json: approvers, each_serializer: CheckoutApproverSerializer, adapter: :attributes
+    approvers = CheckoutApprover.all.to_a
+    render json: approvers, each_serializer: CheckoutApproverSerializer, adapter: :attributes,
+      checkout_context: CheckoutReadContext.for_approvers(approvers)
   end
 
   def create
-    approver = CheckoutApprover.find_or_initialize_by(member_id: approver_params[:member_id])
-    incoming_shops = approver_params[:shop_ids] || []
-    incoming_tools = approver_params[:tool_ids] || []
-    approver.shop_ids = (approver.shop_ids + incoming_shops).uniq
-    approver.tool_ids = (approver.tool_ids + incoming_tools).uniq
-    approver.save!
+    approver = CheckoutApproverMutationLock.with(member_id: approver_params[:member_id]) do
+      record = CheckoutApprover.find_or_initialize_by(member_id: approver_params[:member_id])
+      incoming_shops = approver_params[:shop_ids] || []
+      incoming_tools = approver_params[:tool_ids] || []
+      record.shop_ids = (record.shop_ids + incoming_shops).uniq
+      record.tool_ids = (record.tool_ids + incoming_tools).uniq
+      record.save!
+      record
+    end
 
     ::Service::AuditLogger.log(
       log_type:       'portal',
@@ -27,8 +31,12 @@ class Admin::CheckoutApproversController < AdminController
   end
 
   def update
-    before = @approver.attributes.dup
-    @approver.update_attributes!(approver_params)
+    before = nil
+    CheckoutApproverMutationLock.with(member_id: @approver.member_id) do
+      @approver.reload
+      before = @approver.attributes.dup
+      @approver.update_attributes!(approver_params)
+    end
 
     ::Service::AuditLogger.log(
       log_type:        'portal',
@@ -45,8 +53,12 @@ class Admin::CheckoutApproversController < AdminController
   end
 
   def destroy
-    before = @approver.attributes.dup
-    @approver.destroy
+    before = nil
+    CheckoutApproverMutationLock.with(member_id: @approver.member_id) do
+      @approver.reload
+      before = @approver.attributes.dup
+      @approver.destroy
+    end
 
     ::Service::AuditLogger.log(
       log_type:        'portal',
