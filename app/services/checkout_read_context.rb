@@ -35,9 +35,7 @@ class CheckoutReadContext
     context = new
     context.load_members(approvers.map(&:member_id))
     context.load_shops(Shop.where(:id.in => approvers.flat_map(&:shop_ids).uniq).only(:name).to_a)
-    tool_ids = approvers.flat_map(&:tool_ids).uniq
-    context.load_names(tool_ids)
-    context.load_tool_details(tool_ids)
+    context.load_tool_details(approvers.flat_map(&:tool_ids).uniq)
     context
   end
 
@@ -62,9 +60,11 @@ class CheckoutReadContext
   end
 
   # Approver-scoped tool detail (name/shop/out_of_service), batched to avoid
-  # a per-approver query. Reuses the same @tools store as load_tools.
+  # a per-approver query. Reuses the same @tools store as load_tools, and
+  # populates @names from the same result instead of a second Tool query.
   def load_tool_details(ids)
     @tools = Tool.where(:id.in => ids.uniq).only(:name, :shop_id, :out_of_service).index_by { |tool| tool.id.to_s }
+    @names = @tools.transform_values(&:name)
   end
 
   def tools_for(ids)

@@ -24,7 +24,7 @@ class ToolAvailabilityService
     # refresh above only updates a shared board, and only staff otherwise see
     # this affected list (in the response below, for their own review).
     if changed && value && affected.exists?
-      ToolOutageNotificationJob.perform_later(tool.id.to_s, affected.pluck(:id))
+      ToolOutageNotificationJob.perform_later(tool.id.to_s, affected.pluck(:id).map(&:to_s))
     end
     { outOfService: value, affectedReservations: affected.order_by(start_at: :asc).limit(100).map { |r| { id: r.id.to_s, startAt: r.start_at, endAt: r.end_at } },
       affectedCount: affected.count }
