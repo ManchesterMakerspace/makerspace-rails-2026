@@ -13,6 +13,7 @@ class SlackReservationModal
 
     def build_view(shop, member, response_url: nil, slack_user_id: nil, reservation_scope: nil, tool_ids: nil,
       title: nil, date: nil, start_time: nil, duration: nil, alert_message: nil, read_context: nil, metrics:)
+      raise Error::UnprocessableEntity.new('This shop is out of service') if shop.out_of_service?
       read_context ||= ReservationReadContext.new(shop: shop, member: member)
       tools = read_context.eligible_tools
       raise ::Error::UnprocessableEntity.new("This shop has more than 100 reservable tools; use the portal") if tools.length > 100

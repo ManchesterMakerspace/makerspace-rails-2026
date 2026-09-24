@@ -39,3 +39,14 @@ Every linked feature document must use these sections, in this order:
     jobs, or dependencies needed to operate the resource.
 
 Keep feature-document filenames and links consistent with the established names in this inventory.
+
+## Repair-ticket availability and authenticated links
+
+Public tool JSON/HTML and public shop tool lists include tool out_of_service. Public shop JSON and the nested shop in tool JSON also include the shop out_of_service flag. Shop pages, tool pages, and the fallback workshop directory show shop outage warnings. Outage notes and Slack receipts remain excluded from public projections, as do ticket data and reporter identity. Hidden restrictions are unchanged. Tool/shop HTML and JSON use public, max-age=0, s-maxage=0, must-revalidate; QR SVGs retain stable-image caching. Both shop and tool availability participate in ETags/render-cache digests.
+
+Reservation agenda JSON reports `shopOutOfService` and `toolOutOfService`
+separately, with `outOfService` true if either is true. Without a tool filter,
+`toolOutOfService` is false. HTML displays the applicable shop/tool warnings while
+retaining existing reservations.
+
+`/fix-tickets`, `/fix-tickets/:id`, and `/volunteer/tasks/:id` are authenticated portal routes. Public (read-only) tickets require an active unexpired member, not an anonymous browser. Existing shortcode mappings may target the authenticated bounty detail route; resolving a shortcode does not bypass target authorization. Unauthenticated bounty feeds do not include source-ticket content.

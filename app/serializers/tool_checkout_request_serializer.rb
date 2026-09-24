@@ -1,4 +1,5 @@
 class ToolCheckoutRequestSerializer < ActiveModel::Serializer
+  attribute(:out_of_service) { !!object.tool&.out_of_service }
   attribute :requestor_annotation do
     object.tool&.effective_requestor_annotation
   end

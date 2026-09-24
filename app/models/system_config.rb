@@ -40,6 +40,12 @@ class SystemConfig
     find_by(key: key)&.value
   end
 
+  # A saved blank value explicitly disables publication; only an absent override
+  # uses the environment. Never substitute a default Slack channel.
+  def self.slack_tickets_channel
+    (get('slack_channel_tickets') || ENV['SLACK_TICKETS_CHANNEL']).to_s.strip
+  end
+
   def self.set(key, value)
     record = find_or_initialize_by(key: key)
     record.value = value.to_s

@@ -23,7 +23,12 @@ RSpec.describe "Reservation agendas API", type: :request do
           "text/html" => { schema: { type: :string } }
         }
 
-        it("documents the response") { }
+        it 'exposes independent shop and tool outage flags with effective availability' do |example|
+          shop = create(:shop, out_of_service: true, out_of_service_note: 'Maintenance')
+          get '/reservations/agenda.json', params: { shop: shop.name }
+          assert_response_matches_metadata(example.metadata)
+          expect(response.parsed_body).to include('outOfService' => true, 'shopOutOfService' => true, 'toolOutOfService' => false)
+        end
       end
 
       response "400", "Shop parameter missing" do

@@ -1,6 +1,34 @@
 require "rails_helper"
 
 RSpec.describe Service::ReservationSlackCanvas do
+  it 'marks only unavailable booked tools and clears the warning after restoration' do
+    unavailable = create(:tool, shop: shop, name: 'Unsafe saw', out_of_service: true)
+    available = create(:tool, shop: shop, name: 'Working drill')
+    date = Date.new(2026, 9, 15)
+    create(:reservation, member: member, shop: shop, reservation_scope: 'tools', tool_ids: [unavailable.id.to_s, available.id.to_s],
+      title: 'Existing booking', start_at: zone.local(2026, 9, 15, 10), end_at: zone.local(2026, 9, 15, 11))
+    markdown = described_class.send(:agenda_markdown, shop, date)
+    expect(markdown).to include('Existing booking', 'Unsafe saw (OUT OF SERVICE', 'Working drill')
+    expect(markdown).not_to include('Working drill (OUT OF SERVICE')
+    unavailable.update!(out_of_service: false)
+    expect(described_class.send(:agenda_markdown, shop, date)).not_to include('OUT OF SERVICE')
+  end
+  it 'renders an outage banner on both days, keeps bookings, and removes the banner after restoration' do
+    shop.update!(out_of_service: true, out_of_service_note: 'Leak')
+    date = Date.new(2026, 9, 15)
+    create(:reservation, member: member, shop: shop, reservation_scope: 'shop', tool_ids: [], title: 'Existing booking',
+      start_at: zone.local(2026, 9, 15, 10), end_at: zone.local(2026, 9, 15, 11))
+    [date, date + 1.day].each do |day|
+      markdown = described_class.send(:agenda_markdown, shop, day)
+      expect(markdown).to include('## Shop out of service', 'all its tools are unavailable')
+    end
+    expect(described_class.send(:agenda_markdown, shop, date)).to include('Existing booking')
+    expect(described_class.send(:reservation_canvas_relevant?, shop, [(date + 1.day).iso8601])).to be(true)
+    shop.update!(out_of_service: false)
+    markdown = described_class.send(:agenda_markdown, shop, date)
+    expect(markdown).not_to include('## Shop out of service')
+    expect(markdown).to include('Existing booking')
+  end
   {
     "Build ](not a URL) [cabinet] | test\nnext" => "Build not a URL cabinet test next",
     'foo[]\\(){}}}}}))))]]]]' => 'foo',

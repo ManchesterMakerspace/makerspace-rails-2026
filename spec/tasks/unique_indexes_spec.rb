@@ -20,6 +20,28 @@ RSpec.describe 'data:ensure_unique_indexes' do
     task.reenable
   end
 
+  it 'creates all repair indexes and safely repeats the operation' do
+    models = [FixTicket, FixTicketEvent, FixTicketReveal]
+    models.each { |model| model.collection.drop }
+    2.times do
+      task.reenable
+      task.invoke
+      models.each do |model|
+        actual = model.collection.indexes.to_a
+        model.index_specifications.each do |specification|
+          index = actual.find { |candidate| candidate['key'] == specification.key.stringify_keys }
+          expect(index).to be_present
+          expect(index['unique']).to be(true) if specification.options[:unique]
+        end
+      end
+    end
+  end
+
+  it 'retains the old repair-index command as an alias to the consolidated task' do
+    expect(Rake::Task['fix_tickets:ensure_indexes'].prerequisites).to eq(['data:ensure_unique_indexes'])
+    expect(Rake::Task['fix_tickets:ensure_indexes'].actions).to be_empty
+  end
+
   [nil, :partial, :sparse].each do |existing_kind|
     it "creates full shortcode indexes from #{existing_kind || 'a clean collection'}" do
       Shortcode.collection.drop

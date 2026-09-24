@@ -212,10 +212,8 @@ describe "Shared checkout creation API", type: :request do
         allow(Service::SlackConnector).to receive(:send_slack_message)
       end
       response "200", "checkout created" do
-        schema type: :object, properties: {
-          _id: { type: :string }, member_id: { type: :string }, tool_id: { type: :string },
-          unmet_prerequisites: { type: :array, items: { type: :string }, maxItems: 0 }
-        }, required: %w[_id member_id tool_id unmet_prerequisites]
+        schema allOf: [{ "$ref" => "#/components/schemas/ToolCheckout" },
+          { type: :object, properties: { unmet_prerequisites: { type: :array, items: { type: :string }, maxItems: 0 } } }]
         run_test!
       end
       response "422", "membership, tool availability, prerequisites, duplicate state or lock contention prevents creation" do

@@ -13,7 +13,7 @@ class ReservationReadContext
   end
 
   def candidate_tools
-    @candidate_tools ||= Tool.where(shop_id: shop.id, reservable: true, :disabled.ne => true)
+    @candidate_tools ||= Tool.where(shop_id: shop.id, reservable: true, :disabled.ne => true, :out_of_service.ne => true)
       .order_by(name: :asc).to_a.tap { |tools| remember_tools(tools) }
   end
 
