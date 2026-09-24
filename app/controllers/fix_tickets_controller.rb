@@ -24,9 +24,13 @@ class FixTicketsController < ApplicationController
     open_count = FixTicketService.count(current_member)
     can_create = eligible && (privileged || open_count < FixTicketService.limit)
     reason = !eligible ? 'Reporting requires active, unexpired membership.' : (!can_create ? "You have reached the open-ticket limit (#{FixTicketService.limit}). Withdraw or close a report before submitting another." : nil)
+    # distinct(:assignee_ids) on tickets that all have an empty assignee_ids
+    # array returns [BSON::Undefined] rather than [] -- passing that into a
+    # $in clause raises "InMatchExpression equality cannot be undefined".
+    assignee_ids = FixTicketPolicy.new(current_member).scope.distinct(:assignee_ids).select { |id| id.is_a?(BSON::ObjectId) }
     render json: { shops: shops.map { |s| { id: s.id.to_s, name: s.name } },
       tools: tools.map { |t| { id: t.id.to_s, name: t.name, shopId: t.shop_id.to_s, outOfService: !!t.out_of_service } },
-      assignees: Member.where(:id.in => FixTicketPolicy.new(current_member).scope.distinct(:assignee_ids)).order_by(lastname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } },
+      assignees: Member.where(:id.in => assignee_ids).order_by(lastname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } },
       canCreate: can_create, creationUnavailableReason: reason,
       openCount: open_count, openLimit: privileged ? nil : FixTicketService.limit,
       bountyMaxCredit: VolunteerTask.ticket_bounty_max_credit,
