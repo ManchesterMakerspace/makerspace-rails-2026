@@ -338,11 +338,17 @@ RSpec.describe 'Slack reservation picker availability' do
   it 'excludes hidden and unavailable tools, including when all tools are unavailable' do
     shop = create(:shop, reservable: false)
     member = build(:member, :current)
-    available = create(:tool, shop: shop, reservable: true)
-    legacy = create(:tool, shop: shop, reservable: true)
+    # open: true -- otherwise Tool#effective_reservation_prerequisite_ids
+    # makes every tool its own prerequisite (the "must already have a
+    # supervised checkout on this tool" training gate), which an unsaved
+    # member with no checkout history can never satisfy. That gate is
+    # unrelated to what this test verifies (out_of_service/disabled
+    # exclusion), so it's turned off here.
+    available = create(:tool, shop: shop, reservable: true, open: true)
+    legacy = create(:tool, shop: shop, reservable: true, open: true)
     legacy.unset(:out_of_service)
-    create(:tool, shop: shop, reservable: true, disabled: true)
-    create(:tool, shop: shop, reservable: true, out_of_service: true)
+    create(:tool, shop: shop, reservable: true, open: true, disabled: true)
+    create(:tool, shop: shop, reservable: true, open: true, out_of_service: true)
     view = SlackReservationModal.build(shop, member)
     options = view[:blocks].find { |b| b[:block_id] == 'tools' }[:element][:options]
     expect(options.pluck(:value)).to contain_exactly(available.id.to_s, legacy.id.to_s)
