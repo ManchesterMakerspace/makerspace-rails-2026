@@ -71,8 +71,7 @@ RSpec.describe FixTicketDelivery do
     SlackUser.create!(member_id: reporter.id, slack_id: 'U123')
     event.set(kind: 'updated', field_changes: { 'announce_to_slack' => [false, true] }, recipients: [reporter.id], central_enabled: false)
     allow(Service::SlackConnector).to receive(:safe_channel).with('U123').and_return('U123')
-    expect(client).to receive(:conversations_open).with(users: 'U123').and_return({ 'channel' => { 'id' => 'D123' } })
-    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'D123')).and_return({ 'ts' => '100.002', 'channel' => 'D123' })
+    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'U123')).and_return({ 'ts' => '100.002', 'channel' => 'D123' })
     described_class.call(ticket, event)
     expect(event.reload.completed_at).to be_present
   end
@@ -124,8 +123,7 @@ RSpec.describe FixTicketDelivery do
     SlackUser.create!(member_id: reporter.id, slack_id: 'U123')
     event.set(recipients: [reporter.id], central_enabled: false)
     allow(Service::SlackConnector).to receive(:safe_channel).with('U123').and_return('U123')
-    expect(client).to receive(:conversations_open).with(users: 'U123').and_return({ 'channel' => { 'id' => 'D123' } })
-    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'D123', text: include("Ticket ##{ticket.id}:"))).and_return({ 'ts' => '100.001', 'channel' => 'D123' })
+    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'U123', text: include("Ticket ##{ticket.id}:"))).and_return({ 'ts' => '100.001', 'channel' => 'D123' })
     described_class.call(ticket, event)
   end
   %w[revoked suspended].each do |status|
