@@ -112,7 +112,11 @@ class FixTicketDelivery
       # logical Slack message rather than inventing a fresh delivery identity.
       digest = Digest::SHA256.hexdigest("#{event.id}/#{key}")
       uuid = [digest[0,8], digest[8,4], digest[12,4], digest[16,4], digest[20,12]].join('-')
-      channel = client.conversations_open(users: channel).dig('channel', 'id') if channel.start_with?('U', 'W')
+      # chat_postMessage already accepts a raw user id as `channel` and
+      # resolves/opens the DM internally (same as Service::SlackConnector's
+      # existing send_slack_message) -- pre-resolving it ourselves via
+      # conversations_open needs the im:write scope, which this bot token
+      # doesn't have and has never needed elsewhere in the app.
       attempt = event.delivery_attempts[key]
       if attempt
         receipt = reconcile(attempt, uuid)
