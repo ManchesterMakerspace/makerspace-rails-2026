@@ -9,7 +9,7 @@ describe "Tool checkout requests API", type: :request do
   path "/tool_checkout_requests" do
     get "Lists the member's eligible open checkout requests" do
       tags "ToolCheckoutRequests"
-      description "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending."
+      description "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending. requestorAnnotation is the current tool annotation, falling back to its shop, or null."
       produces "application/json"
       response "200", "eligible open requests" do
         let(:member) { create(:member, :current) }
@@ -19,7 +19,7 @@ describe "Tool checkout requests API", type: :request do
           ToolCheckoutRequest.create!(member: create(:member, :current, status: "suspended"), tool: tool)
           sign_in member
         end
-        schema type: :array, items: { type: :object }
+        schema type: :array, items: { type: :object, properties: { requestorAnnotation: { type: :string, nullable: true } } }
         run_test! do |response|
           expect(JSON.parse(response.body).map { |row| row.fetch("id") }).to eq([visible_request.id.to_s])
         end
@@ -29,7 +29,7 @@ describe "Tool checkout requests API", type: :request do
     post "Requests a safety checkout" do
       tags "ToolCheckoutRequests"
       operationId "createToolCheckoutRequest"
-      description "Creation is serialized under the shared per-member/tool lock, with membership, availability, prerequisites, checkout records and open requests rechecked immediately before insertion. Lock contention returns 422."
+      description "Creation is serialized under the shared per-member/tool lock, with membership, availability, prerequisites, checkout records and open requests rechecked immediately before insertion. Lock contention returns 422. Successful submission sends a Slack DM to the linked requestor including the tool annotation, or the shop annotation when the tool has none."
       consumes "application/json"
       produces "application/json"
       parameter name: :request_details, in: :body, schema: {
@@ -62,6 +62,7 @@ describe "Tool checkout requests API", type: :request do
             shopId: { type: :string },
             shopName: { type: :string },
             note: { type: :string, nullable: true },
+            requestorAnnotation: { type: :string, nullable: true },
             requestDate: { type: :string, format: "date-time" },
             status: { type: :string },
             messageId: { type: :string, nullable: true },

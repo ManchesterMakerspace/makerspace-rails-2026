@@ -1,4 +1,5 @@
 require 'rails_helper'
+require_relative 'support/fix_ticket_api_schemas'
 
 RSpec.configure do |config|
   # Specify a root folder where Swagger JSON files are generated
@@ -457,8 +458,12 @@ RSpec.configure do |config|
         {
           type: :object,
           properties: {
+            outOfService: { type: :boolean },
+            outOfServiceNote: { type: :string, nullable: true },
+            resourceManagers: { type: :array, items: { '$ref' => '#/components/schemas/FixPerson' } },
             id: { type: :string },
             name: { type: :string },
+            requestorAnnotation: { type: :string, nullable: true },
             wikiUrl: { type: :string, format: :uri },
             wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
             gdriveId: { type: :string, 'x-nullable': true },
@@ -467,9 +472,12 @@ RSpec.configure do |config|
             colorId: { type: :string, pattern: '^\d+$', 'x-nullable': true },
             reservationPrerequisiteNames: { type: :array, items: { type: :string } },
             googleResourceId: { type: :string, 'x-nullable': true },
-            resourceEmail: { type: :string, 'x-nullable': true }
+            resourceEmail: { type: :string, 'x-nullable': true },
+            floorName: { type: :string },
+            capacity: { type: :integer },
+            toolCount: { type: :integer, minimum: 0 }
           },
-          required: [:id, :name, :wikiUrl, :reservable]
+          required: [:id, :name, :requestorAnnotation, :wikiUrl, :reservable, :toolCount]
         }
       ]
     },
@@ -482,21 +490,37 @@ RSpec.configure do |config|
             id: { type: :string },
             shopId: { type: :string },
             name: { type: :string },
+            requestorAnnotation: { type: :string, nullable: true },
             wikiUrl: { type: :string, format: :uri },
             wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
             gdriveId: { type: :string, 'x-nullable': true },
             description: { type: :string, 'x-nullable': true },
+            open: { type: :boolean },
             disabled: { type: :boolean },
+            outOfService: { type: :boolean, default: false },
             allowPending: { type: :boolean, default: false },
-            effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } }
+            announce: { type: :boolean },
+            announceChannel: { type: :string, 'x-nullable': true },
+            usersChannel: { type: :string, 'x-nullable': true },
+            prerequisiteIds: { type: :array, items: { type: :string } },
+            prerequisiteNames: { type: :array, items: { type: :string } },
+            effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } },
+            reservationPrerequisiteNames: { type: :array, items: { type: :string } },
+            shopName: { type: :string },
+            notes: { type: :string, 'x-nullable': true, description: "Present only when the member may view operational notes." },
+            unmetPrerequisiteIds: { type: :array, items: { type: :string }, description: "Present when availability is evaluated for a signed-in member." },
+            unmetPrerequisiteNames: { type: :array, items: { type: :string }, description: "Present when availability is evaluated for a signed-in member." },
+            requestable: { type: :boolean, description: "Present when availability is evaluated for a signed-in member." }
           },
-          required: [:id, :shopId, :name, :wikiUrl, :reservable]
+          required: [:id, :shopId, :name, :requestorAnnotation, :wikiUrl, :reservable]
         }
       ]
     },
     CheckoutApprover: {
       type: :object,
       properties: {
+        tools: { type: :array, items: { type: :object, required: %w[id name shopId outOfService], properties: { id: { type: :string }, name: { type: :string }, shopId: { type: :string }, outOfService: { type: :boolean } } } },
+        outOfServiceToolNames: { type: :array, items: { type: :string } },
         id: { type: :string },
         memberId: { type: :string },
         shopIds: { type: :array, items: { type: :string } },
@@ -509,6 +533,7 @@ RSpec.configure do |config|
     Reservation: {
       type: :object,
       properties: {
+        outOfServiceToolNames: { type: :array, items: { type: :string } },
         id: { type: :string },
         title: { type: :string },
         memberId: { type: :string },
@@ -642,6 +667,9 @@ RSpec.configure do |config|
     ReservationAgenda: {
       type: :object,
       properties: {
+        outOfService: { type: :boolean, description: 'True when the shop or selected tool is out of service.' },
+        shopOutOfService: { type: :boolean },
+        toolOutOfService: { type: :boolean, description: 'Selected tool flag; false without a tool filter.' },
         shopName: { type: :string },
         toolName: { type: :string, 'x-nullable': true },
         generatedAt: { type: :string, format: 'date-time' },
@@ -670,11 +698,12 @@ RSpec.configure do |config|
               status: { type: :string, enum: %w[pending unpaid approved] },
               reservationScope: { type: :string, enum: %w[shop tools] },
               toolNames: { type: :array, items: { type: :string } },
+              outOfServiceToolNames: { type: :array, items: { type: :string } },
               inProgress: { type: :boolean }
             },
             required: [
               :title, :memberName, :startAt, :endAt, :status,
-              :reservationScope, :toolNames, :inProgress
+              :reservationScope, :toolNames, :outOfServiceToolNames, :inProgress
             ]
           }
         }
@@ -1026,6 +1055,8 @@ RSpec.configure do |config|
   }
 
 
+  definitions.merge!(FixTicketApiSchemas::SCHEMAS)
+
   config.openapi_specs = {
     'v1/swagger.json' => {
       openapi: '3.0.3',
@@ -1043,6 +1074,10 @@ RSpec.configure do |config|
             in: :cookie,
             name: '_member-interface_session',
             description: 'Rails member session cookie obtained after sign-in.'
+          },
+          sessionAuth: {
+            type: :apiKey, in: :cookie, name: '_member-interface_session',
+            description: 'Devise session cookie from portal sign-in. Mutations also require the existing X-XSRF-TOKEN CSRF header.'
           }
         },
         schemas: {

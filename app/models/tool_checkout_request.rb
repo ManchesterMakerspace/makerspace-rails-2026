@@ -95,6 +95,18 @@ class ToolCheckoutRequest
     Service::ErrorReporter.notify(e)
   end
 
+  def notify_requestor
+    return if member.direct_notifications_suppressed?
+
+    slack_id = member.slack_user&.slack_id
+    return if slack_id.blank?
+
+    message = "Your checkout request for #{CheckoutDisplay.escape(tool.name)} has been created."
+    annotation = tool.effective_requestor_annotation
+    message += "\n\n*Annotation for requestors*\n#{CheckoutDisplay.escape(annotation)}" if annotation.present?
+    Service::SlackConnector.send_slack_message(message, slack_id)
+  end
+
   # Request and approval sends can overlap. Atomically retain the first recorded
   # timestamp; neither path may overwrite a message already owned by the other.
   def register_announcement(timestamp)

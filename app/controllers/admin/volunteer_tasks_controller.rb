@@ -19,7 +19,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
     tasks = tasks.where(parent_task_id: params[:parent_task_id])  if params[:parent_task_id].present?
     tasks = tasks.where(:parent_task_id.ne => nil)                if params[:children_only] == 'true'
     tasks = tasks.where(parent_task_id: nil)                      if params[:parents_only] == 'true'
-    render json: tasks, each_serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: tasks, each_serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   end
 
   # POST /api/admin/volunteer_tasks
@@ -31,7 +31,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
     ))
     task.save!
     enqueue_canvas_sync(task.shop_id)
-    render json: task, serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: task, serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   end
 
   # PUT /api/admin/volunteer_tasks/:id
@@ -40,10 +40,23 @@ class Admin::VolunteerTasksController < AdminOrRmController
       authorize_shop_assignment!(task_params[:shop_id])
     end
     previous_shop_id = @task.shop_id
+    if @task.ticket_id && task_params.key?(:credit_value) && !is_admin? && !is_board_member? &&
+        task_params[:credit_value].to_f != @task.credit_value
+      raise Error::Forbidden.new('Only admins and board members can change linked bounty credits')
+    end
+    if @task.ticket_id && (task_params.keys - %w[title description credit_value prerequisite_tool_ids]).any?
+      raise Error::UnprocessableEntity.new('Linked ticket bounties cannot change shop or lifecycle through generic edits')
+    end
     @task.update!(task_params)
+    if @task.previous_changes.key?('credit_value')
+      Service::AuditLogger.log(log_type: 'portal', event_type: 'volunteer_task_credit_changed',
+        resource_type: 'VolunteerTask', resource_id: @task.id, actor: current_member,
+        field_changes: { 'credit_value' => @task.previous_changes['credit_value'] },
+        after_snapshot: { title: @task.title })
+    end
     enqueue_canvas_sync(previous_shop_id)
     enqueue_canvas_sync(@task.shop_id) if @task.shop_id.to_s != previous_shop_id.to_s
-    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   end
 
   # POST /api/admin/volunteer_tasks/:id/complete
@@ -55,7 +68,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
       end
     end
     @task.complete!(current_member)
-    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   rescue Error::Forbidden
     render json: { error: 'You cannot verify your own task completion' }, status: :forbidden
   end
@@ -64,7 +77,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
   def release
     raise ::Error::UnprocessableEntity.new('A reason is required') unless params[:reason].present?
     @task.release!(current_member, params[:reason])
-    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   rescue Error::Forbidden
     render json: { error: 'You cannot release your own claimed task' }, status: :forbidden
   end
@@ -73,7 +86,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
   def reject_pending
     raise ::Error::UnprocessableEntity.new('A reason is required') unless params[:reason].present?
     @task.reject_pending!(current_member, params[:reason])
-    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   rescue Error::Forbidden
     render json: { error: 'You cannot reject your own task' }, status: :forbidden
   end
@@ -82,7 +95,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
   def cancel
     @task.cancel!
     enqueue_canvas_sync(@task.shop_id)
-    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   end
 
   # POST /api/admin/volunteer_tasks/:id/reset_cooldown
@@ -91,13 +104,14 @@ class Admin::VolunteerTasksController < AdminOrRmController
       render json: { error: 'Only recurring tasks have a cooldown to reset' }, status: :unprocessable_content and return
     end
     @task.update!(next_available: nil, claimed_at: nil)
-    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes
+    render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member
   end
 
   # DELETE /api/admin/volunteer_tasks/:id
   def destroy
     raise ::Error::Forbidden.new unless is_admin? || is_board_member?
     shop_id = @task.shop_id
+    raise Error::UnprocessableEntity.new('Cancel linked bounties to preserve ticket history') if @task.ticket_id
     @task.destroy
     enqueue_canvas_sync(shop_id)
     render json: {}, status: :no_content

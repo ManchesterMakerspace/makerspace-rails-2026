@@ -5,6 +5,10 @@ class Slack::InteractionsController < ApplicationController
   def create
     slack_request = nil
     payload = JSON.parse(params[:payload].to_s)
+    if payload['action_id'].to_s.start_with?('fix_') || payload.dig('view', 'callback_id').to_s.start_with?('fix_') || Array(payload['actions']).any? { |a| a['action_id'].to_s.start_with?('fix_') }
+      return render json: FixSlack.interaction(payload)
+    end
+
     callback_id = payload.dig("view", "callback_id")
     if callback_id == SlackCheckoutModal::CALLBACK_ID && payload["type"].in?(%w[block_actions view_submission])
       return checkout_modal_interaction(payload)
@@ -391,7 +395,8 @@ class Slack::InteractionsController < ApplicationController
   def verify_slack_signature
     secret = ENV["SLACK_SIGNING_SECRET"]
     if secret.blank?
-      return if Rails.env.development?
+      fix_payload = params[:payload].to_s.include?('fix_')
+      return if Rails.env.development? && !fix_payload
 
       render json: { error: "Slack signing secret is not configured" },
         status: :forbidden

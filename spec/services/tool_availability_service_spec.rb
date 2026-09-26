@@ -82,4 +82,56 @@ RSpec.describe ToolAvailabilityService do
       tool.update!(disabled: true)
     }.not_to have_enqueued_job(ReservationSlackCanvasSyncJob)
   end
+
+  describe ".set!" do
+    let(:actor) { create(:member, :admin) }
+
+    it "marks the tool out of service and logs the change" do
+      result = ToolAvailabilityService.set!(tool: tool, actor: actor, value: true)
+
+      expect(tool.reload.out_of_service).to be true
+      expect(result[:outOfService]).to be true
+    end
+
+    it "raises for a non-staff actor" do
+      outsider = create(:member, :current)
+
+      expect { ToolAvailabilityService.set!(tool: tool, actor: outsider, value: true) }
+        .to raise_error(Error::Forbidden)
+    end
+
+    it "notifies holders of affected reservations when the tool goes out of service" do
+      reservation = create(
+        :reservation, member: member, shop: shop, reservation_scope: "tools",
+        tool_ids: [tool.id.to_s], start_at: zone.local(2026, 9, 9, 23, 0),
+        end_at: zone.local(2026, 9, 10, 1, 0), status: "approved"
+      )
+
+      expect {
+        ToolAvailabilityService.set!(tool: tool, actor: actor, value: true)
+      }.to have_enqueued_job(ToolOutageNotificationJob).with(tool.id.to_s, [reservation.id])
+    end
+
+    it "does not notify when restoring service" do
+      tool.update!(out_of_service: true)
+
+      expect {
+        ToolAvailabilityService.set!(tool: tool, actor: actor, value: false)
+      }.not_to have_enqueued_job(ToolOutageNotificationJob)
+    end
+
+    it "does not notify when there are no affected reservations" do
+      expect {
+        ToolAvailabilityService.set!(tool: tool, actor: actor, value: true)
+      }.not_to have_enqueued_job(ToolOutageNotificationJob)
+    end
+
+    it "does not notify when the value is unchanged" do
+      tool.update!(out_of_service: true)
+
+      expect {
+        ToolAvailabilityService.set!(tool: tool, actor: actor, value: true)
+      }.not_to have_enqueued_job(ToolOutageNotificationJob)
+    end
+  end
 end

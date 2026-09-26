@@ -11,6 +11,7 @@ class ShortUrl
   PUBLIC_PATH = %r{\A/(?:api/)?(shop|tool)/([a-f0-9]{24})/public\.html\z}
   PLURAL_PATH = %r{\A/(shops|tools)/([a-f0-9]{24})/public\.html\z}
   CHECKOUT_PATH = %r{\A/tools/([a-f0-9]{24})/request-checkout\z}
+  BOUNTY_PATH = %r{\A/volunteer/tasks/([a-f0-9]{24})\z}
   RENTAL_PATH = %r{\A/rentals/spots/([a-f0-9]{24})\z}
 
   def self.base_url(fallback_host: nil)
@@ -53,12 +54,14 @@ class ShortUrl
   end
 
   def self.supported_path?(path)
-    PUBLIC_PATH.match?(path) || PLURAL_PATH.match?(path) || CHECKOUT_PATH.match?(path) || RENTAL_PATH.match?(path)
+    BOUNTY_PATH.match?(path) || PUBLIC_PATH.match?(path) || PLURAL_PATH.match?(path) || CHECKOUT_PATH.match?(path) || RENTAL_PATH.match?(path)
   end
 
   def self.visible!(url)
     path = URI.parse(url).path
-    if (match = PUBLIC_PATH.match(path)) || (match = PLURAL_PATH.match(path))
+    if (match = BOUNTY_PATH.match(path))
+      raise PublicCatalog::Unavailable unless VolunteerTask.where(id: match[1]).exists?
+    elsif (match = PUBLIC_PATH.match(path)) || (match = PLURAL_PATH.match(path))
       match[1].start_with?("shop") ? PublicCatalog.shop(match[2]) : PublicCatalog.tool(match[2])
     elsif (match = CHECKOUT_PATH.match(path))
       PublicCatalog.tool(match[1])

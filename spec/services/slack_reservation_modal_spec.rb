@@ -42,10 +42,18 @@ RSpec.describe SlackReservationModal do
       reservation_prerequisite_tool_ids: [],
       duration_fees: []
     }
-    defaults[:disabled?] = false if klass == Shop
+    defaults.merge!(disabled?: false, out_of_service?: false) if klass == Shop
     defaults.merge!(effective_reservation_prerequisite_ids: [], allow_pending: false) if klass == Tool
     defaults.merge!(shop_id: shop.id, disabled?: false) if klass == Tool
     instance_double(klass, **defaults.merge(overrides))
+  end
+
+  context 'when the entire shop is out of service' do
+    it 'rejects the modal before querying reservation options' do
+      allow(shop).to receive(:out_of_service?).and_return(true)
+      expect(Tool).not_to receive(:where)
+      expect { described_class.build(shop, member) }.to raise_error(Error::UnprocessableEntity, /out of service/)
+    end
   end
 
   def block(view, block_id)
@@ -323,5 +331,30 @@ RSpec.describe SlackReservationModal do
 
     expect { described_class.build(shop, member) }
       .to raise_error(Error::UnprocessableEntity, "This shop has more than 100 reservable tools; use the portal")
+  end
+end
+
+RSpec.describe 'Slack reservation picker availability' do
+  it 'excludes hidden and unavailable tools, including when all tools are unavailable' do
+    shop = create(:shop, reservable: false)
+    member = build(:member, :current)
+    # open: true -- otherwise Tool#effective_reservation_prerequisite_ids
+    # makes every tool its own prerequisite (the "must already have a
+    # supervised checkout on this tool" training gate), which an unsaved
+    # member with no checkout history can never satisfy. That gate is
+    # unrelated to what this test verifies (out_of_service/disabled
+    # exclusion), so it's turned off here.
+    available = create(:tool, shop: shop, reservable: true, open: true)
+    legacy = create(:tool, shop: shop, reservable: true, open: true)
+    legacy.unset(:out_of_service)
+    create(:tool, shop: shop, reservable: true, open: true, disabled: true)
+    create(:tool, shop: shop, reservable: true, open: true, out_of_service: true)
+    view = SlackReservationModal.build(shop, member)
+    options = view[:blocks].find { |b| b[:block_id] == 'tools' }[:element][:options]
+    expect(options.pluck(:value)).to contain_exactly(available.id.to_s, legacy.id.to_s)
+    [available, legacy].each { |tool| tool.set(out_of_service: true) }
+    expect { SlackReservationModal.build(shop, member) }.to raise_error(Error::UnprocessableEntity, /no reservable resources/)
+    shop.set(reservable: true)
+    expect(SlackReservationModal.build(shop, member)[:blocks].pluck(:block_id)).not_to include('tools')
   end
 end

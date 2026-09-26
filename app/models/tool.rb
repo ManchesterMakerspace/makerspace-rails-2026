@@ -4,6 +4,7 @@ class Tool
   include ActiveModel::Serializers::JSON
 
   field :name, type: String
+  field :requestor_annotation, type: String
   field :wiki_url, type: String
   field :gdrive_id, type: String
   field :description, type: String
@@ -13,6 +14,8 @@ class Tool
   field :notes, type: String
   field :open, type: Boolean, default: false
   field :disabled, type: Boolean, default: false
+  # Independent of Hidden (disabled): unavailable tools remain in the catalog.
+  field :out_of_service, type: Boolean, default: false
   field :allow_pending, type: Boolean, default: false
   field :announce, type: Boolean, default: false
   field :announce_channel, type: String
@@ -40,7 +43,7 @@ class Tool
   # Scoped per shop, not global -- a common name like "Hand Tools" is allowed
   # to exist once per shop. Slack lookups that resolve a tool by name (see
   # SlackCheckoutRequestJob) are shop-scoped too, so this can't go ambiguous.
-  validates :name, uniqueness: { case_sensitive: false, scope: :shop_id }
+  validates :name, uniqueness: { case_sensitive: false, scope: :shop_id, message: 'already exists in this shop' }
   validates :shop, presence: true
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :reservation_horizon_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
@@ -65,6 +68,10 @@ class Tool
 
   def checkout_request_error(member)
     ToolCheckoutRequestEligibility.new(member: member, tool: self).error
+  end
+
+  def effective_requestor_annotation
+    requestor_annotation.presence || shop&.requestor_annotation.presence
   end
 
   def disabled
@@ -114,7 +121,7 @@ class Tool
   private
 
   CHECKOUT_CANVAS_FIELDS = %w[
-    shop_id name description wiki_url prerequisite_ids disabled
+    shop_id name description wiki_url prerequisite_ids disabled out_of_service
   ].freeze
 
   def enqueue_checkout_canvas_sync_after_catalog_change
@@ -145,6 +152,7 @@ class Tool
   end
 
   def normalize_external_fields
+    self.requestor_annotation = requestor_annotation.to_s.strip.presence
     self.wiki_url = wiki_url.to_s.strip.presence
     self.gdrive_id = gdrive_id.to_s.strip.presence
     self.announce_channel =

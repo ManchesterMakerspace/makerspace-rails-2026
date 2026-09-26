@@ -18,6 +18,30 @@ RSpec.describe Service::VolunteerSlackCanvas do
     allow(Service::SlackConnector).to receive(:replace_canvas)
   end
 
+  it "redacts hidden shop titles and headers on an existing canvas refresh" do
+    shop.set(disabled: true, volunteer_canvas_id: 'FEXISTING')
+    expect(Service::SlackConnector).to receive(:rename_canvas).with('FEXISTING', 'Volunteer opportunities')
+    described_class.sync!(shop)
+    expect(Service::SlackConnector).to have_received(:replace_canvas) do |id, markdown|
+      expect(id).to eq('FEXISTING')
+      expect(markdown).to include('# Volunteer opportunities')
+      expect(markdown).not_to include(shop.name)
+    end
+  end
+
+  it "creates hidden-shop canvases without embedding the shop name in the title" do
+    shop.set(disabled: true)
+    VolunteerTask.create!(title: 'Repair work', description: 'Replace switch', shop_id: shop.id, created_by_id: admin.id)
+    allow(Service::SlackConnector).to receive(:create_canvas).with('Volunteer opportunities', channel_id: 'CWOOD').and_return('FHIDDEN')
+    expect(Service::SlackConnector).to receive(:rename_canvas).with('FHIDDEN', 'Volunteer opportunities')
+    described_class.sync!(shop, create_if_needed: true)
+    expect(shop.reload.volunteer_canvas_id).to eq('FHIDDEN')
+    expect(Service::SlackConnector).to have_received(:replace_canvas) do |_, markdown|
+      expect(markdown).to include('Repair work')
+      expect(markdown).not_to include(shop.name)
+    end
+  end
+
   it "creates a channel-bound canvas, caches it, grants owners, and writes both lists" do
     rm_b = create(
       :member,

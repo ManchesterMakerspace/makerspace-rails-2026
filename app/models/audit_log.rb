@@ -30,7 +30,7 @@ class AuditLog
 
   # ── Resource (which record was changed) ────────────────────────────────────
   field :resource_type, type: String   # Mongoid model class name: "Member", "Rental", "Invoice", etc.
-  field :resource_id,   type: BSON::ObjectId
+  field :resource_id,   type: Object # ObjectId resources and integer repair-ticket IDs
 
   # ── Change data ────────────────────────────────────────────────────────────
   # field_changes:   diff of only changed fields — { "status" => ["activeMember", "revoked"] }

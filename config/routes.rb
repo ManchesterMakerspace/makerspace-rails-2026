@@ -27,6 +27,7 @@ Rails.application.routes.draw do
   namespace :slack do
     post '/events',             to: 'events#create'
     post '/commands/checkout',  to: 'commands#checkout'
+    post '/commands/fix', to: 'fix#command'
     post '/commands/reserve',   to: 'commands#reserve'
     post '/commands/volunteer', to: 'commands#volunteer'
     post '/interactions',       to: 'interactions#create'
@@ -41,6 +42,7 @@ Rails.application.routes.draw do
   get '/reservations/agenda', to: 'reservation_agendas#index'
 
   scope :api, defaults: { format: :json } do
+    get "/shortcodes/:code", to: "shortcode_resolutions#show"
     post "/shortcodes", to: "shortcodes#create"
     devise_for :members, skip: [:registrations], controllers: { sessions: "sessions" }
     devise_scope :member do
@@ -91,6 +93,23 @@ Rails.application.routes.draw do
 
       # Member sees their own checkouts
       resources :tool_checkouts, only: [:index]
+      resources :fix_tickets, only: [:index, :show, :create, :update] do
+        collection { get :catalog }
+        member do
+          post :notes
+          post :withdraw
+          post :assignments
+          get :assignee_options
+          post :bounty
+          post :reward
+          post :reveal
+          post :retry_delivery
+          post :outage
+        end
+      end
+      get '/volunteer/tasks/:id/detail', to: 'fix_bounties#show'
+      post '/tools/:id/outage', to: 'tool_availability#create'
+      post '/shops/:id/outage', to: 'shop_availability#create'
       resources :workshops, only: [:index]
       resources :tool_checkout_requests, only: [:index, :create, :update, :destroy]
       resources :reservation_catalog, only: [:index]
@@ -172,11 +191,14 @@ Rails.application.routes.draw do
         resources :invoice_options, only: [:create, :update, :destroy]
 
         # Tool checkout management
-        resources :shops, only: [:index, :create, :update, :destroy]
+        resources :shops, only: [:index, :create, :update, :destroy] do
+          get :resource_manager_options, on: :collection
+        end
         get 'google_calendar/colors', to: 'google_calendar#colors'
         resources :tools, only: [:index, :create, :update, :destroy] do
           member do
             patch :notes
+            patch :requestor_annotation
           end
         end
         resources :tool_checkouts, only: [:index, :create, :destroy]
