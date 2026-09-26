@@ -8,6 +8,7 @@ Retrieved 2026-03-14, License - CC BY-SA 4.0
 */
 
 .watermark {
+  pointer-events: none;
   opacity: 0.15;
   font-size: 52px;
   color: 'DarkSlateGray';
