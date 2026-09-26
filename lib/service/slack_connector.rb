@@ -74,7 +74,10 @@ module Service
             )
           end
         rescue Slack::Web::Api::Errors::SlackError => e
-          raise e
+          if e.is_a?(Slack::Web::Api::Errors::MissingScope)
+            $stderr.puts("[SlackMissingScope] #{format_api_error(e)}")
+          end
+          raise
         end
       end
     end
