@@ -88,6 +88,48 @@ RSpec.describe CardManagement, requires_transactions: true do
     expect(Card.where(id: card.id)).to exist
   end
 
+  it 'audits the finalized assignment of a pending member before running external effects' do
+    pending_member = create(:member, :current, status: 'pending')
+    rejection = create(:rejection_card, uid: '05060708')
+    allow(Service::AuditLogger).to receive(:attempt_slack).and_return(false)
+    allow_any_instance_of(Card).to receive(:perform_assignment_effects!).and_wrap_original do |original|
+      assigned = original.receiver
+      audit = AuditLog.find_by(event_type: 'card_assigned', resource_id: assigned.id)
+      expect(audit.after_snapshot['validity']).to eq('activeMember')
+      # A separate session sees these writes only once the transaction commits.
+      Thread.new do
+        expect(Member.find(pending_member.id).status).to eq('activeMember')
+        expect(Card.find(assigned.id).validity).to eq('activeMember')
+        expect(AuditLog.find(audit.id)).to be_present
+      end.value
+      original.call
+    end
+
+    assigned = described_class.assign!({ member_id: pending_member.id, uid: rejection.uid }, actor)
+
+    expect(pending_member.reload.status).to eq('activeMember')
+    expect(assigned.reload.validity).to eq('activeMember')
+    expect(rejection.reload.holder).to eq(pending_member.fullname)
+    expect(AuditLog.find_by(event_type: 'card_assigned', resource_id: assigned.id)
+      .after_snapshot['validity']).to eq(assigned.validity)
+  end
+
+  it 'rolls back pending-member activation and rejection-card updates if the audit fails' do
+    pending_member = create(:member, :current, status: 'pending')
+    rejection = create(:rejection_card, uid: '05060708')
+    allow(Service::AuditLogger).to receive(:log).and_return(nil)
+    expect_any_instance_of(Card).not_to receive(:perform_assignment_effects!)
+
+    expect do
+      described_class.assign!({ member_id: pending_member.id, uid: rejection.uid }, actor)
+    end.to raise_error(CardManagement::Unavailable)
+
+    expect(pending_member.reload.status).to eq('pending')
+    expect(rejection.reload.holder).to be_nil
+    expect(Card.where(uid: rejection.uid)).not_to exist
+    expect(AuditLog.where(event_type: 'card_assigned')).not_to exist
+  end
+
   it 'restores a deleted card and removes its audit when release fails before commit' do
     card.update!(card_location: 'lost')
     revision = member.reload.card_operation_version

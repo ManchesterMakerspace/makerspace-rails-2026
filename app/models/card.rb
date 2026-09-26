@@ -47,8 +47,18 @@ class Card
   end
 
   def complete_assignment!
+    finalize_assignment!
+    perform_assignment_effects!
+  end
+
+  # Database state must be finalized before the assignment audit is captured.
+  def finalize_assignment!
     activate_pending_member
     update_rejection_card
+  end
+
+  # Run only after the assignment transaction commits.
+  def perform_assignment_effects!
     settle_open_member_invoices
     enqueue_member_provisioning
   end

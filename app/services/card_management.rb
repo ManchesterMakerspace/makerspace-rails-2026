@@ -81,10 +81,11 @@ class CardManagement
         old.skip_provisioning_enqueue = true
         old.invalidate
       end
+      card.finalize_assignment!
       audit = audit!(card, actor, 'card_assigned')
     end
     # External provisioning and invoice callbacks must not run in a retried transaction.
-    card.complete_assignment!
+    card.perform_assignment_effects!
     channel = Service::SlackConnector.logs_channel
     posted = Service::AuditLogger.attempt_slack(audit.slack_message, channel)
     audit.set(slack_channel: channel, slack_posted: posted)
