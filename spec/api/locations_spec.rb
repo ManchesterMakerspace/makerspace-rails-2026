@@ -7,6 +7,21 @@ RSpec.describe 'Location contracts', type: :request do
   let(:location) { create(:location, shop: shop, name: 'Cabinet 1') }
   before { sign_in member; allow(REDIS).to receive(:set).and_return(true) }
 
+  path '/locations' do
+    get 'List locations for every member, optionally scoped to a set of shops' do
+      tags 'Locations'
+      security [sessionAuth: []]
+      produces 'application/json'
+      parameter name: :shop_ids, in: :query, type: :array, items: { type: :string }, required: false
+      response('200', 'Locations, visible to a plain member (not just admin/board/shop manager)') do
+        schema type: :array, items: { '$ref' => '#/components/schemas/Location' }
+        let(:member) { create(:member, :current) }
+        before { location }
+        run_test! { |r| expect(JSON.parse(r.body).map { |l| l['id'] }).to eq([location.id.to_s]) }
+      end
+    end
+  end
+
   path '/admin/locations' do
     get 'List locations, optionally scoped to a shop or a set of shops' do
       tags 'Locations'
@@ -96,6 +111,19 @@ RSpec.describe 'Location contracts', type: :request do
       other_location = create(:location, shop: other_shop, name: 'Cabinet 2')
 
       get '/api/admin/locations', params: { shop_ids: [shop.id.to_s, other_shop.id.to_s] }
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).map { |l| l['id'] }).to contain_exactly(location.id.to_s, other_location.id.to_s)
+    end
+  end
+
+  describe 'GET /api/locations?shop_ids[]=...' do
+    it 'returns locations across every requested shop for a plain member' do
+      sign_in create(:member, :current)
+      location
+      other_location = create(:location, shop: other_shop, name: 'Cabinet 2')
+
+      get '/api/locations', params: { shop_ids: [shop.id.to_s, other_shop.id.to_s] }
 
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body).map { |l| l['id'] }).to contain_exactly(location.id.to_s, other_location.id.to_s)

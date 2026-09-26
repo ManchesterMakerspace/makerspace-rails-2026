@@ -8941,6 +8941,47 @@
         }
       }
     },
+    "/locations": {
+      "get": {
+        "summary": "List locations for every member, optionally scoped to a set of shops",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shop_ids",
+            "in": "query",
+            "items": {
+              "type": "string"
+            },
+            "required": false,
+            "schema": {
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Locations, visible to a plain member (not just admin/board/shop manager)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Location"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/locations": {
       "get": {
         "summary": "List locations, optionally scoped to a shop or a set of shops",
