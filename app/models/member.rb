@@ -1,5 +1,6 @@
 class Member
   include Mongoid::Document
+  field :card_operation_version, type: Integer, default: 0
   include SanitizesUserInput
   include Mongoid::Search
   include ActiveModel::Serializers::JSON

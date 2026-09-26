@@ -13,6 +13,7 @@ require "sprockets/railtie"
 require "rails/test_unit/railtie"
 require_relative "../lib/app_domain_url"
 require_relative "../lib/shortcode_resolver"
+require_relative "../lib/service/test_database_uri"
 
 require 'dotenv'
 if (ENV["RAILS_ENV"] == 'production')

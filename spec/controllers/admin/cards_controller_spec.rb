@@ -8,14 +8,14 @@ RSpec.describe Admin::CardsController, type: :controller do
   let(:valid_attributes) {
     {
       member_id: member.id,
-      uid: 'A146HG'
+      uid: 'A146AB'
     }
   }
 
   let(:duplicate_member_card) {
     {
       member_id: member.id,
-      uid: 'KJK08'
+      uid: 'ABCD08'
     }
   }
 
@@ -56,7 +56,7 @@ RSpec.describe Admin::CardsController, type: :controller do
     end
 
     describe "POST #create" do
-      context "with valid params" do
+      context "with valid params", requires_transactions: true do
         it "creates a new Card if member doesn't have one" do
           expect {
             post :create, params: valid_attributes, format: :json

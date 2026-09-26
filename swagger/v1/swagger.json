@@ -4452,13 +4452,19 @@
         }
       },
       "post": {
-        "summary": "Creates an access card",
+        "summary": "Creates an access card (active admin or board member)",
         "tags": [
           "Cards"
         ],
         "operationId": "adminCreateCard",
         "parameters": [],
         "responses": {
+          "409": {
+            "description": "UID already registered; existing cards remain unchanged"
+          },
+          "503": {
+            "description": "Transactional card storage unavailable"
+          },
           "200": {
             "description": "access card created"
           },
@@ -4469,7 +4475,7 @@
             "description": "User unauthenticated"
           },
           "422": {
-            "description": "missing parameter"
+            "description": "Missing parameter or UID is neither canonical nor a recent unclaimed reader import"
           },
           "404": {
             "description": "member not found"
@@ -4486,7 +4492,12 @@
                     "type": "string"
                   },
                   "uid": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Uppercase hexadecimal ASCII byte pairs, or an exact UID from a recent unclaimed reader rejection. All assignments require an active admin or board member."
+                  },
+                  "source": {
+                    "type": "string",
+                    "description": "Audit-only client-reported UID source: nfc or import. Missing/unknown values are recorded as unspecified. Never affects authorization or UID validation; import eligibility comes from server-side reader rejection records."
                   }
                 },
                 "required": [
@@ -4545,6 +4556,64 @@
                 "required": [
                   "cardLocation"
                 ]
+              }
+            }
+          },
+          "required": true
+        }
+      },
+      "delete": {
+        "summary": "Release a lost card or card assigned to an expired/revoked member",
+        "tags": [
+          "Cards"
+        ],
+        "operationId": "adminReleaseNfcCard",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Released, reusable"
+          },
+          "409": {
+            "description": "Ineligible or changed assignment"
+          },
+          "403": {
+            "description": "Not an active admin or board member"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Card no longer exists"
+          },
+          "422": {
+            "description": "Missing version"
+          },
+          "503": {
+            "description": "Transaction or audit storage unavailable"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "string"
+                  }
+                }
               }
             }
           },
@@ -5208,6 +5277,93 @@
             }
           },
           "required": true
+        }
+      }
+    },
+    "/admin/cards/lookup": {
+      "get": {
+        "summary": "Look up an NFC or exact assigned legacy UID (active admin or board)",
+        "tags": [
+          "Cards"
+        ],
+        "operationId": "adminLookupNfcCard",
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "query",
+            "required": true,
+            "description": "Exact card UID, including assigned legacy values. No case folding or normalization. Unknown UIDs must be uppercase hexadecimal ASCII byte pairs.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Card found; member profile not embedded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "uid",
+                    "releasable",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "uid": {
+                      "type": "string"
+                    },
+                    "holder": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "expiry": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "validity": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "member_id": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "releasable": {
+                      "type": "boolean"
+                    },
+                    "release_reason": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown canonical UID"
+          },
+          "422": {
+            "description": "Unknown noncanonical UID or invalid parameter"
+          },
+          "403": {
+            "description": "Not an active admin or board member"
+          },
+          "409": {
+            "description": "Ambiguous duplicate UID records"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
         }
       }
     },

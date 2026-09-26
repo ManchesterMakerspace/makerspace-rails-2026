@@ -401,3 +401,12 @@ also run when shop or tool references change, selecting the current tool/shop
 channel and retaining per-event delivery receipts to prevent duplicate sends.
 
 Tool availability updates queue `ReservationSlackCanvasSyncJob` for each affected active, unexpired reservation overlapping today or tomorrow in the reservation time zone. Tool restoration also refreshes these dates. Reservation canvases retain bookings and label individually booked out-of-service tools as unavailable.
+# NFC card assignment and release
+
+`CardManagement` performs assignment and eligible release in MongoDB transactions
+(replica set required). Assignment defers the existing card provisioning/invoice
+callbacks until commit; release enqueues `MemberProvisioningJob` for the prior
+member after committing deletion and its audit. Release also clears the matching
+rejection-card holder so the UID can be imported again. The member write within
+the transaction detects concurrent renewals/revocations; a stale version returns
+409. Card operations create no recurring job.

@@ -76,6 +76,8 @@ mongorestore --uri "<uri for dev db>" dump/ --drop
 
 # Testing
 Rspec is used for unit testing the ruby backend.
+See [MongoDB transaction test setup](docs/testing-mongodb.md) for the replica set,
+parallel worker databases, and CI's required transaction coverage.
 ```
 $ rspec
 ```
