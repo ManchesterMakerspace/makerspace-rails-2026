@@ -108,7 +108,7 @@ class SlackVolunteerJob < ApplicationJob
       .where(parent_task_id: nil)
       .order_by(task_number: :asc)
       .to_a
-    tasks.select! { |task| task.eligible_for?(invoker) } unless privileged?(invoker)
+    tasks.select! { |task| task.eligible_for?(invoker) }
     tasks = tasks.first(15)
 
     if tasks.empty?
@@ -126,7 +126,8 @@ class SlackVolunteerJob < ApplicationJob
         else ''
       end
       lines << "• *#{t.title}* (#{credit_label}#{type_hint}) — `#{t.display_number}`\n  #{t.description}"
-      lines << "  Shop: #{t.shop.name}" if t.shop_id.present? && t.shop
+      visible_shop = VolunteerTaskVisibility.new(t, invoker).shop
+      lines << "  Shop: #{visible_shop.name}" if visible_shop
     end
     lines << "\nUse `/volunteer claim <task#>` to claim one."
 

@@ -139,3 +139,12 @@ consider whether names and rankings are suitable for the display's location and
 audience, restrict access when appropriate, and establish a process for removal
 requests. Token protection reduces casual access but does not make a publicly
 visible screen private.
+
+### Bounty catalog visibility
+
+Public bounty feeds omit hidden shop names and hidden prerequisite tools,
+including tools in hidden shops. The shop filter matches only visible shop names.
+Authenticated task projections also redact hidden IDs/names unless the viewer
+has catalog-management permission. These display rules do not remove stored
+prerequisites or change checkout requirements. Linked legacy bounties never
+expose creator identity when that creator is the anonymous ticket reporter.

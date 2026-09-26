@@ -49,6 +49,7 @@ module Service
 
         tools.each do |tool|
           lines.concat(["", "---", "", "### #{escape_markdown(tool.name)}"])
+          lines << '**Out of service - do not use.**' if tool.out_of_service?
           description = tool.description.to_s.strip
           wiki = "[#{escape_markdown(tool.name)} Wiki](#{tool.effective_wiki_url})"
           lines << [description, "(#{wiki})"].reject(&:blank?).join(" ")

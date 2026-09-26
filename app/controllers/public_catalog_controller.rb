@@ -1,15 +1,15 @@
 # No ApplicationController callbacks, authentication, session, or CSRF helpers.
 class PublicCatalogController < ActionController::Base
   include CatalogUnavailable
-  TEMPLATE_VERSION = "public-catalog-v2"
+  TEMPLATE_VERSION = "public-catalog-v4-shop-availability"
 
   def shop
     shop = PublicCatalog.shop(params[:id])
     return serve_qr(shop, "shop") if request.format.svg?
     tools = Tool.where(shop_id: shop.id, :disabled.ne => true)
-      .only(:id, :name, :open).collation(locale: "en", strength: 2).order_by(name: :asc, id: :asc)
+      .only(:id, :name, :open, :out_of_service).collation(locale: "en", strength: 2).order_by(name: :asc, id: :asc)
     projection = PublicCatalog.shop_fields(shop).merge(tools: tools.map do |tool|
-      { id: tool.id.to_s, name: tool.name, open: tool.open }
+      { id: tool.id.to_s, name: tool.name, open: tool.open, out_of_service: !!tool.out_of_service }
     end)
     projection[:calendars] = [PublicCatalog.calendar_fields(shop)].compact if request.format.html?
     serve(projection, "shop")
@@ -32,10 +32,10 @@ class PublicCatalogController < ActionController::Base
     response.headers.delete("ETag")
     response.headers.delete("Last-Modified")
     response.set_header("Cache-Control", "no-store")
-    shops = Shop.where(:disabled.ne => true).only(:id, :name)
+    shops = Shop.where(:disabled.ne => true).only(:id, :name, :out_of_service)
       .collation(locale: "en", strength: 2).order_by(name: :asc, id: :asc)
     page = { name: "Workshops", title: "Workshops", footer_links: PublicCatalog.footer_links,
-             shops: shops.map { |shop| { id: shop.id.to_s, name: shop.name } } }
+             shops: shops.map { |shop| { id: shop.id.to_s, name: shop.name, out_of_service: !!shop.out_of_service } } }
     render template: "public_catalog/workshops", layout: "public_catalog", locals: { page: page }, status: :not_found
   end
 
@@ -62,7 +62,7 @@ class PublicCatalogController < ActionController::Base
   end
 
   def fresh_public_response?(digest)
-    response.set_header("Cache-Control", "public, max-age=259200, s-maxage=259200")
+    response.set_header("Cache-Control", request.format.svg? ? "public, max-age=259200, s-maxage=259200" : "public, max-age=0, s-maxage=0, must-revalidate")
     response.set_header("ETag", %Q("#{digest}"))
     return true unless request.fresh?(response)
 

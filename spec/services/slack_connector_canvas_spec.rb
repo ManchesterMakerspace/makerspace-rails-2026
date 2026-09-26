@@ -54,6 +54,16 @@ RSpec.describe Service::SlackConnector do
     expect(client).to have_received(:canvases_create).twice
   end
 
+  it "renames an existing canvas using an encoded title operation" do
+    expect(client).to receive(:canvases_edit) do |arguments|
+      expect(arguments[:canvas_id]).to eq('F123')
+      expect(JSON.parse(arguments[:changes])).to eq([
+        { 'operation' => 'rename', 'title_content' => { 'type' => 'markdown', 'markdown' => 'Volunteer opportunities' } }
+      ])
+    end
+    described_class.rename_canvas('F123', 'Volunteer opportunities')
+  end
+
   it "replaces the entire canvas with the rendered agenda" do
     expect(client).to receive(:canvases_edit) do |arguments|
       expect(arguments[:canvas_id]).to eq("F123")
@@ -140,15 +150,15 @@ RSpec.describe Service::SlackConnector do
         method: "views.open",
         arguments: {
           trigger_id: "trigger-secret",
-          view: { private_metadata: "not-a-secret" },
+          view: { private_metadata: "private-ticket-context", callback_id: "not-a-secret" },
           api_key: "request-secret"
         }
       }
     )
 
     expect(details).to include(validation_message, "not-a-secret")
-    expect(details).to include('"trigger_id":"[FILTERED]"', '"api_key":"[FILTERED]"', '"token":"[FILTERED]"')
-    expect(details).not_to include("trigger-secret", "request-secret", "response-secret", "xoxb-embedded-secret")
+    expect(details).to include('"trigger_id":"[FILTERED]"', '"api_key":"[FILTERED]"', '"token":"[FILTERED]"', '"private_metadata":"[FILTERED]"')
+    expect(details).not_to include("trigger-secret", "request-secret", "response-secret", "xoxb-embedded-secret", "private-ticket-context")
   end
 
   it "resolves a configured channel name to its Slack channel ID" do

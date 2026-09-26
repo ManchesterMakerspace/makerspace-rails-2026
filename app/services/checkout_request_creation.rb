@@ -16,6 +16,7 @@ class CheckoutRequestCreation
       CheckoutNotificationJob.enqueue("request", request.id)
     else
       CheckoutCreation.notify { request.announce_request }
+      CheckoutCreation.notify { request.notify_requestor }
     end
     request
   end

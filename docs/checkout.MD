@@ -278,3 +278,26 @@ back to a DM to the submitting Slack user. Enqueue, replacement and DM failures
 are reported without the response URL and never undo persisted requests or
 checkouts. Outcome job credentials are encrypted and job argument logging is
 disabled. See `docs/jobs-tasks-services.MD` for timeouts and delivery details.
+
+## Annotation for requestors
+
+Shops and tools have an optional `requestor_annotation` text field. Blank or
+whitespace-only values normalize to nil. Shop managers (plus admins and board
+members) edit the shop default. Owning-shop managers and eligible additional
+approvers assigned to the tool or shop can edit the tool override through
+`PATCH /api/admin/tools/:id/requestor_annotation`; that endpoint cannot change
+other tool settings. The portal provides shop form fields and a tool annotation
+editor. These annotations are separate from private tool notes and the member's
+request note.
+
+After successful submission through the portal or Slack, the linked requestor
+receives a confirmation DM with the tool annotation, falling back to the shop
+annotation when the tool has none. This is independent of channel announcements.
+No annotation section is included when neither is set; members without linked
+Slack accounts receive no DM. Slack modal delivery runs in CheckoutNotificationJob.
+Existing Slack ephemeral outcome acknowledgements are preserved. Notification
+failures do not roll back a saved request.
+
+Request responses expose `requestorAnnotation`, resolved from current tool/shop
+settings at read time. The member's My Checkout Requests table displays it in a
+keyboard-focusable tooltip. Clearing a tool override restores the shop fallback.

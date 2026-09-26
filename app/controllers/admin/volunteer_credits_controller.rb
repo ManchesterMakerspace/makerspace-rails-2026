@@ -3,7 +3,7 @@ class Admin::VolunteerCreditsController < AdminOrRmController
 
   # GET /api/admin/volunteer_credits
   def index
-    credits = VolunteerCredit.all.order_by(created_at: :desc)
+    credits = VolunteerCredit.where(ticket_id: nil).order_by(created_at: :desc)
     credits = credits.where(member_id: params[:member_id]) if params[:member_id].present?
     credits = credits.where(status: params[:status])       if params[:status].present?
     render json: credits, each_serializer: VolunteerCreditSerializer, adapter: :attributes
@@ -85,7 +85,7 @@ class Admin::VolunteerCreditsController < AdminOrRmController
   private
 
   def find_credit
-    @credit = VolunteerCredit.find(params[:id])
+    @credit = VolunteerCredit.where(id: params[:id], ticket_id: nil).first
     raise ::Mongoid::Errors::DocumentNotFound.new(VolunteerCredit, { id: params[:id] }) if @credit.nil?
   end
 

@@ -39,8 +39,13 @@ class Admin::ToolCheckoutsController < ApplicationController
     raise Error::UnprocessableEntity.new("Tool unavailable") unless tool
     checkout = CheckoutCreation.create!(actor_id: current_member.id,
       member_id: checkout_params[:member_id], tool_id: tool.id, shop_id: tool.shop_id, source: "portal")
-    render json: checkout.as_json(serializer: ToolCheckoutSerializer, adapter: :attributes,
-      scope: current_member).merge(unmet_prerequisites: []), adapter: :attributes
+    # checkout.as_json(serializer:, adapter:, scope:) silently ignores those
+    # options -- as_json doesn't understand the ActiveModelSerializers render
+    # API, so this was dumping raw snake_case Mongoid attributes instead of
+    # the serialized response.
+    payload = ActiveModelSerializers::SerializableResource.new(checkout, serializer: ToolCheckoutSerializer,
+      adapter: :attributes, scope: current_member).as_json.merge(unmet_prerequisites: [])
+    render json: payload
   end
 
   def update
