@@ -11,6 +11,7 @@ RSpec.describe Location, type: :model do
     it { is_expected.to have_field(:svg_element_id).of_type(String) }
     it { is_expected.to have_field(:x_pct).of_type(Float) }
     it { is_expected.to have_field(:y_pct).of_type(Float) }
+    it { is_expected.to have_field(:shape_points).of_type(Array) }
   end
 
   describe "ActiveModel validations" do
@@ -58,6 +59,19 @@ RSpec.describe Location, type: :model do
       child = build(:location, shop: shop, parent_id: parent.id)
 
       expect(child).to be_valid
+    end
+
+    it "is invalid when shape_points has fewer than 3 points" do
+      location = build(:location, shape_points: [{ x: 10, y: 10 }, { x: 20, y: 20 }])
+
+      expect(location).not_to be_valid
+      expect(location.errors[:shape_points]).to include("must have at least 3 points to form a shape")
+    end
+
+    it "is valid when shape_points has 3 or more points" do
+      location = build(:location, shape_points: [{ x: 10, y: 10 }, { x: 50, y: 10 }, { x: 30, y: 40 }])
+
+      expect(location).to be_valid
     end
   end
 end

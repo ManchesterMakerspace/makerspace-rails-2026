@@ -64,7 +64,8 @@ class Admin::LocationsController < ApplicationController
   private
 
   def location_params
-    params.permit(:name, :kind, :parent_id, :shop_id, :svg_element_id, :x_pct, :y_pct)
+    params.permit(:name, :kind, :parent_id, :shop_id, :svg_element_id, :x_pct, :y_pct,
+                   shape_points: [:x, :y])
   end
 
   def find_location

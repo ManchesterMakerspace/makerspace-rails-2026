@@ -32,6 +32,20 @@ RSpec.describe 'Location contracts', type: :request do
         let(:member) { create(:member, :current) }
         run_test!
       end
+      response('200', 'Created location with a drawn shape') do
+        schema '$ref' => '#/components/schemas/Location'
+        let(:body) do
+          { name: 'Woodshop', shop_id: shop.id.to_s, kind: 'area',
+            shape_points: [{ x: 10, y: 10 }, { x: 50, y: 10 }, { x: 30, y: 40 }] }
+        end
+        run_test! { |r| expect(JSON.parse(r.body)['shapePoints'].size).to eq(3) }
+      end
+      response('422', 'A shape needs at least 3 points') do
+        let(:body) do
+          { name: 'Woodshop', shop_id: shop.id.to_s, shape_points: [{ x: 10, y: 10 }, { x: 50, y: 10 }] }
+        end
+        run_test!
+      end
     end
   end
 

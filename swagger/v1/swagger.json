@@ -1219,6 +1219,25 @@
           "yPct": {
             "type": "number",
             "x-nullable": true
+          },
+          "shapePoints": {
+            "type": "array",
+            "x-nullable": true,
+            "items": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ]
+            }
           }
         },
         "required": [
@@ -1250,6 +1269,24 @@
           },
           "y_pct": {
             "type": "number"
+          },
+          "shape_points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ]
+            }
           }
         },
         "required": [
@@ -8946,7 +8983,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Created location",
+            "description": "Created location with a drawn shape",
             "content": {
               "application/json": {
                 "schema": {
@@ -8957,6 +8994,9 @@
           },
           "403": {
             "description": "Not a manager of this shop"
+          },
+          "422": {
+            "description": "A shape needs at least 3 points"
           }
         },
         "requestBody": {

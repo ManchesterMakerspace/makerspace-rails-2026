@@ -7,6 +7,7 @@ class Location
   field :svg_element_id, type: String, default: nil   # references a named shape in the shop's existing floor-plan SVG
   field :x_pct, type: Float, default: nil             # fallback click-placed pin, % of image width
   field :y_pct, type: Float, default: nil             # % of image height
+  field :shape_points, type: Array, default: nil      # admin-drawn polygon: [{x:, y:}, ...], % of image
 
   belongs_to :shop
 
@@ -14,6 +15,7 @@ class Location
   validates :shop, presence: true
   validate :parent_belongs_to_same_shop
   validate :parent_is_not_a_descendant
+  validate :shape_points_form_a_polygon
 
   index({ shop_id: 1 })
   index({ parent_id: 1 })
@@ -50,5 +52,10 @@ class Location
       visited << ancestor.id
       ancestor = ancestor.parent_id ? Location.where(id: ancestor.parent_id).first : nil
     end
+  end
+
+  def shape_points_form_a_polygon
+    return if shape_points.nil?
+    errors.add(:shape_points, "must have at least 3 points to form a shape") if shape_points.size < 3
   end
 end

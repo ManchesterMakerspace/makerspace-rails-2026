@@ -525,7 +525,16 @@ RSpec.configure do |config|
         shopId: { type: :string },
         svgElementId: { type: :string, 'x-nullable': true },
         xPct: { type: :number, 'x-nullable': true },
-        yPct: { type: :number, 'x-nullable': true }
+        yPct: { type: :number, 'x-nullable': true },
+        shapePoints: {
+          type: :array,
+          'x-nullable': true,
+          items: {
+            type: :object,
+            properties: { x: { type: :number }, y: { type: :number } },
+            required: [:x, :y]
+          }
+        }
       },
       required: [:id, :name, :shopId]
     },
@@ -538,7 +547,15 @@ RSpec.configure do |config|
         shop_id: { type: :string },
         svg_element_id: { type: :string },
         x_pct: { type: :number },
-        y_pct: { type: :number }
+        y_pct: { type: :number },
+        shape_points: {
+          type: :array,
+          items: {
+            type: :object,
+            properties: { x: { type: :number }, y: { type: :number } },
+            required: [:x, :y]
+          }
+        }
       },
       required: [:name, :shop_id]
     },
