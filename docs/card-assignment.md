@@ -20,6 +20,13 @@ Assignment, old-card invalidation, pending-member activation, rejection-card
 claiming, and the finalized audit snapshot share one MongoDB transaction.
 Invoice and provisioning effects run only after commit.
 
+`GET /api/admin/cards/lookup?uid=...` accepts an exact UID already assigned to a
+card, including noncanonical legacy identifiers. It performs no normalization or
+case folding. Unknown canonical UIDs return 404; unknown noncanonical or nonstring
+values return 422. Ambiguous duplicate records still return 409. The same active
+admin/board policy applies. Legacy results include the card ID and version needed
+to release an eligible assignment.
+
 Release creates a `card_released` audit in the same transaction as deletion,
 including the actor, former member when available, card ID, full pre-release
 snapshot (including UID), and an empty post-release snapshot. The audit remains

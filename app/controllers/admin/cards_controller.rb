@@ -10,10 +10,13 @@ class Admin::CardsController < AdminController
 
   def lookup
     uid = params.require(:uid)
-    unless uid.is_a?(String) && uid.match?(/\A(?:[0-9A-F]{2})+\z/)
-      return render json: { error: 'UID must be uppercase hexadecimal ASCII byte pairs.' }, status: :unprocessable_entity
+    unless uid.is_a?(String)
+      return render json: { error: 'UID must be a string.' }, status: :unprocessable_entity
     end
     cards = Card.where(uid: uid).limit(2).to_a
+    if cards.empty? && !uid.match?(/\A(?:[0-9A-F]{2})+\z/)
+      return render json: { error: 'Unknown UID must be uppercase hexadecimal ASCII byte pairs.' }, status: :unprocessable_entity
+    end
     raise Error::NotFound.new if cards.empty?
     raise CardManagement::Conflict, 'Duplicate UID records require administrator repair.' if cards.length > 1
     render json: CardManagement.snapshot(cards.first)

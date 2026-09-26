@@ -7,11 +7,11 @@ describe 'NFC card management', type: :request do
   before { sign_in admin }
 
   path '/admin/cards/lookup' do
-    get 'Look up an NFC UID (active admin or board)' do
+    get 'Look up an NFC or exact assigned legacy UID (active admin or board)' do
       tags 'Cards'
       operationId 'adminLookupNfcCard'
       produces 'application/json'
-      parameter name: :uid, in: :query, required: true, schema: { type: :string, pattern: '^(?:[0-9A-F]{2})+$' }
+      parameter name: :uid, in: :query, required: true, description: 'Exact card UID, including assigned legacy values. No case folding or normalization. Unknown UIDs must be uppercase hexadecimal ASCII byte pairs.', schema: { type: :string }
       let(:uid) { card.uid }
       response '200', 'Card found; member profile not embedded' do
         schema type: :object, required: %w[id uid releasable version], properties: {
@@ -26,11 +26,11 @@ describe 'NFC card management', type: :request do
           expect(response.headers['Cache-Control']).to include('no-store')
         end
       end
-      response '404', 'Unknown UID' do
+      response '404', 'Unknown canonical UID' do
         let(:uid) { '0000' }
         run_test!
       end
-      response '422', 'Noncanonical UID' do
+      response '422', 'Unknown noncanonical UID or invalid parameter' do
         let(:uid) { '1b:1a:4d:2f' }
         run_test!
       end
@@ -78,6 +78,50 @@ describe 'NFC card management', type: :request do
       payload[:source] = source unless source.nil?
       post '/api/admin/cards', params: payload, as: :json
       expect(response).to have_http_status(:forbidden)
+    end
+  end
+
+  %w[legacy-key 1b:1a:4d:2f].each do |uid|
+    it "looks up the exact assigned legacy UID #{uid} without requiring transactions" do
+      legacy = create(:card, member: holder, uid: uid)
+      get '/api/admin/cards/lookup', params: { uid: uid }
+      expect(response).to have_http_status(:ok)
+      snapshot = JSON.parse(response.body)
+      expect(snapshot['id']).to eq(legacy.id.to_s)
+      expect(snapshot['uid']).to eq(uid)
+      expect(snapshot['version']).to eq(CardManagement.version(legacy))
+      expect(response.headers['Cache-Control']).to include('no-store')
+    end
+  end
+
+  it 'does not normalize unknown values into an existing legacy UID' do
+    create(:card, member: holder, uid: 'legacy-key')
+    get '/api/admin/cards/lookup', params: { uid: 'LEGACY-KEY' }
+    expect(response).to have_http_status(:unprocessable_entity)
+  end
+
+  it 'rejects nonstring UIDs before querying cards' do
+    expect(Card).not_to receive(:where)
+    get '/api/admin/cards/lookup', params: { uid: { '$ne' => '' } }
+    expect(response).to have_http_status(:unprocessable_entity)
+  end
+
+  %w[lost expired].each do |condition|
+    it "releases a #{condition} legacy assignment using its lookup ID and version", requires_transactions: true do
+      legacy = create(:card, member: holder, uid: 'legacy-key')
+      if condition == 'lost'
+        legacy.update!(card_location: 'lost')
+      else
+        holder.set(expirationTime: 1.day.ago.to_i * 1000)
+      end
+      get '/api/admin/cards/lookup', params: { uid: legacy.uid }
+      expect(response).to have_http_status(:ok)
+      snapshot = JSON.parse(response.body)
+      expect(snapshot['releasable']).to be(true)
+      delete "/api/admin/cards/#{snapshot['id']}", params: { version: snapshot['version'] }, as: :json
+      expect(response).to have_http_status(:no_content)
+      expect(Card.where(id: legacy.id)).not_to exist
+      expect(AuditLog.find_by(event_type: 'card_released', resource_id: legacy.id).before_snapshot['uid']).to eq('legacy-key')
     end
   end
 

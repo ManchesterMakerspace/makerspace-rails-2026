@@ -5282,7 +5282,7 @@
     },
     "/admin/cards/lookup": {
       "get": {
-        "summary": "Look up an NFC UID (active admin or board)",
+        "summary": "Look up an NFC or exact assigned legacy UID (active admin or board)",
         "tags": [
           "Cards"
         ],
@@ -5292,9 +5292,9 @@
             "name": "uid",
             "in": "query",
             "required": true,
+            "description": "Exact card UID, including assigned legacy values. No case folding or normalization. Unknown UIDs must be uppercase hexadecimal ASCII byte pairs.",
             "schema": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-F]{2})+$"
+              "type": "string"
             }
           }
         ],
@@ -5350,10 +5350,10 @@
             }
           },
           "404": {
-            "description": "Unknown UID"
+            "description": "Unknown canonical UID"
           },
           "422": {
-            "description": "Noncanonical UID"
+            "description": "Unknown noncanonical UID or invalid parameter"
           },
           "403": {
             "description": "Not an active admin or board member"
