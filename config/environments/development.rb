@@ -91,6 +91,33 @@ Rails.application.configure do
       $stderr.puts  '[RAILS_SERVE_STATIC_FILES] WARNING: Will not directly serve static files, hopefully apache or nginx will do it for you!!!'
     end
   end
+  # Sprockets (Server#cache_headers) sets a year-long immutable Cache-Control
+  # whenever it thinks a path is content-hashed -- its check is just a regex
+  # for "-<7+ alphanumeric chars> right before the extension"
+  # (path_fingerprint), with no idea whether that's an actual hash. The react
+  # build output here is copied in under fixed, non-hashed names (see
+  # docker-compose.dev.yml's build step) like
+  # "makerspace-react.admin-tool-checkouts.js" -- and "-checkouts.js" alone
+  # satisfies that regex, a false positive. That's not something
+  # config.public_file_server.headers reaches (Sprockets sets its own header
+  # directly, bypassing it), so override it after the fact for just this
+  # path instead -- a browser that ever fetched one of these under the wrong
+  # header keeps reusing that exact copy for a year even after a real
+  # rebuild otherwise.
+  config.middleware.insert_before(0, Class.new do
+    def initialize(app) = @app = app
+
+    def call(env)
+      # Capture before calling down the stack -- a mounted sub-app (Sprockets,
+      # at /assets) mutates env['PATH_INFO']/SCRIPT_NAME in place per normal
+      # Rack sub-app routing, so it no longer has this prefix by the time
+      # @app.call returns.
+      path = env['PATH_INFO'].to_s
+      status, headers, body = @app.call(env)
+      headers['cache-control'] = 'no-cache' if path.start_with?('/assets/makerspace-react')
+      [status, headers, body]
+    end
+  end)
   
   if ENV['MAILTRAP_API_TOKEN'].present? && ENV['MAILTRAP_ACCOUNT_ID'].present?
     begin

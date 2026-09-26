@@ -73,5 +73,19 @@ RSpec.describe Location, type: :model do
 
       expect(location).to be_valid
     end
+
+    it "is invalid when a shape_points value is outside 0-100" do
+      location = build(:location, shape_points: [{ x: 10, y: 10 }, { x: 133, y: 10 }, { x: 30, y: 40 }])
+
+      expect(location).not_to be_valid
+      expect(location.errors[:shape_points]).to include("must have x/y values between 0 and 100")
+    end
+
+    it "is invalid when x_pct or y_pct is outside 0-100" do
+      location = build(:location, x_pct: 133, y_pct: 50)
+
+      expect(location).not_to be_valid
+      expect(location.errors[:x_pct]).to be_present
+    end
   end
 end
