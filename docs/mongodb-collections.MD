@@ -18,6 +18,9 @@ index-task changes:
 - `reservations` gained a sparse invoice lookup index.
 - tool-name uniqueness changed from global uniqueness to case-insensitive
   uniqueness within a shop; the catalog query index was also added.
+- `locations` was added: a self-referential tree for placing a shop's
+  cabinets/shelves/drawers on its floor-plan map, or nesting them under each
+  other. Foundational data model only so far -- no controller/route/UI yet.
 
 The table includes collections accessed without a Mongoid model: `checkins` is
 queried directly by the administrative space-usage interface, and `notes` is
@@ -45,6 +48,7 @@ conditions are included where they are part of the index contract.
 | `groups` | `Group` | Household/group memberships, their primary member, subscription, and shared expiration. | Unique `{ groupName: 1 }`, partial when `groupName` is a string |
 | `invoice_options` | `InvoiceOption` | Purchasable billing choices, prices, plans, promotions, and renewal operations. | None |
 | `invoices` | `Invoice` | Amounts due and billing-operation state for members and other invoiceable resources. | Sparse `{ reservation_id: 1 }`; unique `{ transaction_id: 1 }`, partial when `transaction_id` is a string; `{ member_id: 1 }` (deployment task) |
+| `locations` | `Location` | Self-referential tree for shop map placement (cabinets/shelves/drawers) and named references into a shop's floor-plan SVG. | `{ shop_id: 1 }`; `{ parent_id: 1 }` |
 | `mailtrap` | `MailtrapEvent` | Delivery events received from Mailtrap webhooks and linked back to members/messages. | `{ member_id: 1 }`; unique sparse `{ event_id: 1 }`; `{ message_id: 1 }`; `{ occurred_at: 1 }`; sparse `{ mailtrap_message_id: 1 }` |
 | `mailtrap_messages` | `MailtrapMessage` | Outbound email metadata used to correlate messages with later delivery events. | Unique sparse `{ message_id: 1 }`; `{ member_id: 1 }`; `{ email: 1 }`; `{ created_at: 1 }` (the deployment task also enforces the existing member index as non-unique) |
 | `members` | `Member` | Member identity, authentication, membership status, expiration, billing links, and provisioning state. | Unique `{ email: 1 }`, partial when `email` is a string; unique `{ customer_id: 1 }`, partial when `customer_id` is a string; `{ status: 1, startDate: 1, expirationTime: 1 }` |

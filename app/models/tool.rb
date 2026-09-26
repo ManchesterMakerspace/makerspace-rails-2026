@@ -30,6 +30,9 @@ class Tool
   field :reservation_prerequisite_tool_ids, type: Array, default: []
   field :google_resource_id, type: String
   field :resource_email, type: String
+  # Optional placement in the shop's Location tree (map pin or nested
+  # container, e.g. a shelf/drawer) -- see Location.
+  field :location_id, type: BSON::ObjectId, default: nil
 
   belongs_to :shop
 

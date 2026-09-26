@@ -442,6 +442,11 @@ FactoryBot.define do
     max_reservation_duration_hours { 8 }
   end
 
+  factory :location do
+    sequence(:name) { |n| "Location #{n}" }
+    association :shop
+  end
+
   factory :tool_checkout do
     association :member
     association :tool
