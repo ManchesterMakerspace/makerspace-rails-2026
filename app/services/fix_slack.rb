@@ -81,7 +81,9 @@ class FixSlack
           raise Error::Forbidden.new unless FixTicketPolicy.new(member, ticket).staff?
         end
         members = if field == 'assignee_id'
-          Member.where(:id.in => FixTicketPolicy.new(member).scope.distinct(:assignee_ids))
+          assignee_ids = FixTicketPolicy.new(member).scope.distinct(:assignee_ids)
+            .select { |id| id.is_a?(BSON::ObjectId) }
+          Member.where(:id.in => assignee_ids)
         else
           Member.where(status: 'activeMember', :expirationTime.gt => Time.current.to_i * 1000)
         end

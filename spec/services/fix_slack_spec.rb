@@ -100,6 +100,12 @@ RSpec.describe FixSlack do
     expect(described_class.options(member, payload.merge('value' => 'Unrelated'))[:options]).to be_empty
     expect(described_class.options(member, payload.merge('value' => 'Vis'))[:options].map { |o| o[:value] }).to eq([visible.id.to_s])
   end
+  it 'returns no assignee suggestions when visible tickets have empty assignee arrays' do
+    create(:fix_ticket, reporter_id: member.id, assignee_ids: [])
+
+    payload = { 'action_id' => 'fix_search_assignee_id', 'value' => '' }
+    expect(described_class.options(member, payload)[:options]).to be_empty
+  end
   it 'initializes tool and assignee filters without losing their IDs' do
     tool = create(:tool, shop: create(:shop))
     query = { 'tool_id' => tool.id.to_s, 'assignee_id' => member.id.to_s }

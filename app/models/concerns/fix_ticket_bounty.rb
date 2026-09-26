@@ -56,11 +56,15 @@ module FixTicketBounty
       yield
       ticket.reload
       previous = ticket.assignee_ids
+      previous_status = ticket.status
       ticket.bounty_assignee_ids -= [former]
       ticket.assignee_ids = (ticket.manual_assignee_ids + ticket.bounty_assignee_ids).uniq
+      ticket.status = 'open' if ticket.assignee_ids.empty?
       ticket.save!
       update!(status: 'cancelled') unless ticket.active?
-      FixTicketService.assignment_event!(ticket, actor, previous)
+      changes = {}
+      changes['status'] = [previous_status, ticket.status] if previous_status != ticket.status
+      FixTicketService.assignment_event!(ticket, actor, previous, changes: changes)
     end
     FixTicketService.enqueue(ticket)
     enqueue_volunteer_canvas_sync

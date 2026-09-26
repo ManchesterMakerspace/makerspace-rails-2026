@@ -12,11 +12,10 @@ module Service
 
         before_assignee_ids = ticket.assignee_ids.dup
         before_status = ticket.status
-        ticket.assignee_ids -= expired_ids
-        ticket.manual_assignee_ids -= expired_ids
-        ticket.bounty_assignee_ids -= expired_ids
-        ticket.status = "open" if ticket.assignee_ids.empty?
-        ticket.save!
+        release_expired_bounty_claim(ticket, expired_ids)
+        ticket.reload
+        FixTicketService.expire_assignees!(ticket: ticket, expired_ids: expired_ids)
+        ticket.reload
 
         field_changes = { "assignee_ids" => [before_assignee_ids, ticket.assignee_ids] }
         field_changes["status"] = [before_status, ticket.status] if before_status != ticket.status
@@ -30,5 +29,19 @@ module Service
       end
       processed
     end
+
+    def self.release_expired_bounty_claim(ticket, expired_ids)
+      bounty = ticket.bounty
+      return unless bounty && expired_ids.include?(bounty.claimed_by_id)
+
+      actor = Member.find(ticket.reporter_id)
+      reason = 'Claim released because the assignee membership expired'
+      if bounty.status == 'claimed'
+        bounty.release!(actor, reason)
+      elsif bounty.status == 'pending'
+        bounty.reject_pending!(actor, reason)
+      end
+    end
+    private_class_method :release_expired_bounty_claim
   end
 end

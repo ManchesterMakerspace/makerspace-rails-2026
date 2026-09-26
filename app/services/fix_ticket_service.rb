@@ -247,8 +247,31 @@ class FixTicketService
         assignment_event!(ticket, member, previous)
       end
     end
-    def assignment_event!(ticket, actor, previous)
-      event!(ticket, actor, 'assigned', added: ticket.assignee_ids - previous)
+    def assignment_event!(ticket, actor, previous, changes: {})
+      event!(ticket, actor, 'assigned', added: ticket.assignee_ids - previous, changes: changes)
+    end
+    def expire_assignees!(ticket:, expired_ids:)
+      result = nil
+      transaction(ticket.reporter_id) do
+        result = FixTicket.find(ticket.id)
+        removed_ids = result.assignee_ids & expired_ids
+        previous_status = result.status
+        result.manual_assignee_ids -= removed_ids
+        result.bounty_assignee_ids -= removed_ids
+        result.assignee_ids = (result.manual_assignee_ids + result.bounty_assignee_ids).uniq
+        result.status = 'open' if result.assignee_ids.empty?
+        unless result.changed?
+          result = nil
+          next
+        end
+
+        result.save!
+        changes = {}
+        changes['status'] = [previous_status, result.status] if previous_status != result.status
+        event!(result, nil, 'assigned', changes: changes)
+      end
+      enqueue(result) if result
+      result&.reload
     end
     def cancel_unclaimed_bounty!(ticket)
       task = ticket.bounty
@@ -294,8 +317,8 @@ class FixTicketService
       ticket.inc(revision: 1)
       ticket.set(updated_at: Time.current)
       recipients = []
-      recipients += ticket.assignee_ids - [actor.id] if kind == 'note' || note.present? || (changes.keys & %w[status confirmation]).any?
-      recipients << ticket.reporter_id if actor.id != ticket.reporter_id && (kind == 'assigned' || note.present? || (changes.keys & %w[status confirmation assignees announcement_note]).any?)
+      recipients += ticket.assignee_ids - [actor&.id] if kind == 'note' || note.present? || (changes.keys & %w[status confirmation]).any?
+      recipients << ticket.reporter_id if actor&.id != ticket.reporter_id && (kind == 'assigned' || note.present? || (changes.keys & %w[status confirmation assignees announcement_note]).any?)
       notify_staff = kind == 'created' || note.present?
       if notify_staff && ticket.shop_id.present?
         approver_rules = [{ shop_ids: ticket.shop_id.to_s }]
@@ -306,7 +329,7 @@ class FixTicketService
         approvers = CheckoutApprover.where(:member_id.in => candidates.map(&:id)).order_by(_id: :asc).to_a.reverse.index_by(&:member_id)
         tool = ticket.tool
         candidates.each do |candidate|
-          next if candidate.id == actor.id
+          next if candidate.id == actor&.id
           rm = candidate.manages_shop?(ticket.shop_id)
           approver = candidate.valid_for_checkout_request? && approvers[candidate.id]
           relevant = approver && (tool ? approver.can_approve_tool?(tool) : approver.can_approve_for_shop?(ticket.shop_id))
@@ -315,7 +338,7 @@ class FixTicketService
       end
       recipients += added
       recipients += [ticket.reporter_id] + ticket.assignee_ids if kind == 'bounty'
-      FixTicketEvent.create!(ticket_id: ticket.id, actor_id: actor.id, kind: kind, note: note, note_role: note_role,
+      FixTicketEvent.create!(ticket_id: ticket.id, actor_id: actor&.id, kind: kind, note: note, note_role: note_role,
         unscoped_staff_notification: notify_staff && ticket.shop_id.blank?,
         field_changes: kind == 'assigned' ? changes.except('assignees') : changes, revision: ticket.revision, recipients: recipients.uniq)
     end
