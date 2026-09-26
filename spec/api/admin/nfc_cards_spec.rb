@@ -62,15 +62,57 @@ describe 'NFC card management', type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
-  it 'rejects noncanonical NFC enrollment' do
-    post '/api/admin/cards', params: { memberId: holder.id.to_s, uid: '1b:1a:4d:2f', source: 'nfc' }, as: :json
-    expect(response).to have_http_status(:unprocessable_entity)
+  [nil, 'nfc', 'import', 'other'].each do |source|
+    it "rejects unobserved noncanonical UIDs regardless of source #{source.inspect}" do
+      expect(CardManagement).not_to receive(:assign!)
+      payload = { memberId: holder.id.to_s, uid: '1b:1a:4d:2f' }
+      payload[:source] = source unless source.nil?
+      post '/api/admin/cards', params: payload, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+
+    it "rejects expired operators regardless of source #{source.inspect}" do
+      admin.set(expirationTime: 1.day.ago.to_i * 1000)
+      expect(CardManagement).not_to receive(:assign!)
+      payload = { memberId: holder.id.to_s, uid: '001B1A4D2F' }
+      payload[:source] = source unless source.nil?
+      post '/api/admin/cards', params: payload, as: :json
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
+  it 'accepts a legacy identifier observed by a reader', requires_transactions: true do
+    create(:rejection_card, uid: 'legacy-key', holder: nil, timeOf: Time.current)
+    post '/api/admin/cards', params: { memberId: holder.id.to_s, uid: 'legacy-key' }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(Card.where(uid: 'legacy-key')).to exist
+  end
+
+  it 'does not accept stale or already claimed reader records as import evidence' do
+    create(:rejection_card, uid: 'stale-key', holder: nil, timeOf: 3.days.ago)
+    create(:rejection_card, uid: 'claimed-key', holder: 'Someone', timeOf: Time.current)
+    expect(CardManagement).not_to receive(:assign!)
+    %w[stale-key claimed-key].each do |uid|
+      post '/api/admin/cards', params: { memberId: holder.id.to_s, uid: uid, source: 'import' }, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
   end
 
   it 'accepts canonical NFC UIDs', requires_transactions: true do
+    admin.update!(role: 'board_member')
     post '/api/admin/cards', params: { memberId: holder.id.to_s, uid: '001B1A4D2F', source: 'nfc' }, as: :json
     expect(response).to have_http_status(:ok)
     expect(Card.where(uid: '001B1A4D2F')).to exist
+    assigned = Card.find_by(uid: '001B1A4D2F')
+    expect(AuditLog.find_by(event_type: 'card_assigned', resource_id: assigned.id).slack_message)
+      .to include('Card UID source: NFC scan (client-reported)')
+  end
+
+  it 'rejects revoked operators even when their expiration is in the future' do
+    admin.set(status: 'revoked')
+    expect(CardManagement).not_to receive(:assign!)
+    post '/api/admin/cards', params: { memberId: holder.id.to_s, uid: '001B1A4D2F' }, as: :json
+    expect(response).to have_http_status(:unauthorized)
   end
 
   path '/admin/cards/{id}' do

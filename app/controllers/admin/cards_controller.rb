@@ -1,5 +1,5 @@
 class Admin::CardsController < AdminController
-  before_action :active_nfc_operator!, only: [:lookup, :destroy]
+  before_action :active_nfc_operator!, only: [:lookup, :destroy, :create]
   before_action { response.set_header('Cache-Control', 'private, no-store') }
   rescue_from CardManagement::Conflict do |error|
     render json: { error: error.message }, status: :conflict
@@ -26,19 +26,20 @@ class Admin::CardsController < AdminController
 
   def new
     @card = Card.new()
-    reject = RejectionCard.where({holder: nil, timeOf: {'$gt' => (Date.today - 1.day)}}).sort(timeOf: 1).last
+    reject = importable_rejections.sort(timeOf: 1).last
     @card.uid = reject.uid if !!reject
     render json: @card, adapter: :attributes and return
   end
 
   def create
-    if params[:source] == 'nfc'
-      active_nfc_operator!
-      unless params[:uid].is_a?(String) && params[:uid].match?(/\A(?:[0-9A-F]{2})+\z/)
-        return render json: { error: 'UID must be uppercase hexadecimal ASCII byte pairs.' }, status: :unprocessable_entity
-      end
+    attributes = create_card_params
+    uid = attributes[:uid]
+    # Only reader-observed legacy identifiers qualify for the import exception.
+    # A client-provided source cannot relax authorization or UID validation.
+    unless uid.is_a?(String) && (uid.match?(/\A(?:[0-9A-F]{2})+\z/) || importable_rejections.where(uid: uid).exists?)
+      return render json: { error: 'UID must be uppercase hexadecimal ASCII byte pairs or match a recent unclaimed reader rejection.' }, status: :unprocessable_entity
     end
-    @card = CardManagement.assign!(create_card_params, current_member)
+    @card = CardManagement.assign!(attributes, current_member, uid_source: params[:source])
 
     render json: @card, adapter: :attributes and return
   end
@@ -72,6 +73,10 @@ class Admin::CardsController < AdminController
   end
 
   private
+  def importable_rejections
+    RejectionCard.where(holder: nil, :timeOf.gt => Date.today - 1.day)
+  end
+
   def active_nfc_operator!
     raise Error::Forbidden.new unless current_member.fully_active_unexpired?
   end

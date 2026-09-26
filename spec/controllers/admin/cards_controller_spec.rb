@@ -8,14 +8,14 @@ RSpec.describe Admin::CardsController, type: :controller do
   let(:valid_attributes) {
     {
       member_id: member.id,
-      uid: 'A146HG'
+      uid: 'A146AB'
     }
   }
 
   let(:duplicate_member_card) {
     {
       member_id: member.id,
-      uid: 'KJK08'
+      uid: 'ABCD08'
     }
   }
 

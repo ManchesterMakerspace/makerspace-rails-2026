@@ -51,8 +51,17 @@ With `REQUIRE_MONGO_TRANSACTIONS` absent or other than exact `true`, tagged
 examples are pending on standalone MongoDB. Untagged examples still run.
 Connection/authentication errors and errors within supported transactions always
 fail. Set `REQUIRE_MONGO_TRANSACTIONS=true` to fail suite startup on unsupported
-topology before DatabaseCleaner runs. Both CI jobs set it and run the independent
-commit/rollback probe; E2E does not load the RSpec hooks.
+topology before DatabaseCleaner runs. GitHub Actions and CircleCI set it and run
+the independent commit/rollback probe; E2E does not load the RSpec hooks.
+
+CircleCI's build job starts its MongoDB 7.0 sidecar with `--replSet rs0 --bind_ip_all`.
+After installing the bundle, `scripts/ci/initialize-mongo.rb` connects directly,
+initializes the single member at `localhost:27017`, and waits up to 60 seconds for
+a writable primary. Initialization failures stop the build and point to the
+CircleCI MongoDB service logs. The job then runs the same commit/rollback probe
+as GitHub Actions before indexing, integration tests, or RSpec. Its job-level
+`MLAB_URI` includes `replicaSet=rs0`; `REQUIRE_MONGO_TRANSACTIONS=true` prevents
+transaction-dependent coverage from silently skipping before publication.
 
 Production transaction requirements are unchanged. No nontransactional write
 fallback is provided.

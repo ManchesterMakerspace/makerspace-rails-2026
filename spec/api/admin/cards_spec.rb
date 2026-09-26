@@ -71,7 +71,7 @@ describe 'Admin::AccessCards API', type: :request do
       end
     end
 
-    post 'Creates an access card' do 
+    post 'Creates an access card (active admin or board member)' do
       tags 'Cards'
       operationId "adminCreateCard"
       consumes 'application/json'
@@ -80,8 +80,8 @@ describe 'Admin::AccessCards API', type: :request do
         type: :object,
         properties: {
           memberId: { type: :string },
-          uid: { type: :string },
-          source: { type: :string, enum: ['import', 'nfc'], description: 'NFC requires active admin/board and uppercase hexadecimal UID byte pairs.' },
+          uid: { type: :string, description: 'Uppercase hexadecimal ASCII byte pairs, or an exact UID from a recent unclaimed reader rejection. All assignments require an active admin or board member.' },
+          source: { type: :string, description: 'Audit-only client-reported UID source: nfc or import. Missing/unknown values are recorded as unspecified. Never affects authorization or UID validation; import eligibility comes from server-side reader rejection records.' },
         },
         required: [:memberId, :uid]
       }, required: true
@@ -108,7 +108,7 @@ describe 'Admin::AccessCards API', type: :request do
 
         let(:createAccessCardDetails) {{
           memberId: basic.id,
-          uid: "12ggh34"
+          uid: "12AB34"
         }}
 
         run_test!(requires_transactions: true)
@@ -119,7 +119,7 @@ describe 'Admin::AccessCards API', type: :request do
         schema '$ref' => '#/components/schemas/error'
         let(:createAccessCardDetails) {{
           memberId: basic.id,
-          uid: "12ggh34"
+          uid: "12AB34"
         }}
         run_test!
       end
@@ -128,16 +128,16 @@ describe 'Admin::AccessCards API', type: :request do
         schema '$ref' => '#/components/schemas/error'
         let(:createAccessCardDetails) {{
           memberId: basic.id,
-          uid: "12ggh34"
+          uid: "12AB34"
         }}
         run_test!
       end
 
-      response '422', 'missing parameter' do 
+      response '422', 'Missing parameter or UID is neither canonical nor a recent unclaimed reader import' do
         before { sign_in admin }
         schema '$ref' => '#/components/schemas/error'
         let(:createAccessCardDetails) {{
-          uid: "12ggh34"
+          uid: "12AB34"
         }}
         run_test!
       end
@@ -147,7 +147,7 @@ describe 'Admin::AccessCards API', type: :request do
         schema '$ref' => '#/components/schemas/error'
         let(:createAccessCardDetails) {{
           memberId: 'invalid',
-          uid: "12ggh34"
+          uid: "12AB34"
         }}
         run_test!(requires_transactions: true)
       end

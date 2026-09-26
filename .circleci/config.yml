@@ -1,12 +1,17 @@
 version: 2.1
 jobs:
   build:
+    environment:
+      RAILS_ENV: test
+      MLAB_URI: mongodb://localhost:27017/makerspace_test?replicaSet=rs0
+      REQUIRE_MONGO_TRANSACTIONS: "true"
     docker:
       - image: cimg/ruby:3.2.9-browsers
         auth:
           username: $DOCKERHUB_USERNAME
           password: $DOCKERHUB_PASSWORD
       - image: mongo:7.0
+        command: [mongod, --replSet, rs0, --bind_ip_all]
         auth:
           username: $DOCKERHUB_USERNAME
           password: $DOCKERHUB_PASSWORD
@@ -49,23 +54,11 @@ jobs:
           paths:
             - vendor/bundle
       - run:
-          name: Wait for MongoDB
+          name: Initialize MongoDB replica set and verify transactions
           command: |
-            set +e
-            if ! command -v mongosh > /dev/null 2>&1 ; then
-              echo "Candygram for Mongo..."
-              curl -L -O https://downloads.mongodb.com/compass/mongodb-mongosh_2.1.1_amd64.deb
-              sudo dpkg -i mongodb-mongosh_2.1.1_amd64.deb
-              sudo apt-get update
-              sudo apt-get install -f -y
-              mongosh --version || echo "Mongo only pawn in game of life"
-            fi
-            set -e
-            for i in $(seq 1 30); do
-              mongosh --eval "db.runCommand({ ping: 1 })" --quiet && break
-              echo "Waiting for mongo... ($i)"
-              sleep 2
-            done
+            set -euo pipefail
+            bundle exec ruby scripts/ci/initialize-mongo.rb
+            bundle exec ruby scripts/ci/verify-mongo-transactions.rb
       - run:
           name: Create mongoid_search indexes
           command: |

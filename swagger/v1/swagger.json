@@ -4452,7 +4452,7 @@
         }
       },
       "post": {
-        "summary": "Creates an access card",
+        "summary": "Creates an access card (active admin or board member)",
         "tags": [
           "Cards"
         ],
@@ -4475,7 +4475,7 @@
             "description": "User unauthenticated"
           },
           "422": {
-            "description": "missing parameter"
+            "description": "Missing parameter or UID is neither canonical nor a recent unclaimed reader import"
           },
           "404": {
             "description": "member not found"
@@ -4492,15 +4492,12 @@
                     "type": "string"
                   },
                   "uid": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Uppercase hexadecimal ASCII byte pairs, or an exact UID from a recent unclaimed reader rejection. All assignments require an active admin or board member."
                   },
                   "source": {
                     "type": "string",
-                    "enum": [
-                      "import",
-                      "nfc"
-                    ],
-                    "description": "NFC requires active admin/board and uppercase hexadecimal UID byte pairs."
+                    "description": "Audit-only client-reported UID source: nfc or import. Missing/unknown values are recorded as unspecified. Never affects authorization or UID validation; import eligibility comes from server-side reader rejection records."
                   }
                 },
                 "required": [

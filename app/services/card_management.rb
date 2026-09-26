@@ -38,10 +38,11 @@ class CardManagement
     raise Unavailable, 'Card changes require an available MongoDB replica set. Please retry.'
   end
 
-  def self.audit!(card, actor, event, before: nil)
+  def self.audit!(card, actor, event, before: nil, message_details: nil)
     log = Service::AuditLogger.log(log_type: 'member', event_type: event,
       resource_type: 'Card', resource_id: card.id, actor: actor, subject: card.member,
-      before_snapshot: before, after_snapshot: event == 'card_released' ? {} : card.attributes)
+      before_snapshot: before, after_snapshot: event == 'card_released' ? {} : card.attributes,
+      message_details: message_details)
     raise Unavailable, 'Unable to record the card audit. No changes were saved.' unless log
     log
   end
@@ -66,7 +67,7 @@ class CardManagement
     MemberProvisioningJob.perform_later(member_id) if member_id
   end
 
-  def self.assign!(attributes, actor)
+  def self.assign!(attributes, actor, uid_source: nil)
     card = nil
     audit = nil
     transaction do
@@ -82,7 +83,13 @@ class CardManagement
         old.invalidate
       end
       card.finalize_assignment!
-      audit = audit!(card, actor, 'card_assigned')
+      # Source describes the client workflow, never authorization or UID validity.
+      source_label = case uid_source
+      when 'nfc' then 'NFC scan (client-reported)'
+      when 'import' then 'Reader import (client-reported)'
+      else 'Unspecified'
+      end
+      audit = audit!(card, actor, 'card_assigned', message_details: "Card UID source: #{source_label}")
     end
     # External provisioning and invoice callbacks must not run in a retried transaction.
     card.perform_assignment_effects!
