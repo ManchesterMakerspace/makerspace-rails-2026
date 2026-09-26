@@ -116,6 +116,19 @@ RSpec.describe FixSlack do
     end
     expect(JSON.parse(view[:private_metadata])).to include(query)
   end
+  it 'labels deleted assignees when opening the assignment modal' do
+    admin = create(:member, :admin, :current)
+    deleted_id = BSON::ObjectId.new
+    ticket = create(:fix_ticket, reporter_id: member.id, assignee_ids: [deleted_id])
+    allow(described_class).to receive(:member!).and_return(admin)
+    expect(Service::SlackConnector).to receive(:open_modal) do |_trigger, view|
+      selected = view[:blocks].first.dig(:element, :initial_options)
+      expect(selected).to contain_exactly(hash_including(value: deleted_id.to_s, text: hash_including(text: 'Former member')))
+    end
+
+    described_class.interaction({ 'type' => 'block_actions', 'trigger_id' => 'trigger',
+      'actions' => [{ 'action_id' => 'fix_assign', 'value' => { id: ticket.id.to_s }.to_json }] })
+  end
   it 'clears a shop through the edit modal No shop choice', requires_transactions: true do
     admin = create(:member, :admin, :current)
     ticket = FixTicketService.create!(actor: member, attributes: { title: 'Repair', description: 'Broken', category: 'broken', shop_id: create(:shop).id.to_s, submission_key: SecureRandom.uuid })

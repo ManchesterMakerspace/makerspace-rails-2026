@@ -399,6 +399,22 @@ RSpec.describe FixTicketService, requires_transactions: true do
     expect(FixTicketPolicy.new(claimant, ticket).change_status?).to be(true)
   end
 
+  it 'requires a linked bounty claimant to release the claim before self-unassigning' do
+    ticket = report(reporter)
+    described_class.bounty!(id: ticket.id, actor: admin,
+      attributes: { title: 'Repair', description: 'Replace switch', credit_value: 1 })
+    task = ticket.reload.bounty
+    claimant = member
+    task.claim!(claimant)
+
+    expect do
+      described_class.assign!(id: ticket.id, actor: claimant, unassign_self: true)
+    end.to raise_error(Error::UnprocessableEntity, /Release the linked bounty claim/)
+    expect(task.reload).to have_attributes(status: 'claimed', claimed_by_id: claimant.id)
+    expect(ticket.reload.bounty_assignee_ids).to eq([claimant.id])
+    expect(ticket.assignee_ids).to eq([claimant.id])
+  end
+
   { release!: ['claimed', :notify_member_task_released], reject_pending!: ['pending', :notify_member_task_rejected] }.each do |operation, (state, notification)|
     it "defers #{operation} effects until assignment writes commit" do
       ticket = report(reporter)

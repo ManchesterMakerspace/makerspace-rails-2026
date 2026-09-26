@@ -252,7 +252,8 @@ class FixSlack
         when 'assign'
           ticket = FixTicket.find(data['id'])
           raise Error::Forbidden.new unless FixTicketPolicy.new(member, ticket).staff?
-          choices = ticket.assignee_ids.map { |id| option(Member.find(id).fullname, id) }
+          members = Member.where(:id.in => ticket.assignee_ids).to_a.index_by(&:id)
+          choices = ticket.assignee_ids.map { |id| option(members[id]&.fullname || 'Former member', id) }
           modal('fix_assign', [external('member_ids', 'Assignees', selected: choices, multi: true)], data)
         end
         present_view(payload, view) if view

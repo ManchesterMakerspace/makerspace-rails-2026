@@ -227,8 +227,10 @@ class FixTicketService
         previous = ticket.assignee_ids.dup
         if unassign_self
           raise Error::Forbidden.new unless policy.assigned?
+          if ticket.bounty_assignee_ids.include?(member.id)
+            raise Error::UnprocessableEntity.new('Release the linked bounty claim before unassigning yourself')
+          end
           ticket.manual_assignee_ids -= [member.id]
-          ticket.bounty_assignee_ids -= [member.id]
         else
           raise Error::Forbidden.new unless policy.staff?
           ids = Array(member_ids).map { |value| parse_id(value) }.compact.uniq
