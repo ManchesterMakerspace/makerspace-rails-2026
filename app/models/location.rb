@@ -13,6 +13,7 @@ class Location
   validates :name, presence: true
   validates :shop, presence: true
   validate :parent_belongs_to_same_shop
+  validate :parent_is_not_a_descendant
 
   index({ shop_id: 1 })
   index({ parent_id: 1 })
@@ -31,5 +32,23 @@ class Location
     return unless parent_id
     parent_location = Location.where(id: parent_id).first
     errors.add(:parent_id, "must belong to the same shop") if parent_location && parent_location.shop_id != shop_id
+  end
+
+  # Only relevant when re-parenting an existing location -- a brand new
+  # record can't already be an ancestor of anything. Walks up the chain with
+  # a visited-set guard so a pre-existing cycle in the data can't hang this
+  # in an infinite loop.
+  def parent_is_not_a_descendant
+    return unless parent_id && persisted?
+    visited = Set.new
+    ancestor = Location.where(id: parent_id).first
+    while ancestor
+      if ancestor.id == id || visited.include?(ancestor.id)
+        errors.add(:parent_id, "cannot be a descendant of this location")
+        return
+      end
+      visited << ancestor.id
+      ancestor = ancestor.parent_id ? Location.where(id: ancestor.parent_id).first : nil
+    end
   end
 end

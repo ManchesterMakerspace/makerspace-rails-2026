@@ -515,6 +515,33 @@ RSpec.configure do |config|
         }
       ]
     },
+    Location: {
+      type: :object,
+      properties: {
+        id: { type: :string },
+        name: { type: :string },
+        kind: { type: :string, 'x-nullable': true },
+        parentId: { type: :string, 'x-nullable': true },
+        shopId: { type: :string },
+        svgElementId: { type: :string, 'x-nullable': true },
+        xPct: { type: :number, 'x-nullable': true },
+        yPct: { type: :number, 'x-nullable': true }
+      },
+      required: [:id, :name, :shopId]
+    },
+    LocationWrite: {
+      type: :object,
+      properties: {
+        name: { type: :string },
+        kind: { type: :string },
+        parent_id: { type: :string },
+        shop_id: { type: :string },
+        svg_element_id: { type: :string },
+        x_pct: { type: :number },
+        y_pct: { type: :number }
+      },
+      required: [:name, :shop_id]
+    },
     CheckoutApprover: {
       type: :object,
       properties: {

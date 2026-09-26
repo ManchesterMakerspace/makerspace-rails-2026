@@ -197,6 +197,7 @@ Rails.application.routes.draw do
             patch :requestor_annotation
           end
         end
+        resources :locations, only: [:index, :create, :update, :destroy]
         resources :tool_checkouts, only: [:index, :create, :destroy]
         resources :tool_checkout_requests, only: [:index]
         resources :checkout_approvers, only: [:index, :create, :update, :destroy]
