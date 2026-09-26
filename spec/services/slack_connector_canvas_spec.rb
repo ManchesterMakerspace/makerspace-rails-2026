@@ -161,6 +161,37 @@ RSpec.describe Service::SlackConnector do
     expect(details).not_to include("trigger-secret", "request-secret", "response-secret", "xoxb-embedded-secret", "private-ticket-context")
   end
 
+  it "logs filtered extended details before reraising a missing-scope error" do
+    response = double(
+      status: 200,
+      body: {
+        ok: false,
+        error: "missing_scope",
+        needed: "chat:write",
+        provided: "channels:read",
+        response_metadata: { messages: ["missing chat:write for xoxb-embedded-secret"] },
+        token: "response-secret"
+      }
+    )
+    error = Slack::Web::Api::Errors::MissingScope.new("missing_scope", response)
+    allow(Rails.env).to receive(:test?).and_return(false)
+    allow(client).to receive(:chat_postMessage).and_raise(error)
+
+    expect {
+      expect {
+        described_class.send_slack_message("hello", "C123")
+      }.to raise_error(error)
+    }.to output(
+      a_string_including(
+        "[SlackMissingScope]",
+        '"needed":"chat:write"',
+        '"provided":"channels:read"',
+        "missing chat:write for [FILTERED]",
+        '"token":"[FILTERED]"'
+      )
+    ).to_stderr
+  end
+
   it "resolves a configured channel name to its Slack channel ID" do
     channel = double(name: "woodshop", id: "C123")
     response = double(
