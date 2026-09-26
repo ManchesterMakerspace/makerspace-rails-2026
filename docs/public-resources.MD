@@ -7,6 +7,7 @@ document that follows the structure below.
 
 | Route pattern | HTTP method | Intended audience/device | Authentication or token behavior | Supported formats | Required parameters | Optional parameters | Owning controller | Feature document |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `/manifest.webmanifest`, `/service-worker.js`, `/offline.html`, `/pwa-icon.png` | `GET` | Installable member portal | Public static files; offline page contains no member data | Manifest JSON, JS, HTML, PNG | None | None | Static public file server | [NFC/mobile deployment](../../makerspace-react-2026/docs/nfc-mobile.md) |
 | `/api/shortcodes/:code` | `GET` | MMS Portal QR scanner and public API consumers | No session; destination retains its authorization | JSON | `code` (path) | None | `ShortcodeResolutionsController#show` | [Shortcode resolution](shortcode-resolution.MD) |
 | `/reservations/agenda` | `GET` | Shop displays, kiosks, and direct browser/API consumers | No member session; optionally requires `token` when a reservation token is configured | HTML, JSON | `shop` (query) | `tool`, `token` (query); `.json` extension or JSON `Accept` header | `ReservationAgendasController#index` | [Shop and tool reservations](reservations.MD#public-reservation-agenda) |
 | `/api/rental_spots/:id/public` | `GET` | QR/deep-link visitors and Member Portal pre-login landing pages | No member session or token | JSON | `id` (path; MongoDB ID or spot number) | None | `RentalSpotsController#public_show` | [Public rental spots](rental-spots.MD) |

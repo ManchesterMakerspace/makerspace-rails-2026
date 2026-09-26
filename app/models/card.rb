@@ -5,10 +5,11 @@ class Card
   field :expiry, type: Integer #Member's expirationTime
   field :validity, type: String #Member's Status
   attr_accessor :card_location, :skip_provisioning_enqueue
+  attr_accessor :defer_assignment_effects
 
   before_create :set_expiration, :set_holder
   before_update :set_expiration
-  after_create :activate_pending_member, :update_rejection_card, :settle_open_member_invoices, :enqueue_member_provisioning
+  after_create :complete_assignment!, unless: :defer_assignment_effects
   after_update :enqueue_member_provisioning
 
   validates :uid, presence: true, uniqueness: true
@@ -43,6 +44,13 @@ class Card
   def invalidate
     self.card_location = @@memberStatuses[:lost]
     self.save!
+  end
+
+  def complete_assignment!
+    activate_pending_member
+    update_rejection_card
+    settle_open_member_invoices
+    enqueue_member_provisioning
   end
 
   private

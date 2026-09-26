@@ -81,9 +81,25 @@ describe 'Admin::AccessCards API', type: :request do
         properties: {
           memberId: { type: :string },
           uid: { type: :string },
+          source: { type: :string, enum: ['import', 'nfc'], description: 'NFC requires active admin/board and uppercase hexadecimal UID byte pairs.' },
         },
         required: [:memberId, :uid]
       }, required: true
+
+      response '409', 'UID already registered; existing cards remain unchanged' do
+        before { sign_in admin; create(:card, uid: '1B1A4D2F', member: basic) }
+        let(:createAccessCardDetails) { { memberId: basic.id, uid: '1B1A4D2F' } }
+        run_test!
+      end
+
+      response '503', 'Transactional card storage unavailable' do
+        before do
+          sign_in admin
+          allow(CardManagement).to receive(:assign!).and_raise(CardManagement::Unavailable, 'Unavailable')
+        end
+        let(:createAccessCardDetails) { { memberId: basic.id, uid: '1B1A4D2F' } }
+        run_test!
+      end
 
       response '200', 'access card created' do 
         before { sign_in admin }

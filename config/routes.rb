@@ -175,7 +175,9 @@ Rails.application.routes.draw do
       delete '/volunteer/events/:id/checkin', to: 'volunteer#remove_checkin'
 
       namespace :admin do
-        resources :cards, only: [:new, :create, :index, :update]
+        resources :cards, only: [:new, :create, :index, :update, :destroy] do
+          get :lookup, on: :collection
+        end
         resources :checkins, only: [:index]
         resources :rejections, only: [:index]
         resources :audit_logs, only: [:index]

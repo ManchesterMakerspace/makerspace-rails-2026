@@ -1,0 +1,6 @@
+{
+  "id": "/", "name": "Manchester Makerspace", "short_name": "Makerspace",
+  "start_url": "/", "scope": "/", "display": "standalone",
+  "background_color": "#ffffff", "theme_color": "#791100",
+  "icons": [{ "src": "/pwa-icon.png", "sizes": "563x563", "type": "image/png", "purpose": "any" }]
+}
