@@ -134,7 +134,7 @@ class Admin::ToolsController < ApplicationController
 
   def tool_params
     params.permit(:open, :name, :requestor_annotation, :wiki_url, :gdrive_id, :description, :shop_id, :disabled, :announce,
-      :announce_channel, :users_channel, :reservable, :allow_pending,
+      :announce_channel, :users_channel, :reservable, :allow_pending, :location_id,
       :max_concurrent_reservations, :reservation_horizon_days,
       :minimum_advance_notice_hours, :prohibit_same_day_reservations, :reservation_full_day, :max_reservation_duration_hours, :reservation_requires_approval,
       prerequisite_ids: [], duration_fees: [:invoice_option_id, :minimum_hours, :maximum_hours, :full_day], reservation_prerequisite_tool_ids: [])

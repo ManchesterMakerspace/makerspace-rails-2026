@@ -503,6 +503,8 @@ RSpec.configure do |config|
             usersChannel: { type: :string, 'x-nullable': true },
             prerequisiteIds: { type: :array, items: { type: :string } },
             prerequisiteNames: { type: :array, items: { type: :string } },
+            locationId: { type: :string, 'x-nullable': true },
+            locationName: { type: :string, 'x-nullable': true },
             effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } },
             reservationPrerequisiteNames: { type: :array, items: { type: :string } },
             shopName: { type: :string },

@@ -2,10 +2,14 @@ class ToolSerializer < ActiveModel::Serializer
   attribute :requestor_annotation
   attributes :open, :id, :name, :wiki_url, :gdrive_id, :description, :disabled, :out_of_service,
              :allow_pending, :announce,
-             :announce_channel, :users_channel, :shop_id, :prerequisite_ids,
+             :announce_channel, :users_channel, :shop_id, :prerequisite_ids, :location_id,
              :reservable, :max_concurrent_reservations, :reservation_horizon_days,
              :minimum_advance_notice_hours, :prohibit_same_day_reservations, :reservation_full_day, :duration_fees, :max_reservation_duration_hours, :reservation_requires_approval,
              :reservation_prerequisite_tool_ids
+
+  attribute :location_name do
+    object.location&.name
+  end
 
   attribute :effective_reservation_prerequisite_ids do
     object.effective_reservation_prerequisite_ids

@@ -1138,6 +1138,14 @@
                   "type": "string"
                 }
               },
+              "locationId": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "locationName": {
+                "type": "string",
+                "x-nullable": true
+              },
               "effectiveReservationPrerequisiteIds": {
                 "type": "array",
                 "items": {
@@ -8935,7 +8943,7 @@
     },
     "/admin/locations": {
       "get": {
-        "summary": "List locations, optionally scoped to a shop",
+        "summary": "List locations, optionally scoped to a shop or a set of shops",
         "tags": [
           "Locations"
         ],
@@ -8951,6 +8959,17 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "shop_ids",
+            "in": "query",
+            "items": {
+              "type": "string"
+            },
+            "required": false,
+            "schema": {
+              "type": "array"
             }
           }
         ],
@@ -9034,7 +9053,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Updated location",
+            "description": "Reassigned to a different shop (fixing a misplaced location)",
             "content": {
               "application/json": {
                 "schema": {
@@ -9070,7 +9089,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Updated location",
+            "description": "Reassigned to a different shop (fixing a misplaced location)",
             "content": {
               "application/json": {
                 "schema": {

@@ -5,7 +5,13 @@ class Admin::LocationsController < ApplicationController
   before_action :authorize_manage, only: [:update, :destroy]
 
   def index
-    locations = params[:shop_id] ? Location.where(shop_id: params[:shop_id]) : Location.all
+    locations = if params[:shop_ids]
+      Location.where(:shop_id.in => Array(params[:shop_ids]))
+    elsif params[:shop_id]
+      Location.where(shop_id: params[:shop_id])
+    else
+      Location.all
+    end
     locations = locations.where(:shop_id.in => managed_shop_ids) unless is_admin? || is_board_member?
     render json: locations.to_a, each_serializer: LocationSerializer, adapter: :attributes
   end
