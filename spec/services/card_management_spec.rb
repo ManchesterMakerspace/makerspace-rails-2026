@@ -1,9 +1,28 @@
 require 'rails_helper'
 
-RSpec.describe CardManagement do
+RSpec.describe CardManagement, requires_transactions: true do
   let(:actor) { create(:member, :admin) }
   let(:member) { create(:member, expirationTime: 1.day.from_now.to_i * 1000) }
   let(:card) { create(:card, uid: '000AFF', member: member) }
+
+  it 'never executes writes without transaction support', requires_transactions: false do
+    session = double('session', end_session: nil)
+    allow(Card).to receive(:with_session).and_yield(session)
+    allow(session).to receive(:with_transaction).and_raise(Mongo::Error::TransactionsNotSupported.new('standalone topology'))
+    expect do
+      described_class.transaction { raise 'Must not execute writes' }
+    end.to raise_error(CardManagement::Unavailable, /replica set/)
+  end
+
+  it 'rolls back a new assignment and old-card invalidation when audit persistence fails' do
+    existing = create(:card, uid: '01020304', member: member)
+    allow(Service::AuditLogger).to receive(:log).and_return(nil)
+    expect do
+      described_class.assign!({ member_id: member.id, uid: '05060708' }, actor)
+    end.to raise_error(CardManagement::Unavailable)
+    expect(Card.where(uid: '05060708')).not_to exist
+    expect(existing.reload.validity).to eq('activeMember')
+  end
 
   it 'keeps an existing card active when duplicate assignment fails' do
     existing = create(:card, uid: '01020304', member: member)
@@ -55,7 +74,7 @@ RSpec.describe CardManagement do
     expect(Card.where(id: orphan.id)).not_to exist
   end
 
-  it 'does not grant release solely for stolen or suspended status' do
+  it 'does not grant release solely for stolen or suspended status', requires_transactions: false do
     card.update!(card_location: 'stolen')
     expect(described_class.reason(card, member)).to be_nil
     member.set(status: 'suspended')
@@ -67,5 +86,21 @@ RSpec.describe CardManagement do
     allow(Service::AuditLogger).to receive(:log).and_return(nil)
     expect { described_class.release!(card.id, described_class.version(card), actor) }.to raise_error(CardManagement::Unavailable)
     expect(Card.where(id: card.id)).to exist
+  end
+
+  it 'restores a deleted card and removes its audit when release fails before commit' do
+    card.update!(card_location: 'lost')
+    revision = member.reload.card_operation_version
+    allow_any_instance_of(Card).to receive(:delete).and_wrap_original do |original, *args|
+      original.call(*args)
+      raise CardManagement::Unavailable, 'Simulated failure after deletion'
+    end
+
+    expect do
+      described_class.release!(card.id, described_class.version(card), actor)
+    end.to raise_error(CardManagement::Unavailable, 'Simulated failure after deletion')
+    expect(Card.where(id: card.id)).to exist
+    expect(AuditLog.where(event_type: 'card_released', resource_id: card.id)).not_to exist
+    expect(member.reload.card_operation_version).to eq(revision)
   end
 end

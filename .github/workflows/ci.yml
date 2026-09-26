@@ -93,16 +93,6 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      mongo:
-        image: mongo:7.0
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })' --quiet"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-
       redis:
         image: redis:7
         ports:
@@ -118,7 +108,8 @@ jobs:
       RAILS_ENV: test
       ITEMS_PER_PAGE: 50
       SKIP_EMAILVALIDATION: "true"
-      MLAB_URI: mongodb://localhost:27017/makerspace_test
+      MLAB_URI: mongodb://localhost:27017/makerspace_test?replicaSet=rs0
+      REQUIRE_MONGO_TRANSACTIONS: "true"
       REDIS_URL: redis://localhost:6379/0
       SECRET_KEY_BASE: ci_dummy_secret_key_base
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
@@ -148,6 +139,12 @@ jobs:
           ruby-version: '3.4'
           bundler-cache: true
 
+      - name: Start MongoDB replica set
+        run: bash scripts/ci/start-mongo.sh
+
+      - name: Verify MongoDB transactions
+        run: bundle exec ruby scripts/ci/verify-mongo-transactions.rb
+
       - name: Report available CPU cores
         run: nproc
 
@@ -159,6 +156,10 @@ jobs:
 
       - name: Run RSpec
         run: bundle exec parallel_rspec spec/ -n 4
+
+      - name: MongoDB logs on failure
+        if: failure()
+        run: docker logs makerspace-ci-mongo
 
 
   # -- 4. Production asset compile check ----------------------------------------
@@ -216,16 +217,6 @@ jobs:
     needs: build-ui
 
     services:
-      mongo:
-        image: mongo:7.0
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })' --quiet"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-
       redis:
         image: redis:7
         ports:
@@ -241,7 +232,8 @@ jobs:
       ITEMS_PER_PAGE: 50
       SKIP_EMAILVALIDATION: "true"
       PORT: 3035
-      MLAB_URI: mongodb://localhost:27017/makerspace_test
+      MLAB_URI: mongodb://localhost:27017/makerspace_test?replicaSet=rs0
+      REQUIRE_MONGO_TRANSACTIONS: "true"
       REDIS_URL: redis://localhost:6379/0
       DEVISE_SECRET_KEY: ci_dummy_devise_secret
       OTP_SECRET_KEY: fZ4zRjsUzonEkqfj1zEB1NuxGcLR1VviOY5Oit5CtqI=
@@ -297,6 +289,12 @@ jobs:
           name: ui-build
           path: app/assets/builds/
 
+      - name: Start MongoDB replica set
+        run: bash scripts/ci/start-mongo.sh
+
+      - name: Verify MongoDB transactions
+        run: bundle exec ruby scripts/ci/verify-mongo-transactions.rb
+
       - name: Seed database
         run: bundle exec rake db:db_reset
 
@@ -322,7 +320,13 @@ jobs:
 
       - name: Run Playwright tests
         working-directory: ui
+        env:
+          RAILS_DIR: ${{ github.workspace }}
         run: npx playwright test
+
+      - name: MongoDB logs on failure
+        if: failure()
+        run: docker logs makerspace-ci-mongo
 
       - name: Upload Playwright artifacts on failure
         if: failure()

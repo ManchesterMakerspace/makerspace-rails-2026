@@ -56,7 +56,7 @@ RSpec.describe Admin::CardsController, type: :controller do
     end
 
     describe "POST #create" do
-      context "with valid params" do
+      context "with valid params", requires_transactions: true do
         it "creates a new Card if member doesn't have one" do
           expect {
             post :create, params: valid_attributes, format: :json

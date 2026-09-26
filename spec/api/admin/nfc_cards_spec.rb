@@ -62,9 +62,12 @@ describe 'NFC card management', type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
-  it 'rejects noncanonical NFC enrollment and accepts canonical UIDs' do
+  it 'rejects noncanonical NFC enrollment' do
     post '/api/admin/cards', params: { memberId: holder.id.to_s, uid: '1b:1a:4d:2f', source: 'nfc' }, as: :json
     expect(response).to have_http_status(:unprocessable_entity)
+  end
+
+  it 'accepts canonical NFC UIDs', requires_transactions: true do
     post '/api/admin/cards', params: { memberId: holder.id.to_s, uid: '001B1A4D2F', source: 'nfc' }, as: :json
     expect(response).to have_http_status(:ok)
     expect(Card.where(uid: '001B1A4D2F')).to exist
@@ -83,13 +86,13 @@ describe 'NFC card management', type: :request do
       let(:releaseCard) { { version: CardManagement.version(card) } }
       response '204', 'Released, reusable' do
         before { card.update!(card_location: 'lost') }
-        run_test! do
+        run_test!(requires_transactions: true) do
           expect(Card.where(id: id)).not_to exist
           expect(AuditLog.where(event_type: 'card_released', resource_id: card.id)).to exist
         end
       end
       response '409', 'Ineligible or changed assignment' do
-        run_test!
+        run_test!(requires_transactions: true)
       end
       response '403', 'Not an active admin or board member' do
         before { sign_in holder }
@@ -101,7 +104,7 @@ describe 'NFC card management', type: :request do
       end
       response '404', 'Card no longer exists' do
         let(:id) { BSON::ObjectId.new.to_s }
-        run_test!
+        run_test!(requires_transactions: true)
       end
       response '422', 'Missing version' do
         let(:releaseCard) { {} }

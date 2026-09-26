@@ -89,7 +89,7 @@ describe 'Admin::AccessCards API', type: :request do
       response '409', 'UID already registered; existing cards remain unchanged' do
         before { sign_in admin; create(:card, uid: '1B1A4D2F', member: basic) }
         let(:createAccessCardDetails) { { memberId: basic.id, uid: '1B1A4D2F' } }
-        run_test!
+        run_test!(requires_transactions: true)
       end
 
       response '503', 'Transactional card storage unavailable' do
@@ -111,7 +111,7 @@ describe 'Admin::AccessCards API', type: :request do
           uid: "12ggh34"
         }}
 
-        run_test!
+        run_test!(requires_transactions: true)
       end
 
       response '403', 'User unauthorized' do 
@@ -149,7 +149,7 @@ describe 'Admin::AccessCards API', type: :request do
           memberId: 'invalid',
           uid: "12ggh34"
         }}
-        run_test!
+        run_test!(requires_transactions: true)
       end
     end
   end
