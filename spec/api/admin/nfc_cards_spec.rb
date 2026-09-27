@@ -9,6 +9,7 @@ describe 'NFC card management', type: :request do
   path '/admin/cards/lookup' do
     get 'Look up an NFC or exact assigned legacy UID (active admin or board)' do
       tags 'Cards'
+      security [sessionAuth: []]
       operationId 'adminLookupNfcCard'
       produces 'application/json'
       parameter name: :uid, in: :query, required: true, description: 'Exact card UID, including assigned legacy values. No case folding or normalization. Unknown UIDs must be uppercase hexadecimal ASCII byte pairs.', schema: { type: :string }
@@ -27,22 +28,30 @@ describe 'NFC card management', type: :request do
         end
       end
       response '404', 'Unknown canonical UID' do
+        schema '$ref' => '#/components/schemas/error'
         let(:uid) { '0000' }
         run_test!
       end
       response '422', 'Unknown noncanonical UID or invalid parameter' do
+        schema anyOf: [
+          { '$ref' => '#/components/schemas/error' },
+          { type: :object, required: ['error'], properties: { error: { type: :string } } }
+        ]
         let(:uid) { '1b:1a:4d:2f' }
         run_test!
       end
       response '403', 'Not an active admin or board member' do
+        schema '$ref' => '#/components/schemas/error'
         before { sign_in holder }
         run_test!
       end
       response '409', 'Ambiguous duplicate UID records' do
+        schema type: :object, required: ['error'], properties: { error: { type: :string } }
         before { allow(CardManagement).to receive(:snapshot).and_raise(CardManagement::Conflict, 'Duplicate UID records require administrator repair.') }
         run_test!
       end
       response '401', 'Unauthenticated' do
+        schema '$ref' => '#/components/schemas/error'
         before { sign_out admin }
         run_test!
       end
@@ -162,8 +171,10 @@ describe 'NFC card management', type: :request do
   path '/admin/cards/{id}' do
     delete 'Release a lost card or card assigned to an expired/revoked member' do
       tags 'Cards'
+      security [sessionAuth: []]
       operationId 'adminReleaseNfcCard'
       consumes 'application/json'
+      produces 'application/json'
       parameter name: :id, in: :path, type: :string, required: true
       parameter name: :releaseCard, in: :body, required: true, schema: {
         type: :object, required: ['version'], properties: { version: { type: :string } }
@@ -178,25 +189,31 @@ describe 'NFC card management', type: :request do
         end
       end
       response '409', 'Ineligible or changed assignment' do
+        schema type: :object, required: ['error'], properties: { error: { type: :string } }
         run_test!(requires_transactions: true)
       end
       response '403', 'Not an active admin or board member' do
+        schema '$ref' => '#/components/schemas/error'
         before { sign_in holder }
         run_test!
       end
       response '401', 'Unauthenticated' do
+        schema '$ref' => '#/components/schemas/error'
         before { sign_out admin }
         run_test!
       end
       response '404', 'Card no longer exists' do
+        schema '$ref' => '#/components/schemas/error'
         let(:id) { BSON::ObjectId.new.to_s }
         run_test!(requires_transactions: true)
       end
       response '422', 'Missing version' do
+        schema '$ref' => '#/components/schemas/error'
         let(:releaseCard) { {} }
         run_test!
       end
       response '503', 'Transaction or audit storage unavailable' do
+        schema type: :object, required: ['error'], properties: { error: { type: :string } }
         before { allow(CardManagement).to receive(:release!).and_raise(CardManagement::Unavailable, 'Unavailable') }
         run_test!
       end

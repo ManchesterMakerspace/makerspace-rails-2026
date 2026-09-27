@@ -4567,6 +4567,11 @@
         "tags": [
           "Cards"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "operationId": "adminReleaseNfcCard",
         "parameters": [
           {
@@ -4583,22 +4588,80 @@
             "description": "Released, reusable"
           },
           "409": {
-            "description": "Ineligible or changed assignment"
+            "description": "Ineligible or changed assignment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           },
           "403": {
-            "description": "Not an active admin or board member"
+            "description": "Not an active admin or board member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Unauthenticated"
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Card no longer exists"
+            "description": "Card no longer exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           },
           "422": {
-            "description": "Missing version"
+            "description": "Missing version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           },
           "503": {
-            "description": "Transaction or audit storage unavailable"
+            "description": "Transaction or audit storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -5286,6 +5349,11 @@
         "tags": [
           "Cards"
         ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "operationId": "adminLookupNfcCard",
         "parameters": [
           {
@@ -5350,19 +5418,77 @@
             }
           },
           "404": {
-            "description": "Unknown canonical UID"
+            "description": "Unknown canonical UID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           },
           "422": {
-            "description": "Unknown noncanonical UID or invalid parameter"
+            "description": "Unknown noncanonical UID or invalid parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/error"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "error"
+                      ],
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           },
           "403": {
-            "description": "Not an active admin or board member"
+            "description": "Not an active admin or board member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Ambiguous duplicate UID records"
+            "description": "Ambiguous duplicate UID records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           },
           "401": {
-            "description": "Unauthenticated"
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           }
         }
       }
