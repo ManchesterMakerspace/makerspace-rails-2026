@@ -58,3 +58,28 @@ before releasing updated clients. No checkout backfill is required.
   not authenticated portal or physical-device acceptance.
 - Service and collection lifecycle inventories were updated. No environment
   variables or API request/response schemas changed in this follow-up.
+
+## Request resolution, dialog recovery, and Slack follow-up
+
+- All-held group requests resolve through the reviewed API revision without new
+  checkouts or credit. Dialog catalog failures preserve existing scope selections,
+  expose retry, and block submission until loading succeeds.
+- Textual group approvals open their signed Slack modal during the command request.
+  Local target lookup supports mentions, usernames, and email; missing links have
+  email recovery. Slack reservation previews include group prerequisites without
+  applying prerequisite tools' resource policies.
+- 88 distinct Rails examples passed using their latest results across focused
+  group API, Slack controller/job, reservation preview, and identity lookup runs
+  against the supplied test replica set. Slack and Redis were mocked.
+- Full React suite: 372 tests in 66 suites passed; TypeScript and the production
+  web build passed. Existing webpack BASE_URL/child-compilation warnings remain.
+- Mocked Chromium checks passed at 320, 600, 900, and 1280 pixels for dialog retry,
+  existing scope preservation, group-only shop selection, and request resolution.
+  Narrow/wide screenshots were reviewed. Live Slack, device, and authenticated
+  portal acceptance were not performed.
+- Executable group response schemas now cover CRUD, checkout review, and volunteer
+  responses. Checkout, reservation, service, and UI documentation were updated;
+  the environment-variable inventory is unchanged.
+
+Swagger was regenerated successfully (865 dry-run examples; not additional
+executed tests), and the generated response schema references were checked.

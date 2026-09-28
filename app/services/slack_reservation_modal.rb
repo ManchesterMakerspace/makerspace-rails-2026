@@ -28,11 +28,19 @@ class SlackReservationModal
       scope_options << option("One or more tools", "tools") if choices.present?
       reservation_scope = valid_scope(reservation_scope, scope_options)
       selected_tools = selected_tools(tools, reservation_scope, tool_ids)
-      selected_groups = groups.select { |group| Array(tool_ids).include?("group:#{group.id}") }
+      selected_groups = reservation_scope == "tools" ? groups.select { |group| Array(tool_ids).include?("group:#{group.id}") } : []
       selected_tools = (selected_tools + selected_groups.flat_map(&:included_tools)).uniq(&:id)
       resources = ReservationPolicy.resources(
         shop: shop, reservation_scope: reservation_scope, tools: selected_tools
       )
+      group_prerequisite_ids = selected_groups.flat_map(&:prerequisite_ids).uniq
+      required_ids = ReservationPolicy.prerequisite_ids(shop: shop, reservation_scope: reservation_scope,
+        tools: selected_tools, member: member, additional_prerequisite_ids: group_prerequisite_ids)
+      missing_ids = member.role == 'board_member' ? [] : required_ids.reject { |id| read_context.checked_out_tool_ids.include?(id) }
+      missing_names = read_context.tool_names(missing_ids)
+      prerequisite_warning = if missing_ids.any?
+        "Missing required checkout(s): #{missing_ids.map { |id| missing_names[id] || id }.join(', ')}"
+      end
       metrics[:resource_count] = resources.length
       policy = ReservationPolicy.aggregate(resources)
       scheduling_window = ReservationPolicy.scheduling_window(resources, policy: policy)
@@ -96,7 +104,8 @@ class SlackReservationModal
       end
       blocks.concat(policy_blocks(
         shop, reservation_scope, selected_tools, member, policy, scheduling_window,
-        timing: timing, fee: fee, alert_message: alert_message, read_context: read_context
+        timing: timing, fee: fee, alert_message: alert_message || prerequisite_warning, read_context: read_context,
+        group_prerequisite_ids: group_prerequisite_ids
       ))
 
       view = {
@@ -113,7 +122,7 @@ class SlackReservationModal
         close: plain("Cancel"),
         blocks: blocks
       }
-      submit_text = if !scheduling_window[:compatible] || durations.empty?
+      submit_text = if missing_ids.any? || !scheduling_window[:compatible] || durations.empty?
         "Review selection"
       elsif fee[:total].positive?
         "Use Member Portal"
@@ -143,7 +152,7 @@ class SlackReservationModal
       )
     end
 
-    def policy_summary(shop:, reservation_scope:, tools:, member:, policy: nil, scheduling_window: nil, read_context: nil)
+    def policy_summary(shop:, reservation_scope:, tools:, member:, policy: nil, scheduling_window: nil, read_context: nil, group_prerequisite_ids: [])
       resources = ReservationPolicy.resources(
         shop: shop, reservation_scope: reservation_scope, tools: tools
       )
@@ -160,7 +169,8 @@ class SlackReservationModal
       lines << "• Manager approval is required." if policy[:requires_approval]
       lines << "• *Unavailable combination:* #{scheduling_window[:reason]}" unless scheduling_window[:compatible]
       prerequisites = ReservationPolicy.prerequisite_names(
-        shop: shop, reservation_scope: reservation_scope, tools: tools, member: member, read_context: read_context
+        shop: shop, reservation_scope: reservation_scope, tools: tools, member: member, read_context: read_context,
+        additional_prerequisite_ids: group_prerequisite_ids
       )
       lines << if prerequisites.present?
         "• Required active checkout(s): #{prerequisites.join(', ')}."
@@ -204,7 +214,7 @@ class SlackReservationModal
       end
     end
 
-    def policy_blocks(shop, reservation_scope, tools, member, policy, scheduling_window, timing:, fee:, alert_message:, read_context:)
+    def policy_blocks(shop, reservation_scope, tools, member, policy, scheduling_window, timing:, fee:, alert_message:, read_context:, group_prerequisite_ids: [])
       incompatible = !scheduling_window[:compatible]
       alert_text = alert_message.presence || if incompatible
         "These resources cannot currently be reserved together. Review the conflicting rules below."
@@ -230,7 +240,8 @@ class SlackReservationModal
             member: member,
             policy: policy,
             scheduling_window: scheduling_window,
-            read_context: read_context
+            read_context: read_context,
+            group_prerequisite_ids: group_prerequisite_ids
           )
         }
       }]

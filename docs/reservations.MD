@@ -923,3 +923,9 @@ The published `ReservationPreview` contract includes required `feeLines`, `feeTo
 For deleted tools, payment notifications resolve each selected tool by its current name, then its saved fee-snapshot name, then "Deleted tool". Historical fee lines for tools no longer selected are not included.
 
 The shared published resource configuration includes minimumAdvanceNoticeHours (default 2, minimum 0), prohibitSameDayReservations, reservationFullDay, and durationFees with invoiceOptionId, minimumHours, maximumHours, and fullDay. Reservation responses publish fullDay and the optional owner/manager billing fields invoice, feeSnapshot, and notifiedAt. Invoice and notification IDs may be null; notifiedAt is a Slack message timestamp string, not a date-time.
+
+Slack group reservation previews include group prerequisites alongside physical
+resource prerequisites. Missing checkouts display an error and Review selection;
+prerequisite tools are not added to reserved resources or their duration/fee rules.
+Board-member overrides match server validation. Switching to whole-shop scope
+uses the shop's prerequisites instead of stale group selections.

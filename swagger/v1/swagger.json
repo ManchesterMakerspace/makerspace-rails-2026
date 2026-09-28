@@ -3098,6 +3098,124 @@
           "canRequest"
         ]
       },
+      "GroupCheckoutReview": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "includedToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "heldToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prerequisiteIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missingPrerequisiteIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prerequisiteNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "group": {
+            "$ref": "#/components/schemas/ToolGroup"
+          }
+        },
+        "required": [
+          "revision",
+          "includedToolIds",
+          "heldToolIds",
+          "createToolIds",
+          "prerequisiteIds",
+          "missingPrerequisiteIds",
+          "prerequisiteNames",
+          "group"
+        ]
+      },
+      "GroupVolunteerRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "approved",
+              "declined",
+              "revoked"
+            ]
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "group"
+            ]
+          },
+          "targetName": {
+            "type": "string"
+          },
+          "toolGroupId": {
+            "type": "string"
+          },
+          "groupRevision": {
+            "type": "integer"
+          },
+          "includedToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "memberName",
+          "note",
+          "requestDate",
+          "targetType",
+          "targetName",
+          "toolGroupId",
+          "groupRevision",
+          "includedToolIds"
+        ]
+      },
       "ToolCheckout": {
         "type": "object",
         "properties": {
@@ -12631,12 +12749,12 @@
                   },
                   "text": {
                     "type": "string",
-                    "description": "Empty text opens the stateful checkout menu (my checkouts, request a checkout, volunteer to do checkouts, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Legacy text: MEMBER TOOL, request [TOOL], active|list [all], volunteer, or help. Active lists share the modal query and detail fields; final results replace the initial ephemeral response asynchronously, with DM fallback."
+                    "description": "Empty text opens the stateful checkout menu (my checkouts, request a checkout, volunteer to do checkouts, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Textual MEMBER GROUP opens a signed group review synchronously using trigger_id; unknown target identities should use their linked Member Portal email. Legacy text: MEMBER TOOL, request [TOOL], active|list [all], volunteer, or help. Active lists share the modal query and detail fields; final results replace the initial ephemeral response asynchronously, with DM fallback."
                   },
                   "trigger_id": {
                     "type": "string",
                     "example": "T12345678",
-                    "description": "Required to open the checkout modal (empty text, volunteer, or legacy request without a tool)"
+                    "description": "Required to open the checkout modal (empty text, MEMBER GROUP, volunteer, or legacy request without a tool)"
                   },
                   "channel_id": {
                     "type": "string"
@@ -13114,30 +13232,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "name",
-                      "revision",
-                      "includedTools"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "name": {
-                        "type": "string"
-                      },
-                      "revision": {
-                        "type": "integer"
-                      },
-                      "includedTools": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/Tool"
-                        }
-                      }
-                    }
+                    "$ref": "#/components/schemas/ToolGroup"
                   }
                 }
               }
@@ -13158,7 +13253,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolGroup"
+                }
+              }
+            }
           },
           "403": {
             "description": "Shop management required"
@@ -13242,7 +13344,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Group"
+            "description": "Group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolGroup"
+                }
+              }
+            }
           }
         }
       },
@@ -13259,7 +13368,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Updated"
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolGroup"
+                }
+              }
+            }
           },
           "409": {
             "description": "Stale revision; refresh review"
@@ -13383,7 +13499,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Current revision and physical checkout review"
+            "description": "Current revision and physical checkout review",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupCheckoutReview"
+                }
+              }
+            }
           }
         }
       }
@@ -13498,7 +13621,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Open volunteer request"
+            "description": "Open volunteer request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupVolunteerRequest"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -13541,7 +13671,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Open volunteer requests"
+            "description": "Open volunteer requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupVolunteerRequest"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -13570,7 +13710,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Decision recorded"
+            "description": "Decision recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupVolunteerRequest"
+                }
+              }
+            }
           }
         },
         "requestBody": {

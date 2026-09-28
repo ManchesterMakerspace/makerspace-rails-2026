@@ -37,6 +37,8 @@ class Slack::CommandsController < ApplicationController
       response_url: params[:response_url], slack_user_id: params[:user_id])
     Service::SlackConnector.open_modal(params[:trigger_id], view)
     render json: { response_type: "ephemeral", text: "Opening checkout menu..." }
+  rescue Error::CustomError => error
+    render json: { response_type: "ephemeral", text: error.message }
   rescue => error
     Service::ErrorReporter.notify(error, context: { phase: "open checkout menu" })
     render json: { response_type: "ephemeral", text: "The checkout menu could not be opened. Please try /checkout again." }
@@ -122,10 +124,22 @@ class Slack::CommandsController < ApplicationController
     unless argument.present? && current_checkout_shop && checkout_shop_channel?
       return render json: { response_type: "ephemeral", text: checkout_shop_channel_instruction }
     end
-    unless find_slack_member
+    actor = find_slack_member
+    unless actor
       return render json: { response_type: "ephemeral", text: "Link your Slack account to a Member Portal account before using /checkout." }
     end
-    SlackCheckoutJob.perform_later(params.to_unsafe_h.stringify_keys)
+    group = ToolGroup.where(shop_id: current_checkout_shop.id, archived: false)
+      .find_by(name: /\A#{Regexp.escape(argument)}\z/i)
+    if group
+      target = SlackCheckoutMember.resolve(subcommand)
+      unless target
+        return render json: { response_type: "ephemeral", text: "No linked member found. Try their Member Portal email address." }
+      end
+      view = SlackGroupApprovalModal.build(actor: actor, member: target, group: group, slack_user_id: params[:user_id])
+      Service::SlackConnector.open_modal(params[:trigger_id], view)
+      return render json: { response_type: "ephemeral", text: "Review the group checkout before approving." }
+    end
+    SlackCheckoutJob.perform_later(params.to_unsafe_h.stringify_keys.except('trigger_id'))
     render json: { response_type: "ephemeral", text: "Processing checkout of *#{argument}* for *#{subcommand}*..." }
   end
 

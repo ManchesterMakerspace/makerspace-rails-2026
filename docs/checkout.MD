@@ -25,6 +25,8 @@ held/new checkout IDs and external prerequisites. POST `:id/approve` accepts
 Internal prerequisites can be granted together; external prerequisites need
 active checkouts. Open tools may receive a group grant. Revoked child records
 block the whole group, and fully held groups create neither records nor credit.
+When an open request is supplied, the portal offers Resolve request and submits
+its ID to reconcile the request even when no new checkouts are needed.
 
 Group approval authority is Admin/Board, shop RM, shop-wide assignment or an
 explicit group assignment. Separate tool assignments alone do not qualify.
@@ -44,6 +46,9 @@ reverses that shared credit. Groups never retroactively grant previous trainees
 newly added tools.
 
 Slack `/checkout request <name>` resolves shop-scoped groups as well as tools.
+Textual `/checkout MEMBER GROUP` resolves a linked target and opens the signed
+review during the command request, without queueing the short-lived trigger.
+Unlinked targets receive an instruction to use their Member Portal email.
 The signed checkout modal carries the reviewed group revision. Group selectors
 follow physical tools and use `:linked_paperclips:` where supported. Group batch
 announcements use the group override or shop channel and preserve deduplicated

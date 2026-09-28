@@ -107,7 +107,12 @@ modal, and rechecks tool/shop availability, membership, prerequisites, existing
 checkouts, and open requests immediately before creating a request. Creation is
 serialized per member and tool so concurrent Slack deliveries cannot announce
 duplicate open requests.
-`SlackCheckoutJob` handles approver-driven `/checkout MEMBER TOOL` commands and
+`SlackCheckoutMember` resolves linked target members locally by Slack mention,
+username, or email. `/checkout MEMBER GROUP` opens its signed review synchronously
+in `Slack::CommandsController`, before the trigger expires, with email recovery
+for unlinked targets. No modal trigger is passed to `SlackCheckoutJob`.
+
+`SlackCheckoutJob` handles approver-driven physical `/checkout MEMBER TOOL` commands and
 resolves the shop from the channel ID or normalized name. It delegates to
 `CheckoutCreation`, the same operation as the portal and modal. Authority,
 member eligibility, availability, prerequisites, duplicates and selected-request
