@@ -7422,7 +7422,32 @@
                       "type": "string"
                     },
                     "toolId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "toolGroupId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "targetType": {
+                      "type": "string",
+                      "enum": [
+                        "tool",
+                        "group"
+                      ]
+                    },
+                    "targetName": {
                       "type": "string"
+                    },
+                    "groupRevision": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "includedToolIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
                     "toolName": {
                       "type": "string"
@@ -7469,6 +7494,11 @@
                     "memberStatus",
                     "toolId",
                     "toolName",
+                    "toolGroupId",
+                    "targetType",
+                    "targetName",
+                    "groupRevision",
+                    "includedToolIds",
                     "shopId",
                     "shopName",
                     "note",
@@ -7477,6 +7507,49 @@
                     "messageId",
                     "checkedOutId",
                     "memberSlackUrl"
+                  ],
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "targetType": {
+                          "enum": [
+                            "tool"
+                          ]
+                        },
+                        "toolId": {
+                          "type": "string"
+                        },
+                        "toolGroupId": {
+                          "type": "string",
+                          "nullable": true,
+                          "enum": [
+                            null
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "targetType": {
+                          "enum": [
+                            "group"
+                          ]
+                        },
+                        "toolId": {
+                          "type": "string",
+                          "nullable": true,
+                          "enum": [
+                            null
+                          ]
+                        },
+                        "toolGroupId": {
+                          "type": "string"
+                        },
+                        "groupRevision": {
+                          "type": "integer"
+                        }
+                      }
+                    }
                   ]
                 }
               }
@@ -7504,7 +7577,7 @@
           }
         },
         "operationId": "createToolCheckoutRequest",
-        "description": "Creation is serialized under the shared per-member/tool lock, with membership, availability, prerequisites, checkout records and open requests rechecked immediately before insertion. Lock contention returns 422. Successful submission sends a Slack DM to the linked requestor including the tool annotation, or the shop annotation when the tool has none.",
+        "description": "Creation is serialized under the shared per-member/tool lock (groups acquire the catalog and constituent-tool locks), with membership, availability, prerequisites, checkout records and open requests rechecked immediately before insertion. Lock contention returns 422. Successful submission sends a Slack DM to the linked requestor including the tool annotation, or the shop annotation when the tool has none.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7748,7 +7821,7 @@
             }
           }
         },
-        "description": "Owner and open status are rechecked inside the same member/tool lock used by approval and cancellation. Tool and shop must still be available.",
+        "description": "Owner and open status are rechecked inside the same locks used by approval and cancellation: catalog and constituent-tool locks for groups, member/tool lock for tools. Tool and shop must still be available.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7808,7 +7881,7 @@
         "tags": [
           "ToolCheckoutRequests"
         ],
-        "description": "Cancellation and approval serialize under the same member/tool lock. A successful cancellation retains the existing announcement-removal behavior.",
+        "description": "Cancellation and approval serialize under the same locks, including the catalog and constituent-tool locks for groups. A successful cancellation retains the existing announcement-removal behavior.",
         "responses": {
           "204": {
             "description": "request cancelled"

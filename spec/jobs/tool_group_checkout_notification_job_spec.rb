@@ -19,11 +19,11 @@ RSpec.describe ToolGroupCheckoutNotificationJob do
     result = ToolGroupCheckout.approve!(actor: actor, member: member, group: group, revision: group.revision, source: 'slack')
     expect(request.reload.status).to eq('closed')
     expect(ToolGroupCheckout).not_to have_received(:notify)
-    args = [group.id.to_s, member.id.to_s, result[:checkouts].map { |row| row.id.to_s }, [request.id.to_s], result[:approval_batch_id]]
+    args = [group.id.to_s, member.id.to_s, result[:checkouts].map { |row| row.id.to_s }, [request.id.to_s], result[:approval_batch_id], result[:notification_snapshot]]
     expect(described_class).to have_received(:perform_later).with(*args)
     expect_any_instance_of(ToolCheckoutRequest).to receive(:refresh_closed_announcement)
     described_class.perform_now(*args)
-    expect(ToolGroupCheckout).to have_received(:notify).with(group, member, hash_including(approval_batch_id: result[:approval_batch_id]))
+    expect(ToolGroupCheckout).to have_received(:notify).with(nil, member, hash_including(approval_batch_id: result[:approval_batch_id]))
     ToolGroupCheckout.approve!(actor: actor, member: member, group: group, revision: group.revision, source: 'slack')
     expect(described_class).to have_received(:perform_later).once
   end
@@ -34,10 +34,35 @@ RSpec.describe ToolGroupCheckoutNotificationJob do
     result = ToolGroupCheckout.approve!(actor: actor, member: member, group: group,
       revision: group.revision, source: 'slack', request_id: request.id)
     expect(result[:checkouts]).to be_empty
-    expect(described_class).to have_received(:perform_later).with(group.id.to_s, member.id.to_s, [], [request.id.to_s], nil)
+    expect(described_class).to have_received(:perform_later).with(group.id.to_s, member.id.to_s, [], [request.id.to_s], nil, result[:notification_snapshot])
     expect_any_instance_of(ToolCheckoutRequest).to receive(:refresh_closed_announcement)
-    described_class.perform_now(group.id.to_s, member.id.to_s, [], [request.id.to_s], nil)
+    described_class.perform_now(group.id.to_s, member.id.to_s, [], [request.id.to_s], nil, result[:notification_snapshot])
     expect(ToolGroupCheckout).not_to have_received(:notify)
+  end
+
+  it 'delivers the approved catalog snapshot even after group and child edits' do
+    SlackUser.create!(member: member, slack_id: 'UMEMBER')
+    tool.update!(users_channel: 'COLD', wiki_url: 'https://old.example.test')
+    group.update!(announce: true, announce_channel: 'CANNOUNCE')
+    args = nil
+    allow(described_class).to receive(:perform_later) { |*values| args = values; true }
+    result = ToolGroupCheckout.approve!(actor: actor, member: member, group: group, revision: group.revision, source: 'slack')
+    snapshot = result[:notification_snapshot]
+    group.set(name: 'Changed kit', revision: 99, included_tool_ids: [], announce_channel: 'CNEW')
+    tool.set(name: 'Changed tool', users_channel: 'CNEW', wiki_url: 'https://new.example.test')
+    allow(ToolGroupCheckout).to receive(:notify).and_call_original
+    allow(Service::AuditLogger).to receive(:log)
+    allow(Service::SlackConnector).to receive(:channel_member?).and_return(false)
+    allow(Service::SlackConnector).to receive(:invite_to_channel)
+    allow(Service::SlackConnector).to receive(:send_slack_message)
+    allow(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later)
+    described_class.perform_now(*ActiveJob::Arguments.deserialize(ActiveJob::Arguments.serialize(args)))
+    expect(Service::AuditLogger).to have_received(:log).with(hash_including(
+      after_snapshot: hash_including(group_revision: snapshot['revision'], included_tool_ids: [tool.id.to_s])))
+    expect(Service::SlackConnector).to have_received(:invite_to_channel).with(snapshot['tools'].first['users_channel'], 'UMEMBER')
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(include('*Kit*'), snapshot['channel'])
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(include('https://old.example.test'), 'UMEMBER')
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'CNEW')
   end
 
   it 'does not enqueue a rolled-back approval' do

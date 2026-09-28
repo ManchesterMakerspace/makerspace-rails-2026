@@ -101,3 +101,39 @@ executed tests), and the generated response schema references were checked.
   updated. No environment variables changed. Release the backend response and
   notification worker before the updated group overview UI. Live Slack and
   physical-device acceptance were not performed.
+
+## Scope selection, workshop recovery and notification snapshots
+
+Whole-shop selection clears the shop's individual and group grants. Workshop Add
+Tool retries both management catalogs in the same dialog, including rejected
+requests. Slack group notification jobs now carry approval-time catalog details
+through Active Job serialization; edits before delivery do not change audit or
+message content/channels. Existing queued jobs without snapshots retain legacy
+lookup behavior, so drain them before editing catalogs during rollout. Deploy the
+updated worker before producers enqueue six-argument jobs. No API/client release
+is required; the UI fixes may deploy independently. Environment variables and
+collection/index schemas are unchanged.
+
+Validation: 27 distinct Rails examples passed across the group checkout, signed
+modal and individual/group notification suites using the designated test MongoDB.
+Seven focused React examples and TypeScript passed. The mocked Chromium fixture
+passed keyboard retry, recovery and overflow checks at 320/600/900/1280 pixels.
+Slack calls were mocked; no live Slack or native-device acceptance was performed.
+
+## Slack group request acknowledgement and cancellation
+
+Both request modal paths queue group announcements/requestor DMs through the
+existing notification worker after saving. Stateful Slack and portal group edits
+and cancellations now share the catalog and constituent checkout locks with
+approval and recheck state within them. The API create response documents both
+target variants, including the null physical-tool ID for a group.
+
+Validation: the focused workflow/API/Slack interaction run passed 91 examples;
+the final API run passed all 15 examples, including two added portal group mutation
+cases (93 distinct examples total). Race tests exercised both winning operations
+with real MongoDB transactions and process-local keyed locks replacing Redis.
+The designated test MongoDB was used. Slack calls were mocked. Swagger was
+regenerated from the executable specs; its dry run is not additional test coverage.
+Checkout and jobs documentation were updated. Environment variables and collection
+schemas are unchanged. Existing portal types already support group fields;
+publishing regenerated API-client types remains a separate release step.

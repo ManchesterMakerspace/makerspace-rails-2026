@@ -222,7 +222,7 @@ class SlackCheckoutWorkflow
     case step
     when "request_new"
       if @tool.is_a?(ToolGroup)
-        ToolGroupCheckout.request!(member: @member, group: @tool, note: note)
+        ToolGroupCheckout.request!(member: @member, group: @tool, note: note, defer_notifications: true) { load_context! }
       else
       CheckoutRequestCreation.create!(member_id: @member.id, tool_id: @tool.id,
         shop_id: @shop.id, note: note, defer_notifications: true) { load_context! }
@@ -247,7 +247,7 @@ class SlackCheckoutWorkflow
       CheckoutApproverVolunteering.decline!(request: @volunteer_request, actor: @member, note: note)
       message = "The volunteer request from #{CheckoutDisplay.escape(@volunteer_request.member.fullname)} was declined."
     else
-      CheckoutMutationLock.with(member_id: @request.member_id, tool_id: @tool.id) do
+      with_request_locks do
         load_context!
         if step == "request_edit"
           @request.update!(note: note)
@@ -265,6 +265,14 @@ class SlackCheckoutWorkflow
       SlackCheckoutOutcomeJob.report("enqueue", error_class: error.class.name)
     end
     :clear
+  end
+
+  def with_request_locks(&action)
+    if @request.tool_group_id
+      ToolGroupCheckout.with_request_locks(@request, &action)
+    else
+      CheckoutMutationLock.with(member_id: @request.member_id, tool_id: @tool.id, &action)
+    end
   end
 
   def build

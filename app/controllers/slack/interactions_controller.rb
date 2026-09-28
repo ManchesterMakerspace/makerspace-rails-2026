@@ -394,7 +394,7 @@ class Slack::InteractionsController < ApplicationController
     note = state.dig("note", "note", "value")
     return checkout_errors("note" => "Note is too long (maximum is 128 characters)") if note && (!note.is_a?(String) || note.length > 128)
     if group_target
-      ToolGroupCheckout.request!(member: member, group: tool, note: note)
+      ToolGroupCheckout.request!(member: member, group: tool, note: note, defer_notifications: true)
     else
       CheckoutRequestCreation.create!(member_id: member.id, tool_id: tool.id, shop_id: shop.id, note: note, defer_notifications: true)
     end

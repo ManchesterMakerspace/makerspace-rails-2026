@@ -363,3 +363,19 @@ explicit group assignments, batched for overview lists. The portal displays them
 in Authorized Groups with Group chips, separately from effective individual grants.
 Group checkout requests expose their shop's current `requestorAnnotation`, including
 null after instructions are cleared.
+
+Deferred group approval notifications retain the approved group revision, name,
+included tool IDs, child details and channels. Catalog edits after approval do not
+change the queued audit or message content. Whole-shop selection in the approver
+editor clears that shop's explicit tool and group selections; deselecting the shop
+does not restore the cleared grants.
+
+Both Slack checkout-request modals defer group announcements and requestor DMs
+to `CheckoutNotificationJob` after persistence, matching individual requests.
+Slack group edits/cancellations and portal group request mutations take the shop
+catalog lock followed by the included member/tool locks, then reload and authorize
+the open request. Approval uses the same lock order: a winning cancellation blocks
+approval; a completed approval prevents a later cancellation from reporting success.
+The create-request API response schema describes tool and group variants, including
+nullable `toolId`, `toolGroupId`, `targetType`, `targetName`, `groupRevision` and
+`includedToolIds`.

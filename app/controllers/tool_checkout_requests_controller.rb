@@ -46,14 +46,19 @@ class ToolCheckoutRequestsController < AuthenticationController
   private
 
   def mutate_request!
-    CatalogMutationLock.with([@request.target&.shop_id]) do
-    CheckoutMutationLock.with(member_id: @request.member_id, tool_id: @request.tool_id || @request.tool_group_id) do
+    mutation = proc do
       @request.reload
       raise Error::Forbidden.new unless @request.member_id == current_member.id && @request.open?
       tool = @request.target
       raise Error::Forbidden.new unless tool && !tool.disabled? && tool.shop && !tool.shop.disabled?
       yield
     end
+    if @request.tool_group_id
+      ToolGroupCheckout.with_request_locks(@request, &mutation)
+    else
+      CatalogMutationLock.with([@request.target&.shop_id]) do
+        CheckoutMutationLock.with(member_id: @request.member_id, tool_id: @request.tool_id, &mutation)
+      end
     end
   end
 

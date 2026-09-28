@@ -11,7 +11,12 @@
   through commit so revocation cannot race grant propagation.
 - `ToolGroupCheckoutNotificationJob` runs on the Slack queue after Slack-sourced
   group approvals commit. It receives committed checkout/request IDs and the batch
-  ID, then delivers audit, deduplicated users-channel invitations, announcements,
+  ID plus a catalog snapshot captured inside the approval transaction and catalog
+  lock (group name/revision, included IDs, child details and delivery channels).
+  Delivery uses that snapshot even after catalog edits; current member DM suppression
+  still applies. Older queued five-argument jobs remain supported using their legacy
+  current-catalog lookup; drain those jobs before catalog edits during deployment.
+  It then delivers audit, deduplicated users-channel invitations, announcements,
   member DMs, canvas scheduling, and reconciled request announcement updates.
   Both stateful and signed group modals use it. Enqueue errors are reported without
   rolling back approval or falling back to synchronous Slack delivery. Repeated
@@ -23,7 +28,9 @@
   for manual `/checkout @member group-name` approvals and rechecks both on submit.
 - `ReservationGroupExpansion` expands selections and preserves historical snapshots.
 - `CheckoutNotificationJob` accepts either request target for request/cancellation
-  and volunteer delivery. `SlackCheckoutRequestJob` resolves tool or group names.
+  and volunteer delivery. Both Slack request modals enqueue group request announcements
+  and requestor DMs only after persistence, so these sends do not delay acknowledgement.
+  `SlackCheckoutRequestJob` resolves tool or group names.
 - `data:ensure_unique_indexes` creates group indexes and replaces the open
   volunteer-request unique key with its tool/group-aware version. Run before
   deploying clients that select groups; no checkout backfill task is required.

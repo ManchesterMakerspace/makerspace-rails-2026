@@ -37,10 +37,22 @@ class ToolGroupCheckout
     end
   end
 
-  def self.request!(member:, group:, note: nil)
+  # Keep request mutations in the same catalog -> constituent checkout lock order
+  # as approval. Callers must reload and authorize the request inside the block.
+  def self.with_request_locks(request)
+    group = request.tool_group
+    raise Error::Forbidden.new('Group unavailable') unless group
+    CatalogMutationLock.with([group.shop_id]) do
+      group.reload
+      with_tool_locks(request.member_id, group.included_tool_ids) { yield }
+    end
+  end
+
+  def self.request!(member:, group:, note: nil, defer_notifications: false)
     request = CatalogMutationLock.with([group.shop_id]) do
       group.reload
       with_tool_locks(member.id, group.included_tool_ids) do
+        yield if block_given?
         member.reload
         review = review(member: member, group: group, requesting: true)
         validate_review!(review)
@@ -50,8 +62,12 @@ class ToolGroupCheckout
         ToolCheckoutRequest.create!(member: member, tool_group: group, note: note)
       end
     end
-    CheckoutCreation.notify { request.announce_request }
-    CheckoutCreation.notify { request.notify_requestor }
+    if defer_notifications
+      CheckoutNotificationJob.enqueue('request', request.id)
+    else
+      CheckoutCreation.notify { request.announce_request }
+      CheckoutCreation.notify { request.notify_requestor }
+    end
     request
   end
 
@@ -93,6 +109,7 @@ class ToolGroupCheckout
               reconciled = reconcile!(member.id)
               { checkouts: created, skipped: existing,
                 reconciled: reconciled,
+                notification_snapshot: notification_snapshot(group, member),
                 approval_batch_id: created.any? ? batch_id : existing.map(&:approval_batch_id).compact.uniq.one? ? existing.find(&:approval_batch_id).approval_batch_id : nil }
             end
           ensure
@@ -112,11 +129,12 @@ class ToolGroupCheckout
   end
 
   def self.deliver_notifications(group, member, result)
-    notify(group, member, result) if group && member && result[:checkouts].any?
+    notify(group, member, result) if (group || result[:notification_snapshot]) && member && result[:checkouts].any?
+    group_id = result[:notification_snapshot]&.fetch('id') || group&.id&.to_s
     Array(result[:reconciled]).each do |request|
       # A new batch updates its own announcement in notify; all-held requests
       # still need their closed status reflected in Slack.
-      next if group && result[:checkouts].any? && request.tool_group_id == group.id
+      next if group_id && result[:checkouts].any? && request.tool_group_id.to_s == group_id
       CheckoutCreation.notify { request.refresh_closed_announcement }
     end
   end
@@ -137,23 +155,40 @@ class ToolGroupCheckout
     end
   end
 
+  def self.notification_snapshot(group, member)
+    {
+      'id' => group.id.to_s, 'name' => group.name, 'revision' => group.revision,
+      'shop_id' => group.shop_id.to_s, 'included_tool_ids' => group.included_tool_ids.dup,
+      'channel' => group.announce? ? (group.announce_channel.presence || group.shop.slack_channel) : nil,
+      'tools' => group.included_tools.map do |tool|
+        { 'id' => tool.id.to_s, 'name' => tool.name, 'users_channel' => tool.users_channel,
+          'details' => [tool.name, tool.effective_wiki_url,
+            tool.gdrive_id.present? ? "https://drive.google.com/drive/folders/#{tool.gdrive_id}" : nil,
+            tool.effective_requestor_annotation, tool.notes_visible_to?(member) ? tool.notes : nil].compact.join("\n") }
+      end
+    }
+  end
+
   def self.notify(group, member, result)
     created = result[:checkouts]
+    snapshot = result[:notification_snapshot] || notification_snapshot(group, member)
+    children = snapshot.fetch('tools')
+    created_tools = created.map { |row| children.find { |tool| tool['id'] == row.tool_id.to_s } }
     CheckoutCreation.notify do
       Service::AuditLogger.log(log_type: 'member', event_type: 'tool_group_checkout_created',
-        resource_type: 'ToolGroup', resource_id: group.id, actor: created.first.approved_by, subject: member,
-        after_snapshot: { approval_batch_id: result[:approval_batch_id], group_revision: group.revision,
-          checkout_ids: created.map { |row| row.id.to_s }, included_tool_ids: group.included_tool_ids })
+        resource_type: 'ToolGroup', resource_id: snapshot.fetch('id'), actor: created.first.approved_by, subject: member,
+        after_snapshot: { approval_batch_id: result[:approval_batch_id], group_revision: snapshot.fetch('revision'),
+          checkout_ids: created.map { |row| row.id.to_s }, included_tool_ids: snapshot.fetch('included_tool_ids') })
     end
-    created.uniq { |row| row.tool.users_channel }.each do |checkout|
-      CheckoutCreation.notify { checkout.invite_member_to_users_channel }
+    created.zip(created_tools).uniq { |_row, tool| tool['users_channel'] }.each do |checkout, tool|
+      CheckoutCreation.notify { checkout.invite_member_to_users_channel(channel: tool['users_channel']) }
     end
-    CheckoutCreation.notify { ToolCheckoutSlackCanvasSyncJob.perform_later(group.shop_id.to_s) }
-    message = "*#{member.fullname}* has been checked out on *#{group.name}*: #{created.map { |row| row.tool.name }.join(', ')}."
-    channels = created.map { |row| row.tool.users_channel.presence }.compact
-    channel = group.announce? ? (group.announce_channel.presence || group.shop.slack_channel) : nil
+    CheckoutCreation.notify { ToolCheckoutSlackCanvasSyncJob.perform_later(snapshot.fetch('shop_id')) }
+    message = "*#{member.fullname}* has been checked out on *#{snapshot.fetch('name')}*: #{created_tools.map { |tool| tool['name'] }.join(', ')}."
+    channels = created_tools.map { |tool| tool['users_channel'].presence }.compact
+    channel = snapshot['channel']
     channels << channel if channel.present?
-    request = ToolCheckoutRequest.where(member_id: member.id, tool_group_id: group.id, status: 'closed').order_by(request_date: :desc).first
+    request = ToolCheckoutRequest.where(member_id: member.id, tool_group_id: snapshot.fetch('id'), status: 'closed').order_by(request_date: :desc).first
     channels.uniq.each do |destination|
       CheckoutCreation.notify do
         if destination == channel && request&.message_id.present?
@@ -167,10 +202,7 @@ class ToolGroupCheckout
     CheckoutCreation.notify do
       slack_id = member.slack_user&.slack_id
       if slack_id.present? && !member.direct_notifications_suppressed?
-        details = group.included_tools.map do |tool|
-          [tool.name, tool.effective_wiki_url, tool.gdrive_id.present? ? "https://drive.google.com/drive/folders/#{tool.gdrive_id}" : nil,
-            tool.effective_requestor_annotation, tool.notes_visible_to?(member) ? tool.notes : nil].compact.join("\n")
-        end.join("\n\n")
+        details = children.map { |tool| tool['details'] }.join("\n\n")
         Service::SlackConnector.send_slack_message("#{message}\n\n#{details}", slack_id)
       end
     end

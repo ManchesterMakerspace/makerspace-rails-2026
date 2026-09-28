@@ -288,9 +288,9 @@ class ToolCheckout
     ToolGroupCheckout.reconcile!(member_id)
   end
 
-  def invite_member_to_users_channel
+  def invite_member_to_users_channel(channel: tool.users_channel)
     @users_channel_invitation_status = :not_configured
-    return if tool.users_channel.blank?
+    return if channel.blank?
 
     slack_user = SlackUser.find_by(member_id: member_id)
     if slack_user.nil? || slack_user.slack_id.blank?
@@ -298,12 +298,12 @@ class ToolCheckout
       return
     end
 
-    if ::Service::SlackConnector.channel_member?(tool.users_channel, slack_user.slack_id)
+    if ::Service::SlackConnector.channel_member?(channel, slack_user.slack_id)
       @users_channel_invitation_status = :already_member
       return
     end
 
-    ::Service::SlackConnector.invite_to_channel(tool.users_channel, slack_user.slack_id)
+    ::Service::SlackConnector.invite_to_channel(channel, slack_user.slack_id)
     @users_channel_invitation_status = :invited
   rescue => e
     begin
@@ -311,7 +311,7 @@ class ToolCheckout
       # generated conversations_invite method. Retry it with the bot client
       # before asking a human to add the member manually.
       ::Service::SlackConnector.client.conversations_invite(
-        channel: tool.users_channel,
+        channel: channel,
         users: slack_user.slack_id
       )
       @users_channel_invitation_status = :invited
@@ -319,7 +319,7 @@ class ToolCheckout
       @users_channel_invitation_status = :failed
       Service::ErrorReporter.notify(fallback_error, context: {
         action: 'invite member to tool users channel',
-        channel: tool.users_channel,
+        channel: channel,
         slack_id: slack_user&.slack_id,
         initial_error: e.message
       })
