@@ -1,5 +1,29 @@
 # MongoDB Collections
 
+## Tool groups
+
+`tool_groups` stores shop-scoped physical-tool sets, disjoint prerequisites,
+description, requestable/reservable/announce flags, announcement channel,
+archive state, and revision. Its `(shop_id, name)` index is unique with English
+case-insensitive collation; member/prerequisite indexes support reference guards.
+`CatalogMutationLock` coordinates groups and physical tools because a unique
+index cannot span both collections.
+
+`tool_checkouts` remains physical-tool-only. Optional `group_id`, `group_name`,
+`group_revision`, and `approval_batch_id` record provenance. Newly created
+checkouts in one group batch share an approver credit ID. Checkout and approver
+requests target exactly one of `tool_id` and `tool_group_id`.
+
+`reservations` stores expanded `tool_ids`, `selected_tool_ids`, `tool_group_ids`,
+and `group_snapshots`. Snapshots contain the group name, revision, tool IDs and
+prerequisite IDs at selection time. `checkout_approvers.group_granted_tool_ids`
+retains individual grants when a group assignment is removed.
+
+Before updated clients are released, run `bundle exec rake data:ensure_unique_indexes`.
+This also replaces the old open volunteer-request key with
+`(member_id, tool_id, tool_group_id, status)`. No checkout backfill is needed.
+MongoDB transactions require a replica set.
+
 This is the source-of-truth inventory of MongoDB collections owned by the
 Rails application. Collection names are Mongoid's default pluralized model
 name unless the model declares `store_in` explicitly.

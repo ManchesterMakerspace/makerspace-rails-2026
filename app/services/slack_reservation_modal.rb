@@ -16,14 +16,20 @@ class SlackReservationModal
       raise Error::UnprocessableEntity.new('This shop is out of service') if shop.out_of_service?
       read_context ||= ReservationReadContext.new(shop: shop, member: member)
       tools = read_context.eligible_tools
-      raise ::Error::UnprocessableEntity.new("This shop has more than 100 reservable tools; use the portal") if tools.length > 100
-      raise ::Error::UnprocessableEntity.new("This shop has no reservable resources") unless shop.reservable || tools.present?
+      groups = ToolGroup.where(shop_id: shop.id, archived: false, reservable: true).order_by(name: :asc).to_a.select do |group|
+        group.included_tools.none? { |tool| tool.disabled? || tool.out_of_service? || (member.status == 'pending' && !tool.allow_pending) }
+      end
+      choices = tools.map { |tool| option(tool.name, tool.id.to_s) } + groups.map { |group| option(":linked_paperclips: #{group.name}", "group:#{group.id}") }
+      raise ::Error::UnprocessableEntity.new("This shop has more than 100 reservable resources; use the portal") if choices.length > 100
+      raise ::Error::UnprocessableEntity.new("This shop has no reservable resources") unless shop.reservable || choices.present?
 
       scope_options = []
       scope_options << option("Entire shop", "shop") if shop.reservable
-      scope_options << option("One or more tools", "tools") if tools.present?
+      scope_options << option("One or more tools", "tools") if choices.present?
       reservation_scope = valid_scope(reservation_scope, scope_options)
       selected_tools = selected_tools(tools, reservation_scope, tool_ids)
+      selected_groups = groups.select { |group| Array(tool_ids).include?("group:#{group.id}") }
+      selected_tools = (selected_tools + selected_groups.flat_map(&:included_tools)).uniq(&:id)
       resources = ReservationPolicy.resources(
         shop: shop, reservation_scope: reservation_scope, tools: selected_tools
       )
@@ -57,14 +63,16 @@ class SlackReservationModal
           initial_option: scope_options.find { |choice| choice[:value] == reservation_scope }
         }, dispatch_action: true)
       ]
-      if tools.present?
+      if choices.present?
         tool_element = {
           type: "multi_static_select",
           action_id: TOOLS_ACTION_ID,
           placeholder: plain("Select tools"),
-          options: tools.map { |tool| option(tool.name, tool.id.to_s) }
+          options: choices
         }
-        tool_element[:initial_options] = selected_tools.map { |tool| option(tool.name, tool.id.to_s) } if selected_tools.present?
+        selected_values = tool_ids.nil? ? selected_tools.map { |tool| tool.id.to_s } : Array(tool_ids)
+        initial_options = choices.select { |choice| selected_values.include?(choice[:value]) }
+        tool_element[:initial_options] = initial_options if initial_options.present?
         blocks << input("tools", TOOLS_ACTION_ID, "Tools", tool_element, optional: reservation_scope != "tools", dispatch_action: true)
       end
       blocks << input("date", "date", "Date", {

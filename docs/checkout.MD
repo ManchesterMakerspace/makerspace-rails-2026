@@ -1,5 +1,45 @@
 # Safety checkouts
 
+## Tool groups
+
+Authenticated `/api/tool_groups` provides catalog, create, show, edit and archive
+operations. Admin/Board or the shop RM may manage a group. PUT and DELETE require
+the current `revision`; stale revisions return 409. Groups have no public page,
+QR code, shortcode, or independent checkout entitlement. All flags default off.
+
+Checkout requests accept exactly one `tool_id` or `tool_group_id`. Existing list
+contracts stay tool-only unless `include_groups=true`. Group requests are one
+record and use current membership. The group's Requestable flag governs member
+requests, independently of manual signoff.
+
+GET `/api/tool_groups/:id/review?member_id=...` returns current membership,
+held/new checkout IDs and external prerequisites. POST `:id/approve` accepts
+`member_id` and the reviewed `revision`, and returns `checkouts`, `skipped` and
+`approvalBatchId`. Individual approvals retain their existing response shape.
+Internal prerequisites can be granted together; external prerequisites need
+active checkouts. Open tools may receive a group grant. Revoked child records
+block the whole group, and fully held groups create neither records nor credit.
+
+Group approval authority is Admin/Board, shop RM, shop-wide assignment or an
+explicit group assignment. Separate tool assignments alone do not qualify.
+Group assignments also persist individual grants, including subsequently added
+tools. Removing a group assignment retains these grants. Revoking an individual
+checkout removes affected group authority. Eligible volunteers must hold every
+included checkout; existing shop reviewer permissions apply at decision time.
+
+`ToolGroupCheckout` acquires the catalog lock, approver lock and ordered physical
+checkout locks, then commits grants, request reconciliation and the group credit
+in one MongoDB transaction. Slack delivery follows commit. An ordinary approver
+receives one 0.25 credit for a batch with new checkouts; the first revocation
+reverses that shared credit. Groups never retroactively grant previous trainees
+newly added tools.
+
+Slack `/checkout request <name>` resolves shop-scoped groups as well as tools.
+The signed checkout modal carries the reviewed group revision. Group selectors
+follow physical tools and use `:linked_paperclips:` where supported. Group batch
+announcements use the group override or shop channel and preserve deduplicated
+individual users-channel invitations.
+
 ## Member Portal lists
 
 “My Active Tool Checkouts” displays an accessible note tooltip beside tools with

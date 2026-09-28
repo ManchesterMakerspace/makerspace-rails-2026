@@ -4,6 +4,10 @@ class Admin::ToolCheckoutRequestsController < ApplicationController
 
   def index
     requests = CheckoutInteractionQuery.new(member: current_member).open_requests(for_approval: true)
+    if params[:include_groups] == 'true'
+      group_requests = CheckoutInteractionQuery.new(member: current_member).visible_group_requests
+      requests = requests.to_a + group_requests.select { |request| ToolGroupCheckout.authorized?(current_member, request.tool_group) }
+    end
 
     requests = ToolCheckoutRequest.table_query(requests, params)
     response.set_header("total-items", requests.count)

@@ -11,6 +11,7 @@ RSpec.describe 'Availability and volunteer credit catalogs', type: :request do
 
   path '/reservation_catalog' do
     get 'List enabled reservation shops and their reservable tools' do
+      parameter name: :include_groups, in: :query, required: false, schema: { type: :boolean }, description: 'Add toolGroups with expanded child details. Default omits groups for native compatibility.'
       tags 'Reservations'
       security [sessionAuth: []]
       produces 'application/json'

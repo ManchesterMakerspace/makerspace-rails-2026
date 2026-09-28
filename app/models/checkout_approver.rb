@@ -10,6 +10,14 @@ class CheckoutApprover
   field :shop_ids, type: Array, default: []
   # Optional individual Tool IDs. Shop assignments and tool assignments are additive.
   field :tool_ids, type: Array, default: []
+  field :tool_group_ids, type: Array, default: []
+  field :group_granted_tool_ids, type: Array, default: []
+  before_validation :expand_group_authority
+  validate :valid_group_assignments
+
+  def can_approve_group?(group)
+    group && (can_approve_for_shop?(group.shop_id) || Array(tool_group_ids).map(&:to_s).include?(group.id.to_s))
+  end
 
   validates :member, presence: true
   validate :has_assignment
@@ -59,6 +67,18 @@ class CheckoutApprover
   end
 
   private
+
+  def expand_group_authority
+    groups = ToolGroup.where(:id.in => Array(tool_group_ids)).to_a
+    self.group_granted_tool_ids = (Array(group_granted_tool_ids) + groups.flat_map(&:included_tool_ids)).uniq
+    self.tool_ids = (Array(tool_ids).map(&:to_s) + group_granted_tool_ids).uniq
+  end
+
+  def valid_group_assignments
+    if ToolGroup.where(:id.in => Array(tool_group_ids), archived: false).count != Array(tool_group_ids).uniq.length
+      errors.add(:tool_group_ids, 'contain an invalid group')
+    end
+  end
 
   def has_assignment
     return if Array(shop_ids).present? || Array(tool_ids).present?

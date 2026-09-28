@@ -1,5 +1,6 @@
 class CheckoutApproverVolunteering
   def self.create!(member:, tool:, note: nil)
+    return ToolGroupVolunteering.create!(member: member, group: tool, note: note) if tool.is_a?(ToolGroup)
     request = CheckoutMutationLock.with(member_id: member.id, tool_id: tool.id) do
       member.reload
       raise Error::UnprocessableEntity.new("You must have an active checkout for this tool") unless
@@ -18,6 +19,7 @@ class CheckoutApproverVolunteering
   end
 
   def self.approve!(request:, actor:, note: nil)
+    return ToolGroupVolunteering.decide!(request: request, actor: actor, approve: true, note: note) if request.tool_group
     approver = CheckoutMutationLock.with(member_id: request.member_id, tool_id: request.tool_id) do
       request.reload
       authorize_decision!(request, actor)
@@ -54,6 +56,7 @@ class CheckoutApproverVolunteering
   end
 
   def self.decline!(request:, actor:, note: nil)
+    return ToolGroupVolunteering.decide!(request: request, actor: actor, approve: false, note: note) if request.tool_group
     CheckoutMutationLock.with(member_id: request.member_id, tool_id: request.tool_id) do
       request.reload
       authorize_decision!(request, actor)
@@ -64,11 +67,16 @@ class CheckoutApproverVolunteering
   end
 
   def self.revoke_for!(member_id:, tool_id:, approver_lock_held: false)
+    CheckoutApproverRequest.where(member_id: member_id, :tool_group_id.in => ToolGroup.where(included_tool_ids: tool_id.to_s).pluck(:id), status: 'open').update_all(status: 'revoked')
     CheckoutApproverRequest.where(member_id: member_id, tool_id: tool_id, status: "open").update_all(status: "revoked")
     mutation = -> do
       approver = CheckoutApprover.find_by(member_id: member_id)
       next unless approver
       approver.pull(tool_ids: tool_id.to_s)
+      approver.pull(group_granted_tool_ids: tool_id.to_s)
+      ToolGroup.where(included_tool_ids: tool_id.to_s).each do |group|
+        approver.pull(tool_group_ids: group.id.to_s)
+      end
       approver.destroy! if approver.tool_ids.empty? && Array(approver.shop_ids).empty?
     end
     if approver_lock_held
@@ -80,11 +88,11 @@ class CheckoutApproverVolunteering
 
   def self.deliver_request_notifications(request)
     Member.where(:role.in => %w[resource_manager admin board_member],
-      :resource_manager_shop_ids.in => [request.tool.shop_id.to_s]).each do |manager|
+      :resource_manager_shop_ids.in => [request.target.shop_id.to_s]).each do |manager|
       slack_id = SlackUser.find_by(member_id: manager.id)&.slack_id
       next if slack_id.blank? || manager.direct_notifications_suppressed?
       Service::SlackConnector.send_slack_message(
-        "*#{request.member.fullname}* volunteered to approve checkouts for *#{request.tool.name}* in *#{request.tool.shop.name}*.\n" \
+        "*#{request.member.fullname}* volunteered to approve checkouts for *#{request.target.name}* in *#{request.target.shop.name}*.\n" \
         "Checked out: #{checkout_date(request)}\nJoined makerspace: #{member_join_date(request.member)}" \
         "#{request.note.present? ? "\nNote: #{request.note}" : ""}\n" \
         "Open `/checkout` and choose View open requests to review it.", slack_id)
@@ -95,7 +103,7 @@ class CheckoutApproverVolunteering
 
   def self.authorize_decision!(request, actor)
     raise Error::Forbidden.new("Only a resource manager for this shop can decide this request") unless
-      reviewer?(actor, request.tool.shop_id)
+      reviewer?(actor, request.target.shop_id)
     raise Error::UnprocessableEntity.new("This volunteer request is no longer open") unless request.open?
   end
 
@@ -103,7 +111,7 @@ class CheckoutApproverVolunteering
     slack_id = SlackUser.find_by(member_id: request.member_id)&.slack_id
     return if slack_id.blank? || request.member.direct_notifications_suppressed?
     status = request.status == "approved" ? "approved" : "declined"
-    message = "Your request to approve checkouts for *#{request.tool.name}* in *#{request.tool.shop.name}* was *#{status}*."
+    message = "Your request to approve checkouts for *#{request.target.name}* in *#{request.target.shop.name}* was *#{status}*."
     message += "\nRM note: #{request.decision_note}" if request.decision_note.present?
     Service::SlackConnector.send_slack_message(message, slack_id)
   rescue => error

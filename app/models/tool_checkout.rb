@@ -8,6 +8,13 @@ class ToolCheckout
   field :revocation_reason, type: String  # internal only — not shown to member
   field :signed_off_via, type: String, default: "portal"  # "portal" or "slack"
   field :volunteer_credit_id, type: BSON::ObjectId
+  field :group_id, type: BSON::ObjectId
+  field :group_revision, type: Integer
+  field :group_name, type: String
+  field :approval_batch_id, type: String
+  attr_accessor :defer_group_callbacks
+  attr_accessor :reconciled_requests
+  index({ approval_batch_id: 1 })
   field :revocation_cleanup_pending, type: Boolean, default: false
   field :revoked_by_id, type: BSON::ObjectId
   field :revocation_cleanup_completed_steps, type: Array, default: []
@@ -22,9 +29,9 @@ class ToolCheckout
   validates :member, presence: true
   validates :tool, presence: true
 
-  after_create :close_open_request
+  after_create :close_open_request, unless: :defer_group_callbacks
   after_create :invite_member_to_users_channel, unless: :defer_users_channel_invitation
-  after_create :enqueue_checkout_canvas_sync
+  after_create :enqueue_checkout_canvas_sync, unless: :defer_group_callbacks
   before_update :mark_revocation_cleanup_pending
   after_update :complete_revocation_cleanup, if: :revocation_cleanup_required?
   after_update :enqueue_checkout_canvas_sync_after_revocation
@@ -278,6 +285,7 @@ class ToolCheckout
     requests = requests.where(id: checkout_request_id) if checkout_request_id
     request = requests.order_by(request_date: :asc, id: :asc).first
     request.update_attributes!(status: "closed", checked_out_id: id) if request
+    ToolGroupCheckout.reconcile!(member_id)
   end
 
   def invite_member_to_users_channel

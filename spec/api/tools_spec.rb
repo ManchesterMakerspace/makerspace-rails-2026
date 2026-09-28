@@ -18,6 +18,7 @@ RSpec.describe 'Tools API', type: :request do
 
   before do
     allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
     allow(Service::SlackChannelAssignment).to receive(:resolve!) do |channels|
       channels.to_h.transform_keys(&:to_s).transform_values do |name|
         { id: "C#{name.hash.abs.to_s.first(8).ljust(8, '0')}", name: name }

@@ -15,6 +15,7 @@ class SlackCheckoutJob < ApplicationJob
     shop = Shop.where(:slack_channel.in => names).first
     raise Error::UnprocessableEntity.new("No shop is configured for this channel.") unless shop
     tool = Tool.where(shop_id: shop.id).find_by(name: /\A#{Regexp.escape(tool_name)}\z/i)
+    tool ||= ToolGroup.where(shop_id: shop.id, archived: false).find_by(name: /\A#{Regexp.escape(tool_name)}\z/i)
     raise Error::UnprocessableEntity.new("Tool not found in this shop.") unless tool
     member = find_member_from_token(token)
     if !member && slack_mention?(token)
@@ -22,6 +23,11 @@ class SlackCheckoutJob < ApplicationJob
       member = find_member_from_token(token)
     end
     raise Error::UnprocessableEntity.new("No member found. Try their Member Portal email address.") unless member
+    if tool.is_a?(ToolGroup)
+      view = SlackGroupApprovalModal.build(actor: actor, member: member, group: tool, slack_user_id: params['user_id'])
+      Service::SlackConnector.open_modal(params['trigger_id'], view)
+      return deliver(params, "Review the group checkout before approving.")
+    end
     checkout = CheckoutCreation.create!(actor_id: actor.id, member_id: member.id,
       tool_id: tool.id, shop_id: shop.id, source: "slack")
     deliver(params, "Checkout approved: #{CheckoutDisplay.escape(checkout.tool.name)} for #{CheckoutDisplay.escape(member.fullname)}.")

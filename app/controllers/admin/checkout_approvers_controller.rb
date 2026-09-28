@@ -1,5 +1,6 @@
 class Admin::CheckoutApproversController < AdminController
   before_action :find_approver, only: [:update, :destroy]
+  around_action :lock_group_catalog, only: [:create, :update, :destroy]
 
   def index
     approvers = CheckoutApprover.all.to_a
@@ -14,6 +15,7 @@ class Admin::CheckoutApproversController < AdminController
       incoming_tools = approver_params[:tool_ids] || []
       record.shop_ids = (record.shop_ids + incoming_shops).uniq
       record.tool_ids = (record.tool_ids + incoming_tools).uniq
+      record.tool_group_ids = (record.tool_group_ids + Array(approver_params[:tool_group_ids])).uniq
       record.save!
       record
     end
@@ -75,8 +77,13 @@ class Admin::CheckoutApproversController < AdminController
 
   private
 
+  def lock_group_catalog(&block)
+    ids = Array(@approver&.tool_group_ids) | Array(params[:tool_group_ids])
+    CatalogMutationLock.with(ToolGroup.where(:id.in => ids).pluck(:shop_id), &block)
+  end
+
   def approver_params
-    params.permit(:member_id, shop_ids: [], tool_ids: [])
+    params.permit(:member_id, shop_ids: [], tool_ids: [], tool_group_ids: [])
   end
 
   def find_approver

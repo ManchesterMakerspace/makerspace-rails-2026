@@ -1,5 +1,22 @@
 # Shop and Tool Reservations
 
+## Group selection
+
+Reservation inputs accept `tool_group_ids` alongside `tool_ids`. The service
+expands groups and deduplicates all physical tools before policy, conflict,
+capacity and fee evaluation. A reservable group permits individually
+non-reservable children; hidden/out-of-service restrictions and all other child
+policies still apply. Group prerequisites supplement child prerequisites.
+Groups have no price or Google Calendar resource of their own.
+
+Saved `group_snapshots` preserve the selected name, revision, membership and
+prerequisites. Updates omitting both resource arrays retain those snapshots.
+Legacy clients resending unchanged physical IDs without group IDs also retain
+them. Calendar descriptions, Slack summaries and portal history use saved names.
+Explicit resource selection performs a fresh expansion and fee preview; the
+portal clears fee acceptance when the selection changes. The reservation catalog
+adds `toolGroups` only for `include_groups=true`, preserving older native clients.
+
 ## Overview
 
 The reservation feature allows eligible members to reserve an entire shop or one

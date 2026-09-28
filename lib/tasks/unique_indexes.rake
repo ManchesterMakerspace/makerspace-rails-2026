@@ -240,12 +240,25 @@ namespace :data do
 
     # Keep compound uniqueness and repair lookup/outbox indexes with the same
     # release-time entry point as core indexes. MongoDB rejects duplicate data.
-    [FixTicket, FixTicketEvent, FixTicketReveal].each(&:create_indexes)
+    [FixTicket, FixTicketEvent, FixTicketReveal, ToolGroup].each(&:create_indexes)
+
+    # The former key treated every group target as tool_id=null, preventing
+    # multiple distinct group volunteer requests. Replace it before clients opt in.
+    volunteer_indexes = begin
+      CheckoutApproverRequest.collection.indexes.to_a
+    rescue Mongo::Error::OperationFailure => error
+      raise unless error.code == 26
+      []
+    end
+    volunteer_indexes.each do |index|
+      next unless index['key'].keys.map(&:to_s) == %w[member_id tool_id status]
+      CheckoutApproverRequest.collection.indexes.drop_one(index['name'])
+    end
 
     # These constraints make the volunteer workflow's retry-safe writes
     # enforceable by MongoDB rather than relying only on application checks.
     [
-      [CheckoutApproverRequest, { member_id: 1, tool_id: 1, status: 1 }],
+      [CheckoutApproverRequest, { member_id: 1, tool_id: 1, tool_group_id: 1, status: 1 }],
       [VolunteerCredit, { tool_checkout_id: 1 }]
     ].each do |model, key|
       specification = model.index_specifications.find { |index| index.key.stringify_keys == key.stringify_keys }

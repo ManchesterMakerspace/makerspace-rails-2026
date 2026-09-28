@@ -330,7 +330,7 @@ RSpec.describe SlackReservationModal do
     tools.concat(101.times.map { |index| resource_double(Tool, name: "Tool #{index}") })
 
     expect { described_class.build(shop, member) }
-      .to raise_error(Error::UnprocessableEntity, "This shop has more than 100 reservable tools; use the portal")
+        .to raise_error(Error::UnprocessableEntity, "This shop has more than 100 reservable resources; use the portal")
   end
 end
 

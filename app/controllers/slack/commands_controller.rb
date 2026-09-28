@@ -137,7 +137,8 @@ class Slack::CommandsController < ApplicationController
     metadata = { "member_id" => member.id.to_s, "shop_id" => shop&.id&.to_s,
       "response_url" => params[:response_url], "slack_user_id" => params[:user_id],
       "step" => shop ? step : "shop_#{step}" }.compact
-    tools = shop ? CheckoutInteractionQuery.new(member: member, shop: shop).volunteerable_tools : []
+    query = CheckoutInteractionQuery.new(member: member, shop: shop)
+    tools = shop ? query.volunteerable_tools + query.volunteerable_groups : []
     view = SlackCheckoutModal.new(member: member, shop: shop, metadata: metadata, tools: tools).build
     Service::SlackConnector.open_modal(params[:trigger_id], view)
     render json: { response_type: "ephemeral", text: "Opening checkout volunteer form…" }
@@ -254,10 +255,11 @@ class Slack::CommandsController < ApplicationController
   end
 
   def open_request_list(member)
-    requests = CheckoutInteractionQuery.new(member: member).open_requests.to_a
+    query = CheckoutInteractionQuery.new(member: member)
+    requests = query.open_requests.to_a + query.visible_group_requests.select { |request| request.member_id == member.id }
     return "You have no open checkout requests." if requests.empty?
 
-    lines = requests.map { |request| "• *#{request.tool&.name}* — #{request.tool&.shop&.name || 'Unknown shop'}" }
+    lines = requests.map { |request| "• *#{request.tool_group_id ? ':linked_paperclips: ' : ''}#{request.target&.name}* — #{request.target&.shop&.name || 'Unknown shop'}" }
     "*Your open checkout requests:*\n#{lines.join("\n")}"
   end
 

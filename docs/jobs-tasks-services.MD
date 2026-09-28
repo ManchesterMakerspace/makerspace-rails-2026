@@ -1,5 +1,23 @@
 # Production jobs, tasks, and services
 
+## Tool group services
+
+- `CatalogMutationLock` serializes physical-tool and group catalog mutations by
+  shop, also coordinating checkout approval and reservation expansion.
+- `ToolGroupCatalog` validates revisions, archives requests and extends persistent
+  individual approver grants when a group's membership changes.
+- `ToolGroupCheckout` reviews and atomically grants physical checkouts, records
+  batch provenance, reconciles requests and issues one credit before post-commit
+  Slack delivery. `ToolGroupVolunteering` revalidates complete membership at decision.
+- `SlackGroupApprovalModal` signs the reviewed group revision and Slack identity
+  for manual `/checkout @member group-name` approvals and rechecks both on submit.
+- `ReservationGroupExpansion` expands selections and preserves historical snapshots.
+- `CheckoutNotificationJob` accepts either request target for request/cancellation
+  and volunteer delivery. `SlackCheckoutRequestJob` resolves tool or group names.
+- `data:ensure_unique_indexes` creates group indexes and replaces the open
+  volunteer-request unique key with its tool/group-aware version. Run before
+  deploying clients that select groups; no checkout backfill task is required.
+
 ## Shop outage announcements
 
 `ShopAvailabilityService` lets admins, board members, and assigned resource managers

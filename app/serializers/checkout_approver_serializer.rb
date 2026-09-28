@@ -5,7 +5,7 @@ class CheckoutApproverSerializer < ActiveModel::Serializer
   attribute :tools do
     scoped_tools.map { |tool| { id: tool.id.to_s, name: tool.name, shopId: tool.shop_id.to_s, outOfService: !!tool.out_of_service } }
   end
-  attributes :id, :member_id, :shop_ids, :tool_ids
+  attributes :id, :member_id, :shop_ids, :tool_ids, :tool_group_ids
 
   attribute :member_name do
     (checkout_context ? checkout_context.members[object.member_id.to_s] : object.member).try(:fullname)

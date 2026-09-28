@@ -8,6 +8,7 @@ describe "Tool checkout requests API", type: :request do
 
   path "/tool_checkout_requests" do
     get "Lists the member's eligible open checkout requests" do
+      parameter name: :include_groups, in: :query, required: false, schema: { type: :boolean }, description: 'Opt in to group targets; default remains tool-only.'
       tags "ToolCheckoutRequests"
       description "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending. requestorAnnotation is the current tool annotation, falling back to its shop, or null."
       produces "application/json"
@@ -36,9 +37,10 @@ describe "Tool checkout requests API", type: :request do
         type: :object,
         properties: {
           tool_id: { type: :string },
+          tool_group_id: { type: :string },
           note: { type: :string }
         },
-        required: ["tool_id"]
+        oneOf: [{ required: ['tool_id'] }, { required: ['tool_group_id'] }]
       }
 
       response "200", "checkout request created" do
@@ -119,6 +121,7 @@ end
 describe "Checkout approval queue API", type: :request do
   path "/admin/tool_checkout_requests" do
     get "Lists authorized eligible open checkout requests" do
+      parameter name: :include_groups, in: :query, required: false, schema: { type: :boolean }, description: 'Include group requests for which the viewer has group approval authority.'
       tags "ToolCheckoutRequests"
       description "Admins and board members see all tool scopes; resource managers see managed shops; valid checkout approvers see assigned enabled tools and shops. All scopes exclude inactive, expired, revoked and suspended requesters. Pending requesters require a tool allowing pending members. Defaults to request_date then id ascending."
       produces "application/json"

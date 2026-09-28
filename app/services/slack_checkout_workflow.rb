@@ -79,11 +79,16 @@ class SlackCheckoutWorkflow
     case step
     when "request_new"
       @tool = available_tool!(@metadata["record_id"])
-      error = ToolCheckoutRequestEligibility.new(member: @member, tool: @tool).error
+      error = if @tool.is_a?(ToolGroup)
+        ToolGroupCheckout.validate_review!(ToolGroupCheckout.review(member: @member, group: @tool, requesting: true))
+        nil
+      else
+        ToolCheckoutRequestEligibility.new(member: @member, tool: @tool).error
+      end
       reject!(error) if error
     when *REQUEST_STEPS
       @request = visible_request!(@metadata["record_id"])
-      @tool = available_tool!(@request.tool_id)
+      @tool = available_tool!(@request.tool_group_id ? "group:#{@request.tool_group_id}" : @request.tool_id)
       if step.in?(%w[request_edit request_cancel])
         reject!("Only the requester can edit or cancel this request.") unless @request.member_id == @member.id
       elsif step == "request_approve"
@@ -98,13 +103,18 @@ class SlackCheckoutWorkflow
     when "volunteer_detail", "volunteer_approve", "volunteer_decline"
       @volunteer_request = find_record(CheckoutApproverRequest, @metadata["record_id"])
       reject! unless @volunteer_request&.open?
-      @tool = available_tool!(@volunteer_request.tool_id)
+      @tool = available_tool!(@volunteer_request.tool_group_id ? "group:#{@volunteer_request.tool_group_id}" : @volunteer_request.tool_id)
       reject!("You are not authorized to review volunteers for this shop.") unless
         CheckoutApproverVolunteering.reviewer?(@member, @shop.id)
     end
   end
 
   def available_tool!(id)
+    if id.to_s.start_with?('group:')
+      group = find_record(ToolGroup, id.to_s.delete_prefix('group:'))
+      reject! unless group && @shop && group.shop_id == @shop.id && !group.disabled?
+      return group
+    end
     tool = find_record(Tool, id)
     reject! unless @shop && tool && tool.shop_id == @shop.id && !tool.disabled? && !tool.open
     reject!("This tool is not available to pending members.") if @member.status == "pending" && !tool.allow_pending
@@ -112,11 +122,17 @@ class SlackCheckoutWorkflow
   end
 
   def can_approve?(tool)
+    return ToolGroupCheckout.authorized?(@member, tool) if tool.is_a?(ToolGroup)
     CheckoutCreation.authorized?(@member, tool)
   end
 
   def volunteer_tool!(id)
     tool = available_tool!(id)
+    if tool.is_a?(ToolGroup)
+      ToolGroupVolunteering.eligible!(@member, tool)
+      reject! if CheckoutApprover.find_by(member_id: @member.id)&.can_approve_group?(tool)
+      return tool
+    end
     reject!("You must have an active checkout for this tool.") unless
       ToolCheckout.where(member_id: @member.id, tool_id: tool.id, revoked_at: nil).exists?
     reject!("You are already an approver for this tool.") if CheckoutApprover.find_by(member_id: @member.id)&.can_approve_tool?(tool)
@@ -132,13 +148,18 @@ class SlackCheckoutWorkflow
   def visible_request!(id)
     request = find_record(ToolCheckoutRequest, id)
     reject! unless request&.open?
-    tool = available_tool!(request.tool_id)
+    tool = available_tool!(request.tool_group_id ? "group:#{request.tool_group_id}" : request.tool_id)
     reject! unless request.member_id == @member.id || can_approve?(tool)
     requester = find_record(Member, request.member_id)
     reject! unless requester
     # Ignore this existing open request, but recheck membership, prerequisites,
     # availability and existing checkout records through the authoritative policy.
-    error = ToolCheckoutRequestEligibility.new(member: requester, tool: tool, open_request_tool_ids: []).error
+    error = if tool.is_a?(ToolGroup)
+      ToolGroupCheckout.validate_review!(ToolGroupCheckout.review(member: requester, group: tool))
+      nil
+    else
+      ToolCheckoutRequestEligibility.new(member: requester, tool: tool, open_request_tool_ids: []).error
+    end
     reject!(error) if error
     request
   end
@@ -200,12 +221,21 @@ class SlackCheckoutWorkflow
     end
     case step
     when "request_new"
+      if @tool.is_a?(ToolGroup)
+        ToolGroupCheckout.request!(member: @member, group: @tool, note: note)
+      else
       CheckoutRequestCreation.create!(member_id: @member.id, tool_id: @tool.id,
         shop_id: @shop.id, note: note, defer_notifications: true) { load_context! }
+      end
       message = "Your checkout request for #{CheckoutDisplay.escape(@tool.name.to_s.first(200))} has been created."
     when "request_approve"
+      if @tool.is_a?(ToolGroup)
+        ToolGroupCheckout.approve!(actor: @member, member: @request.member, group: @tool,
+          revision: @metadata['group_revision'], source: 'slack', request_id: @request.id) { load_context! }
+      else
       CheckoutCreation.create!(actor_id: @member.id, member_id: @request.member_id,
         tool_id: @tool.id, shop_id: @shop.id, source: "slack", request_id: @request.id, defer_notifications: true) { load_context! }
+      end
       message = "The checkout request for #{CheckoutDisplay.escape(@tool.name.to_s.first(200))} has been approved."
     when "volunteer_confirm"
       CheckoutApproverVolunteering.create!(member: @member, tool: @tool, note: note)
@@ -238,16 +268,17 @@ class SlackCheckoutWorkflow
   end
 
   def build
+    @metadata['group_revision'] = @tool.revision if @tool.is_a?(ToolGroup)
     options = { member: @member, shop: @shop, metadata: @metadata, tool: @tool,
       request: @request, volunteer_request: @volunteer_request, checkout: @checkout, alert: @message }
     case step
     when "request_tools"
-      options[:tools] = query.requestable_tools
+      options[:tools] = query.requestable_tools + query.requestable_groups
     when "requests"
-      options[:requests] = query.visible_open_requests.to_a
-      options[:volunteer_requests] = query.visible_volunteer_requests.to_a
+      options[:requests] = query.visible_open_requests.to_a + query.visible_group_requests
+      options[:volunteer_requests] = query.visible_volunteer_requests.to_a + query.visible_group_volunteers
     when "volunteer"
-      options[:tools] = query.volunteerable_tools
+      options[:tools] = query.volunteerable_tools + query.volunteerable_groups
     when "active"
       options[:checkouts] = query.listed_active_checkouts
     when "request_detail"
