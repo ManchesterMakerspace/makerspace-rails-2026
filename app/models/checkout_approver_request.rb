@@ -1,4 +1,12 @@
 class CheckoutApproverRequest
+  # The latest constituent checkout is when the complete group became held.
+  def checkout_completed_on
+    ids = tool_group ? tool_group.included_tool_ids : [tool_id.to_s]
+    rows = ToolCheckout.where(member_id: member_id, :tool_id.in => ids, revoked_at: nil).to_a
+    return 'Unknown' if ids.empty? || (ids - rows.map { |row| row.tool_id.to_s }).any?
+    rows.map(&:checked_out_at).compact.max&.to_date&.iso8601 || 'Unknown'
+  end
+
   include Mongoid::Document
 
   belongs_to :member

@@ -1,5 +1,11 @@
 # Safety checkouts
 
+`GET /api/tools` accepts optional `shop_id`. A selected shop narrows the existing
+eligible catalog; hidden shops/tools, open tools, held checkouts and pending-member
+restrictions still apply. Omitted or blank `shop_id` preserves the all-shops
+response. Unknown or unavailable shops return an empty array. The member's
+Available Tools shop selector applies this scope to tools and groups together.
+
 ## Tool groups
 
 Authenticated `/api/tool_groups` provides catalog, create, show, edit and archive
@@ -26,6 +32,9 @@ Group assignments also persist individual grants, including subsequently added
 tools. Removing a group assignment retains these grants. Revoking an individual
 checkout removes affected group authority. Eligible volunteers must hold every
 included checkout; existing shop reviewer permissions apply at decision time.
+Direct group assignment also rejects revoked constituent checkouts rather than
+restoring the removed authority. Volunteer review and notification dates use the
+latest active checkout among all current constituent tools, when all are held.
 
 `ToolGroupCheckout` acquires the catalog lock, approver lock and ordered physical
 checkout locks, then commits grants, request reconciliation and the group credit

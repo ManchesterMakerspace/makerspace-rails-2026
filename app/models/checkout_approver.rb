@@ -70,6 +70,11 @@ class CheckoutApprover
 
   def expand_group_authority
     groups = ToolGroup.where(:id.in => Array(tool_group_ids)).to_a
+    revoked = ToolCheckout.where(member_id: member_id, :revoked_at.ne => nil).pluck(:tool_id).map(&:to_s)
+    if groups.any? { |group| (group.included_tool_ids & revoked).any? }
+      errors.add(:tool_group_ids, 'cannot include a group with a revoked checkout')
+      return
+    end
     self.group_granted_tool_ids = (Array(group_granted_tool_ids) + groups.flat_map(&:included_tool_ids)).uniq
     self.tool_ids = (Array(tool_ids).map(&:to_s) + group_granted_tool_ids).uniq
   end

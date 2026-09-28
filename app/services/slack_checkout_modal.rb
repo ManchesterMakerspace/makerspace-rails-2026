@@ -191,8 +191,7 @@ class SlackCheckoutModal
   end
 
   def volunteer_checkout_date
-    ToolCheckout.where(member_id: @volunteer_request.member_id, tool_id: @volunteer_request.tool_id, revoked_at: nil)
-      .order_by(checked_out_at: :desc).first&.checked_out_at&.to_date&.iso8601 || "Unknown"
+    @volunteer_request.checkout_completed_on
   end
 
   def member_join_date(member)

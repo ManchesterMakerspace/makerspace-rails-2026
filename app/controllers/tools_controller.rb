@@ -11,6 +11,7 @@ class ToolsController < AuthenticationController
     excluded_tool_ids = ToolCheckout.where(member_id: current_member.id).pluck(:tool_id).map(&:to_s)
     tools = Tool.where(:disabled.ne => true, :open.ne => true, :shop_id.in => Shop.where(:disabled.ne => true).pluck(:id)).where(:id.nin => excluded_tool_ids)
     tools = tools.where(allow_pending: true) if current_member.status == 'pending'
+    tools = tools.where(shop_id: params[:shop_id]) if params[:shop_id].present?
 
     render json: tools.order_by(name: :asc),
       each_serializer: ToolCatalogSerializer,

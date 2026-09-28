@@ -3009,6 +3009,95 @@
           }
         }
       },
+      "ToolGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "shopId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "prerequisiteIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includedToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includedTools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Tool"
+            }
+          },
+          "reservable": {
+            "type": "boolean"
+          },
+          "requestable": {
+            "type": "boolean"
+          },
+          "announce": {
+            "type": "boolean"
+          },
+          "announceChannel": {
+            "type": "string",
+            "nullable": true
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "group"
+            ]
+          },
+          "canManage": {
+            "type": "boolean"
+          },
+          "canApprove": {
+            "type": "boolean"
+          },
+          "canRequest": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "shopId",
+          "name",
+          "description",
+          "prerequisiteIds",
+          "includedToolIds",
+          "includedTools",
+          "reservable",
+          "requestable",
+          "announce",
+          "announceChannel",
+          "archived",
+          "revision",
+          "targetType",
+          "canManage",
+          "canApprove",
+          "canRequest"
+        ]
+      },
       "ToolCheckout": {
         "type": "object",
         "properties": {
@@ -5785,6 +5874,13 @@
                       "items": {
                         "$ref": "#/components/schemas/Tool"
                       }
+                    },
+                    "toolGroups": {
+                      "type": "array",
+                      "description": "Present only when include_groups=true.",
+                      "items": {
+                        "$ref": "#/components/schemas/ToolGroup"
+                      }
                     }
                   }
                 }
@@ -5797,6 +5893,17 @@
     "/tools": {
       "get": {
         "summary": "List checkout request tools, including availability",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Restrict tools to one shop while preserving membership and visibility rules. Omit or leave blank for all eligible shops."
+          }
+        ],
         "tags": [
           "Tools"
         ],
