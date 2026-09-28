@@ -15,7 +15,7 @@ class SlackCheckoutModal
   DECLINE_VOLUNTEER = "checkout_decline_volunteer".freeze
   CHOICES = [["View my checkouts", "active"], ["Request a checkout", "request_tools"],
              ["Volunteer to do checkouts", "volunteer"], ["View open requests", "requests"]].freeze
-  METADATA_KEYS = %w[member_id shop_id response_url slack_user_id step record_id].freeze
+  METADATA_KEYS = %w[member_id shop_id response_url slack_user_id step record_id group_revision].freeze
 
   # Integrity-protected context, not an authorization cache. A client cannot
   # replace the shop or workflow step; the workflow still reloads every record.
@@ -66,23 +66,26 @@ class SlackCheckoutModal
     when /\Ashop_(active|request_tools|requests|volunteer)\z/
       shop_selector
     when "request_tools"
-      selector(TOOL, "Tool", @tools.map { |tool| [tool.name, tool.id.to_s] })
+      selector(TOOL, "Tool", @tools.map { |tool| tool_option(tool) })
     when "request_new"
       section("Request a checkout on #{@tool.name}")
       note_input
       @submit = "Request"
     when "volunteer"
-      selector(TOOL, "Checked-out tool", @tools.map { |tool| [tool.name, tool.id.to_s] })
+      selector(TOOL, "Checked-out tool", @tools.map { |tool| tool_option(tool) })
     when "volunteer_confirm"
       section("Volunteer to approve checkouts for #{@tool.name}")
       note_input
       @submit = "Volunteer"
     when "requests"
-      volunteers = @volunteer_requests.map { |row| ["VOLUNTEER: #{row.tool.name} — #{row.member.fullname}", "volunteer:#{row.id}"] }
-      selector(REQUEST, "Open request", volunteers + @requests.map { |row| ["#{row.tool.name} — #{row.member.fullname}", row.id.to_s] })
+      rows = (@volunteer_requests + @requests).sort_by { |row| [row.tool_group_id ? 1 : 0, row.target.name.downcase] }
+      selector(REQUEST, "Open request", rows.map do |row|
+        volunteer = row.is_a?(CheckoutApproverRequest)
+        ["#{volunteer ? 'VOLUNTEER: ' : ''}#{row.tool_group_id ? ':linked_paperclips: ' : ''}#{row.target.name} — #{row.member.fullname}", "#{volunteer ? 'volunteer:' : ''}#{row.id}"]
+      end)
     when "volunteer_detail"
       section("Volunteer: #{@volunteer_request.member.fullname}")
-      section("Tool: #{@volunteer_request.tool.name}")
+      section("Tool: #{@volunteer_request.target.name}")
       section("Requested: #{@volunteer_request.request_date&.iso8601}")
       section("Checked out: #{volunteer_checkout_date}")
       section("Joined makerspace: #{member_join_date(@volunteer_request.member)}")
@@ -90,7 +93,7 @@ class SlackCheckoutModal
       actions([["Approve volunteer", APPROVE_VOLUNTEER], ["Decline volunteer", DECLINE_VOLUNTEER]])
     when "volunteer_approve", "volunteer_decline"
       decision = @metadata["step"] == "volunteer_approve" ? "Approve" : "Decline"
-      section("#{decision} #{@volunteer_request.member.fullname}'s request for #{@volunteer_request.tool.name}?")
+      section("#{decision} #{@volunteer_request.member.fullname}'s request for #{@volunteer_request.target.name}?")
       note_input
       @submit = decision
     when "request_detail"
@@ -166,7 +169,19 @@ class SlackCheckoutModal
   end
 
   def request_details
-    section("Tool: #{@request.tool.name}")
+    section("#{@request.tool_group_id ? ':linked_paperclips: Group' : 'Tool'}: #{@request.target.name}")
+    if @request.tool_group
+      review = ToolGroupCheckout.review(member: @request.member, group: @request.tool_group)
+      @request.tool_group.included_tools.each do |tool|
+        state = review[:held_tool_ids].include?(tool.id.to_s) ? 'Already held' : 'Will create checkout'
+        section("#{tool.name}: #{state}")
+        section("Wiki: #{tool.effective_wiki_url}") if tool.effective_wiki_url.present?
+        section("Drive: https://drive.google.com/drive/folders/#{tool.gdrive_id}") if tool.gdrive_id.present?
+        section(tool.effective_requestor_annotation) if tool.effective_requestor_annotation.present?
+        section(tool.notes) if tool.notes.present? && tool.notes_visible_to?(@member)
+      end
+      section("Prerequisites: #{Tool.where(:id.in => review[:prerequisite_ids]).map(&:name).join(', ')}")
+    end
     section("Requested: #{@request.request_date&.iso8601}")
     if @request.member_id != @member.id
       section("Member: #{@request.member.fullname}")
@@ -176,8 +191,7 @@ class SlackCheckoutModal
   end
 
   def volunteer_checkout_date
-    ToolCheckout.where(member_id: @volunteer_request.member_id, tool_id: @volunteer_request.tool_id, revoked_at: nil)
-      .order_by(checked_out_at: :desc).first&.checked_out_at&.to_date&.iso8601 || "Unknown"
+    @volunteer_request.checkout_completed_on
   end
 
   def member_join_date(member)
@@ -187,5 +201,9 @@ class SlackCheckoutModal
   def actions(buttons, block_id: "checkout_actions")
     @blocks << { type: "actions", block_id: block_id,
       elements: buttons.map { |label, id| { type: "button", action_id: id, text: plain(label), value: id } } }
+  end
+
+  def tool_option(tool)
+    tool.is_a?(ToolGroup) ? [":linked_paperclips: #{tool.name}", "group:#{tool.id}"] : [tool.name, tool.id.to_s]
   end
 end

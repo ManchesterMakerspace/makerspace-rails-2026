@@ -32,12 +32,25 @@ class Slack::InteractionsController < ApplicationController
       end
     when "checkout_request_submit"
       create_checkout_request(payload)
+    when "group_checkout_approve"
+      approve_group_checkout(payload)
     else
       render json: {}
     end
   end
 
   private
+
+  def approve_group_checkout(payload)
+    SlackGroupApprovalModal.submit!(payload)
+    render json: { response_action: "clear" }
+  rescue Error::CustomError => error
+    render json: { response_action: "update", view: {
+      type: "modal", callback_id: "group_checkout_result", title: { type: "plain_text", text: "Group checkout" },
+      close: { type: "plain_text", text: "Close" },
+      blocks: [{ type: "section", text: { type: "plain_text", text: "#{error.message} Reopen the command to review the current group." } }]
+    } }
+  end
 
   def checkout_modal_interaction(payload)
     workflow = SlackCheckoutWorkflow.new(payload)
@@ -89,7 +102,10 @@ class Slack::InteractionsController < ApplicationController
     if scope == "tools"
       shop = Shop.find(metadata["shop_id"])
       validate_reservation_tool_ids!(shop, member, tool_ids)
-      tools = Tool.where(:id.in => tool_ids).to_a
+      expanded = ReservationGroupExpansion.call(shop_id: shop.id, reservation_scope: 'tools',
+        tool_ids: tool_ids.reject { |id| id.start_with?('group:') },
+        tool_group_ids: tool_ids.grep(/\Agroup:/).map { |id| id.delete_prefix('group:') })
+      tools = Tool.where(:id.in => expanded[:tool_ids]).to_a
       scheduling_window = ReservationPolicy.scheduling_window(tools)
       unless scheduling_window[:compatible]
         return render json: {
@@ -125,7 +141,8 @@ class Slack::InteractionsController < ApplicationController
         title: state.dig("title", "title", "value"),
         shop_id: metadata["shop_id"],
         reservation_scope: scope,
-        tool_ids: tool_ids,
+        tool_ids: tool_ids.reject { |id| id.start_with?('group:') },
+        tool_group_ids: tool_ids.grep(/\Agroup:/).map { |id| id.delete_prefix('group:') },
         full_day: duration[:full_day],
         start_at: start_at,
         end_at: end_at
@@ -232,6 +249,16 @@ class Slack::InteractionsController < ApplicationController
 
   def validate_reservation_tool_ids!(shop, member, tool_ids, read_context: nil)
     requested_ids = Array(tool_ids).map(&:to_s).uniq
+    group_ids = requested_ids.grep(/\Agroup:/)
+    if group_ids.any?
+      expansion = ReservationGroupExpansion.call(shop_id: shop.id, reservation_scope: 'tools',
+        tool_group_ids: group_ids.map { |id| id.delete_prefix('group:') }, tool_ids: [])
+      children = Tool.where(:id.in => expansion[:tool_ids]).to_a
+      if children.any? { |tool| tool.disabled? || tool.out_of_service? || (member.status == 'pending' && !tool.allow_pending) }
+        raise Error::UnprocessableEntity.new('A group includes an unavailable tool')
+      end
+      requested_ids -= group_ids
+    end
     candidates = read_context ? read_context.eligible_tools : Tool.where(
       shop_id: shop.id,
       :id.in => requested_ids,
@@ -358,14 +385,19 @@ class Slack::InteractionsController < ApplicationController
 
     shop = Shop.find_by(id: metadata["shop_id"])
     tool_id = state.dig("tool", "tool", "selected_option", "value")
-    tool = shop && Tool.where(shop_id: shop.id, :disabled.ne => true).find_by(id: tool_id)
+    group_target = tool_id.to_s.start_with?('group:')
+    tool = shop && (group_target ? ToolGroup.where(shop_id: shop.id, archived: false).find_by(id: tool_id.delete_prefix('group:')) : Tool.where(shop_id: shop.id, :disabled.ne => true).find_by(id: tool_id))
     return checkout_errors("tool" => "That shop or tool is no longer available.") unless tool
-    error = ToolCheckoutRequestEligibility.new(member: member, tool: tool).error
+    error = group_target ? nil : ToolCheckoutRequestEligibility.new(member: member, tool: tool).error
     return checkout_errors("tool" => error) if error
 
     note = state.dig("note", "note", "value")
     return checkout_errors("note" => "Note is too long (maximum is 128 characters)") if note && (!note.is_a?(String) || note.length > 128)
-    CheckoutRequestCreation.create!(member_id: member.id, tool_id: tool.id, shop_id: shop.id, note: note, defer_notifications: true)
+    if group_target
+      ToolGroupCheckout.request!(member: member, group: tool, note: note, defer_notifications: true)
+    else
+      CheckoutRequestCreation.create!(member_id: member.id, tool_id: tool.id, shop_id: shop.id, note: note, defer_notifications: true)
+    end
     begin
       SlackCheckoutOutcomeJob.enqueue(checkout_confirmation(shop), metadata["response_url"], payload.dig("user", "id"))
     rescue => error

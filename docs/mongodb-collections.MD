@@ -1,5 +1,31 @@
 # MongoDB Collections
 
+## Tool groups
+
+`tool_groups` stores shop-scoped physical-tool sets, disjoint prerequisites,
+description, requestable/reservable/announce flags, announcement channel,
+archive state, and revision. Its `(shop_id, name)` index is unique with English
+case-insensitive collation; member/prerequisite indexes support reference guards.
+`CatalogMutationLock` coordinates groups and physical tools because a unique
+index cannot span both collections. Shop deletion destroys all of its active and
+archived groups before cascading tool deletion; direct tool deletion still rejects
+references from either kind of group.
+
+`tool_checkouts` remains physical-tool-only. Optional `group_id`, `group_name`,
+`group_revision`, and `approval_batch_id` record provenance. Newly created
+checkouts in one group batch share an approver credit ID. Checkout and approver
+requests target exactly one of `tool_id` and `tool_group_id`.
+
+`reservations` stores expanded `tool_ids`, `selected_tool_ids`, `tool_group_ids`,
+and `group_snapshots`. Snapshots contain the group name, revision, tool IDs and
+prerequisite IDs at selection time. `checkout_approvers.group_granted_tool_ids`
+retains individual grants when a group assignment is removed.
+
+Before updated clients are released, run `bundle exec rake data:ensure_unique_indexes`.
+This also replaces the old open volunteer-request key with
+`(member_id, tool_id, tool_group_id, status)`. No checkout backfill is needed.
+MongoDB transactions require a replica set.
+
 This is the source-of-truth inventory of MongoDB collections owned by the
 Rails application. Collection names are Mongoid's default pluralized model
 name unless the model declares `store_in` explicitly.
@@ -36,7 +62,7 @@ conditions are included where they are part of the index contract.
 | `checkins` | None (direct collection access) | Facility check-in events used by administrative check-in and space-usage reporting. | None beyond `_id` is declared by this repository |
 | `counter` | `Counter` | Atomic `seq` values for named client sequences, with one document per sequence (for example, `_id: "tickets"`). | None |
 | `checkout_approvers` | `CheckoutApprover` | Members authorized to approve Safety Checkouts, optionally scoped to shops or tools. | None |
-| `checkout_approver_requests` | `CheckoutApproverRequest` | Open, approved, or revoked requests from checked-out members volunteering to approve checkouts for a tool. | Unique `{ member_id: 1, tool_id: 1, status: 1 }`, partial when `status` is `open` |
+| `checkout_approver_requests` | `CheckoutApproverRequest` | Open, approved, declined, or revoked requests from checked-out members volunteering to approve checkouts for a tool or group. | Unique `{ member_id: 1, tool_id: 1, tool_group_id: 1, status: 1 }`, partial when `status` is `open` |
 | `default_permissions` | `DefaultPermission` | Default enabled/disabled values applied to member permissions. | None |
 | `earned_memberships` | `EarnedMembership` | A member's earned-membership program and its requirement/report relationships. | `{ member_id: 1 }` (deployment task) |
 | `earned_membership__report` | `EarnedMembership::Report` | Periodic earned-membership reports; report-requirement snapshots are embedded in these documents. | None |

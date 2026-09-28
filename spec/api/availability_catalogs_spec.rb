@@ -11,6 +11,7 @@ RSpec.describe 'Availability and volunteer credit catalogs', type: :request do
 
   path '/reservation_catalog' do
     get 'List enabled reservation shops and their reservable tools' do
+      parameter name: :include_groups, in: :query, required: false, schema: { type: :boolean }, description: 'Add toolGroups with expanded child details. Default omits groups for native compatibility.'
       tags 'Reservations'
       security [sessionAuth: []]
       produces 'application/json'
@@ -18,7 +19,8 @@ RSpec.describe 'Availability and volunteer credit catalogs', type: :request do
       response '200', 'Reservation catalog with availability and Resource Managers' do
         schema type: :object, required: %w[shops tools], properties: {
           shops: { type: :array, items: { '$ref' => '#/components/schemas/Shop' } },
-          tools: { type: :array, items: { '$ref' => '#/components/schemas/Tool' } }
+          tools: { type: :array, items: { '$ref' => '#/components/schemas/Tool' } },
+          toolGroups: { type: :array, description: 'Present only when include_groups=true.', items: { '$ref' => '#/components/schemas/ToolGroup' } }
         }
         let!(:manager) { create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s]) }
         let!(:available_tool) { create(:tool, shop: shop, reservable: true) }
@@ -31,6 +33,16 @@ RSpec.describe 'Availability and volunteer credit catalogs', type: :request do
           expect(data['shops'].first['resourceManagers']).to include(hash_including('id' => manager.id.to_s))
           expect(data['tools'].map { |row| row['id'] }).to contain_exactly(available_tool.id.to_s, unavailable_tool.id.to_s)
           expect(data['tools']).to include(hash_including('id' => unavailable_tool.id.to_s, 'outOfService' => true))
+          expect(data).not_to have_key('toolGroups')
+        end
+        context 'when explicitly including groups' do
+          let(:include_groups) { true }
+          let!(:group) { ToolGroup.create!(shop: shop, name: 'Workshop kit', reservable: true, included_tool_ids: [available_tool.id.to_s]) }
+          run_test! do |response|
+            expect(response.parsed_body['toolGroups']).to contain_exactly(hash_including(
+              'id' => group.id.to_s, 'name' => group.name, 'targetType' => 'group',
+              'includedTools' => [hash_including('id' => available_tool.id.to_s)]))
+          end
         end
       end
     end
@@ -38,6 +50,7 @@ RSpec.describe 'Availability and volunteer credit catalogs', type: :request do
 
   path '/tools' do
     get 'List checkout request tools, including availability' do
+      parameter name: :shop_id, in: :query, required: false, schema: { type: :string }, description: 'Restrict tools to one shop while preserving membership and visibility rules. Omit or leave blank for all eligible shops.'
       tags 'Tools'
       security [sessionAuth: []]
       produces 'application/json'
@@ -53,6 +66,36 @@ RSpec.describe 'Availability and volunteer credit catalogs', type: :request do
         }
         let!(:tool) { create(:tool, shop: shop, open: false, out_of_service: true) }
         run_test! { |response| expect(response.parsed_body).to include(hash_including('id' => tool.id.to_s, 'outOfService' => true)) }
+        context 'with a shop filter' do
+          let(:shop_id) { shop.id.to_s }
+          let!(:other_tool) { create(:tool, shop: create(:shop), open: false) }
+          let!(:hidden_tool) { create(:tool, shop: shop, disabled: true, open: false) }
+          let!(:open_tool) { create(:tool, shop: shop, open: true) }
+          let!(:held_tool) { create(:tool, shop: shop, open: false) }
+          before { create(:tool_checkout, member: member, tool: held_tool) }
+          run_test! { |response| expect(response.parsed_body.map { |row| row['id'] }).to eq([tool.id.to_s]) }
+          context 'for a disabled shop' do
+            before { shop.update!(disabled: true) }
+            run_test! { |response| expect(response.parsed_body).to eq([]) }
+          end
+          context 'for an unknown shop' do
+            let(:shop_id) { BSON::ObjectId.new.to_s }
+            run_test! { |response| expect(response.parsed_body).to eq([]) }
+          end
+          context 'for a pending member' do
+            before { member.update!(status: 'pending'); tool.update!(allow_pending: false) }
+            let!(:pending_tool) { create(:tool, shop: shop, open: false, allow_pending: true) }
+            run_test! { |response| expect(response.parsed_body.map { |row| row['id'] }).to eq([pending_tool.id.to_s]) }
+          end
+        end
+        context 'without a shop filter' do
+          let!(:other_tool) { create(:tool, shop: create(:shop), open: false) }
+          run_test! { |response| expect(response.parsed_body.map { |row| row['id'] }).to contain_exactly(tool.id.to_s, other_tool.id.to_s) }
+          context 'with a blank shop filter' do
+            let(:shop_id) { '' }
+            run_test! { |response| expect(response.parsed_body.map { |row| row['id'] }).to contain_exactly(tool.id.to_s, other_tool.id.to_s) }
+          end
+        end
       end
     end
   end

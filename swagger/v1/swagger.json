@@ -1191,6 +1191,35 @@
       "CheckoutApprover": {
         "type": "object",
         "properties": {
+          "toolGroups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "shopId"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "shopId": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Explicit group assignments, separate from effective individual tool grants."
+          },
+          "toolGroupIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "tools": {
             "type": "array",
             "items": {
@@ -1258,12 +1287,32 @@
           "id",
           "memberId",
           "shopIds",
-          "toolIds"
+          "toolIds",
+          "toolGroups"
         ]
       },
       "Reservation": {
         "type": "object",
         "properties": {
+          "toolGroupIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "selectedToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "groupSnapshots": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Saved group names, revisions, physical members and prerequisites at selection time."
+          },
           "outOfServiceToolNames": {
             "type": "array",
             "items": {
@@ -2409,6 +2458,12 @@
               "type": "string"
             }
           },
+          "tool_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "start_at": {
             "type": "string",
             "format": "date-time"
@@ -2769,6 +2824,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "tool_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -2972,6 +3033,213 @@
           }
         }
       },
+      "ToolGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "shopId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "prerequisiteIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includedToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includedTools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Tool"
+            }
+          },
+          "reservable": {
+            "type": "boolean"
+          },
+          "requestable": {
+            "type": "boolean"
+          },
+          "announce": {
+            "type": "boolean"
+          },
+          "announceChannel": {
+            "type": "string",
+            "nullable": true
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "group"
+            ]
+          },
+          "canManage": {
+            "type": "boolean"
+          },
+          "canApprove": {
+            "type": "boolean"
+          },
+          "canRequest": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "shopId",
+          "name",
+          "description",
+          "prerequisiteIds",
+          "includedToolIds",
+          "includedTools",
+          "reservable",
+          "requestable",
+          "announce",
+          "announceChannel",
+          "archived",
+          "revision",
+          "targetType",
+          "canManage",
+          "canApprove",
+          "canRequest"
+        ]
+      },
+      "GroupCheckoutReview": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "includedToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "heldToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prerequisiteIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missingPrerequisiteIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prerequisiteNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "group": {
+            "$ref": "#/components/schemas/ToolGroup"
+          }
+        },
+        "required": [
+          "revision",
+          "includedToolIds",
+          "heldToolIds",
+          "createToolIds",
+          "prerequisiteIds",
+          "missingPrerequisiteIds",
+          "prerequisiteNames",
+          "group"
+        ]
+      },
+      "GroupVolunteerRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "approved",
+              "declined",
+              "revoked"
+            ]
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "group"
+            ]
+          },
+          "targetName": {
+            "type": "string"
+          },
+          "toolGroupId": {
+            "type": "string"
+          },
+          "groupRevision": {
+            "type": "integer"
+          },
+          "includedToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "memberName",
+          "note",
+          "requestDate",
+          "targetType",
+          "targetName",
+          "toolGroupId",
+          "groupRevision",
+          "includedToolIds"
+        ]
+      },
       "ToolCheckout": {
         "type": "object",
         "properties": {
@@ -2986,6 +3254,22 @@
           },
           "outOfService": {
             "type": "boolean"
+          },
+          "groupId": {
+            "type": "string",
+            "nullable": true
+          },
+          "groupName": {
+            "type": "string",
+            "nullable": true
+          },
+          "groupRevision": {
+            "type": "integer",
+            "nullable": true
+          },
+          "approvalBatchId": {
+            "type": "string",
+            "nullable": true
           },
           "checkedOutAt": {
             "type": "string",
@@ -3062,10 +3346,36 @@
             "type": "string"
           },
           "toolId": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "outOfService": {
             "type": "boolean"
+          },
+          "toolGroupId": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "tool",
+              "group"
+            ]
+          },
+          "targetName": {
+            "type": "string",
+            "nullable": true
+          },
+          "groupRevision": {
+            "type": "integer",
+            "nullable": true
+          },
+          "includedToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "memberName": {
             "type": "string",
@@ -5663,6 +5973,17 @@
     "/reservation_catalog": {
       "get": {
         "summary": "List enabled reservation shops and their reservable tools",
+        "parameters": [
+          {
+            "name": "include_groups",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Add toolGroups with expanded child details. Default omits groups for native compatibility."
+          }
+        ],
         "tags": [
           "Reservations"
         ],
@@ -5695,6 +6016,13 @@
                       "items": {
                         "$ref": "#/components/schemas/Tool"
                       }
+                    },
+                    "toolGroups": {
+                      "type": "array",
+                      "description": "Present only when include_groups=true.",
+                      "items": {
+                        "$ref": "#/components/schemas/ToolGroup"
+                      }
                     }
                   }
                 }
@@ -5707,6 +6035,17 @@
     "/tools": {
       "get": {
         "summary": "List checkout request tools, including availability",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Restrict tools to one shop while preserving membership and visibility rules. Omit or leave blank for all eligible shops."
+          }
+        ],
         "tags": [
           "Tools"
         ],
@@ -7034,7 +7373,18 @@
             }
           }
         },
-        "description": "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending. requestorAnnotation is the current tool annotation, falling back to its shop, or null."
+        "parameters": [
+          {
+            "name": "include_groups",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Opt in to group targets; default remains tool-only."
+          }
+        ],
+        "description": "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending. requestorAnnotation is the current tool annotation, falling back to its shop, or null. Group targets use the group shop annotation."
       },
       "post": {
         "summary": "Requests a safety checkout",
@@ -7072,7 +7422,32 @@
                       "type": "string"
                     },
                     "toolId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "toolGroupId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "targetType": {
+                      "type": "string",
+                      "enum": [
+                        "tool",
+                        "group"
+                      ]
+                    },
+                    "targetName": {
                       "type": "string"
+                    },
+                    "groupRevision": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "includedToolIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
                     "toolName": {
                       "type": "string"
@@ -7119,6 +7494,11 @@
                     "memberStatus",
                     "toolId",
                     "toolName",
+                    "toolGroupId",
+                    "targetType",
+                    "targetName",
+                    "groupRevision",
+                    "includedToolIds",
                     "shopId",
                     "shopName",
                     "note",
@@ -7127,6 +7507,49 @@
                     "messageId",
                     "checkedOutId",
                     "memberSlackUrl"
+                  ],
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "targetType": {
+                          "enum": [
+                            "tool"
+                          ]
+                        },
+                        "toolId": {
+                          "type": "string"
+                        },
+                        "toolGroupId": {
+                          "type": "string",
+                          "nullable": true,
+                          "enum": [
+                            null
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "targetType": {
+                          "enum": [
+                            "group"
+                          ]
+                        },
+                        "toolId": {
+                          "type": "string",
+                          "nullable": true,
+                          "enum": [
+                            null
+                          ]
+                        },
+                        "toolGroupId": {
+                          "type": "string"
+                        },
+                        "groupRevision": {
+                          "type": "integer"
+                        }
+                      }
+                    }
                   ]
                 }
               }
@@ -7154,7 +7577,7 @@
           }
         },
         "operationId": "createToolCheckoutRequest",
-        "description": "Creation is serialized under the shared per-member/tool lock, with membership, availability, prerequisites, checkout records and open requests rechecked immediately before insertion. Lock contention returns 422. Successful submission sends a Slack DM to the linked requestor including the tool annotation, or the shop annotation when the tool has none.",
+        "description": "Creation is serialized under the shared per-member/tool lock (groups acquire the catalog and constituent-tool locks), with membership, availability, prerequisites, checkout records and open requests rechecked immediately before insertion. Lock contention returns 422. Successful submission sends a Slack DM to the linked requestor including the tool annotation, or the shop annotation when the tool has none.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7164,12 +7587,24 @@
                   "tool_id": {
                     "type": "string"
                   },
+                  "tool_group_id": {
+                    "type": "string"
+                  },
                   "note": {
                     "type": "string"
                   }
                 },
-                "required": [
-                  "tool_id"
+                "oneOf": [
+                  {
+                    "required": [
+                      "tool_id"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "tool_group_id"
+                    ]
+                  }
                 ]
               }
             }
@@ -7204,6 +7639,17 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "include_groups",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Include group requests for which the viewer has group approval authority."
+          }
+        ],
         "description": "Admins and board members see all tool scopes; resource managers see managed shops; valid checkout approvers see assigned enabled tools and shops. All scopes exclude inactive, expired, revoked and suspended requesters. Pending requesters require a tool allowing pending members. Defaults to request_date then id ascending."
       }
     },
@@ -7375,7 +7821,7 @@
             }
           }
         },
-        "description": "Owner and open status are rechecked inside the same member/tool lock used by approval and cancellation. Tool and shop must still be available.",
+        "description": "Owner and open status are rechecked inside the same locks used by approval and cancellation: catalog and constituent-tool locks for groups, member/tool lock for tools. Tool and shop must still be available.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7435,7 +7881,7 @@
         "tags": [
           "ToolCheckoutRequests"
         ],
-        "description": "Cancellation and approval serialize under the same member/tool lock. A successful cancellation retains the existing announcement-removal behavior.",
+        "description": "Cancellation and approval serialize under the same locks, including the catalog and constituent-tool locks for groups. A successful cancellation retains the existing announcement-removal behavior.",
         "responses": {
           "204": {
             "description": "request cancelled"
@@ -12400,12 +12846,12 @@
                   },
                   "text": {
                     "type": "string",
-                    "description": "Empty text opens the stateful checkout menu (my checkouts, request a checkout, volunteer to do checkouts, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Legacy text: MEMBER TOOL, request [TOOL], active|list [all], volunteer, or help. Active lists share the modal query and detail fields; final results replace the initial ephemeral response asynchronously, with DM fallback."
+                    "description": "Empty text opens the stateful checkout menu (my checkouts, request a checkout, volunteer to do checkouts, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Textual MEMBER GROUP opens a signed group review synchronously using trigger_id; unknown target identities should use their linked Member Portal email. Legacy text: MEMBER TOOL, request [TOOL], active|list [all], volunteer, or help. Active lists share the modal query and detail fields; final results replace the initial ephemeral response asynchronously, with DM fallback."
                   },
                   "trigger_id": {
                     "type": "string",
                     "example": "T12345678",
-                    "description": "Required to open the checkout modal (empty text, volunteer, or legacy request without a tool)"
+                    "description": "Required to open the checkout modal (empty text, MEMBER GROUP, volunteer, or legacy request without a tool)"
                   },
                   "channel_id": {
                     "type": "string"
@@ -12848,6 +13294,554 @@
                     }
                   }
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_groups": {
+      "get": {
+        "summary": "List authenticated groups separately from physical tools",
+        "tags": [
+          "Tool groups"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active groups with permission-scoped physical tool details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolGroup"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a group (Admin, Board or shop RM)",
+        "tags": [
+          "Tool groups"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolGroup"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Shop management required"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "shop_id",
+                  "included_tool_ids"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "shop_id": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "included_tool_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "prerequisite_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "reservable": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "requestable": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "announce": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "announce_channel": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_groups/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "schema": {
+            "type": "string"
+          },
+          "required": true
+        }
+      ],
+      "get": {
+        "summary": "Read an authenticated group",
+        "tags": [
+          "Tool groups"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolGroup"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Edit a group with optimistic revision checking (Admin, Board or shop RM)",
+        "tags": [
+          "Tool groups"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolGroup"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision; refresh review"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "revision"
+                ],
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "included_tool_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "prerequisite_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "reservable": {
+                    "type": "boolean"
+                  },
+                  "requestable": {
+                    "type": "boolean"
+                  },
+                  "announce": {
+                    "type": "boolean"
+                  },
+                  "announce_channel": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Archive a group and cancel open requests, preserving historical records",
+        "tags": [
+          "Tool groups"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Archived"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "revision"
+                ],
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_groups/{id}/review": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "schema": {
+            "type": "string"
+          },
+          "required": true
+        }
+      ],
+      "get": {
+        "summary": "Review current included, held, prerequisite and proposed checkout IDs",
+        "tags": [
+          "Tool groups"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Another member requires group approval authority"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current revision and physical checkout review",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupCheckoutReview"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_groups/{id}/approve": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "schema": {
+            "type": "string"
+          },
+          "required": true
+        }
+      ],
+      "post": {
+        "summary": "Atomically approve individual checkouts for a reviewed group",
+        "tags": [
+          "Tool groups"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Created and skipped checkouts with shared approvalBatchId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "checkouts",
+                    "skipped",
+                    "approvalBatchId"
+                  ],
+                  "properties": {
+                    "checkouts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ToolCheckout"
+                      }
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ToolCheckout"
+                      }
+                    },
+                    "approvalBatchId": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale group revision"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "member_id",
+                  "revision"
+                ],
+                "properties": {
+                  "member_id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "request_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_groups/{id}/volunteer": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "schema": {
+            "type": "string"
+          },
+          "required": true
+        }
+      ],
+      "post": {
+        "summary": "Volunteer for group authority with all current included checkouts",
+        "tags": [
+          "Tool groups"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Open volunteer request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupVolunteerRequest"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_groups/{id}/volunteers": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "schema": {
+            "type": "string"
+          },
+          "required": true
+        }
+      ],
+      "get": {
+        "summary": "List open volunteers using existing shop-reviewer permissions",
+        "tags": [
+          "Tool groups"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open volunteer requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupVolunteerRequest"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tool_groups/{id}/decide_volunteer": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "schema": {
+            "type": "string"
+          },
+          "required": true
+        }
+      ],
+      "post": {
+        "summary": "Decide a volunteer request, revalidating membership and held checkouts",
+        "tags": [
+          "Tool groups"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Decision recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupVolunteerRequest"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "request_id",
+                  "decision"
+                ],
+                "properties": {
+                  "request_id": {
+                    "type": "string"
+                  },
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approved",
+                      "declined"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                }
               }
             }
           }

@@ -87,13 +87,13 @@ RSpec.describe CheckoutCreation do
     expect(ToolCheckout.count).to eq(0)
   end
 
-  it "closes the selected request through the callback and retains audit even when notification fails" do
+  it "closes every satisfied request and retains audit even when notification fails" do
     earlier = ToolCheckoutRequest.create!(member: member, tool: tool)
     row = ToolCheckoutRequest.create!(member: member, tool: tool)
     allow_any_instance_of(ToolCheckout).to receive(:send_checkout_slack_notification).and_raise(StandardError)
     checkout = create_checkout(request_id: row.id)
     expect(row.reload).to have_attributes(status: "closed", checked_out_id: checkout.id)
-    expect(earlier.reload).to be_open
+    expect(earlier.reload.status).to eq('closed')
     expect(AuditLog.where(resource_id: checkout.id, event_type: "tool_checkout_created")).to exist
   end
 

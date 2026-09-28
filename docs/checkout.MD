@@ -1,5 +1,61 @@
 # Safety checkouts
 
+`GET /api/tools` accepts optional `shop_id`. A selected shop narrows the existing
+eligible catalog; hidden shops/tools, open tools, held checkouts and pending-member
+restrictions still apply. Omitted or blank `shop_id` preserves the all-shops
+response. Unknown or unavailable shops return an empty array. The member's
+Available Tools shop selector applies this scope to tools and groups together.
+
+## Tool groups
+
+Authenticated `/api/tool_groups` provides catalog, create, show, edit and archive
+operations. Admin/Board or the shop RM may manage a group. PUT and DELETE require
+the current `revision`; stale revisions return 409. Groups have no public page,
+QR code, shortcode, or independent checkout entitlement. All flags default off.
+
+Checkout requests accept exactly one `tool_id` or `tool_group_id`. Existing list
+contracts stay tool-only unless `include_groups=true`. Group requests are one
+record and use current membership. The group's Requestable flag governs member
+requests, independently of manual signoff.
+
+GET `/api/tool_groups/:id/review?member_id=...` returns current membership,
+held/new checkout IDs and external prerequisites. POST `:id/approve` accepts
+`member_id` and the reviewed `revision`, and returns `checkouts`, `skipped` and
+`approvalBatchId`. Individual approvals retain their existing response shape.
+Internal prerequisites can be granted together; external prerequisites need
+active checkouts. Open tools may receive a group grant. Revoked child records
+block the whole group, and fully held groups create neither records nor credit.
+When an open request is supplied, the portal offers Resolve request and submits
+its ID to reconcile the request even when no new checkouts are needed.
+
+Group approval authority is Admin/Board, shop RM, shop-wide assignment or an
+explicit group assignment. Separate tool assignments alone do not qualify.
+Group assignments also persist individual grants, including subsequently added
+tools. Removing a group assignment retains these grants. Revoking an individual
+checkout removes affected group authority. Eligible volunteers must hold every
+included checkout; existing shop reviewer permissions apply at decision time.
+Direct group assignment also rejects revoked constituent checkouts rather than
+restoring the removed authority. Volunteer review and notification dates use the
+latest active checkout among all current constituent tools, when all are held.
+
+`ToolGroupCheckout` acquires the catalog lock, approver lock and ordered physical
+checkout locks, then commits grants, request reconciliation and the group credit
+in one MongoDB transaction. Slack delivery follows commit. For Slack-sourced group approvals, all notification
+work is queued after commit so the modal can acknowledge without waiting for Slack
+API calls; portal approvals keep their existing delivery behavior. An ordinary approver
+receives one 0.25 credit for a batch with new checkouts; the first revocation
+reverses that shared credit. Groups never retroactively grant previous trainees
+newly added tools.
+
+Slack `/checkout request <name>` resolves shop-scoped groups as well as tools.
+Textual `/checkout MEMBER GROUP` resolves a linked target and opens the signed
+review during the command request, without queueing the short-lived trigger.
+Unlinked targets receive an instruction to use their Member Portal email.
+The signed checkout modal carries the reviewed group revision. Group selectors
+follow physical tools and use `:linked_paperclips:` where supported. Group batch
+announcements use the group override or shop channel and preserve deduplicated
+individual users-channel invitations.
+
 ## Member Portal lists
 
 “My Active Tool Checkouts” displays an accessible note tooltip beside tools with
@@ -301,3 +357,25 @@ failures do not roll back a saved request.
 Request responses expose `requestorAnnotation`, resolved from current tool/shop
 settings at read time. The member's My Checkout Requests table displays it in a
 keyboard-focusable tooltip. Clearing a tool override restores the shop fallback.
+
+Approver responses include `toolGroups` summaries (`id`, `name`, `shopId`) for
+explicit group assignments, batched for overview lists. The portal displays them
+in Authorized Groups with Group chips, separately from effective individual grants.
+Group checkout requests expose their shop's current `requestorAnnotation`, including
+null after instructions are cleared.
+
+Deferred group approval notifications retain the approved group revision, name,
+included tool IDs, child details and channels. Catalog edits after approval do not
+change the queued audit or message content. Whole-shop selection in the approver
+editor clears that shop's explicit tool and group selections; deselecting the shop
+does not restore the cleared grants.
+
+Both Slack checkout-request modals defer group announcements and requestor DMs
+to `CheckoutNotificationJob` after persistence, matching individual requests.
+Slack group edits/cancellations and portal group request mutations take the shop
+catalog lock followed by the included member/tool locks, then reload and authorize
+the open request. Approval uses the same lock order: a winning cancellation blocks
+approval; a completed approval prevents a later cancellation from reporting success.
+The create-request API response schema describes tool and group variants, including
+nullable `toolId`, `toolGroupId`, `targetType`, `targetName`, `groupRevision` and
+`includedToolIds`.

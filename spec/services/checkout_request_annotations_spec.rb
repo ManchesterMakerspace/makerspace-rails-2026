@@ -57,4 +57,14 @@ RSpec.describe "Checkout request annotations" do
     expect { submit }.to raise_error(Error::UnprocessableEntity)
     expect(Service::SlackConnector).to have_received(:send_slack_message).once
   end
+  it 'serializes the group shop annotation, including changes and removal' do
+    group = ToolGroup.create!(shop: shop, name: 'Kit', included_tool_ids: [tool.id.to_s])
+    request = ToolCheckoutRequest.create!(member: member, tool_group: group)
+    expect(ToolCheckoutRequestSerializer.new(request).serializable_hash[:requestor_annotation]).to eq('Shop instructions')
+    shop.update!(requestor_annotation: 'New group instructions')
+    expect(ToolCheckoutRequestSerializer.new(request.reload).serializable_hash[:requestor_annotation]).to eq('New group instructions')
+    shop.update!(requestor_annotation: nil)
+    expect(ToolCheckoutRequestSerializer.new(request.reload).serializable_hash[:requestor_annotation]).to be_nil
+  end
+
 end

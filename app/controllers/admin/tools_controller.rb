@@ -7,6 +7,7 @@ class Admin::ToolsController < ApplicationController
   before_action :authorize_notes, only: [:notes]
   before_action :authorize_annotation, only: [:requestor_annotation]
   before_action :prevent_move_with_active_reservations, only: [:update]
+  around_action :lock_catalog_mutation, only: [:create, :update, :destroy]
 
   def index
     tools = params[:shop_id] ? Tool.where(shop_id: params[:shop_id]) : Tool.all
@@ -131,6 +132,10 @@ class Admin::ToolsController < ApplicationController
   end
 
   private
+
+  def lock_catalog_mutation(&block)
+    CatalogMutationLock.with([@tool&.shop_id, params[:shop_id]], &block)
+  end
 
   def tool_params
     params.permit(:open, :name, :requestor_annotation, :wiki_url, :gdrive_id, :description, :shop_id, :disabled, :announce,

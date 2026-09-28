@@ -62,6 +62,16 @@ RSpec.describe "Slack interactions", type: :request do
       expect(SlackCheckoutOutcomeJob).to have_been_enqueued.with(include("unpaid volunteers"), kind_of(String), "USUBMITTER")
     end
 
+    it "queues group request notifications before clearing the legacy modal" do
+      group = ToolGroup.create!(shop: shop, name: 'Kit', included_tool_ids: [tool.id.to_s], requestable: true)
+      expect_any_instance_of(ToolCheckoutRequest).not_to receive(:announce_request)
+      expect_any_instance_of(ToolCheckoutRequest).not_to receive(:notify_requestor)
+      submit(tool_id: "group:#{group.id}")
+      expect(response.parsed_body).to eq('response_action' => 'clear')
+      expect(ToolCheckoutRequest.last.tool_group_id).to eq(group.id)
+      expect(CheckoutNotificationJob).to have_been_enqueued.with('request', ToolCheckoutRequest.last.id.to_s)
+    end
+
     it "uses the submitting Slack identity instead of trusting metadata" do
       attacker = create(:member, :current)
       SlackUser.create!(member: attacker, slack_id: "UATTACKER")
