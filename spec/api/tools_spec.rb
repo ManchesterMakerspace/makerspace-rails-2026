@@ -473,6 +473,10 @@ RSpec.describe 'Tools API', type: :request do
         prerequisite_ids: [visible_tool.id.to_s],
         reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
       )
+      groups = [false, true].map do |archived|
+        ToolGroup.create!(shop: shop, name: "Shop kit #{archived}", archived: archived,
+          included_tool_ids: [internal_tool.id.to_s], prerequisite_ids: [visible_tool.id.to_s])
+      end
       shop.set(reservation_prerequisite_tool_ids: [visible_tool.id.to_s])
 
       surviving_shop = Shop.create!(name: 'Surviving shop')
@@ -498,6 +502,7 @@ RSpec.describe 'Tools API', type: :request do
         'External volunteer task', 'External volunteer event'
       )
       expect(response.body).not_to include('Internal dependent')
+      expect(ToolGroup.where(:id.in => groups.map(&:id)).count).to eq(2)
       expect(Shop.where(id: shop.id)).to exist
 
       checkout_tool.set(prerequisite_ids: [])
@@ -511,6 +516,7 @@ RSpec.describe 'Tools API', type: :request do
       expect(response).to have_http_status(:no_content)
       expect(Shop.where(id: shop.id)).not_to exist
       expect(Tool.where(id: [visible_tool.id, internal_tool.id])).not_to exist
+      expect(ToolGroup.where(:id.in => groups.map(&:id))).not_to exist
     end
   end
 end

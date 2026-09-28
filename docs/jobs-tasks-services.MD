@@ -5,7 +5,10 @@
 - `CatalogMutationLock` serializes physical-tool and group catalog mutations by
   shop, also coordinating checkout approval and reservation expansion.
 - `ToolGroupCatalog` validates revisions, archives requests and extends persistent
-  individual approver grants when a group's membership changes.
+  individual approver grants when a group's membership changes. Under the shop
+  catalog lock it acquires assigned members' approver locks in sorted order before
+  opening the MongoDB transaction, rechecks revoked checkouts, and holds the locks
+  through commit so revocation cannot race grant propagation.
 - `ToolGroupCheckout` reviews and atomically grants physical checkouts, records
   batch provenance, reconciles requests and issues one credit before post-commit
   Slack delivery. `ToolGroupVolunteering` revalidates complete membership at decision.

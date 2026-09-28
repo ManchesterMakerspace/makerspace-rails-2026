@@ -35,6 +35,8 @@ class Shop
   field :volunteer_canvas_id, type: String
   field :checkout_canvas_id, type: String
 
+  # Mongoid cascades in association order; remove group references before tools.
+  has_many :tool_groups, dependent: :destroy
   has_many :tools, dependent: :destroy
   has_many :reservation_blackouts, dependent: :destroy
 

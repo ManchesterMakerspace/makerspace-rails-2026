@@ -39,3 +39,22 @@ The Android artifact is in the React repository at
 `android/app/build/outputs/apk/debug/app-debug.apk`. Deployment and publication
 were not performed. Deploy backend support and run `data:ensure_unique_indexes`
 before releasing updated clients. No checkout backfill is required.
+
+## Catalog and signoff follow-up
+
+- Catalog grants now acquire approver locks before the transaction and retain
+  them through commit. A deterministic revocation-at-lock-boundary regression
+  uses the real test replica set with mocked Redis; distributed Redis contention
+  was not exercised.
+- Shop deletion removes active and archived groups before their physical tools.
+  Both model and authenticated API regressions passed, including surviving-reference
+  rejection before deletion.
+- 41 distinct Rails examples passed using their latest results across the catalog,
+  group checkout, shop model, and tools API runs. React checkout coverage passed
+  45 tests in 13 suites, and TypeScript checking passed.
+- The mocked Chromium fixture passed at 320, 600, 900, and 1280 pixels for catalog
+  filtering, group load failure, keyboard retry, and group-only approver shop
+  selection. Narrow and wide screenshots were reviewed. This is component coverage,
+  not authenticated portal or physical-device acceptance.
+- Service and collection lifecycle inventories were updated. No environment
+  variables or API request/response schemas changed in this follow-up.

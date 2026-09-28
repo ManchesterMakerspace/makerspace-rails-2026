@@ -14,6 +14,13 @@ RSpec.describe ToolGroupCatalog do
     ToolCheckout.create!(member: trainee, tool: tool, defer_users_channel_invitation: true)
     approver = CheckoutApprover.create!(member: actor, tool_group_ids: [group.id.to_s])
     extra = create(:tool, shop: shop)
+    allow(CheckoutApproverMutationLock).to receive(:with).with(member_id: actor.id.to_s).and_wrap_original do |lock, **args, &operation|
+      lock.call(**args) do
+        operation.call
+        expect(group.reload.revision).to eq(2)
+        expect(approver.reload.tool_ids).to include(extra.id.to_s)
+      end
+    end
     described_class.save!(actor: actor, group: group, revision: 1, attributes: { included_tool_ids: [tool.id.to_s, extra.id.to_s] })
     expect(approver.reload.tool_ids).to contain_exactly(tool.id.to_s, extra.id.to_s)
     expect(ToolCheckout.where(member: trainee, tool: extra)).not_to exist
@@ -34,4 +41,24 @@ RSpec.describe ToolGroupCatalog do
     actor.update!(role: 'resource_manager', resource_manager_shop_ids: [create(:shop).id.to_s])
     expect { described_class.save!(actor: actor, group: group, revision: 1, attributes: { name: 'Other' }) }.to raise_error(Error::Forbidden)
   end
+  it 'rechecks revocation after locking and holds the approver lock through commit' do
+    approver = CheckoutApprover.create!(member: actor, tool_group_ids: [group.id.to_s])
+    extra = create(:tool, shop: shop)
+    checkout = ToolCheckout.create!(member: actor, tool: extra, defer_users_channel_invitation: true)
+    allow(CheckoutApproverMutationLock).to receive(:with).with(member_id: actor.id.to_s) do |&operation|
+      # A revocation wins immediately before the catalog acquires this lock.
+      checkout.approver_mutation_lock_held = true
+      checkout.update!(revoked_at: Time.current, revocation_reason: 'Revoked')
+      operation.call
+      # Read independently of the transaction before releasing the lock.
+      expect(group.reload.revision).to eq(2)
+    end
+    described_class.save!(actor: actor, group: group, revision: 1,
+      attributes: { included_tool_ids: [tool.id.to_s, extra.id.to_s] })
+    expect(CheckoutApproverMutationLock).to have_received(:with).with(member_id: actor.id.to_s)
+    expect(approver.reload.tool_group_ids).to be_empty
+    expect(approver.tool_ids).not_to include(extra.id.to_s)
+    expect(approver.group_granted_tool_ids).not_to include(extra.id.to_s)
+  end
+
 end

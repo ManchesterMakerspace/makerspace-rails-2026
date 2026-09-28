@@ -7,7 +7,9 @@ description, requestable/reservable/announce flags, announcement channel,
 archive state, and revision. Its `(shop_id, name)` index is unique with English
 case-insensitive collation; member/prerequisite indexes support reference guards.
 `CatalogMutationLock` coordinates groups and physical tools because a unique
-index cannot span both collections.
+index cannot span both collections. Shop deletion destroys all of its active and
+archived groups before cascading tool deletion; direct tool deletion still rejects
+references from either kind of group.
 
 `tool_checkouts` remains physical-tool-only. Optional `group_id`, `group_name`,
 `group_revision`, and `approval_batch_id` record provenance. Newly created
