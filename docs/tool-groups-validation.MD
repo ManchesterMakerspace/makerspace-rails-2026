@@ -83,3 +83,21 @@ before releasing updated clients. No checkout backfill is required.
 
 Swagger was regenerated successfully (865 dry-run examples; not additional
 executed tests), and the generated response schema references were checked.
+
+## Deferred notifications and group overview follow-up
+
+- Slack-sourced approvals queue post-commit group delivery, including both modal
+  paths, reconciled announcements, and all-held request resolution. Tests cover
+  rollback, enqueue failure without synchronous fallback, and repeat approval.
+- Group request annotations follow the current shop instructions. Explicit group
+  summaries are batched into approver responses and shown separately in the table.
+  Group-list retry and automatic recovery clear old load errors.
+- 53 distinct Rails examples passed using their latest results on the supplied
+  test replica set; Slack and Redis were mocked. Focused React coverage passed
+  53 tests in 15 suites, plus TypeScript and mocked browser checks at 320, 600,
+  900, and 1280 pixels. Catalog recovery and approver scope screenshots were reviewed.
+- Swagger was regenerated (865 dry-run examples, not additional executed tests)
+  and its group summary contract checked. Job/service, checkout, and UX docs were
+  updated. No environment variables changed. Release the backend response and
+  notification worker before the updated group overview UI. Live Slack and
+  physical-device acceptance were not performed.

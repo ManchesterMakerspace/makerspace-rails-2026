@@ -9,6 +9,13 @@
   catalog lock it acquires assigned members' approver locks in sorted order before
   opening the MongoDB transaction, rechecks revoked checkouts, and holds the locks
   through commit so revocation cannot race grant propagation.
+- `ToolGroupCheckoutNotificationJob` runs on the Slack queue after Slack-sourced
+  group approvals commit. It receives committed checkout/request IDs and the batch
+  ID, then delivers audit, deduplicated users-channel invitations, announcements,
+  member DMs, canvas scheduling, and reconciled request announcement updates.
+  Both stateful and signed group modals use it. Enqueue errors are reported without
+  rolling back approval or falling back to synchronous Slack delivery. Repeated
+  approvals with no new checkouts or reconciled requests do not enqueue again.
 - `ToolGroupCheckout` reviews and atomically grants physical checkouts, records
   batch provenance, reconciles requests and issues one credit before post-commit
   Slack delivery. `ToolGroupVolunteering` revalidates complete membership at decision.

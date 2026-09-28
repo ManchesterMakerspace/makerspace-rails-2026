@@ -5,6 +5,10 @@ class CheckoutApproverSerializer < ActiveModel::Serializer
   attribute :tools do
     scoped_tools.map { |tool| { id: tool.id.to_s, name: tool.name, shopId: tool.shop_id.to_s, outOfService: !!tool.out_of_service } }
   end
+  attribute :tool_groups do
+    groups = checkout_context ? checkout_context.groups_for(object.tool_group_ids) : ToolGroup.where(:id.in => object.tool_group_ids).to_a
+    groups.map { |group| { id: group.id.to_s, name: group.name, shopId: group.shop_id.to_s } }
+  end
   attributes :id, :member_id, :shop_ids, :tool_ids, :tool_group_ids
 
   attribute :member_name do

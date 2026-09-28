@@ -105,4 +105,15 @@ RSpec.describe CheckoutReadContext do
         .to eq(serialize([tool], AdminToolSerializer, **options))
     end
   end
+  it 'batches explicit group scopes without per-row catalog queries' do
+    group = ToolGroup.create!(shop: shop, name: 'Kit', included_tool_ids: [tool.id.to_s])
+    rows = [viewer, create(:member, :current)].map { |member| CheckoutApprover.create!(member: member, tool_group_ids: [group.id.to_s]) }
+    context = nil
+    expect(reads { context = described_class.for_approvers(rows) }.length).to eq(4)
+    expect(reads do
+      serialized = serialize(rows, CheckoutApproverSerializer, checkout_context: context)
+      expect(serialized.map { |row| row.deep_stringify_keys['toolGroups'].first['name'] }).to eq(['Kit', 'Kit'])
+    end).to be_empty
+  end
+
 end

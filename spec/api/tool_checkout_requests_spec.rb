@@ -10,7 +10,7 @@ describe "Tool checkout requests API", type: :request do
     get "Lists the member's eligible open checkout requests" do
       parameter name: :include_groups, in: :query, required: false, schema: { type: :boolean }, description: 'Opt in to group targets; default remains tool-only.'
       tags "ToolCheckoutRequests"
-      description "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending. requestorAnnotation is the current tool annotation, falling back to its shop, or null."
+      description "Returns open requests for enabled tools belonging to the signed-in member. Excludes inactive, expired, revoked and suspended members; pending members require a tool allowing pending members. Defaults to request_date then id ascending. requestorAnnotation is the current tool annotation, falling back to its shop, or null. Group targets use the group shop annotation."
       produces "application/json"
       response "200", "eligible open requests" do
         let(:member) { create(:member, :current) }

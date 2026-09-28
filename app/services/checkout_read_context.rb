@@ -1,11 +1,12 @@
 # One response/job's lookup data. Never cache this across requests: assignments,
 # checkouts and tool notes can change independently of the catalog.
 class CheckoutReadContext
-  attr_reader :tools, :shops, :members, :checked_out_tool_ids
+  attr_reader :tools, :shops, :members, :checked_out_tool_ids, :tool_groups
 
   def initialize(viewer = nil)
     @viewer = viewer
     @tools, @shops, @members, @names, @counts, @resource_managers = {}, {}, {}, {}, {}, {}
+    @tool_groups = {}
     @checked_out_tool_ids = Set.new
     if viewer
       @approver = CheckoutApprover.find_by(member_id: viewer.id)
@@ -37,6 +38,7 @@ class CheckoutReadContext
     context.load_members(approvers.map(&:member_id))
     context.load_shops(Shop.where(:id.in => approvers.flat_map(&:shop_ids).uniq).only(:name).to_a)
     context.load_tool_details(approvers.flat_map(&:tool_ids).uniq)
+    context.load_group_details(approvers.flat_map(&:tool_group_ids).uniq)
     context
   end
 
@@ -66,6 +68,15 @@ class CheckoutReadContext
   def load_tool_details(ids)
     @tools = Tool.where(:id.in => ids.uniq).only(:name, :shop_id, :out_of_service).index_by { |tool| tool.id.to_s }
     @names = @tools.transform_values(&:name)
+  end
+
+  def load_group_details(ids)
+    return if ids.empty?
+    @tool_groups = ToolGroup.where(:id.in => ids).only(:name, :shop_id).index_by { |group| group.id.to_s }
+  end
+
+  def groups_for(ids)
+    Array(ids).map(&:to_s).filter_map { |id| tool_groups[id] }
   end
 
   def tools_for(ids)

@@ -101,11 +101,24 @@ class ToolGroupCheckout
         end
       end
     end
-    notify(group, member, result) if result[:checkouts].any?
-    Array(result[:reconciled]).reject { |request| request.tool_group_id == group.id }.each do |request|
-      CheckoutCreation.notify { request.refresh_closed_announcement }
+    if source == 'slack'
+      if result[:checkouts].any? || result[:reconciled].any?
+        ToolGroupCheckoutNotificationJob.enqueue(group.id, member.id, result)
+      end
+    else
+      deliver_notifications(group, member, result)
     end
     result
+  end
+
+  def self.deliver_notifications(group, member, result)
+    notify(group, member, result) if group && member && result[:checkouts].any?
+    Array(result[:reconciled]).each do |request|
+      # A new batch updates its own announcement in notify; all-held requests
+      # still need their closed status reflected in Slack.
+      next if group && result[:checkouts].any? && request.tool_group_id == group.id
+      CheckoutCreation.notify { request.refresh_closed_announcement }
+    end
   end
 
   def self.validate_review!(review)

@@ -40,7 +40,9 @@ latest active checkout among all current constituent tools, when all are held.
 
 `ToolGroupCheckout` acquires the catalog lock, approver lock and ordered physical
 checkout locks, then commits grants, request reconciliation and the group credit
-in one MongoDB transaction. Slack delivery follows commit. An ordinary approver
+in one MongoDB transaction. Slack delivery follows commit. For Slack-sourced group approvals, all notification
+work is queued after commit so the modal can acknowledge without waiting for Slack
+API calls; portal approvals keep their existing delivery behavior. An ordinary approver
 receives one 0.25 credit for a batch with new checkouts; the first revocation
 reverses that shared credit. Groups never retroactively grant previous trainees
 newly added tools.
@@ -355,3 +357,9 @@ failures do not roll back a saved request.
 Request responses expose `requestorAnnotation`, resolved from current tool/shop
 settings at read time. The member's My Checkout Requests table displays it in a
 keyboard-focusable tooltip. Clearing a tool override restores the shop fallback.
+
+Approver responses include `toolGroups` summaries (`id`, `name`, `shopId`) for
+explicit group assignments, batched for overview lists. The portal displays them
+in Authorized Groups with Group chips, separately from effective individual grants.
+Group checkout requests expose their shop's current `requestorAnnotation`, including
+null after instructions are cleared.

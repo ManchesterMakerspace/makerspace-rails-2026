@@ -518,6 +518,9 @@ RSpec.configure do |config|
     CheckoutApprover: {
       type: :object,
       properties: {
+        toolGroups: { type: :array, items: { type: :object, required: %w[id name shopId], properties: {
+          id: { type: :string }, name: { type: :string }, shopId: { type: :string }
+        } }, description: 'Explicit group assignments, separate from effective individual tool grants.' },
         toolGroupIds: { type: :array, items: { type: :string } },
         tools: { type: :array, items: { type: :object, required: %w[id name shopId outOfService], properties: { id: { type: :string }, name: { type: :string }, shopId: { type: :string }, outOfService: { type: :boolean } } } },
         outOfServiceToolNames: { type: :array, items: { type: :string } },
@@ -528,7 +531,7 @@ RSpec.configure do |config|
         shopNames: { type: :array, items: { type: :string } },
         toolNames: { type: :array, items: { type: :string } }
       },
-      required: [:id, :memberId, :shopIds, :toolIds]
+      required: [:id, :memberId, :shopIds, :toolIds, :toolGroups]
     },
     Reservation: {
       type: :object,

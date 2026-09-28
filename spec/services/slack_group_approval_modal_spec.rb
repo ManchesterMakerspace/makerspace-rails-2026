@@ -17,7 +17,9 @@ RSpec.describe SlackGroupApprovalModal do
     { 'user' => { 'id' => 'UGROUPAPPROVER' }, 'view' => { 'private_metadata' => view[:private_metadata] } }
   end
   it 'reviews physical records and approves with Slack provenance' do
+    expect(ToolGroupCheckoutNotificationJob).to receive(:perform_later).and_return(true)
     expect(described_class.submit!(payload)[:checkouts].map(&:signed_off_via)).to eq(['slack'])
+    expect(ToolGroupCheckout).not_to have_received(:notify)
   end
   it 'rejects changed revisions and changed Slack identities without creating records' do
     submission = payload
