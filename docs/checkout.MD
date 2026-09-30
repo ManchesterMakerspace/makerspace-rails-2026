@@ -319,7 +319,9 @@ tool annotation taking precedence over the shop annotation. The portal displays
 annotations inline and links to `/tools/:id/request-checkout`. Returning to Home
 refreshes the list. Requests still undergo the existing server-side validation.
 
-The same Home response includes the existing current-member representation and
+The same Home response includes the existing current-member representation,
+fully described by the `HomeMember` OpenAPI schema (including Slack identity,
+Mailtrap delivery status, subscription plan, TOTP, household, and address fields), and
 a small Slack object (`accepted`, `newMembersChannelUrl`). Acceptance requires a
 valid associated Slack ID matching the current email, current-email provisioning
 records, a join timestamp, and `slack_acceptance_pending: false`. The HTTPS channel

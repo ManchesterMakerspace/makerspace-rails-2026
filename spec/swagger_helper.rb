@@ -1,5 +1,6 @@
 require 'rails_helper'
 require_relative 'support/fix_ticket_api_schemas'
+require_relative 'support/home_api_schemas'
 
 RSpec.configure do |config|
   # Specify a root folder where Swagger JSON files are generated
@@ -1068,6 +1069,7 @@ RSpec.configure do |config|
 
 
   definitions.merge!(FixTicketApiSchemas::SCHEMAS)
+  definitions.merge!(HomeApiSchemas::SCHEMAS)
 
   config.openapi_specs = {
     'v1/swagger.json' => {

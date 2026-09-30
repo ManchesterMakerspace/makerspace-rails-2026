@@ -3993,6 +3993,308 @@
           "isChildTask",
           "isCoolingDown"
         ]
+      },
+      "HomeMember": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "firstname": {
+            "type": "string"
+          },
+          "lastname": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MemberStatus"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MemberRole"
+          },
+          "expirationTime": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Unix time in milliseconds."
+          },
+          "memberContractSignedDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "memberContractOnFile": {
+            "type": "boolean"
+          },
+          "totpEnabled": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "household": {
+            "type": "object",
+            "properties": {
+              "groupName": {
+                "type": "string",
+                "nullable": true
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary"
+                ],
+                "nullable": true
+              },
+              "primaryMemberName": {
+                "type": "string",
+                "nullable": true
+              },
+              "memberCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "groupName",
+              "displayName",
+              "role",
+              "primaryMemberName",
+              "memberCount"
+            ],
+            "additionalProperties": false,
+            "nullable": true
+          },
+          "mailtrap": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "nullable": true
+              },
+              "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "email": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "nullable": true
+              },
+              "value": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "timestamp",
+              "email",
+              "status",
+              "value"
+            ],
+            "additionalProperties": false,
+            "description": "Latest delivery status for the current email, or an unknown status with null ID/timestamp when no event exists."
+          },
+          "slack": {
+            "type": "object",
+            "properties": {
+              "slackId": {
+                "type": "string",
+                "nullable": true
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              },
+              "url": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  null
+                ],
+                "description": "Always null on Home to avoid Slack API calls. Use the top-level slack.newMembersChannelUrl."
+              }
+            },
+            "required": [
+              "slackId",
+              "name",
+              "url"
+            ],
+            "additionalProperties": false,
+            "nullable": true,
+            "description": "Linked Slack identity, or null when none exists. Identity presence alone does not confirm invitation acceptance."
+          },
+          "checkoutApproverShopIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "checkoutApproverToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resourceManagerShopIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isCheckoutApprover": {
+            "type": "boolean"
+          },
+          "slackManualDeactivationRequired": {
+            "type": "boolean"
+          },
+          "firebaseUid": {
+            "type": "string",
+            "nullable": true
+          },
+          "mergedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "paidPendingStart": {
+            "type": "boolean"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cardId": {
+            "type": "string",
+            "nullable": true
+          },
+          "subscription": {
+            "type": "boolean"
+          },
+          "subscriptionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "subscriptionPlanId": {
+            "type": "string",
+            "nullable": true
+          },
+          "earnedMembershipId": {
+            "type": "string",
+            "nullable": true
+          },
+          "earnedMembershipActive": {
+            "type": "boolean"
+          },
+          "customerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "object",
+            "properties": {
+              "street": {
+                "type": "string",
+                "nullable": true
+              },
+              "unit": {
+                "type": "string",
+                "nullable": true
+              },
+              "city": {
+                "type": "string",
+                "nullable": true
+              },
+              "state": {
+                "type": "string",
+                "nullable": true
+              },
+              "postalCode": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "street",
+              "unit",
+              "city",
+              "state",
+              "postalCode"
+            ],
+            "additionalProperties": false
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "silenceEmails": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "groupName": {
+            "type": "string",
+            "nullable": true
+          },
+          "householdRole": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "secondary"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "firstname",
+          "lastname",
+          "email",
+          "status",
+          "role",
+          "expirationTime",
+          "memberContractSignedDate",
+          "memberContractOnFile",
+          "totpEnabled",
+          "notes",
+          "household",
+          "mailtrap",
+          "slack",
+          "checkoutApproverShopIds",
+          "checkoutApproverToolIds",
+          "resourceManagerShopIds",
+          "isCheckoutApprover",
+          "slackManualDeactivationRequired",
+          "firebaseUid",
+          "mergedAt",
+          "paidPendingStart",
+          "startDate",
+          "cardId",
+          "subscription",
+          "subscriptionId",
+          "subscriptionPlanId",
+          "earnedMembershipId",
+          "earnedMembershipActive",
+          "customerId",
+          "address",
+          "phone",
+          "silenceEmails",
+          "groupName",
+          "householdRole"
+        ],
+        "additionalProperties": false,
+        "description": "Complete current-member representation returned by Home. Privileged provisioning and optional expiring-payment-card fields are not requested by this endpoint."
       }
     }
   },
@@ -8911,7 +9213,7 @@
                   ],
                   "properties": {
                     "member": {
-                      "$ref": "#/components/schemas/Member"
+                      "$ref": "#/components/schemas/HomeMember"
                     },
                     "slack": {
                       "type": "object",
