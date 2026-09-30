@@ -98,20 +98,21 @@ RSpec.describe 'Member home', type: :request do
     expect(response.headers['Cache-Control']).to eq('private, no-store')
   end
 
-  it 'keeps Home invoice requests scoped to the member and excludes paid invoices' do
+  it 'keeps Home invoice requests scoped to the member and excludes paid and upcoming invoices' do
     member = create(:member, :admin, :current)
     sign_in member
     # Seed existing invoice states directly: the create-time duplicate-membership
     # validation and payment/email callbacks are unrelated to this read contract.
     invoices = [
-      build(:invoice, member: member),
-      build(:invoice, member: member, subscription_id: 'sub123'),
-      build(:invoice, member: member, settled_at: Time.current),
-      build(:invoice, member: member, transaction_id: 'paid123'),
-      build(:invoice, member: create(:member))
+      build(:invoice, member: member, due_date: 1.day.ago),
+      build(:invoice, member: member, subscription_id: 'sub123', due_date: 1.minute.ago),
+      build(:invoice, member: member, settled_at: Time.current, due_date: 1.day.ago),
+      build(:invoice, member: member, transaction_id: 'paid123', due_date: 1.day.ago),
+      build(:invoice, member: create(:member), due_date: 1.day.ago),
+      build(:invoice, member: member, due_date: 1.day.from_now)
     ]
     invoices.each { |invoice| Invoice.collection.insert_one(invoice.attributes) }
-    get '/api/invoices', params: { settled: false, orderBy: 'due_date', order: 'asc' }
+    get '/api/invoices', params: { settled: false, pastDue: true, orderBy: 'due_date', order: 'asc' }
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.pluck('id')).to contain_exactly(*invoices.first(2).map { |invoice| invoice.id.to_s })
   end
