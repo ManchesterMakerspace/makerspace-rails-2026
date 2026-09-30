@@ -57,6 +57,7 @@ Rails.application.routes.draw do
     # Public shop/tool listing
     resources :shops, only: [:index]
     resources :tools, only: [:index]
+    resources :locations, only: [:index]
 
     # Public rental spot info — unauthenticated deep-link/QR landing
     get '/rental_spots/:id/public', to: 'rental_spots#public_show'
@@ -191,6 +192,9 @@ Rails.application.routes.draw do
         # Tool checkout management
         resources :shops, only: [:index, :create, :update, :destroy] do
           get :resource_manager_options, on: :collection
+          member do
+            patch :requestor_annotation
+          end
         end
         get 'google_calendar/colors', to: 'google_calendar#colors'
         resources :tools, only: [:index, :create, :update, :destroy] do
@@ -199,6 +203,7 @@ Rails.application.routes.draw do
             patch :requestor_annotation
           end
         end
+        resources :locations, only: [:index, :create, :update, :destroy]
         resources :tool_checkouts, only: [:index, :create, :destroy]
         resources :tool_checkout_requests, only: [:index]
         resources :checkout_approvers, only: [:index, :create, :update, :destroy]

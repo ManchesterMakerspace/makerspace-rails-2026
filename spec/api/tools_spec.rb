@@ -160,6 +160,26 @@ RSpec.describe 'Tools API', type: :request do
         'gdriveId' => 'folder-tool'
       )
     end
+
+    it 'attaches a location in the same shop and returns its name' do
+      location = Location.create!(name: 'Cabinet 3', shop: shop, x_pct: 10, y_pct: 10)
+
+      put "/api/admin/tools/#{visible_tool.id}", params: { location_id: location.id.to_s }
+
+      expect(response).to have_http_status(:ok)
+      body = JSON.parse(response.body)
+      expect(body['locationId']).to eq(location.id.to_s)
+      expect(body['locationName']).to eq('Cabinet 3')
+    end
+
+    it 'rejects a location that belongs to a different shop' do
+      other_location = Location.create!(name: 'Elsewhere', shop: Shop.create!(name: 'Other Shop'), x_pct: 10, y_pct: 10)
+
+      put "/api/admin/tools/#{visible_tool.id}", params: { location_id: other_location.id.to_s }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include('must belong to the same shop')
+    end
   end
 
   describe 'PATCH /api/admin/tools/:id/notes' do

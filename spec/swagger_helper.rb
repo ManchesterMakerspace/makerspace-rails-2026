@@ -503,6 +503,8 @@ RSpec.configure do |config|
             usersChannel: { type: :string, 'x-nullable': true },
             prerequisiteIds: { type: :array, items: { type: :string } },
             prerequisiteNames: { type: :array, items: { type: :string } },
+            locationId: { type: :string, 'x-nullable': true },
+            locationName: { type: :string, 'x-nullable': true },
             effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } },
             reservationPrerequisiteNames: { type: :array, items: { type: :string } },
             shopName: { type: :string },
@@ -514,6 +516,52 @@ RSpec.configure do |config|
           required: [:id, :shopId, :name, :requestorAnnotation, :wikiUrl, :reservable]
         }
       ]
+    },
+    Location: {
+      type: :object,
+      properties: {
+        id: { type: :string },
+        name: { type: :string },
+        kind: { type: :string, 'x-nullable': true },
+        parentId: { type: :string, 'x-nullable': true },
+        shopId: { type: :string },
+        svgElementId: { type: :string, 'x-nullable': true },
+        xPct: { type: :number, 'x-nullable': true },
+        yPct: { type: :number, 'x-nullable': true },
+        shapePoints: {
+          type: :array,
+          'x-nullable': true,
+          items: {
+            type: :object,
+            properties: { x: { type: :number }, y: { type: :number } },
+            required: [:x, :y]
+          }
+        },
+        toolNames: { type: :array, items: { type: :string } },
+        toolIds: { type: :array, items: { type: :string } }
+      },
+      required: [:id, :name, :shopId, :toolNames, :toolIds]
+    },
+    LocationWrite: {
+      type: :object,
+      properties: {
+        name: { type: :string },
+        kind: { type: :string },
+        parent_id: { type: :string },
+        shop_id: { type: :string },
+        svg_element_id: { type: :string },
+        x_pct: { type: :number },
+        y_pct: { type: :number },
+        shape_points: {
+          type: :array,
+          items: {
+            type: :object,
+            properties: { x: { type: :number }, y: { type: :number } },
+            required: [:x, :y]
+          }
+        }
+      },
+      required: [:name, :shop_id]
     },
     CheckoutApprover: {
       type: :object,

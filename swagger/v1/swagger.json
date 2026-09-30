@@ -1138,6 +1138,14 @@
                   "type": "string"
                 }
               },
+              "locationId": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "locationName": {
+                "type": "string",
+                "x-nullable": true
+              },
               "effectiveReservationPrerequisiteIds": {
                 "type": "array",
                 "items": {
@@ -1186,6 +1194,126 @@
               "reservable"
             ]
           }
+        ]
+      },
+      "Location": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "parentId": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "shopId": {
+            "type": "string"
+          },
+          "svgElementId": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "xPct": {
+            "type": "number",
+            "x-nullable": true
+          },
+          "yPct": {
+            "type": "number",
+            "x-nullable": true
+          },
+          "shapePoints": {
+            "type": "array",
+            "x-nullable": true,
+            "items": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ]
+            }
+          },
+          "toolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "shopId",
+          "toolNames",
+          "toolIds"
+        ]
+      },
+      "LocationWrite": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "parent_id": {
+            "type": "string"
+          },
+          "shop_id": {
+            "type": "string"
+          },
+          "svg_element_id": {
+            "type": "string"
+          },
+          "x_pct": {
+            "type": "number"
+          },
+          "y_pct": {
+            "type": "number"
+          },
+          "shape_points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name",
+          "shop_id"
         ]
       },
       "CheckoutApprover": {
@@ -9109,6 +9237,235 @@
         }
       }
     },
+    "/locations": {
+      "get": {
+        "summary": "List locations for every member, optionally scoped to a set of shops",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shop_ids",
+            "in": "query",
+            "items": {
+              "type": "string"
+            },
+            "required": false,
+            "schema": {
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Locations, visible to a plain member (not just admin/board/shop manager)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Location"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/locations": {
+      "get": {
+        "summary": "List locations, optionally scoped to a shop or a set of shops",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shop_ids",
+            "in": "query",
+            "items": {
+              "type": "string"
+            },
+            "required": false,
+            "schema": {
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Locations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Location"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a location (admin/board or shop manager)",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Created location with a drawn shape",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Location"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a manager of this shop"
+          },
+          "422": {
+            "description": "A shape needs at least 3 points"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/locations/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Update a location (admin/board or shop manager)",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Reassigned to a different shop (fixing a misplaced location)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Location"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Re-parenting to a descendant is rejected"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationWrite"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update a location (admin/board or shop manager)",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Reassigned to a different shop (fixing a misplaced location)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Location"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Re-parenting to a descendant is rejected"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationWrite"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a location (admin/board or shop manager)",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
     "/members/{id}/permissions": {
       "get": {
         "summary": "Gets a member's permissions",
@@ -11282,6 +11639,63 @@
         }
       }
     },
+    "/admin/shops/{id}/requestor_annotation": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "summary": "Updates only the shop's default annotation for requestors",
+        "tags": [
+          "Checkouts"
+        ],
+        "description": "Requires a signed-in owning-shop resource manager, admin or board member -- same as the full shop #update. Other shop settings cannot be changed through this endpoint. This route previously did not exist (only the equivalent tool route did), so the Shops table's \"Edit annotation\" quick-action always failed with a 404.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "annotation updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shop"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not a manager of this shop"
+          },
+          "404": {
+            "description": "shop not found"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestor_annotation": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                  }
+                },
+                "required": [
+                  "requestor_annotation"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/reservations/agenda": {
       "get": {
         "summary": "Public 24-hour reservation agenda",
@@ -12065,6 +12479,10 @@
                                 },
                                 "outOfService": {
                                   "type": "boolean"
+                                },
+                                "locationName": {
+                                  "type": "string",
+                                  "nullable": true
                                 }
                               }
                             }

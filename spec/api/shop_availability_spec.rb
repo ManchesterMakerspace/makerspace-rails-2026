@@ -30,16 +30,20 @@ RSpec.describe 'Shop availability', type: :request do
               id: { type: :string }, outOfService: { type: :boolean },
               outOfServiceNote: { type: :string, nullable: true }, reservationsAvailable: { type: :boolean },
               tools: { type: :array, items: { type: :object, required: %w[id name outOfService], properties: {
-                id: { type: :string }, name: { type: :string }, outOfService: { type: :boolean }
+                id: { type: :string }, name: { type: :string }, outOfService: { type: :boolean },
+                locationName: { type: :string, nullable: true }
               } } }
             }
           } }
         }
         let!(:unavailable_tool) { create(:tool, shop: shop, out_of_service: true) }
+        let!(:location) { create(:location, shop: shop, name: 'Top Shelf') }
+        let!(:placed_tool) { create(:tool, shop: shop, location_id: location.id) }
         before { shop.update!(out_of_service: true, out_of_service_note: 'Leak') }
         run_test! do |response|
           data = response.parsed_body['workshops'].find { |item| item['id'] == shop.id.to_s }
           expect(data['tools']).to include(hash_including('id' => unavailable_tool.id.to_s, 'outOfService' => true))
+          expect(data['tools']).to include(hash_including('id' => placed_tool.id.to_s, 'locationName' => 'Top Shelf'))
           expect(data).to include('outOfService' => true, 'outOfServiceNote' => 'Leak', 'reservationsAvailable' => false)
         end
       end

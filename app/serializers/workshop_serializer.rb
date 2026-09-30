@@ -32,6 +32,7 @@ class WorkshopSerializer < ActiveModel::Serializer
         wikiUrl: tool.effective_wiki_url,
         gdriveId: tool.gdrive_id,
         description: tool.description,
+        locationName: tool.location&.name,
         outOfService: !!tool.out_of_service, disabled: tool.disabled?,
         open: tool.open,
         reservable: tool.reservable,
