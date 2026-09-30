@@ -27,13 +27,15 @@
           "pending",
           "inactive",
           "nonMember",
-          "revoked"
+          "revoked",
+          "suspended"
         ]
       },
       "MemberRole": {
         "type": "string",
         "enum": [
           "admin",
+          "board_member",
           "resource_manager",
           "member"
         ]
@@ -678,6 +680,38 @@
           "memberContractOnFile": {
             "type": "boolean"
           },
+          "paidPendingStart": {
+            "type": "boolean"
+          },
+          "household": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "groupName": {
+                "type": "string",
+                "nullable": true
+              },
+              "displayName": {
+                "type": "string",
+                "nullable": true
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary"
+                ],
+                "nullable": true
+              },
+              "primaryMemberName": {
+                "type": "string",
+                "nullable": true
+              },
+              "memberCount": {
+                "type": "integer"
+              }
+            }
+          },
           "silenceEmails": {
             "type": "boolean",
             "x-nullable": true
@@ -798,6 +832,17 @@
               "earnedMembershipId": {
                 "type": "string",
                 "x-nullable": true
+              },
+              "earnedMembershipActive": {
+                "type": "boolean"
+              },
+              "householdRole": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary"
+                ],
+                "nullable": true
               }
             },
             "required": [
@@ -4075,6 +4120,357 @@
           "rejectionReason",
           "isChildTask",
           "isCoolingDown"
+        ]
+      },
+      "HomeMember": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "firstname": {
+            "type": "string"
+          },
+          "lastname": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MemberStatus"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MemberRole"
+          },
+          "expirationTime": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Unix time in milliseconds."
+          },
+          "memberContractSignedDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "memberContractOnFile": {
+            "type": "boolean"
+          },
+          "totpEnabled": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "household": {
+            "type": "object",
+            "properties": {
+              "groupName": {
+                "type": "string",
+                "nullable": true
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary"
+                ],
+                "nullable": true
+              },
+              "primaryMemberName": {
+                "type": "string",
+                "nullable": true
+              },
+              "memberCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "groupName",
+              "displayName",
+              "role",
+              "primaryMemberName",
+              "memberCount"
+            ],
+            "additionalProperties": false,
+            "nullable": true
+          },
+          "mailtrap": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "nullable": true
+              },
+              "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "email": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "nullable": true
+              },
+              "value": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "timestamp",
+              "email",
+              "status",
+              "value"
+            ],
+            "additionalProperties": false,
+            "description": "Latest delivery status for the current email, or an unknown status with null ID/timestamp when no event exists."
+          },
+          "slack": {
+            "type": "object",
+            "properties": {
+              "slackId": {
+                "type": "string",
+                "nullable": true
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              },
+              "url": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  null
+                ],
+                "description": "Always null on Home to avoid Slack API calls. Use the top-level slack.newMembersChannelUrl."
+              }
+            },
+            "required": [
+              "slackId",
+              "name",
+              "url"
+            ],
+            "additionalProperties": false,
+            "nullable": true,
+            "description": "Linked Slack identity, or null when none exists. Identity presence alone does not confirm invitation acceptance."
+          },
+          "checkoutApproverShopIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "checkoutApproverToolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resourceManagerShopIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isCheckoutApprover": {
+            "type": "boolean"
+          },
+          "slackManualDeactivationRequired": {
+            "type": "boolean"
+          },
+          "firebaseUid": {
+            "type": "string",
+            "nullable": true
+          },
+          "mergedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "paidPendingStart": {
+            "type": "boolean"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cardId": {
+            "type": "string",
+            "nullable": true
+          },
+          "subscription": {
+            "type": "boolean"
+          },
+          "subscriptionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "subscriptionPlanId": {
+            "type": "string",
+            "nullable": true
+          },
+          "earnedMembershipId": {
+            "type": "string",
+            "nullable": true
+          },
+          "earnedMembershipActive": {
+            "type": "boolean"
+          },
+          "customerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "object",
+            "properties": {
+              "street": {
+                "type": "string",
+                "nullable": true
+              },
+              "unit": {
+                "type": "string",
+                "nullable": true
+              },
+              "city": {
+                "type": "string",
+                "nullable": true
+              },
+              "state": {
+                "type": "string",
+                "nullable": true
+              },
+              "postalCode": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "street",
+              "unit",
+              "city",
+              "state",
+              "postalCode"
+            ],
+            "additionalProperties": false
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "silenceEmails": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "groupName": {
+            "type": "string",
+            "nullable": true
+          },
+          "householdRole": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "secondary"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "firstname",
+          "lastname",
+          "email",
+          "status",
+          "role",
+          "expirationTime",
+          "memberContractSignedDate",
+          "memberContractOnFile",
+          "totpEnabled",
+          "notes",
+          "household",
+          "mailtrap",
+          "slack",
+          "checkoutApproverShopIds",
+          "checkoutApproverToolIds",
+          "resourceManagerShopIds",
+          "isCheckoutApprover",
+          "slackManualDeactivationRequired",
+          "firebaseUid",
+          "mergedAt",
+          "paidPendingStart",
+          "startDate",
+          "cardId",
+          "subscription",
+          "subscriptionId",
+          "subscriptionPlanId",
+          "earnedMembershipId",
+          "earnedMembershipActive",
+          "customerId",
+          "address",
+          "phone",
+          "silenceEmails",
+          "groupName",
+          "householdRole"
+        ],
+        "additionalProperties": false,
+        "description": "Complete current-member representation returned by Home. Privileged provisioning and optional expiring-payment-card fields are not requested by this endpoint."
+      },
+      "HomeUnauthorized": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "integer",
+                "enum": [
+                  401
+                ]
+              },
+              "error": {
+                "type": "string",
+                "enum": [
+                  "unauthorized"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "error",
+              "message"
+            ],
+            "additionalProperties": false,
+            "title": "AuthenticationRequired",
+            "description": "No valid member session, including expired sessions or expired TOTP challenges."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string",
+                "enum": [
+                  "TOTP verification required."
+                ]
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "additionalProperties": false,
+            "title": "TotpVerificationRequired",
+            "description": "The signed-in member must complete the pending TOTP challenge."
+          }
         ]
       }
     }
@@ -8964,6 +9360,147 @@
             }
           },
           "required": true
+        }
+      }
+    },
+    "/home": {
+      "get": {
+        "summary": "Gets the current member landing page data",
+        "tags": [
+          "Members"
+        ],
+        "operationId": "getHome",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "description": "Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance, up to 10 eligible, in-service safety checkouts (Orientation first), and up to five randomly sampled volunteer opportunities for activeMember members. Volunteer recommendations reuse claim eligibility, exclude reusable tasks already claimed and repeatable/recurring tasks with an in-progress claim, and include only open events dated after today that the member has not joined. Other member statuses receive an empty volunteer list. Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.",
+        "responses": {
+          "200": {
+            "description": "current member home data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "member",
+                    "slack",
+                    "availableCheckouts",
+                    "availableVolunteerOpportunities"
+                  ],
+                  "properties": {
+                    "member": {
+                      "$ref": "#/components/schemas/HomeMember"
+                    },
+                    "slack": {
+                      "type": "object",
+                      "required": [
+                        "accepted",
+                        "newMembersChannelUrl"
+                      ],
+                      "properties": {
+                        "accepted": {
+                          "type": "boolean"
+                        },
+                        "newMembersChannelUrl": {
+                          "type": "string",
+                          "nullable": true,
+                          "format": "uri"
+                        }
+                      }
+                    },
+                    "availableVolunteerOpportunities": {
+                      "type": "array",
+                      "maxItems": 5,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "description",
+                          "creditValue",
+                          "shopName",
+                          "eventDate"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "task",
+                              "event"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "creditValue": {
+                            "type": "number"
+                          },
+                          "shopName": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "eventDate": {
+                            "type": "string",
+                            "format": "date",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    },
+                    "availableCheckouts": {
+                      "type": "array",
+                      "maxItems": 10,
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name",
+                          "shopName",
+                          "requestorAnnotation"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "shopName": {
+                            "type": "string"
+                          },
+                          "requestorAnnotation": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "member authentication or TOTP challenge required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeUnauthorized"
+                }
+              }
+            }
+          }
         }
       }
     },

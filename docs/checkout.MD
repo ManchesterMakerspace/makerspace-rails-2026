@@ -301,3 +301,51 @@ failures do not roll back a saved request.
 Request responses expose `requestorAnnotation`, resolved from current tool/shop
 settings at read time. The member's My Checkout Requests table displays it in a
 keyboard-focusable tooltip. Clearing a tool override restores the shop fallback.
+
+## Member Home recommendations
+
+The authenticated `GET /api/home` endpoint returns up to ten safety checkout
+recommendations for the current member only. It reuses
+`ToolCheckoutRequestEligibility.eligible_tools`, including pending-member rules,
+expiration, all active prerequisites, existing checkout records (including
+revoked ones), and open requests. Home additionally excludes out-of-service tools
+and tools in out-of-service shops. This extra filter does not change request
+eligibility on other surfaces.
+
+Eligible tools named `Orientation` (case-insensitive) sort first; remaining tools
+sort by name, with ID breaking ties. Filtering and ordering precede the limit.
+Each entry contains `id`, `name`, `shopName`, and `requestorAnnotation`, with the
+tool annotation taking precedence over the shop annotation. The portal displays
+annotations inline and links to `/tools/:id/request-checkout`. Returning to Home
+refreshes the list. Requests still undergo the existing server-side validation.
+
+The same Home response includes `availableVolunteerOpportunities`: up to five
+randomly sampled tasks/future events for `activeMember` members, after existing
+claim eligibility checks. Child tasks, unavailable/cooling-down tasks, reusable
+tasks previously claimed, and in-progress repeatable/recurring claims are omitted.
+Events must be open, dated after today, and not already joined. Non-active members
+receive an empty list. The portal omits an empty volunteer section; claim/join
+buttons use the existing volunteer APIs and refresh Home after success. Reading
+Home never claims a task or checks a member in.
+
+The response also includes the existing current-member representation,
+fully described by the `HomeMember` OpenAPI schema (including Slack identity,
+Mailtrap delivery status, subscription plan, TOTP, household, and address fields), and
+a small Slack object (`accepted`, `newMembersChannelUrl`). Acceptance requires a
+valid associated Slack ID matching the current email, current-email provisioning
+records, a join timestamp, and `slack_acceptance_pending: false`. The HTTPS channel
+URL uses the existing workspace ID and `slack_channel_new_members` setting (with
+the existing `new_members` default); missing configuration returns null. Home
+disables Slack profile URL resolution in member serialization, leaving
+`member.slack.url` null when a linked Slack user exists. It uses only the cached
+workspace ID for the top-level channel link and never contacts Slack, sends
+invitations, or starts provisioning.
+
+Home responses use `Cache-Control: private, no-store` and require authentication
+and a completed TOTP challenge. Expected authentication failures render locally
+without Redis writes or Slack alert jobs. Missing/expired member sessions and
+expired TOTP challenges receive a 401 object with `status`, `error`, and `message`;
+a session awaiting TOTP receives `{ "error": "TOTP verification required." }`.
+Both bodies are documented by the `HomeUnauthorized` OpenAPI schema and retain
+the private/no-store header. See the executable Home API specification and
+the [portal Home documentation](../../makerspace-react-2026/docs/member-home.md).
