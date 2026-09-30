@@ -31,6 +31,10 @@ class Location
     Location.where(parent_id: id)
   end
 
+  def tools
+    Tool.where(location_id: id)
+  end
+
   private
 
   def parent_belongs_to_same_shop

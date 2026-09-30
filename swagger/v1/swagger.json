@@ -1246,12 +1246,19 @@
                 "y"
               ]
             }
+          },
+          "toolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
           "id",
           "name",
-          "shopId"
+          "shopId",
+          "toolNames"
         ]
       },
       "LocationWrite": {

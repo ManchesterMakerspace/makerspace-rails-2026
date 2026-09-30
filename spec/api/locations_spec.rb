@@ -129,4 +129,17 @@ RSpec.describe 'Location contracts', type: :request do
       expect(JSON.parse(response.body).map { |l| l['id'] }).to contain_exactly(location.id.to_s, other_location.id.to_s)
     end
   end
+
+  describe 'Location#tool_names in the serialized response' do
+    it "lists every tool whose location_id points at this location" do
+      create(:tool, shop: shop, name: 'Drill', location_id: location.id)
+      create(:tool, shop: shop, name: 'Caliper', location_id: location.id)
+      create(:tool, shop: shop, name: 'Unrelated Tool')
+
+      get '/api/admin/locations', params: { shop_id: shop.id.to_s }
+
+      body = JSON.parse(response.body).find { |l| l['id'] == location.id.to_s }
+      expect(body['toolNames']).to contain_exactly('Drill', 'Caliper')
+    end
+  end
 end
