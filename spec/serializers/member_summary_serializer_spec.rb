@@ -5,6 +5,18 @@ RSpec.describe MemberSummarySerializer do
     allow(MemberSubscriber).to receive(:send_slack_invite)
   end
 
+  describe '#slack' do
+    it 'continues resolving the profile URL by default for other callers' do
+      slack_user = instance_double(SlackUser, slack_id: 'U123', real_name: 'Slack Member')
+      member = instance_double(Member, slack_user: slack_user)
+      expect(Service::SlackConnector).to receive(:slack_user_url).with('U123').and_return('slack://user?team=T123&id=U123')
+
+      expect(described_class.new(member).slack).to eq(
+        slack_id: 'U123', name: 'Slack Member', url: 'slack://user?team=T123&id=U123'
+      )
+    end
+  end
+
   it 'includes provisioning only when the controller grants privileged visibility' do
     member = create(:member)
 

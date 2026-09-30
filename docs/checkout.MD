@@ -324,8 +324,11 @@ a small Slack object (`accepted`, `newMembersChannelUrl`). Acceptance requires a
 valid associated Slack ID matching the current email, current-email provisioning
 records, a join timestamp, and `slack_acceptance_pending: false`. The HTTPS channel
 URL uses the existing workspace ID and `slack_channel_new_members` setting (with
-the existing `new_members` default); missing configuration returns null. This is
-a read operation and does not send invitations or start provisioning.
+the existing `new_members` default); missing configuration returns null. Home
+disables Slack profile URL resolution in member serialization, leaving
+`member.slack.url` null when a linked Slack user exists. It uses only the cached
+workspace ID for the top-level channel link and never contacts Slack, sends
+invitations, or starts provisioning.
 
 Home responses use `Cache-Control: private, no-store` and require authentication
 and a completed TOTP challenge. See the executable Home API specification and

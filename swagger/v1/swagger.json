@@ -8891,7 +8891,12 @@
           "Members"
         ],
         "operationId": "getHome",
-        "description": "Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance and up to 10 eligible, in-service safety checkouts (Orientation first). Does not initiate provisioning.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "description": "Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance and up to 10 eligible, in-service safety checkouts (Orientation first). Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.",
         "responses": {
           "200": {
             "description": "current member home data",

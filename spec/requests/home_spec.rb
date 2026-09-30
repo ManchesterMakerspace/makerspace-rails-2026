@@ -20,6 +20,32 @@ RSpec.describe 'Member home', type: :request do
     expect(response.headers['Cache-Control']).to eq('private, no-store')
   end
 
+  [nil, 'T123'].each do |workspace_id|
+    it "does not resolve Slack URLs while serializing Home with cached workspace #{workspace_id.inspect}" do
+      member = create(:member, :current)
+      SlackUser.create!(member: member, slack_id: 'U123', slack_email: member.email, real_name: 'Slack Member')
+      member.reload.set(provisioning_email: member.email, slack_joined_at: Time.current, slack_acceptance_pending: false)
+      sign_in member
+
+      allow(Service::SlackConnector).to receive(:slack_team_id).and_return(workspace_id)
+      allow(Service::SlackConnector).to receive(:new_members_channel).and_return('new_members')
+      expect(Service::SlackConnector).not_to receive(:slack_user_url)
+      expect(Service::SlackConnector).not_to receive(:init_team_id)
+      expect(Service::SlackConnector).not_to receive(:client)
+
+      get '/api/home', as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('member', 'slack')).to include(
+        'slackId' => 'U123', 'name' => 'Slack Member', 'url' => nil
+      )
+      expect(response.parsed_body.fetch('slack')).to eq(
+        'accepted' => true,
+        'newMembersChannelUrl' => workspace_id ? 'https://slack.com/app_redirect?team=T123&channel=new_members' : nil
+      )
+    end
+  end
+
   it 'withholds Home until a password login completes its TOTP challenge' do
     member = create(:member, password: 'password123', otp_required_for_login: true, otp_secret_encrypted: 'test-secret')
     post '/api/members/sign_in', params: { member: { email: member.email, password: 'password123' } }, as: :json

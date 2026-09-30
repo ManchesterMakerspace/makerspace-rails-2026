@@ -6,8 +6,9 @@ RSpec.describe 'Member Home API', type: :request do
     get 'Gets the current member landing page data' do
       tags 'Members'
       operationId 'getHome'
+      security [sessionAuth: []]
       produces 'application/json'
-      description 'Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance and up to 10 eligible, in-service safety checkouts (Orientation first). Does not initiate provisioning.'
+      description 'Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance and up to 10 eligible, in-service safety checkouts (Orientation first). Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.'
 
       response '200', 'current member home data' do
         schema type: :object, required: %w[member slack availableCheckouts], properties: {

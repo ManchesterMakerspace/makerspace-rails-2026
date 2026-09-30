@@ -10,7 +10,8 @@ class HomeController < AuthenticationController
     home = MemberHome.new(current_member)
     render json: {
       member: ActiveModelSerializers::SerializableResource.new(
-        current_member, serializer: MemberSerializer, adapter: :attributes
+        current_member, serializer: MemberSerializer, adapter: :attributes,
+        resolve_slack_url: false
       ).as_json,
       slack: home.slack,
       availableCheckouts: home.available_checkouts
