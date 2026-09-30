@@ -333,5 +333,10 @@ workspace ID for the top-level channel link and never contacts Slack, sends
 invitations, or starts provisioning.
 
 Home responses use `Cache-Control: private, no-store` and require authentication
-and a completed TOTP challenge. See the executable Home API specification and
+and a completed TOTP challenge. Expected authentication failures render locally
+without Redis writes or Slack alert jobs. Missing/expired member sessions and
+expired TOTP challenges receive a 401 object with `status`, `error`, and `message`;
+a session awaiting TOTP receives `{ "error": "TOTP verification required." }`.
+Both bodies are documented by the `HomeUnauthorized` OpenAPI schema and retain
+the private/no-store header. See the executable Home API specification and
 the [portal Home documentation](../../makerspace-react-2026/docs/member-home.md).

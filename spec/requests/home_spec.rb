@@ -3,6 +3,20 @@ require 'rails_helper'
 RSpec.describe 'Member home', type: :request do
   before { allow(REDIS).to receive(:set).and_return(true) }
 
+  def expect_no_authentication_alerts
+    expect(REDIS).not_to receive(:set)
+    expect(SlackMessagesJob).not_to receive(:perform_later)
+    expect(Service::SlackConnector).not_to receive(:enque_message)
+    expect(Service::SlackConnector).not_to receive(:client)
+  end
+
+  def expect_authentication_required
+    expect(response).to have_http_status(:unauthorized)
+    expect(response.headers['Cache-Control']).to eq('private, no-store')
+    expect(response.parsed_body).to eq('status' => 401, 'error' => 'unauthorized',
+      'message' => 'Authentication failed. Review credentials and try again.')
+  end
+
   it 'returns only the signed-in member, even for staff and when another ID is supplied' do
     member = create(:member, :admin, :current)
     other = create(:member, :current)
@@ -14,10 +28,37 @@ RSpec.describe 'Member home', type: :request do
     expect(response.headers['Cache-Control']).to eq('private, no-store')
   end
 
-  it 'does not expose data to anonymous sessions' do
+  it 'rejects repeated anonymous requests without alert work' do
+    expect_no_authentication_alerts
+    2.times do
+      get '/api/home', as: :json
+      expect_authentication_required
+    end
+  end
+
+  it 'rejects expired sessions without alert work or losing the private cache header' do
+    member = create(:member, :current)
+    sign_in member
     get '/api/home', as: :json
-    expect(response).to have_http_status(:unauthorized)
-    expect(response.headers['Cache-Control']).to eq('private, no-store')
+    expect(response).to have_http_status(:ok)
+
+    expect_no_authentication_alerts
+    travel(member.timeout_in + 1.second) do
+      get '/api/home', as: :json
+      expect_authentication_required
+    end
+  end
+
+  it 'rejects expired TOTP challenges without alert work or losing the private cache header' do
+    member = create(:member, password: 'password123', otp_required_for_login: true, otp_secret_encrypted: 'test-secret')
+    post '/api/members/sign_in', params: { member: { email: member.email, password: 'password123' } }, as: :json
+    expect(response).to have_http_status(:accepted)
+
+    expect_no_authentication_alerts
+    travel 11.minutes do
+      get '/api/home', as: :json
+      expect_authentication_required
+    end
   end
 
   [nil, 'T123'].each do |workspace_id|
@@ -50,9 +91,11 @@ RSpec.describe 'Member home', type: :request do
     member = create(:member, password: 'password123', otp_required_for_login: true, otp_secret_encrypted: 'test-secret')
     post '/api/members/sign_in', params: { member: { email: member.email, password: 'password123' } }, as: :json
     expect(response).to have_http_status(:accepted)
+    expect_no_authentication_alerts
     get '/api/home', as: :json
     expect(response).to have_http_status(:unauthorized)
-    expect(response.parsed_body).not_to have_key('member')
+    expect(response.parsed_body).to eq('error' => 'TOTP verification required.')
+    expect(response.headers['Cache-Control']).to eq('private, no-store')
   end
 
   it 'keeps Home invoice requests scoped to the member and excludes paid invoices' do

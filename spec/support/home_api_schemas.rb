@@ -69,6 +69,18 @@ module HomeApiSchemas
       silenceEmails: { type: :boolean, nullable: true },
       groupName: nullable_string,
       householdRole: household_role
-    }).merge(description: 'Complete current-member representation returned by Home. Privileged provisioning and optional expiring-payment-card fields are not requested by this endpoint.')
+    }).merge(description: 'Complete current-member representation returned by Home. Privileged provisioning and optional expiring-payment-card fields are not requested by this endpoint.'),
+    HomeUnauthorized: {
+      oneOf: [
+        object.call({
+          status: { type: :integer, enum: [401] },
+          error: { type: :string, enum: ['unauthorized'] },
+          message: string
+        }).merge(title: 'AuthenticationRequired', description: 'No valid member session, including expired sessions or expired TOTP challenges.'),
+        object.call({
+          error: { type: :string, enum: ['TOTP verification required.'] }
+        }).merge(title: 'TotpVerificationRequired', description: 'The signed-in member must complete the pending TOTP challenge.')
+      ]
+    }
   }.freeze
 end

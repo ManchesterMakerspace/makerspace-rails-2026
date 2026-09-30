@@ -1,9 +1,16 @@
 class HomeController < AuthenticationController
   prepend_before_action do
     response.set_header("Cache-Control", "private, no-store")
-    # Render the standard JSON error here so Warden's separate failure response
-    # does not discard the private/no-store header on anonymous requests.
-    raise Error::Unauthorized.new unless member_signed_in?
+    # Keep expected authentication failures here, including Devise's timeout
+    # throw, so they retain this header and never enter the alerting error handler.
+    authenticated = catch(:warden) do
+      expire_stale_totp_challenge if session[:totp_pending_member_id].present?
+      member_signed_in?
+    end
+    unless authenticated == true
+      error = Error::Unauthorized.new
+      render json: Error::Helpers::Render.json(error.status, error.error, error.message), status: :unauthorized
+    end
   end
 
   def show

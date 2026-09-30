@@ -98,7 +98,24 @@ RSpec.describe 'Member Home API', type: :request do
       end
 
       response '401', 'member authentication or TOTP challenge required' do
-        run_test!
+        schema '$ref' => '#/components/schemas/HomeUnauthorized'
+        run_test! do |response|
+          expect(response.parsed_body).to include('status' => 401, 'error' => 'unauthorized')
+          expect(response.headers['Cache-Control']).to eq('private, no-store')
+        end
+
+        context 'a session awaiting TOTP verification' do
+          let(:member) { create(:member, password: 'password123', otp_required_for_login: true, otp_secret_encrypted: 'test-secret') }
+          before do
+            post '/api/members/sign_in', params: { member: { email: member.email, password: 'password123' } }, as: :json
+            expect(response).to have_http_status(:accepted)
+          end
+
+          run_test! do |response|
+            expect(response.parsed_body).to eq('error' => 'TOTP verification required.')
+            expect(response.headers['Cache-Control']).to eq('private, no-store')
+          end
+        end
       end
     end
   end

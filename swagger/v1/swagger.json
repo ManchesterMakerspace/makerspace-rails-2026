@@ -4295,6 +4295,55 @@
         ],
         "additionalProperties": false,
         "description": "Complete current-member representation returned by Home. Privileged provisioning and optional expiring-payment-card fields are not requested by this endpoint."
+      },
+      "HomeUnauthorized": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "integer",
+                "enum": [
+                  401
+                ]
+              },
+              "error": {
+                "type": "string",
+                "enum": [
+                  "unauthorized"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "error",
+              "message"
+            ],
+            "additionalProperties": false,
+            "title": "AuthenticationRequired",
+            "description": "No valid member session, including expired sessions or expired TOTP challenges."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string",
+                "enum": [
+                  "TOTP verification required."
+                ]
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "additionalProperties": false,
+            "title": "TotpVerificationRequired",
+            "description": "The signed-in member must complete the pending TOTP challenge."
+          }
+        ]
       }
     }
   },
@@ -9266,7 +9315,14 @@
             }
           },
           "401": {
-            "description": "member authentication or TOTP challenge required"
+            "description": "member authentication or TOTP challenge required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeUnauthorized"
+                }
+              }
+            }
           }
         }
       }
