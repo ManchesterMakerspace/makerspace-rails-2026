@@ -27,13 +27,15 @@
           "pending",
           "inactive",
           "nonMember",
-          "revoked"
+          "revoked",
+          "suspended"
         ]
       },
       "MemberRole": {
         "type": "string",
         "enum": [
           "admin",
+          "board_member",
           "resource_manager",
           "member"
         ]
@@ -678,6 +680,38 @@
           "memberContractOnFile": {
             "type": "boolean"
           },
+          "paidPendingStart": {
+            "type": "boolean"
+          },
+          "household": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "groupName": {
+                "type": "string",
+                "nullable": true
+              },
+              "displayName": {
+                "type": "string",
+                "nullable": true
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary"
+                ],
+                "nullable": true
+              },
+              "primaryMemberName": {
+                "type": "string",
+                "nullable": true
+              },
+              "memberCount": {
+                "type": "integer"
+              }
+            }
+          },
           "silenceEmails": {
             "type": "boolean",
             "x-nullable": true
@@ -798,6 +832,17 @@
               "earnedMembershipId": {
                 "type": "string",
                 "x-nullable": true
+              },
+              "earnedMembershipActive": {
+                "type": "boolean"
+              },
+              "householdRole": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary"
+                ],
+                "nullable": true
               }
             },
             "required": [
@@ -8836,6 +8881,86 @@
             }
           },
           "required": true
+        }
+      }
+    },
+    "/home": {
+      "get": {
+        "summary": "Gets the current member landing page data",
+        "tags": [
+          "Members"
+        ],
+        "operationId": "getHome",
+        "description": "Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance and up to 10 eligible, in-service safety checkouts (Orientation first). Does not initiate provisioning.",
+        "responses": {
+          "200": {
+            "description": "current member home data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "member",
+                    "slack",
+                    "availableCheckouts"
+                  ],
+                  "properties": {
+                    "member": {
+                      "$ref": "#/components/schemas/Member"
+                    },
+                    "slack": {
+                      "type": "object",
+                      "required": [
+                        "accepted",
+                        "newMembersChannelUrl"
+                      ],
+                      "properties": {
+                        "accepted": {
+                          "type": "boolean"
+                        },
+                        "newMembersChannelUrl": {
+                          "type": "string",
+                          "nullable": true,
+                          "format": "uri"
+                        }
+                      }
+                    },
+                    "availableCheckouts": {
+                      "type": "array",
+                      "maxItems": 10,
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name",
+                          "shopName",
+                          "requestorAnnotation"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "shopName": {
+                            "type": "string"
+                          },
+                          "requestorAnnotation": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "member authentication or TOTP challenge required"
+          }
         }
       }
     },

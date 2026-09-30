@@ -320,6 +320,17 @@ RSpec.configure do |config|
         expirationTime: { type: :number, 'x-nullable': true },
         memberContractSignedDate: { type: :string, 'x-nullable': true },
         memberContractOnFile: { type: :boolean },
+        paidPendingStart: { type: :boolean },
+        household: {
+          type: :object, nullable: true,
+          properties: {
+            groupName: { type: :string, nullable: true },
+            displayName: { type: :string, nullable: true },
+            role: { type: :string, enum: %w[primary secondary], nullable: true },
+            primaryMemberName: { type: :string, nullable: true },
+            memberCount: { type: :integer }
+          }
+        },
         silenceEmails: { type: :boolean, 'x-nullable': true },
         notes: { type: :string, 'x-nullable': true },
         resourceManagerShopIds: { type: :array, items: { type: :string } },
@@ -375,6 +386,8 @@ RSpec.configure do |config|
             customerId: { type: :string, 'x-nullable': true },
             expiringPaymentCardTypes: { type: :string, 'x-nullable': true },
             earnedMembershipId: { type: :string, 'x-nullable': true },
+            earnedMembershipActive: { type: :boolean },
+            householdRole: { type: :string, enum: %w[primary secondary], nullable: true },
           },
           required: [:id, :expirationTime]
         }
@@ -1076,11 +1089,11 @@ RSpec.configure do |config|
         schemas: {
           MemberStatus: {
             type: :string,
-            enum: ["activeMember", "pending", "inactive", "nonMember", "revoked"]
+            enum: ["activeMember", "pending", "inactive", "nonMember", "revoked", "suspended"]
           },
           MemberRole: {
             type: :string,
-            enum: ["admin", "resource_manager", "member"],
+            enum: ["admin", "board_member", "resource_manager", "member"],
           },
           PayPalAccountSummary: {
             type: :object,

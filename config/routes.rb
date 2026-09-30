@@ -68,6 +68,7 @@ Rails.application.routes.draw do
 
     # Public runtime config — serves env vars to React client at runtime
     get '/config', to: 'client_config#index'
+    get '/home', to: 'home#show'
 
     # Firebase authentication — public endpoints (no Devise session required)
     scope :auth do

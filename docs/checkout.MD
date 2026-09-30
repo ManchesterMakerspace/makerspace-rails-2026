@@ -301,3 +301,32 @@ failures do not roll back a saved request.
 Request responses expose `requestorAnnotation`, resolved from current tool/shop
 settings at read time. The member's My Checkout Requests table displays it in a
 keyboard-focusable tooltip. Clearing a tool override restores the shop fallback.
+
+## Member Home recommendations
+
+The authenticated `GET /api/home` endpoint returns up to ten safety checkout
+recommendations for the current member only. It reuses
+`ToolCheckoutRequestEligibility.eligible_tools`, including pending-member rules,
+expiration, all active prerequisites, existing checkout records (including
+revoked ones), and open requests. Home additionally excludes out-of-service tools
+and tools in out-of-service shops. This extra filter does not change request
+eligibility on other surfaces.
+
+Eligible tools named `Orientation` (case-insensitive) sort first; remaining tools
+sort by name, with ID breaking ties. Filtering and ordering precede the limit.
+Each entry contains `id`, `name`, `shopName`, and `requestorAnnotation`, with the
+tool annotation taking precedence over the shop annotation. The portal displays
+annotations inline and links to `/tools/:id/request-checkout`. Returning to Home
+refreshes the list. Requests still undergo the existing server-side validation.
+
+The same Home response includes the existing current-member representation and
+a small Slack object (`accepted`, `newMembersChannelUrl`). Acceptance requires a
+valid associated Slack ID matching the current email, current-email provisioning
+records, a join timestamp, and `slack_acceptance_pending: false`. The HTTPS channel
+URL uses the existing workspace ID and `slack_channel_new_members` setting (with
+the existing `new_members` default); missing configuration returns null. This is
+a read operation and does not send invitations or start provisioning.
+
+Home responses use `Cache-Control: private, no-store` and require authentication
+and a completed TOTP challenge. See the executable Home API specification and
+the [portal Home documentation](../../makerspace-react-2026/docs/member-home.md).
