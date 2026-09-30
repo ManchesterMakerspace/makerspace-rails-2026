@@ -190,6 +190,9 @@ Rails.application.routes.draw do
         # Tool checkout management
         resources :shops, only: [:index, :create, :update, :destroy] do
           get :resource_manager_options, on: :collection
+          member do
+            patch :requestor_annotation
+          end
         end
         get 'google_calendar/colors', to: 'google_calendar#colors'
         resources :tools, only: [:index, :create, :update, :destroy] do

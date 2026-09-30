@@ -537,9 +537,10 @@ RSpec.configure do |config|
             required: [:x, :y]
           }
         },
-        toolNames: { type: :array, items: { type: :string } }
+        toolNames: { type: :array, items: { type: :string } },
+        toolIds: { type: :array, items: { type: :string } }
       },
-      required: [:id, :name, :shopId, :toolNames]
+      required: [:id, :name, :shopId, :toolNames, :toolIds]
     },
     LocationWrite: {
       type: :object,

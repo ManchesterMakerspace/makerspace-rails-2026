@@ -1252,13 +1252,20 @@
             "items": {
               "type": "string"
             }
+          },
+          "toolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
           "id",
           "name",
           "shopId",
-          "toolNames"
+          "toolNames",
+          "toolIds"
         ]
       },
       "LocationWrite": {
@@ -11350,6 +11357,63 @@
         }
       }
     },
+    "/admin/shops/{id}/requestor_annotation": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "summary": "Updates only the shop's default annotation for requestors",
+        "tags": [
+          "Checkouts"
+        ],
+        "description": "Requires a signed-in owning-shop resource manager, admin or board member -- same as the full shop #update. Other shop settings cannot be changed through this endpoint. This route previously did not exist (only the equivalent tool route did), so the Shops table's \"Edit annotation\" quick-action always failed with a 404.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "annotation updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shop"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not a manager of this shop"
+          },
+          "404": {
+            "description": "shop not found"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestor_annotation": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Annotation for requestors. Null or whitespace clears the annotation; tools fall back to their shop."
+                  }
+                },
+                "required": [
+                  "requestor_annotation"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/reservations/agenda": {
       "get": {
         "summary": "Public 24-hour reservation agenda",
@@ -12133,6 +12197,10 @@
                                 },
                                 "outOfService": {
                                   "type": "boolean"
+                                },
+                                "locationName": {
+                                  "type": "string",
+                                  "nullable": true
                                 }
                               }
                             }

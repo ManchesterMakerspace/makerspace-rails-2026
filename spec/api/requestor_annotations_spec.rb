@@ -162,4 +162,32 @@ RSpec.describe "Checkout requestor annotations", type: :request do
       end
     end
   end
+
+  path "/admin/shops/{id}/requestor_annotation" do
+    parameter name: :id, in: :path, type: :string
+    patch "Updates only the shop's default annotation for requestors" do
+      tags "Checkouts"
+      description "Requires a signed-in owning-shop resource manager, admin or board member -- same as the full shop #update. Other shop settings cannot be changed through this endpoint. This route previously did not exist (only the equivalent tool route did), so the Shops table's \"Edit annotation\" quick-action always failed with a 404."
+      consumes "application/json"
+      produces "application/json"
+      parameter name: :settings, in: :body, schema: { type: :object, properties: { requestor_annotation: annotation_schema }, required: ["requestor_annotation"] }
+      let(:id) { shop.id.to_s }
+      let(:settings) { { requestor_annotation: "Updated shop instructions", name: "Must not change" } }
+      response "200", "annotation updated" do
+        schema response_schemas.fetch("shops")
+        run_test! do |response|
+          expect(JSON.parse(response.body)["requestorAnnotation"]).to eq("Updated shop instructions")
+          expect(shop.reload.name).not_to eq("Must not change")
+        end
+      end
+      response "403", "not a manager of this shop" do
+        let(:member) { create(:member, :resource_manager, :current, resource_manager_shop_ids: [create(:shop).id.to_s]) }
+        run_test! { expect(shop.reload.requestor_annotation).to eq("Shop instructions") }
+      end
+      response "404", "shop not found" do
+        let(:id) { BSON::ObjectId.new.to_s }
+        run_test!
+      end
+    end
+  end
 end

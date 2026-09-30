@@ -131,15 +131,19 @@ RSpec.describe 'Location contracts', type: :request do
   end
 
   describe 'Location#tool_names in the serialized response' do
-    it "lists every tool whose location_id points at this location" do
-      create(:tool, shop: shop, name: 'Drill', location_id: location.id)
-      create(:tool, shop: shop, name: 'Caliper', location_id: location.id)
+    it "lists every tool whose location_id points at this location, with tool_ids index-aligned to tool_names" do
+      drill = create(:tool, shop: shop, name: 'Drill', location_id: location.id)
+      caliper = create(:tool, shop: shop, name: 'Caliper', location_id: location.id)
       create(:tool, shop: shop, name: 'Unrelated Tool')
 
       get '/api/admin/locations', params: { shop_id: shop.id.to_s }
 
       body = JSON.parse(response.body).find { |l| l['id'] == location.id.to_s }
       expect(body['toolNames']).to contain_exactly('Drill', 'Caliper')
+      expect(body['toolIds']).to contain_exactly(drill.id.to_s, caliper.id.to_s)
+      name_by_id = body['toolIds'].zip(body['toolNames']).to_h
+      expect(name_by_id[drill.id.to_s]).to eq('Drill')
+      expect(name_by_id[caliper.id.to_s]).to eq('Caliper')
     end
   end
 end
