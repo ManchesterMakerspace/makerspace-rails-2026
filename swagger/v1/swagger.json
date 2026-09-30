@@ -9247,7 +9247,7 @@
             "sessionAuth": []
           }
         ],
-        "description": "Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance and up to 10 eligible, in-service safety checkouts (Orientation first). Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.",
+        "description": "Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance, up to 10 eligible, in-service safety checkouts (Orientation first), and up to five randomly sampled volunteer opportunities for activeMember members. Volunteer recommendations reuse claim eligibility, exclude reusable tasks already claimed and repeatable/recurring tasks with an in-progress claim, and include only open events dated after today that the member has not joined. Other member statuses receive an empty volunteer list. Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.",
         "responses": {
           "200": {
             "description": "current member home data",
@@ -9258,7 +9258,8 @@
                   "required": [
                     "member",
                     "slack",
-                    "availableCheckouts"
+                    "availableCheckouts",
+                    "availableVolunteerOpportunities"
                   ],
                   "properties": {
                     "member": {
@@ -9278,6 +9279,54 @@
                           "type": "string",
                           "nullable": true,
                           "format": "uri"
+                        }
+                      }
+                    },
+                    "availableVolunteerOpportunities": {
+                      "type": "array",
+                      "maxItems": 5,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "description",
+                          "creditValue",
+                          "shopName",
+                          "eventDate"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "task",
+                              "event"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "creditValue": {
+                            "type": "number"
+                          },
+                          "shopName": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "eventDate": {
+                            "type": "string",
+                            "format": "date",
+                            "nullable": true
+                          }
                         }
                       }
                     },

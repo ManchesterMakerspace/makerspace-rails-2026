@@ -8,15 +8,26 @@ RSpec.describe 'Member Home API', type: :request do
       operationId 'getHome'
       security [sessionAuth: []]
       produces 'application/json'
-      description 'Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance and up to 10 eligible, in-service safety checkouts (Orientation first). Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.'
+      description 'Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance, up to 10 eligible, in-service safety checkouts (Orientation first), and up to five randomly sampled volunteer opportunities for activeMember members. Volunteer recommendations reuse claim eligibility, exclude reusable tasks already claimed and repeatable/recurring tasks with an in-progress claim, and include only open events dated after today that the member has not joined. Other member statuses receive an empty volunteer list. Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.'
 
       response '200', 'current member home data' do
-        schema type: :object, required: %w[member slack availableCheckouts], properties: {
+        schema type: :object, required: %w[member slack availableCheckouts availableVolunteerOpportunities], properties: {
           member: { '$ref' => '#/components/schemas/HomeMember' },
           slack: {
             type: :object, required: %w[accepted newMembersChannelUrl], properties: {
               accepted: { type: :boolean },
               newMembersChannelUrl: { type: :string, nullable: true, format: :uri }
+            }
+          },
+          availableVolunteerOpportunities: {
+            type: :array, maxItems: 5, items: {
+              type: :object, additionalProperties: false,
+              required: %w[id kind title description creditValue shopName eventDate], properties: {
+                id: { type: :string }, kind: { type: :string, enum: %w[task event] },
+                title: { type: :string }, description: { type: :string, nullable: true },
+                creditValue: { type: :number }, shopName: { type: :string, nullable: true },
+                eventDate: { type: :string, format: :date, nullable: true }
+              }
             }
           },
           availableCheckouts: {
@@ -40,6 +51,16 @@ RSpec.describe 'Member Home API', type: :request do
         context 'an active board member opening their own Home' do
           let(:member) { create(:member, :current, role: 'board_member') }
           run_test!
+        end
+
+        context 'an active member with volunteer opportunities' do
+          let(:member) { create(:member, :current) }
+          let!(:task) { VolunteerTask.create!(title: 'Clean the shop', description: 'Put tools away', status: 'repeatable') }
+          let!(:volunteer_event) { VolunteerEvent.create!(title: 'Open house', event_date: Date.tomorrow) }
+
+          run_test! do |response|
+            expect(response.parsed_body.fetch('availableVolunteerOpportunities').pluck('id')).to contain_exactly(task.id.to_s, volunteer_event.id.to_s)
+          end
         end
 
         context 'a member with populated integration, subscription and access fields' do

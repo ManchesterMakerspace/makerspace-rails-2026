@@ -319,7 +319,16 @@ tool annotation taking precedence over the shop annotation. The portal displays
 annotations inline and links to `/tools/:id/request-checkout`. Returning to Home
 refreshes the list. Requests still undergo the existing server-side validation.
 
-The same Home response includes the existing current-member representation,
+The same Home response includes `availableVolunteerOpportunities`: up to five
+randomly sampled tasks/future events for `activeMember` members, after existing
+claim eligibility checks. Child tasks, unavailable/cooling-down tasks, reusable
+tasks previously claimed, and in-progress repeatable/recurring claims are omitted.
+Events must be open, dated after today, and not already joined. Non-active members
+receive an empty list. The portal omits an empty volunteer section; claim/join
+buttons use the existing volunteer APIs and refresh Home after success. Reading
+Home never claims a task or checks a member in.
+
+The response also includes the existing current-member representation,
 fully described by the `HomeMember` OpenAPI schema (including Slack identity,
 Mailtrap delivery status, subscription plan, TOTP, household, and address fields), and
 a small Slack object (`accepted`, `newMembersChannelUrl`). Acceptance requires a

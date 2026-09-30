@@ -21,7 +21,8 @@ class HomeController < AuthenticationController
         resolve_slack_url: false
       ).as_json,
       slack: home.slack,
-      availableCheckouts: home.available_checkouts
+      availableCheckouts: home.available_checkouts,
+      availableVolunteerOpportunities: home.available_volunteer_opportunities
     }
   end
 end

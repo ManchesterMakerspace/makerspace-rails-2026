@@ -116,4 +116,22 @@ RSpec.describe 'Member home', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.pluck('id')).to contain_exactly(*invoices.first(2).map { |invoice| invoice.id.to_s })
   end
+
+  it 'removes a repeatable task and event from Home after claiming and joining them' do
+    member = create(:member, :current)
+    task = VolunteerTask.create!(title: 'Organize supplies', description: 'Sort bins', status: 'repeatable')
+    event = VolunteerEvent.create!(title: 'Open house', event_date: Date.tomorrow)
+    sign_in member
+    allow(Service::SlackConnector).to receive(:send_slack_message)
+    get '/api/home'
+    expect(response.parsed_body.fetch('availableVolunteerOpportunities').pluck('id')).to contain_exactly(task.id.to_s, event.id.to_s)
+
+    post "/api/volunteer/tasks/#{task.id}/claim"
+    expect(response).to have_http_status(:ok)
+    post "/api/volunteer/events/#{event.id}/checkin"
+    expect(response).to have_http_status(:ok)
+
+    get '/api/home'
+    expect(response.parsed_body.fetch('availableVolunteerOpportunities')).to be_empty
+  end
 end
