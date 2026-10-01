@@ -31,6 +31,12 @@ gem 'mongoid_search', '~> 0.4'
 gem 'paypal-sdk-rest', '~> 1.7'
 gem 'braintree', '~> 4.41'
 gem 'slack-ruby-client', '~> 2.0'
+# Pinned below 3.0: that major release removes the `quirks_mode` keyword
+# multi_json still passes through to the json gem, which raises
+# `ArgumentError: unknown keyword: quirks_mode` on nearly every JSON
+# encode/decode -- json floated to 3.0.2 as an unreviewed transitive bump
+# from an unrelated dependabot update and broke the entire test suite.
+gem 'json', '~> 2.21'
 # Google Drive
 gem 'multi_json', '~> 1.15'
 gem 'faraday', '~> 2.14'
