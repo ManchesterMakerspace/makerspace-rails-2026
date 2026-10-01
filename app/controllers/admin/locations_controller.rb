@@ -52,6 +52,12 @@ class Admin::LocationsController < ApplicationController
 
   def destroy
     before = @location.attributes.dup
+    # A tool placed here still points at this location's id by location_id
+    # alone (no DB-level foreign key) -- destroying the location without
+    # clearing that left the tool's location_id dangling at a now-nonexistent
+    # id, which the "place a specific tool here" picker reads as "already
+    # placed somewhere" and refuses to offer the tool again.
+    @location.tools.update_all(location_id: nil)
     @location.destroy
 
     ::Service::AuditLogger.log(
