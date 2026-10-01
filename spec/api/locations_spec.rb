@@ -99,6 +99,17 @@ RSpec.describe 'Location contracts', type: :request do
     end
   end
 
+  describe 'DELETE /api/admin/locations/{id} clears location_id on tools placed there' do
+    it "doesn't leave a tool's location_id dangling at the deleted location's id" do
+      tool = create(:tool, shop: shop, name: 'Drill', location_id: location.id)
+
+      delete "/api/admin/locations/#{location.id}"
+
+      expect(response).to have_http_status(:no_content)
+      expect(tool.reload.location_id).to be_nil
+    end
+  end
+
   # Plain request spec, not an rswag contract example -- rswag's query-string
   # builder doesn't reliably round-trip an array `let` value for an
   # `in: :query, type: :array` parameter (confirmed: the request it built
