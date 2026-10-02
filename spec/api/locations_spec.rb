@@ -99,6 +99,22 @@ RSpec.describe 'Location contracts', type: :request do
     end
   end
 
+  describe 'DELETE /api/admin/locations/{id} cascades to nested children and their tools' do
+    it 'deletes every descendant at any depth and clears location_id on tools placed anywhere in the subtree' do
+      cabinet = create(:location, shop: shop, name: 'Cabinet', parent_id: location.id)
+      shelf = create(:location, shop: shop, name: 'Shelf', parent_id: cabinet.id)
+      top_level_tool = create(:tool, shop: shop, name: 'Drill', location_id: location.id)
+      nested_tool = create(:tool, shop: shop, name: 'Caliper', location_id: shelf.id)
+
+      delete "/api/admin/locations/#{location.id}"
+
+      expect(response).to have_http_status(:no_content)
+      expect(Location.where(id: [location.id, cabinet.id, shelf.id]).count).to eq(0)
+      expect(top_level_tool.reload.location_id).to be_nil
+      expect(nested_tool.reload.location_id).to be_nil
+    end
+  end
+
   describe 'DELETE /api/admin/locations/{id} clears location_id on tools placed there' do
     it "doesn't leave a tool's location_id dangling at the deleted location's id" do
       tool = create(:tool, shop: shop, name: 'Drill', location_id: location.id)

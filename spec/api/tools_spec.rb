@@ -180,6 +180,29 @@ RSpec.describe 'Tools API', type: :request do
       expect(response).to have_http_status(:unprocessable_entity)
       expect(response.body).to include('must belong to the same shop')
     end
+
+    it "deletes the tool's old location when moved elsewhere, if that location held nothing else" do
+      old_location = Location.create!(name: visible_tool.name, shop: shop, x_pct: 10, y_pct: 10)
+      visible_tool.update!(location_id: old_location.id)
+      new_location = Location.create!(name: 'New Spot', shop: shop, x_pct: 20, y_pct: 20)
+
+      put "/api/admin/tools/#{visible_tool.id}", params: { location_id: new_location.id.to_s }
+
+      expect(response).to have_http_status(:ok)
+      expect(Location.where(id: old_location.id)).not_to exist
+    end
+
+    it "keeps the tool's old location if it still holds a child location or another tool" do
+      old_location = Location.create!(name: visible_tool.name, shop: shop, x_pct: 10, y_pct: 10)
+      visible_tool.update!(location_id: old_location.id)
+      Location.create!(name: 'Still here', shop: shop, parent_id: old_location.id, x_pct: 11, y_pct: 11)
+      new_location = Location.create!(name: 'New Spot', shop: shop, x_pct: 20, y_pct: 20)
+
+      put "/api/admin/tools/#{visible_tool.id}", params: { location_id: new_location.id.to_s }
+
+      expect(response).to have_http_status(:ok)
+      expect(Location.where(id: old_location.id)).to exist
+    end
   end
 
   describe 'PATCH /api/admin/tools/:id/notes' do

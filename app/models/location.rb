@@ -35,6 +35,14 @@ class Location
     Tool.where(location_id: id)
   end
 
+  # Every location nested under this one, at any depth -- used so deleting
+  # a location can cascade (clear tool links, remove child locations)
+  # instead of leaving descendants behind with a parent_id pointing at a
+  # now-deleted document.
+  def descendants
+    children.flat_map { |child| [child] + child.descendants }
+  end
+
   private
 
   def parent_belongs_to_same_shop
