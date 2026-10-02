@@ -52,12 +52,19 @@ class Admin::LocationsController < ApplicationController
 
   def destroy
     before = @location.attributes.dup
-    # A tool placed here still points at this location's id by location_id
-    # alone (no DB-level foreign key) -- destroying the location without
-    # clearing that left the tool's location_id dangling at a now-nonexistent
-    # id, which the "place a specific tool here" picker reads as "already
-    # placed somewhere" and refuses to offer the tool again.
-    @location.tools.update_all(location_id: nil)
+    # Deleting a location cascades to everything nested under it, at any
+    # depth -- a child, that child's own children, and so on. Without this,
+    # descendants are left behind with a parent_id pointing at a now-deleted
+    # document (invisible in the tree, unreachable except by direct id).
+    descendants = @location.descendants
+    affected = [@location] + descendants
+    # A tool placed at any of these locations still points at its id by
+    # location_id alone (no DB-level foreign key) -- leaving that dangling
+    # at a now-deleted id is what the "place a specific tool here" picker
+    # reads as "already placed somewhere," refusing to offer the tool again.
+    affected_tool_names = Tool.where(:location_id.in => affected.map(&:id)).pluck(:name)
+    Tool.where(:location_id.in => affected.map(&:id)).update_all(location_id: nil)
+    descendants.each(&:destroy)
     @location.destroy
 
     ::Service::AuditLogger.log(
@@ -66,7 +73,10 @@ class Admin::LocationsController < ApplicationController
       resource_type:   'Location',
       resource_id:     before['_id'],
       actor:           current_member,
-      before_snapshot: before,
+      before_snapshot: before.merge(
+        'deleted_descendant_ids'   => descendants.map { |d| d.id.to_s },
+        'unassigned_tool_names'    => affected_tool_names
+      ),
       after_snapshot:  {}
     )
 
