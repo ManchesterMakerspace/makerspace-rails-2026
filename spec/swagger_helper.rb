@@ -494,6 +494,34 @@ RSpec.configure do |config|
         }
       ]
     },
+    ToolSettingsWrite: {
+      type: :object,
+      description: 'Editable tool settings for owning-shop managers, admins and board members. Omitted fields retain their values on update. Operational notes are saved with the other settings; additional approvers use the dedicated notes or annotation endpoints.',
+      properties: {
+        name: { type: :string, description: 'Unique within the shop, ignoring case.' },
+        shop_id: { type: :string },
+        location_id: { type: :string, nullable: true, description: 'Location in the selected shop. Empty or null clears it.' },
+        requestor_annotation: { type: :string, nullable: true, description: 'Null or whitespace clears the annotation; tools fall back to their shop.' },
+        wiki_url: { type: :string, nullable: true },
+        gdrive_id: { type: :string, nullable: true },
+        description: { type: :string, nullable: true },
+        notes: { type: :string, nullable: true, description: 'Private operational notes. Empty or null clears them.' },
+        open: { type: :boolean }, disabled: { type: :boolean },
+        allow_pending: { type: :boolean, description: 'Allow pending members to request checkout and reservations. Send false to clear; defaults to false on creation.' },
+        announce: { type: :boolean }, announce_channel: { type: :string, nullable: true },
+        users_channel: { type: :string, nullable: true },
+        prerequisite_ids: { type: :array, items: { type: :string } },
+        reservable: { type: :boolean }, max_concurrent_reservations: { type: :integer },
+        reservation_horizon_days: { type: :integer }, minimum_advance_notice_hours: { type: :number },
+        prohibit_same_day_reservations: { type: :boolean }, reservation_full_day: { type: :boolean },
+        max_reservation_duration_hours: { type: :number }, reservation_requires_approval: { type: :boolean },
+        reservation_prerequisite_tool_ids: { type: :array, items: { type: :string } },
+        duration_fees: { type: :array, items: { type: :object, properties: {
+          invoice_option_id: { type: :string }, minimum_hours: { type: :number },
+          maximum_hours: { type: :number }, full_day: { type: :boolean }
+        } } }
+      }
+    },
     Tool: {
       allOf: [
         { '$ref' => '#/components/schemas/ReservationResourceConfig' },
