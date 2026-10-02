@@ -38,15 +38,6 @@ RSpec.describe "Checkout requestor annotations", type: :request do
     disabled: { type: :boolean }, color_id: { type: :string }, floor_name: { type: :string },
     capacity: { type: :integer }
   )
-  tool_properties = reservation_properties.merge(
-    name: { type: :string }, shop_id: { type: :string }, requestor_annotation: annotation_schema,
-    wiki_url: { type: :string, nullable: true }, gdrive_id: { type: :string, nullable: true },
-    description: { type: :string, nullable: true }, open: { type: :boolean }, disabled: { type: :boolean },
-    announce: { type: :boolean }, announce_channel: { type: :string, nullable: true },
-    users_channel: { type: :string, nullable: true }, allow_pending: { type: :boolean },
-    prerequisite_ids: { type: :array, items: { type: :string } }
-  )
-
   %w[shops tools].each do |resource|
     path "/admin/#{resource}/{id}" do
       parameter name: :id, in: :path, type: :string
@@ -57,7 +48,7 @@ RSpec.describe "Checkout requestor annotations", type: :request do
           consumes "application/json"
           produces "application/json"
           parameter name: :settings, in: :body, schema: {
-            type: :object, properties: resource == "shops" ? shop_properties : tool_properties
+            allOf: [resource == "shops" ? { type: :object, properties: shop_properties } : { '$ref' => '#/components/schemas/ToolSettingsWrite' }]
           }
           let(:id) { resource == "shops" ? shop.id.to_s : tool.id.to_s }
           let(:settings) { { requestor_annotation: " Updated instructions " } }
@@ -90,8 +81,7 @@ RSpec.describe "Checkout requestor annotations", type: :request do
         consumes "application/json"
         produces "application/json"
         parameter name: :settings, in: :body, schema: {
-          type: :object,
-          properties: resource == "shops" ? shop_properties : tool_properties,
+          allOf: [resource == "shops" ? { type: :object, properties: shop_properties } : { '$ref' => '#/components/schemas/ToolSettingsWrite' }],
           required: resource == "shops" ? ["name"] : ["name", "shop_id"]
         }
         let(:member) { create(:member, :admin, :current) }

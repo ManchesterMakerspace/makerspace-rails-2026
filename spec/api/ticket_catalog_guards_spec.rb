@@ -16,9 +16,7 @@ RSpec.describe 'Repair ticket catalog references', type: :request do
       security [sessionAuth: []]
       consumes 'application/json'
       produces 'application/json'
-      parameter name: :body, in: :body, schema: { type: :object, properties: {
-        name: { type: :string, description: 'Unique within the shop, ignoring case.' }, shop_id: { type: :string }
-      } }
+      parameter name: :body, in: :body, schema: { allOf: [{ '$ref' => '#/components/schemas/ToolSettingsWrite' }], required: ['name', 'shop_id'] }
       let(:body) { { name: tool.name, shop_id: shop.id.to_s } }
       response '200', 'Created tool including its availability' do
         schema '$ref' => '#/components/schemas/Tool'
@@ -55,7 +53,7 @@ RSpec.describe 'Repair ticket catalog references', type: :request do
         security [sessionAuth: []]
         consumes 'application/json'
         produces 'application/json'
-        parameter name: :body, in: :body, schema: { type: :object, properties: { shop_id: { type: :string }, name: { type: :string, description: 'Unique within the shop, ignoring case; the existing tool is excluded when editing.' } } }
+        parameter name: :body, in: :body, schema: { '$ref' => '#/components/schemas/ToolSettingsWrite' }
         let(:body) { { shop_id: create(:shop).id.to_s } }
         response '200', 'Updated tool including its availability' do
           schema '$ref' => '#/components/schemas/Tool'

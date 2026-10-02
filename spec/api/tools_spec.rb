@@ -275,6 +275,17 @@ RSpec.describe 'Tools API', type: :request do
   describe 'POST /api/admin/tools' do
     before { sign_in create(:member, :admin, :current) }
 
+    it 'creates pending-member access and notes together' do
+      post '/api/admin/tools', params: {
+        name: 'Orientation with notes', shop_id: shop.id.to_s,
+        allow_pending: true, notes: 'Ask the instructor for the key'
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include('allowPending' => true, 'notes' => 'Ask the instructor for the key')
+      expect(Tool.find_by(name: 'Orientation with notes').notes).to eq('Ask the instructor for the key')
+    end
+
     it 'rejects an exact duplicate and explains the shop conflict' do
       post '/api/admin/tools', params: { name: visible_tool.name, shop_id: shop.id.to_s }
       expect(response).to have_http_status(:unprocessable_content)
@@ -337,6 +348,50 @@ RSpec.describe 'Tools API', type: :request do
     end
 
     before { sign_in resource_manager }
+
+    [true, false].each do |allow_pending|
+      it "allows a shop manager to set allow_pending to #{allow_pending} and save notes" do
+        visible_tool.update!(allow_pending: !allow_pending, notes: 'Old notes')
+        put "/api/admin/tools/#{visible_tool.id}", params: { allow_pending: allow_pending, notes: '' }
+
+        expect(response).to have_http_status(:ok)
+        expect(visible_tool.reload.allow_pending).to eq(allow_pending)
+        expect(visible_tool.notes).to eq('')
+        expect(response.parsed_body).to include('allowPending' => allow_pending, 'notes' => '')
+      end
+    end
+
+    it 'preserves omitted settings on a partial update' do
+      prerequisite = create(:tool, shop: shop)
+      visible_tool.update!(allow_pending: true, notes: 'Private notes',
+        prerequisite_ids: [prerequisite.id.to_s], reservation_prerequisite_tool_ids: [prerequisite.id.to_s])
+      put "/api/admin/tools/#{visible_tool.id}", params: { description: 'New description' }
+
+      expect(response).to have_http_status(:ok)
+      expect(visible_tool.reload.allow_pending).to be(true)
+      expect(visible_tool.notes).to eq('Private notes')
+      expect(visible_tool.prerequisite_ids.map(&:to_s)).to eq([prerequisite.id.to_s])
+      expect(visible_tool.reservation_prerequisite_tool_ids.map(&:to_s)).to eq([prerequisite.id.to_s])
+    end
+
+    it 'does not partially save notes or pending access when validation fails' do
+      put "/api/admin/tools/#{visible_tool.id}", params: { name: '', allow_pending: true, notes: 'Changed' }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(visible_tool.reload.allow_pending).to be(false)
+      expect(visible_tool.notes).to be_nil
+    end
+
+    it 'keeps full settings restricted even when an additional approver may edit notes' do
+      approver = create(:member, :current)
+      CheckoutApprover.create!(member: approver, tool_ids: [visible_tool.id.to_s])
+      sign_in approver
+      put "/api/admin/tools/#{visible_tool.id}", params: { allow_pending: true, notes: 'Changed' }
+
+      expect(response).to have_http_status(:forbidden)
+      expect(visible_tool.reload.allow_pending).to be(false)
+      expect(visible_tool.notes).to be_nil
+    end
 
     {
       current: {
