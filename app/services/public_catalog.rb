@@ -29,7 +29,7 @@ class PublicCatalog
 
   FLOOR_PLAN_DIR = Rails.root.join("app/assets/images/shopFloorPlans")
   MAP_PADDING_PCT = 5.0
-  MAP_MIN_SPAN_PCT = 12.0
+  MAP_MIN_SPAN_PCT = 30.0
 
   # Static map for the tool page: the shop's floor plan cropped to the shop,
   # with the shop's outline and this tool's storage spot. Plain numbers only
@@ -38,14 +38,18 @@ class PublicCatalog
   # Never includes location names or any other shop's geometry.
   def self.tool_map(tool, shop)
     return unless tool.location_id
-    floor = shop.floor_name.to_s
+    locations = Location.where(shop_id: shop.id).only(:id, :parent_id, :x_pct, :y_pct, :shape_points, :floor_name, :icon).to_a
+    by_id = locations.index_by(&:id)
+    target = by_id[tool.location_id]
+    return unless target
+
+    # A shop can span floors, so the plan comes from the tool's own location.
+    floor = (target.floor_name.presence || shop.floor_name).to_s
     size = floor_plan_size(floor)
     return unless size
 
-    locations = Location.where(shop_id: shop.id).only(:id, :parent_id, :x_pct, :y_pct, :shape_points).to_a
-    by_id = locations.index_by(&:id)
     spot = nil
-    node = by_id[tool.location_id]
+    node = target
     seen = Set.new
     while node && !spot && seen.add?(node.id)
       spot = location_geometry(node)
@@ -53,7 +57,8 @@ class PublicCatalog
     end
     return unless spot
 
-    areas = locations.select { |l| l.parent_id.nil? }.filter_map { |l| location_geometry(l) }
+    areas = locations.select { |l| l.parent_id.nil? && (l.floor_name.presence || shop.floor_name).to_s == floor }
+      .filter_map { |l| location_geometry(l) }
     points = (areas + [spot]).flat_map { |g| g[:shape] || [g[:pin]] }
     min_x, max_x = widen(*points.map(&:first).minmax)
     min_y, max_y = widen(*points.map(&:last).minmax)
@@ -65,7 +70,8 @@ class PublicCatalog
     { floor: floor, image_size: size, view_box: box,
       shop_areas: areas.filter_map { |g| g[:shape]&.map(&to_units) },
       tool_shape: spot[:shape]&.map(&to_units), tool_marker: to_units.call(marker),
-      marker_radius: ([box[2], box[3]].min * 0.035).round(2) }
+      marker_radius: ([box[2], box[3]].min * 0.05).round(2),
+      tool_glyph: MarkerGlyphs.path(target.icon) }
   end
 
   def self.location_geometry(location)

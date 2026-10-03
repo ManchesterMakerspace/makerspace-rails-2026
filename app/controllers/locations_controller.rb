@@ -9,6 +9,6 @@ class LocationsController < ApplicationController
   # Admin:: counterparts.
   def index
     locations = params[:shop_ids] ? Location.where(:shop_id.in => Array(params[:shop_ids])) : Location.all
-    render json: locations.to_a, each_serializer: LocationSerializer, adapter: :attributes
+    render json: locations.includes(:shop).to_a, each_serializer: LocationSerializer, adapter: :attributes
   end
 end

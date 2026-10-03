@@ -1,5 +1,5 @@
 class LocationSerializer < ActiveModel::Serializer
-  attributes :id, :name, :kind, :parent_id, :shop_id, :svg_element_id, :x_pct, :y_pct, :shape_points,
+  attributes :id, :name, :kind, :parent_id, :shop_id, :svg_element_id, :x_pct, :y_pct, :shape_points, :floor_name, :icon,
     :tool_names, :tool_ids
 
   # Which tools call this location home -- lets a map view show "what's
@@ -17,6 +17,12 @@ class LocationSerializer < ActiveModel::Serializer
 
   def tool_ids
     tools_cache.map { |tool| tool.id.to_s }
+  end
+
+  # The floor this location is drawn on, whether set on it or inherited from
+  # its shop.
+  def floor_name
+    object.effective_floor_name
   end
 
   private

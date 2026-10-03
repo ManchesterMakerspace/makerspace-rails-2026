@@ -94,6 +94,32 @@ RSpec.describe "Public catalog", type: :request do
       expect(response.body).not_to include("storage-map-tool")
     end
 
+    it "draws the floor the tool's own location is on, not the shop's home floor" do
+      shop.update!(floor_name: "1")
+      upstairs = Location.create!(name: "Upstairs bench", shop: shop, floor_name: "2", x_pct: 30, y_pct: 40)
+      Location.create!(name: "Ground area", shop: shop, shape_points: [{ x: 10, y: 10 }, { x: 20, y: 10 }, { x: 20, y: 20 }])
+      tool.update!(location_id: upstairs.id)
+
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).to include("shopFloorPlans/floor-2")
+      expect(response.body).not_to include("shopFloorPlans/floor-1")
+      # the 1st-floor area is not drawn on the 2nd-floor map
+      expect(response.body).not_to include("storage-map-area")
+    end
+
+    it "draws the tool's marker icon inside the marker, defaulting to the pin" do
+      saw = Location.create!(name: "Saw bench", shop: shop, x_pct: 30, y_pct: 40, icon: "saw")
+      tool.update!(location_id: saw.id)
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).to include('class="storage-map-glyph"', %(d="#{MarkerGlyphs::PATHS['saw']}"))
+
+      plain = Location.create!(name: "Plain spot", shop: shop, x_pct: 30, y_pct: 40)
+      tool.update!(location_id: plain.id)
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).to include(%(d="#{MarkerGlyphs::PATHS['pin']}"))
+      expect(response.body).not_to include(MarkerGlyphs::PATHS["saw"])
+    end
+
     it "is omitted when the location has no geometry, and never adds location data to the public JSON" do
       bare = Location.create!(name: "Bare", shop: shop)
       tool.update!(location_id: bare.id)

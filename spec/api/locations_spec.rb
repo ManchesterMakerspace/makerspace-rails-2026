@@ -48,6 +48,19 @@ RSpec.describe 'Location contracts', type: :request do
         let(:member) { create(:member, :current) }
         run_test!
       end
+      response('200', 'Created location on a specific floor with a marker icon') do
+        schema '$ref' => '#/components/schemas/Location'
+        let(:body) { { name: 'Fire extinguisher', shop_id: shop.id.to_s, floor_name: '2', icon: 'saw', x_pct: 20, y_pct: 30 } }
+        run_test! { |r| expect(JSON.parse(r.body).slice('floorName', 'icon')).to eq('floorName' => '2', 'icon' => 'saw') }
+      end
+      response('200', 'A location with no floor reports its shop\'s floor') do
+        schema '$ref' => '#/components/schemas/Location'
+        run_test! { |r| expect(JSON.parse(r.body)['floorName']).to eq(shop.floor_name) }
+      end
+      response('422', 'Unknown floor') do
+        let(:body) { { name: 'Nowhere', shop_id: shop.id.to_s, floor_name: '7' } }
+        run_test!
+      end
       response('200', 'Created location with a drawn shape') do
         schema '$ref' => '#/components/schemas/Location'
         let(:body) do
