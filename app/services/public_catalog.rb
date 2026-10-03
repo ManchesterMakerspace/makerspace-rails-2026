@@ -38,7 +38,7 @@ class PublicCatalog
   # Never includes location names or any other shop's geometry.
   def self.tool_map(tool, shop)
     return unless tool.location_id
-    locations = Location.where(shop_id: shop.id).only(:id, :parent_id, :x_pct, :y_pct, :shape_points, :floor_name).to_a
+    locations = Location.where(shop_id: shop.id).only(:id, :parent_id, :x_pct, :y_pct, :shape_points, :floor_name, :icon).to_a
     by_id = locations.index_by(&:id)
     target = by_id[tool.location_id]
     return unless target
@@ -70,7 +70,8 @@ class PublicCatalog
     { floor: floor, image_size: size, view_box: box,
       shop_areas: areas.filter_map { |g| g[:shape]&.map(&to_units) },
       tool_shape: spot[:shape]&.map(&to_units), tool_marker: to_units.call(marker),
-      marker_radius: ([box[2], box[3]].min * 0.035).round(2) }
+      marker_radius: ([box[2], box[3]].min * 0.05).round(2),
+      tool_glyph: MarkerGlyphs.path(target.icon) }
   end
 
   def self.location_geometry(location)

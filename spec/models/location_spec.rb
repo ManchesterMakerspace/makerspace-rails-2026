@@ -92,6 +92,11 @@ RSpec.describe Location, type: :model do
   end
 
   describe "floor and icon" do
+    it "has a public-map glyph for every marker icon" do
+      expect(MarkerGlyphs::PATHS.keys).to match_array(Location::ICONS)
+      expect(MarkerGlyphs.path("not-an-icon")).to eq(MarkerGlyphs::PATHS["pin"])
+    end
+
     let(:shop) { create(:shop, floor_name: "1") }
 
     it "falls back to the shop's floor when none is set" do

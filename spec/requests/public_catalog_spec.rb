@@ -107,6 +107,19 @@ RSpec.describe "Public catalog", type: :request do
       expect(response.body).not_to include("storage-map-area")
     end
 
+    it "draws the tool's marker icon inside the marker, defaulting to the pin" do
+      saw = Location.create!(name: "Saw bench", shop: shop, x_pct: 30, y_pct: 40, icon: "saw")
+      tool.update!(location_id: saw.id)
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).to include('class="storage-map-glyph"', %(d="#{MarkerGlyphs::PATHS['saw']}"))
+
+      plain = Location.create!(name: "Plain spot", shop: shop, x_pct: 30, y_pct: 40)
+      tool.update!(location_id: plain.id)
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).to include(%(d="#{MarkerGlyphs::PATHS['pin']}"))
+      expect(response.body).not_to include(MarkerGlyphs::PATHS["saw"])
+    end
+
     it "is omitted when the location has no geometry, and never adds location data to the public JSON" do
       bare = Location.create!(name: "Bare", shop: shop)
       tool.update!(location_id: bare.id)

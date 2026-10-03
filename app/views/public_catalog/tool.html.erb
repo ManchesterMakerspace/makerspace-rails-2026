@@ -16,6 +16,7 @@
       <% map[:shop_areas].each do |points| %><polygon class="storage-map-area" points="<%= shape_points.call(points) %>" /><% end %>
       <% if map[:tool_shape] %><polygon class="storage-map-tool" points="<%= shape_points.call(map[:tool_shape]) %>" /><% end %>
       <circle class="storage-map-marker" cx="<%= map[:tool_marker][0] %>" cy="<%= map[:tool_marker][1] %>" r="<%= map[:marker_radius] %>" />
+      <path class="storage-map-glyph" d="<%= map[:tool_glyph] %>" transform="translate(<%= map[:tool_marker][0] %> <%= map[:tool_marker][1] %>) scale(<%= (map[:marker_radius] * 1.3 / 24).round(4) %>) translate(-12 -12)" />
     </svg>
     <figcaption>Where this tool is normally stored</figcaption>
   </figure>
