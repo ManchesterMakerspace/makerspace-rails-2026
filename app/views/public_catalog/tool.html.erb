@@ -8,4 +8,16 @@
 <% else %>
   <%= link_to "Request checkout", "/tools/#{page[:id]}/request-checkout", class: "button" %>
 <% end %>
+<% if (map = page[:map]) %>
+  <% shape_points = ->(points) { points.map { |x, y| "#{x},#{y}" }.join(" ") } %>
+  <figure class="storage-map">
+    <svg viewBox="<%= map[:view_box].join(' ') %>" role="img" aria-label="Map showing where this tool is normally stored" xmlns="http://www.w3.org/2000/svg">
+      <image href="<%= image_path("shopFloorPlans/floor-#{map[:floor]}.svg") %>" x="0" y="0" width="<%= map[:image_size][0] %>" height="<%= map[:image_size][1] %>" />
+      <% map[:shop_areas].each do |points| %><polygon class="storage-map-area" points="<%= shape_points.call(points) %>" /><% end %>
+      <% if map[:tool_shape] %><polygon class="storage-map-tool" points="<%= shape_points.call(map[:tool_shape]) %>" /><% end %>
+      <circle class="storage-map-marker" cx="<%= map[:tool_marker][0] %>" cy="<%= map[:tool_marker][1] %>" r="<%= map[:marker_radius] %>" />
+    </svg>
+    <figcaption>Where this tool is normally stored</figcaption>
+  </figure>
+<% end %>
 <%= render "public_catalog/calendars", calendars: page[:calendars] %>

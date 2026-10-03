@@ -1,7 +1,7 @@
 # No ApplicationController callbacks, authentication, session, or CSRF helpers.
 class PublicCatalogController < ActionController::Base
   include CatalogUnavailable
-  TEMPLATE_VERSION = "public-catalog-v6-no-find-storage"
+  TEMPLATE_VERSION = "public-catalog-v6-storage-map"
 
   def shop
     shop = PublicCatalog.shop(params[:id])
@@ -21,6 +21,9 @@ class PublicCatalogController < ActionController::Base
     projection = PublicCatalog.tool_fields(tool, shop)
     if request.format.html?
       projection[:calendars] = [tool, shop].filter_map { |record| PublicCatalog.calendar_fields(record) }.uniq { |calendar| calendar[:url] }
+      # Static map only (floor-plan geometry, no names); the public JSON
+      # stays unchanged.
+      projection[:map] = PublicCatalog.tool_map(tool, shop)
     end
     serve(projection, "tool")
   end
