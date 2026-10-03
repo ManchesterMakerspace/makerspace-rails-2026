@@ -1,7 +1,7 @@
 # No ApplicationController callbacks, authentication, session, or CSRF helpers.
 class PublicCatalogController < ActionController::Base
   include CatalogUnavailable
-  TEMPLATE_VERSION = "public-catalog-v6-storage-map"
+  TEMPLATE_VERSION = "public-catalog-v7-storage-map-colors"
 
   def shop
     shop = PublicCatalog.shop(params[:id])
