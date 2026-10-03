@@ -1,7 +1,7 @@
 # No ApplicationController callbacks, authentication, session, or CSRF helpers.
 class PublicCatalogController < ActionController::Base
   include CatalogUnavailable
-  TEMPLATE_VERSION = "public-catalog-v5-find-storage"
+  TEMPLATE_VERSION = "public-catalog-v6-no-find-storage"
 
   def shop
     shop = PublicCatalog.shop(params[:id])
@@ -21,10 +21,6 @@ class PublicCatalogController < ActionController::Base
     projection = PublicCatalog.tool_fields(tool, shop)
     if request.format.html?
       projection[:calendars] = [tool, shop].filter_map { |record| PublicCatalog.calendar_fields(record) }.uniq { |calendar| calendar[:url] }
-      # Only whether a storage spot exists, never which one -- enough to offer
-      # the portal's "find where this tool is stored" link without exposing
-      # location data on an unauthenticated page (or changing the public JSON).
-      projection[:placed] = tool.location_id.present?
     end
     serve(projection, "tool")
   end
