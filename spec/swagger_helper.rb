@@ -579,6 +579,8 @@ RSpec.configure do |config|
             required: [:x, :y]
           }
         },
+        floorName: { type: :string, enum: %w[B 1 2], description: 'Floor plan the location is drawn on; the shop\'s own floor when not set on the location.' },
+        icon: { type: :string, enum: Location::ICONS, 'x-nullable': true, description: 'Marker glyph; null draws the default pin.' },
         toolNames: { type: :array, items: { type: :string } },
         toolIds: { type: :array, items: { type: :string } }
       },
@@ -594,6 +596,8 @@ RSpec.configure do |config|
         svg_element_id: { type: :string },
         x_pct: { type: :number },
         y_pct: { type: :number },
+        floor_name: { type: :string, enum: %w[B 1 2], description: 'Blank uses the shop\'s floor; a nested location inherits its parent\'s.' },
+        icon: { type: :string, enum: Location::ICONS },
         shape_points: {
           type: :array,
           items: {

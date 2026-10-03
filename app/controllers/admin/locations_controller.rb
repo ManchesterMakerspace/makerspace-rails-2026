@@ -13,7 +13,7 @@ class Admin::LocationsController < ApplicationController
       Location.all
     end
     locations = locations.where(:shop_id.in => managed_shop_ids) unless is_admin? || is_board_member?
-    render json: locations.to_a, each_serializer: LocationSerializer, adapter: :attributes
+    render json: locations.includes(:shop).to_a, each_serializer: LocationSerializer, adapter: :attributes
   end
 
   def create
@@ -87,7 +87,7 @@ class Admin::LocationsController < ApplicationController
 
   def location_params
     params.permit(:name, :kind, :parent_id, :shop_id, :svg_element_id, :x_pct, :y_pct,
-                   shape_points: [:x, :y])
+                   :floor_name, :icon, shape_points: [:x, :y])
   end
 
   def find_location

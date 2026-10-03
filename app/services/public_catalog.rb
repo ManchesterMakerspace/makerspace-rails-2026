@@ -38,14 +38,18 @@ class PublicCatalog
   # Never includes location names or any other shop's geometry.
   def self.tool_map(tool, shop)
     return unless tool.location_id
-    floor = shop.floor_name.to_s
+    locations = Location.where(shop_id: shop.id).only(:id, :parent_id, :x_pct, :y_pct, :shape_points, :floor_name).to_a
+    by_id = locations.index_by(&:id)
+    target = by_id[tool.location_id]
+    return unless target
+
+    # A shop can span floors, so the plan comes from the tool's own location.
+    floor = (target.floor_name.presence || shop.floor_name).to_s
     size = floor_plan_size(floor)
     return unless size
 
-    locations = Location.where(shop_id: shop.id).only(:id, :parent_id, :x_pct, :y_pct, :shape_points).to_a
-    by_id = locations.index_by(&:id)
     spot = nil
-    node = by_id[tool.location_id]
+    node = target
     seen = Set.new
     while node && !spot && seen.add?(node.id)
       spot = location_geometry(node)
@@ -53,7 +57,8 @@ class PublicCatalog
     end
     return unless spot
 
-    areas = locations.select { |l| l.parent_id.nil? }.filter_map { |l| location_geometry(l) }
+    areas = locations.select { |l| l.parent_id.nil? && (l.floor_name.presence || shop.floor_name).to_s == floor }
+      .filter_map { |l| location_geometry(l) }
     points = (areas + [spot]).flat_map { |g| g[:shape] || [g[:pin]] }
     min_x, max_x = widen(*points.map(&:first).minmax)
     min_y, max_y = widen(*points.map(&:last).minmax)

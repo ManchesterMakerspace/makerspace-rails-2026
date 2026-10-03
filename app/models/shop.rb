@@ -27,6 +27,9 @@ class Shop
   field :reservation_prerequisite_tool_ids, type: Array, default: []
   field :google_resource_id, type: String
   field :resource_email, type: String
+  # Basement, 1st, 2nd -- matches the floor-plan files in app/assets/images/shopFloorPlans.
+  FLOOR_NAMES = %w[B 1 2].freeze
+
   field :floor_name, type: String, default: "1"
   field :capacity, type: Integer, default: 10
   field :color_id, type: String, default: "1"
@@ -45,7 +48,7 @@ class Shop
   validates :name, presence: true, uniqueness: { case_sensitive: false }
   validates :out_of_service_note, presence: true, if: :out_of_service?
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
-  validates :floor_name, presence: true, inclusion: { in: %w[B 1 2] }
+  validates :floor_name, presence: true, inclusion: { in: FLOOR_NAMES }
   validates :capacity, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :reservation_horizon_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :max_reservation_duration_hours, numericality: { greater_than: 0 }

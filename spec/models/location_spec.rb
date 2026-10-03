@@ -12,6 +12,8 @@ RSpec.describe Location, type: :model do
     it { is_expected.to have_field(:x_pct).of_type(Float) }
     it { is_expected.to have_field(:y_pct).of_type(Float) }
     it { is_expected.to have_field(:shape_points).of_type(Array) }
+    it { is_expected.to have_field(:floor_name).of_type(String) }
+    it { is_expected.to have_field(:icon).of_type(String) }
   end
 
   describe "ActiveModel validations" do
@@ -86,6 +88,46 @@ RSpec.describe Location, type: :model do
 
       expect(location).not_to be_valid
       expect(location.errors[:x_pct]).to be_present
+    end
+  end
+
+  describe "floor and icon" do
+    let(:shop) { create(:shop, floor_name: "1") }
+
+    it "falls back to the shop's floor when none is set" do
+      expect(create(:location, shop: shop).effective_floor_name).to eq("1")
+      expect(create(:location, shop: shop, floor_name: "2").effective_floor_name).to eq("2")
+    end
+
+    it "accepts only known floors and icons, treating blanks as unset" do
+      expect(build(:location, shop: shop, floor_name: "9")).not_to be_valid
+      expect(build(:location, shop: shop, icon: "rocket")).not_to be_valid
+      location = build(:location, shop: shop, floor_name: "", icon: "")
+      expect(location).to be_valid
+      expect(location.floor_name).to be_nil
+      expect(location.icon).to be_nil
+      expect(build(:location, shop: shop, floor_name: "B", icon: "saw")).to be_valid
+    end
+
+    it "makes a nested location inherit its parent's floor" do
+      parent = create(:location, shop: shop, floor_name: "2")
+      child = create(:location, shop: shop, parent_id: parent.id)
+      expect(child.floor_name).to eq("2")
+    end
+
+    it "rejects a child on a different floor than its parent" do
+      parent = create(:location, shop: shop, floor_name: "2")
+      child = build(:location, shop: shop, parent_id: parent.id, floor_name: "B")
+      expect(child).not_to be_valid
+      expect(child.errors[:floor_name]).to be_present
+    end
+
+    it "moves everything nested in a location when its floor changes" do
+      parent = create(:location, shop: shop, floor_name: "1")
+      child = create(:location, shop: shop, parent_id: parent.id)
+      grandchild = create(:location, shop: shop, parent_id: child.id)
+      parent.update!(floor_name: "2")
+      expect([child.reload.floor_name, grandchild.reload.floor_name]).to eq(%w[2 2])
     end
   end
 end
