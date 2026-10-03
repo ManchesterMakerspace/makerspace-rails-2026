@@ -11,7 +11,7 @@ class PublicCatalog
   def self.tool(id, public_only: true)
     raise Unavailable unless BSON::ObjectId.legal?(id.to_s)
     query = Tool.where(id: id, :disabled.ne => true)
-    query = query.only(:id, :name, :description, :wiki_url, :shop_id, :open, :out_of_service, :google_resource_id, :resource_email) if public_only
+    query = query.only(:id, :name, :description, :wiki_url, :shop_id, :open, :out_of_service, :location_id, :google_resource_id, :resource_email) if public_only
     record = query.first
     raise Unavailable unless record
     [record, shop(record.shop_id)]

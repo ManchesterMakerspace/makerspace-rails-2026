@@ -8,4 +8,7 @@
 <% else %>
   <%= link_to "Request checkout", "/tools/#{page[:id]}/request-checkout", class: "button" %>
 <% end %>
+<% if page[:placed] %>
+  <p class="find-storage"><%= link_to "Find where this tool should be stored", "/workshops?shop=#{page[:shop][:id]}&findTool=#{page[:id]}", class: "button" %></p>
+<% end %>
 <%= render "public_catalog/calendars", calendars: page[:calendars] %>

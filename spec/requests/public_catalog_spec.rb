@@ -62,6 +62,29 @@ RSpec.describe "Public catalog", type: :request do
     expect(response.headers["Cache-Control"].split(", ")).to match_array(%w[public max-age=0 s-maxage=0 must-revalidate])
   end
 
+  describe "find where this tool is stored link" do
+    it "is offered, pointing at the shop's workshop page with the tool highlighted, only once the tool has a storage location" do
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).not_to include("Find where this tool should be stored")
+
+      location = Location.create!(name: "Secret Cabinet", shop: shop, x_pct: 10, y_pct: 10)
+      tool.update!(location_id: location.id)
+
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).to include("Find where this tool should be stored",
+        "/workshops?shop=#{shop.id}&amp;findTool=#{tool.id}")
+      expect(response.body).not_to include("Secret Cabinet")
+    end
+
+    it "never adds location data to the public JSON" do
+      location = Location.create!(name: "Secret Cabinet", shop: shop, x_pct: 10, y_pct: 10)
+      tool.update!(location_id: location.id)
+
+      get "/tools/#{tool.id}/public"
+      expect(response.parsed_body.keys).to match_array(%w[id name description open out_of_service wiki_url shop])
+    end
+  end
+
   it "lists visible tools alphabetically, including open tools" do
     create(:tool, shop: shop, name: "Alpha", open: true)
     create(:tool, shop: shop, name: "Hidden", disabled: true)
