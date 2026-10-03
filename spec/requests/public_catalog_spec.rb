@@ -62,6 +62,51 @@ RSpec.describe "Public catalog", type: :request do
     expect(response.headers["Cache-Control"].split(", ")).to match_array(%w[public max-age=0 s-maxage=0 must-revalidate])
   end
 
+  describe "storage map" do
+    it "appears only once the tool has a placed storage location, and follows later moves" do
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).not_to include("storage-map")
+
+      cabinet = Location.create!(name: "Secret Cabinet", shop: shop, shape_points: [{ x: 10, y: 10 }, { x: 20, y: 10 }, { x: 20, y: 20 }])
+      tool.update!(location_id: cabinet.id)
+
+      get "/tools/#{tool.id}/public.html"
+      first_etag = response.headers["ETag"]
+      expect(response.body).to include('class="storage-map"', "shopFloorPlans/floor-1", "storage-map-tool", "storage-map-marker")
+      expect(response.body).not_to include("Secret Cabinet", "Find where this tool should be stored")
+
+      cabinet.update!(shape_points: [{ x: 60, y: 60 }, { x: 70, y: 60 }, { x: 70, y: 70 }])
+      get "/tools/#{tool.id}/public.html"
+      expect(response.headers["ETag"]).not_to eq(first_etag)
+    end
+
+    it "falls back to a nested location's nearest ancestor geometry, and draws a pin" do
+      area = Location.create!(name: "Area", shop: shop, shape_points: [{ x: 10, y: 10 }, { x: 50, y: 10 }, { x: 50, y: 50 }])
+      shelf = Location.create!(name: "Shelf", shop: shop, parent_id: area.id)
+      tool.update!(location_id: shelf.id)
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).to include("storage-map-tool")
+
+      pin = Location.create!(name: "Pin", shop: shop, x_pct: 30, y_pct: 40)
+      tool.update!(location_id: pin.id)
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).to include("storage-map-marker")
+      expect(response.body).not_to include("storage-map-tool")
+    end
+
+    it "is omitted when the location has no geometry, and never adds location data to the public JSON" do
+      bare = Location.create!(name: "Bare", shop: shop)
+      tool.update!(location_id: bare.id)
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).not_to include("storage-map")
+
+      pin = Location.create!(name: "Secret Cabinet", shop: shop, x_pct: 10, y_pct: 10)
+      tool.update!(location_id: pin.id)
+      get "/tools/#{tool.id}/public"
+      expect(response.parsed_body.keys).to match_array(%w[id name description open out_of_service wiki_url shop])
+    end
+  end
+
   it "lists visible tools alphabetically, including open tools" do
     create(:tool, shop: shop, name: "Alpha", open: true)
     create(:tool, shop: shop, name: "Hidden", disabled: true)
