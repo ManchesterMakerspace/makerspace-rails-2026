@@ -29,7 +29,7 @@ class PublicCatalog
 
   FLOOR_PLAN_DIR = Rails.root.join("app/assets/images/shopFloorPlans")
   MAP_PADDING_PCT = 5.0
-  MAP_MIN_SPAN_PCT = 12.0
+  MAP_MIN_SPAN_PCT = 30.0
 
   # Static map for the tool page: the shop's floor plan cropped to the shop,
   # with the shop's outline and this tool's storage spot. Plain numbers only
