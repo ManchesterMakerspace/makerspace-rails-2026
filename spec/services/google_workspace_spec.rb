@@ -112,6 +112,36 @@ RSpec.describe Service::GoogleWorkspace do
     end
   end
 
+  describe ".cached_calendar_color" do
+    before { allow(described_class).to receive(:calendar) }
+
+    it "uses the cached palette without ever calling Google" do
+      cached = { colors: [{ id: "4", name: "Flamingo", backgroundColor: "#abcdef", foregroundColor: "#000000" }] }
+      allow(REDIS).to receive(:get).with(described_class::CALENDAR_COLOR_CACHE_KEY).and_return(JSON.generate(cached))
+
+      expect(described_class.cached_calendar_color("4")).to eq("#abcdef")
+      expect(described_class).not_to have_received(:calendar)
+    end
+
+    it "falls back to the built-in palette when nothing is cached, and never calls Google" do
+      allow(REDIS).to receive(:get).with(described_class::CALENDAR_COLOR_CACHE_KEY).and_return(nil)
+
+      expect(described_class.cached_calendar_color("4")).to eq("#ff887c")
+      expect(described_class).not_to have_received(:calendar)
+    end
+
+    it "returns nil for a blank or unknown id, and for anything that is not a plain hex color" do
+      allow(REDIS).to receive(:get).with(described_class::CALENDAR_COLOR_CACHE_KEY).and_return(nil)
+      expect(described_class.cached_calendar_color(nil)).to be_nil
+      expect(described_class.cached_calendar_color("")).to be_nil
+      expect(described_class.cached_calendar_color("99")).to be_nil
+
+      bad = { colors: [{ id: "4", name: "Odd", backgroundColor: "red;} body{display:none", foregroundColor: "#000000" }] }
+      allow(REDIS).to receive(:get).with(described_class::CALENDAR_COLOR_CACHE_KEY).and_return(JSON.generate(bad))
+      expect(described_class.cached_calendar_color("4")).to eq("#ff887c")
+    end
+  end
+
   describe ".ensure_resource!" do
     let(:directory_service) { double("Google Directory service") }
     let(:calendar_service) do

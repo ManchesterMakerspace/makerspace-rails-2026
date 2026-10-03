@@ -75,6 +75,23 @@ module Service
         colors
       end
 
+      # Background color for a calendar color id, from the cached palette or
+      # the built-in fallback. Unlike calendar_colors this never calls Google,
+      # so it is safe to use from unauthenticated pages. Nil if the id is
+      # unknown.
+      def cached_calendar_color(color_id)
+        id = color_id.to_s
+        return nil if id.blank?
+
+        payload = read_color_cache
+        palette = (payload ? payload[:all_colors] + payload[:colors] : []) + FALLBACK_CALENDAR_COLORS
+        # The first usable value for this id: a bad cached value falls through
+        # to the built-in palette rather than being drawn.
+        palette.select { |color| color[:id] == id }
+          .map { |color| color[:backgroundColor].to_s }
+          .find { |hex| hex.match?(/\A#\h{6}\z/) }
+      end
+
       def ensure_resource!(record, category)
         execute_google_call(
           operation: "directory.calendarResources.ensure",

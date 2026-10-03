@@ -115,9 +115,43 @@ RSpec.describe "Public catalog", type: :request do
 
       plain = Location.create!(name: "Plain spot", shop: shop, x_pct: 30, y_pct: 40)
       tool.update!(location_id: plain.id)
+      saw.destroy # the old spot is another pin on the shop's map otherwise, still drawn with its own icon
       get "/tools/#{tool.id}/public.html"
       expect(response.body).to include(%(d="#{MarkerGlyphs::PATHS['pin']}"))
       expect(response.body).not_to include(MarkerGlyphs::PATHS["saw"])
+    end
+
+    it "draws the shop's areas in its calendar color and everything nested inside them" do
+      allow(Service::GoogleWorkspace).to receive(:cached_calendar_color).and_call_original
+      allow(Service::GoogleWorkspace).to receive(:cached_calendar_color).with(shop.color_id).and_return("#123456")
+      room = Location.create!(name: "Secret Room", shop: shop, shape_points: [{ x: 10, y: 10 }, { x: 60, y: 10 }, { x: 60, y: 60 }, { x: 10, y: 60 }])
+      Location.create!(name: "Secret Cabinet", shop: shop, parent_id: room.id, kind: "cabinet",
+                       shape_points: [{ x: 20, y: 20 }, { x: 30, y: 20 }, { x: 30, y: 30 }])
+      other_spot = Location.create!(name: "Other spot", shop: shop, parent_id: room.id, x_pct: 40, y_pct: 40)
+      create(:tool, shop: shop, name: "Other tool", location_id: other_spot.id)
+      mine = Location.create!(name: "My spot", shop: shop, parent_id: room.id, x_pct: 50, y_pct: 50)
+      tool.update!(location_id: mine.id)
+
+      get "/tools/#{tool.id}/public.html"
+      html = response.body
+      expect(html).to include("fill:#123456;fill-opacity:0.3")
+      expect(html).to include("fill:#6d4c41;fill-opacity:0.55")
+      expect(html).to include('class="storage-map-pin"', "fill:#2e7d32")
+      expect(html).to include("storage-map-halo")
+      expect(html).not_to include("Secret Room", "Secret Cabinet", "Other spot", "Other tool", "My spot")
+    end
+
+    it "never draws another shop's areas, or a disabled tool's spot as a tool spot" do
+      other = create(:shop, name: "Other shop")
+      Location.create!(name: "Elsewhere", shop: other, shape_points: [{ x: 70, y: 70 }, { x: 90, y: 70 }, { x: 90, y: 90 }])
+      held = Location.create!(name: "Held by hidden tool", shop: shop, x_pct: 40, y_pct: 40)
+      create(:tool, shop: shop, name: "Hidden tool", location_id: held.id, disabled: true)
+      mine = Location.create!(name: "My spot", shop: shop, x_pct: 20, y_pct: 20)
+      tool.update!(location_id: mine.id)
+
+      get "/tools/#{tool.id}/public.html"
+      expect(response.body).not_to include("storage-map-area")
+      expect(response.body).not_to include("fill:#2e7d32")
     end
 
     it "is omitted when the location has no geometry, and never adds location data to the public JSON" do
