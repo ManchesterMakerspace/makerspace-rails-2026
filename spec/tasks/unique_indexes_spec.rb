@@ -131,7 +131,7 @@ RSpec.describe 'data:ensure_unique_indexes' do
     expect { task.invoke }.not_to raise_error
 
     request_index = CheckoutApproverRequest.collection.indexes.to_a.find do |index|
-      index.fetch('key', {}).keys == %w[member_id tool_id status]
+      index.fetch('key', {}).keys == %w[member_id tool_id tool_group_id status]
     end
     credit_index = VolunteerCredit.collection.indexes.to_a.find do |index|
       index.fetch('key', {}).keys == ['tool_checkout_id']
@@ -142,6 +142,32 @@ RSpec.describe 'data:ensure_unique_indexes' do
     expect(credit_index.fetch('partialFilterExpression')).to eq(
       'tool_checkout_id' => { '$type' => 'objectId' }
     )
+  end
+
+  it 'replaces the legacy volunteer index and preserves uniqueness per tool or group on repeat runs' do
+    collection = CheckoutApproverRequest.collection
+    collection.drop
+    legacy_key = { member_id: 1, tool_id: 1, status: 1 }
+    collection.indexes.create_one(legacy_key, unique: true, partial_filter_expression: { status: 'open' })
+    member_id = BSON::ObjectId.new
+    tool_request = { member_id: member_id, tool_id: BSON::ObjectId.new, status: 'open' }
+    collection.insert_one(tool_request.dup)
+
+    2.times do
+      task.reenable
+      task.invoke
+      expect(collection.indexes.to_a.map { |index| index['key'] }).not_to include(legacy_key.stringify_keys)
+    end
+
+    group_request = { member_id: member_id, tool_group_id: BSON::ObjectId.new, status: 'open' }
+    collection.insert_one(group_request.dup)
+    expect do
+      collection.insert_one(group_request.merge(tool_group_id: BSON::ObjectId.new))
+    end.not_to raise_error
+    [tool_request, group_request].each do |request|
+      expect { collection.insert_one(request.dup) }.to raise_error(Mongo::Error::OperationFailure, /duplicate key/i)
+      expect { collection.insert_one(request.merge(status: 'approved')) }.not_to raise_error
+    end
   end
 
   it 'creates and recognizes a case-insensitive unique tool-name index scoped per shop' do

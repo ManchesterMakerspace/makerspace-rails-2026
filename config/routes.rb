@@ -114,6 +114,15 @@ Rails.application.routes.draw do
       post '/shops/:id/outage', to: 'shop_availability#create'
       resources :workshops, only: [:index]
       resources :tool_checkout_requests, only: [:index, :create, :update, :destroy]
+      resources :tool_groups, only: [:index, :show, :create, :update, :destroy] do
+        member do
+          get :review
+          post :approve
+          post :volunteer
+          get :volunteers
+          post :decide_volunteer
+        end
+      end
       resources :reservation_catalog, only: [:index]
       resources :reservations, only: [:index, :create, :update, :destroy] do
         collection do

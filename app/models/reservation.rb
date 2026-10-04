@@ -23,6 +23,14 @@ class Reservation
   field :title, type: String
   field :reservation_scope, type: String
   field :tool_ids, type: Array, default: []
+  field :selected_tool_ids, type: Array, default: []
+  field :tool_group_ids, type: Array, default: []
+  field :group_snapshots, type: Array, default: []
+
+  def group_label
+    group_snapshots.map { |group| "#{group['name']} (Group)" }.join(', ')
+  end
+
   field :start_at, type: Time
   field :end_at, type: Time
   field :status, type: String, default: "approved"

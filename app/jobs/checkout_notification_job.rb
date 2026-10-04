@@ -18,7 +18,7 @@ class CheckoutNotificationJob < ApplicationJob
         CheckoutCreation.deliver_notifications(checkout, invite: true)
       when "request", "cancellation"
         request = ToolCheckoutRequest.find_by(id: record_id)
-        return unless request && request.member && request.tool
+        return unless request && request.member && request.target
         if action == "request"
           request.announce_request if request.open?
           request.notify_requestor
@@ -27,7 +27,7 @@ class CheckoutNotificationJob < ApplicationJob
         end
       when "approver_volunteer", "approver_volunteer_decision"
         request = CheckoutApproverRequest.find_by(id: record_id)
-        return unless request && request.member && request.tool
+        return unless request && request.member && request.target
         if action == "approver_volunteer" && request.open?
           CheckoutApproverVolunteering.deliver_request_notifications(request)
         elsif action == "approver_volunteer_decision" && request.status.in?(%w[approved declined])

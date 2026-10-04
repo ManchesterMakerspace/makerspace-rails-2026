@@ -13,7 +13,7 @@ class CheckoutApproverCredit
     credit = VolunteerCredit.find_or_create_by!(tool_checkout_id: checkout.id) do |row|
       row.member_id = actor.id
       row.issued_by_id = actor.id
-      row.description = "Completed checkout for #{checkout.member.fullname} on #{checkout.tool.name}"
+      row.description = "Completed checkout for #{checkout.member.fullname} on #{checkout.group_name.presence || checkout.tool.name}"
       row.credit_value = VALUE
       row.status = "approved"
     end
@@ -22,6 +22,13 @@ class CheckoutApproverCredit
   end
 
   def self.reverse!(checkout)
+    return reverse_under_lock!(checkout) unless checkout.approval_batch_id.present?
+    CheckoutMutationLock.with(member_id: 'group-credit', tool_id: checkout.approval_batch_id) do
+      reverse_under_lock!(checkout)
+    end
+  end
+
+  def self.reverse_under_lock!(checkout)
     credit = VolunteerCredit.find_by(id: checkout.volunteer_credit_id) ||
       VolunteerCredit.find_by(tool_checkout_id: checkout.id)
     return unless credit&.status == "approved" && !credit.reversed

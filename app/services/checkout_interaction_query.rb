@@ -10,6 +10,54 @@ class CheckoutInteractionQuery
     Shop.where(:disabled.ne => true).collation(COLLATION).order_by(name: :asc, id: :asc)
   end
 
+  def groups
+    criteria = ToolGroup.where(archived: false, :shop_id.in => enabled_shops.pluck(:id))
+    criteria = criteria.where(shop_id: @shop.id) if @shop
+    criteria.order_by(name: :asc).collation(COLLATION).to_a
+  end
+
+  def requestable_groups
+    groups.select do |group|
+      begin
+        review = ToolGroupCheckout.review(member: @member, group: group, requesting: true)
+        review[:create_tool_ids].any? && review[:missing_prerequisite_ids].empty? &&
+          !ToolCheckoutRequest.where(member_id: @member.id, tool_group_id: group.id, status: 'open').exists?
+      rescue Error::UnprocessableEntity
+        false
+      end
+    end
+  end
+
+  def volunteerable_groups
+    groups.select do |group|
+      begin
+        ToolGroupVolunteering.eligible!(@member, group)
+        !CheckoutApprover.find_by(member_id: @member.id)&.can_approve_group?(group) &&
+          !CheckoutApproverRequest.where(member_id: @member.id, tool_group_id: group.id, status: 'open').exists?
+      rescue Error::UnprocessableEntity
+        false
+      end
+    end
+  end
+
+  def visible_group_requests
+    allowed = groups.select { |group| ToolGroupCheckout.authorized?(@member, group) }.map(&:id)
+    ToolCheckoutRequest.where(status: 'open', :tool_group_id.in => groups.map(&:id)).any_of(
+      { member_id: @member.id }, { :tool_group_id.in => allowed }).to_a.select do |request|
+        begin
+          ToolGroupCheckout.validate_review!(ToolGroupCheckout.review(member: request.member, group: request.tool_group))
+          true
+        rescue Error::UnprocessableEntity
+          false
+        end
+      end.sort_by { |request| request.target.name.downcase }
+  end
+
+  def visible_group_volunteers
+    allowed = groups.select { |group| CheckoutApproverVolunteering.reviewer?(@member, group.shop_id) }.map(&:id)
+    CheckoutApproverRequest.where(status: 'open', :tool_group_id.in => allowed).to_a
+  end
+
   def requestable_tools
     candidates = tools.where(:disabled.ne => true, :open.ne => true)
       .collation(COLLATION).order_by(name: :asc, id: :asc).includes(:shop).to_a

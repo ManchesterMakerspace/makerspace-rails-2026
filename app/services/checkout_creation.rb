@@ -14,15 +14,19 @@ class CheckoutCreation
         shop_id: shop_id, source: source, request_id: request_id,
         defer_notifications: defer_notifications) { yield if block_given? }
     end
-    checkout = if additional_approver_authority_required?(actor, tool)
-      CheckoutApproverMutationLock.with(member_id: actor_id, &create_checkout)
-    else
-      create_checkout.call
+    checkout = CatalogMutationLock.with([tool&.shop_id]) do
+      if additional_approver_authority_required?(actor, tool)
+        CheckoutApproverMutationLock.with(member_id: actor_id, &create_checkout)
+      else
+        create_checkout.call
+      end
     end
+    notify { ToolCheckoutSlackCanvasSyncJob.perform_later(checkout.tool.shop_id.to_s, checkout.id.to_s, 'add') }
+    Array(checkout.reconciled_requests).each { |request| notify { request.refresh_closed_announcement } }
     if defer_notifications
       CheckoutNotificationJob.enqueue("approval", checkout.id)
     else
-      deliver_notifications(checkout)
+      deliver_notifications(checkout, invite: true)
     end
     checkout
   end
@@ -42,13 +46,18 @@ class CheckoutCreation
       end
       error = ToolCheckoutRequestEligibility.new(member: member, tool: tool, open_request_tool_ids: []).error
       raise Error::UnprocessableEntity.new(error) if error
-      checkout = ToolCheckout.create!(member: member, tool: tool, approved_by: actor,
-        signed_off_via: source, checked_out_at: Time.current, checkout_request_id: request&.id,
-        defer_users_channel_invitation: defer_notifications)
-      # The checkout is authoritative. Credit persistence is idempotent and
-      # best-effort, but runs before this lock can admit a revocation.
-      notify { CheckoutApproverCredit.award!(checkout) }
-      checkout
+      ToolCheckout.with_session do |session|
+        session.with_transaction do
+          checkout = ToolCheckout.create!(member: member, tool: tool, approved_by: actor,
+            signed_off_via: source, checked_out_at: Time.current, checkout_request_id: request&.id,
+            defer_users_channel_invitation: true, defer_group_callbacks: true)
+          notify { CheckoutApproverCredit.award!(checkout) }
+          checkout.reconciled_requests = ToolGroupCheckout.reconcile!(member.id)
+          checkout
+        end
+      ensure
+        session.end_session
+      end
     end
   end
 

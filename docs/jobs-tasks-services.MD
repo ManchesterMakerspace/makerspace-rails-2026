@@ -1,5 +1,62 @@
 # Production jobs, tasks, and services
 
+## Tool group services
+
+- `CatalogMutationLock` serializes physical-tool and group catalog mutations by
+  shop, also coordinating checkout approval and reservation expansion.
+- `ToolGroupCatalog` validates revisions, archives requests and extends persistent
+  individual approver grants when a group's membership changes. Under the shop
+  catalog lock it acquires assigned members' approver locks in sorted order before
+  opening the MongoDB transaction, rechecks revoked checkouts, and holds the locks
+  through commit so revocation cannot race grant propagation.
+  Membership edits also lock open checkout-request holders' approver records to
+  coordinate with revocation, then reconcile only that group's newly satisfied
+  requests in the same transaction. These closures reuse existing checkouts and
+  create no credit. Post-commit delivery uses edited catalog details with the
+  pre-edit announcement channel, so a simultaneous channel edit does not move an
+  existing message timestamp. Failed or retried transactions do not deliver stale
+  notification intents; archival takes precedence over reconciliation.
+  Archival and the `ToolGroup` destruction callback share request cleanup: open
+  checkout requests become `deleted`, open volunteer requests become `revoked`,
+  and terminal history is retained. Shop deletion runs this callback for each group
+  before destroying its physical tools. Destruction captures announced open
+  requests and their group name/channel before removing the target, then updates
+  their Slack posts through `remove_announcement` after group destruction. Slack
+  failures are best effort and do not abort deletion or skip subsequent posts.
+- `ToolGroupCheckoutNotificationJob` runs on the Slack queue after Slack-sourced
+  group approvals commit. It receives committed checkout/request IDs and the batch
+  ID plus a catalog snapshot captured inside the approval transaction and catalog
+  lock (group name/revision, included IDs, child details and delivery channels).
+  Delivery uses that snapshot even after catalog edits; current member DM suppression
+  still applies. Older queued five-argument jobs remain supported using their legacy
+  current-catalog lookup; drain those jobs before catalog edits during deployment.
+  It then delivers audit, deduplicated users-channel invitations, announcements,
+  member DMs, canvas scheduling, and reconciled request announcement updates.
+  All-held resolutions use the queued snapshot for the approved group's existing
+  message, including its channel and group/child names after edits or destruction.
+  Other reconciled requests retain their own target's announcement details.
+  Batch delivery updates only a same-group request present in that approval's
+  reconciled request IDs. It sends a fresh group post when no such request exists;
+  older closed requests and their timestamps are never selected from history.
+  Both stateful and signed group modals use it. Enqueue errors are reported without
+  rolling back approval or falling back to synchronous Slack delivery. Repeated
+  approvals with no new checkouts or reconciled requests do not enqueue again.
+- `ToolGroupCheckout` reviews and atomically grants physical checkouts, records
+  batch provenance, reconciles requests and issues one credit before post-commit
+  Slack delivery. `ToolGroupVolunteering` revalidates complete membership at decision.
+- `SlackGroupApprovalModal` signs the reviewed group revision and Slack identity
+  for manual `/checkout @member group-name` approvals and rechecks both on submit.
+- `ReservationGroupExpansion` expands selections and preserves historical snapshots.
+- `CheckoutNotificationJob` accepts either request target for request/cancellation
+  and volunteer delivery. Both Slack request modals enqueue group request announcements
+  and requestor DMs only after persistence, so these sends do not delay acknowledgement.
+  `SlackCheckoutRequestJob` resolves tool or group names.
+- `data:ensure_unique_indexes` creates group indexes and replaces the open
+  volunteer-request unique key with its tool/group-aware version. Run before
+  deploying clients that select groups; no checkout backfill task is required.
+  Run `data:ensure_checkout_indexes` as well to install the nonunique group-request
+  lookup index; the unique-index task does not install `ToolCheckoutRequest` indexes.
+
 ## Shop outage announcements
 
 `ShopAvailabilityService` lets admins, board members, and assigned resource managers
@@ -56,7 +113,8 @@ It creates only the nonunique checkout performance indexes on
 `members(status, expirationTime)`, `tool_checkouts(member_id, revoked_at, tool_id)`,
 `checkout_approvers(member_id)`,
 `tool_checkout_requests(member_id, status, request_date, _id)`,
-`tool_checkout_requests(tool_id, status, request_date, _id)`, and
+`tool_checkout_requests(tool_id, status, request_date, _id)`,
+`tool_checkout_requests(tool_group_id, status)`, and
 `tools(shop_id, name, _id, disabled, open)` (case-insensitive collation),
 using their model declarations. It can be
 rerun and never drops indexes or modifies documents. Unrelated legacy identity
@@ -86,7 +144,12 @@ modal, and rechecks tool/shop availability, membership, prerequisites, existing
 checkouts, and open requests immediately before creating a request. Creation is
 serialized per member and tool so concurrent Slack deliveries cannot announce
 duplicate open requests.
-`SlackCheckoutJob` handles approver-driven `/checkout MEMBER TOOL` commands and
+`SlackCheckoutMember` resolves linked target members locally by Slack mention,
+username, or email. `/checkout MEMBER GROUP` opens its signed review synchronously
+in `Slack::CommandsController`, before the trigger expires, with email recovery
+for unlinked targets. No modal trigger is passed to `SlackCheckoutJob`.
+
+`SlackCheckoutJob` handles approver-driven physical `/checkout MEMBER TOOL` commands and
 resolves the shop from the channel ID or normalized name. It delegates to
 `CheckoutCreation`, the same operation as the portal and modal. Authority,
 member eligibility, availability, prerequisites, duplicates and selected-request
