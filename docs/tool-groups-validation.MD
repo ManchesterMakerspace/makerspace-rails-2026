@@ -164,3 +164,32 @@ verified commit and rollback. All 11 changed Ruby/Rake files passed syntax check
 and `git diff --check` passed. Checkout, service/job and collection/index inventories
 were updated. The environment-variable inventory and API schemas are unchanged.
 Production index installation and live Slack acceptance were not performed.
+
+## Catalog edits and cascade announcements — 2026-10-04
+
+Included-tool membership edits reconcile newly satisfied checkout requests for
+the edited group within the catalog transaction. Request holders share approver
+locks with revocation, closures reuse existing active checkouts, and no checkout
+or volunteer credit is created. Unsatisfied, revoked and unrelated requests remain
+open; archival takes precedence over reconciliation. Existing request posts update
+after commit with the edited group details and pre-edit announcement channel.
+
+Group destruction captures announced open requests and the group name/channel
+before removing the target, then retires their Slack posts after destruction.
+Shop cascades use this path. Delivery reloads each request so a resolution that
+wins during cleanup preserves its success announcement. Slack failures are
+reported without aborting deletion or blocking subsequent request updates.
+
+Validation: 56 distinct focused and related Rails examples passed with no failures
+or pending examples, using each example's latest result. Tests used Ruby 3.4.5,
+MongoDB 7.0 as a replica set with disposable databases, Redis 7, and mocked Slack calls.
+Coverage includes transactional reconciliation and rollback, simultaneous channel
+edits, authenticated membership edits and shop deletion, fallback/override channels,
+Slack failure isolation, the resolution/deletion boundary, and existing approval
+and notification paths. All seven changed Ruby files passed syntax checks, and
+`git diff --check` passed. Swagger regeneration succeeded with no artifact changes;
+its 929 dry-run examples are schema generation, not executed test coverage.
+Checkout, service/job and collection lifecycle inventories were updated. The
+environment-variable inventory, collection/index schemas and API response schemas
+are unchanged. No companion UI change or API-client publication is required.
+Live Slack acceptance and production deployment were not performed.

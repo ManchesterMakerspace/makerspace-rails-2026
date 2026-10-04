@@ -134,16 +134,22 @@ class ToolCheckoutRequest
     ::Service::SlackConnector.delete_slack_message(channel, timestamp)
   end
 
-  def remove_announcement
+  def remove_announcement(notification_snapshot: nil)
     return if message_id.blank?
+    return unless notification_snapshot || target
 
-    channel = target.announce_channel.presence || target.shop.try(:slack_channel)
+    channel = if notification_snapshot
+      notification_snapshot['channel']
+    else
+      target.announce_channel.presence || target.shop&.slack_channel
+    end
     return if channel.blank?
+    target_name = notification_snapshot ? notification_snapshot.fetch('name') : target.name
 
     ::Service::SlackConnector.update_slack_message(
       channel,
       message_id,
-      "*#{member.fullname}* cancelled their checkout request for *#{target.name}*."
+      "*#{member.fullname}* cancelled their checkout request for *#{target_name}*."
     )
   rescue => e
     Service::ErrorReporter.notify(e)

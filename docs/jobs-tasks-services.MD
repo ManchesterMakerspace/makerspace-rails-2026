@@ -9,10 +9,20 @@
   catalog lock it acquires assigned members' approver locks in sorted order before
   opening the MongoDB transaction, rechecks revoked checkouts, and holds the locks
   through commit so revocation cannot race grant propagation.
+  Membership edits also lock open checkout-request holders' approver records to
+  coordinate with revocation, then reconcile only that group's newly satisfied
+  requests in the same transaction. These closures reuse existing checkouts and
+  create no credit. Post-commit delivery uses edited catalog details with the
+  pre-edit announcement channel, so a simultaneous channel edit does not move an
+  existing message timestamp. Failed or retried transactions do not deliver stale
+  notification intents; archival takes precedence over reconciliation.
   Archival and the `ToolGroup` destruction callback share request cleanup: open
   checkout requests become `deleted`, open volunteer requests become `revoked`,
   and terminal history is retained. Shop deletion runs this callback for each group
-  before destroying its physical tools.
+  before destroying its physical tools. Destruction captures announced open
+  requests and their group name/channel before removing the target, then updates
+  their Slack posts through `remove_announcement` after group destruction. Slack
+  failures are best effort and do not abort deletion or skip subsequent posts.
 - `ToolGroupCheckoutNotificationJob` runs on the Slack queue after Slack-sourced
   group approvals commit. It receives committed checkout/request IDs and the batch
   ID plus a catalog snapshot captured inside the approval transaction and catalog

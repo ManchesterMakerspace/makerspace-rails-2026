@@ -13,6 +13,23 @@ RSpec.describe 'Tool group API', type: :request do
     allow(ToolGroupCheckout).to receive(:notify)
   end
 
+  it 'closes a newly satisfied group request when a reviewed membership edit removes the unheld tool', requires_transactions: true do
+    extra = create(:tool, shop: shop)
+    group.update!(included_tool_ids: [tool.id.to_s, extra.id.to_s])
+    trainee = create(:member, :current)
+    checkout = ToolCheckout.create!(member: trainee, tool: tool,
+      defer_users_channel_invitation: true, defer_group_callbacks: true)
+    request = ToolCheckoutRequest.create!(member: trainee, tool_group: group)
+
+    put "/api/tool_groups/#{group.id}", params: { revision: group.revision, included_tool_ids: [tool.id.to_s] }, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(request.reload.status).to eq('closed')
+    expect(request.checked_out_id).to eq(checkout.id)
+    expect(ToolCheckout.where(member: trainee).pluck(:id)).to eq([checkout.id])
+    expect(VolunteerCredit.count).to eq(0)
+  end
+
   path '/tool_groups' do
     get 'List authenticated groups separately from physical tools' do
       tags 'Tool groups'

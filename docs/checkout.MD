@@ -20,6 +20,16 @@ requests, independently of manual signoff.
 Archiving or destroying a group, including through shop deletion, marks its open
 checkout requests `deleted` and open volunteer requests `revoked`. Terminal request
 history is retained.
+After an included-tool membership edit, the catalog save also closes requests for
+that group whose remaining included tools all have active checkouts. It links each
+closed request to an existing checkout, creates no checkout or volunteer credit,
+and leaves unsatisfied and unrelated requests open. Archival takes precedence over
+this reconciliation. Existing Slack posts are updated after commit using the edited
+group details and the channel from before the edit.
+Group destruction captures the name and announcement channel before removing the
+target, then retires each announced open request after destruction. Shop cascades
+use this same cleanup; a Slack failure is reported without aborting deletion or
+preventing updates to other request posts.
 
 GET `/api/tool_groups/:id/review?member_id=...` returns current membership,
 held/new checkout IDs and external prerequisites. POST `:id/approve` accepts

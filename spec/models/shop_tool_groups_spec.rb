@@ -51,4 +51,62 @@ RSpec.describe Shop do
     expect(other_volunteer.reload.status).to eq('open')
     expect(ToolGroup.where(:id.in => groups.map(&:id))).not_to exist
   end
+
+  [false, true].each do |slack_failure|
+    it "retires announced requests after cascading deletion#{slack_failure ? ' even if one Slack update fails' : ''}" do
+      shop = create(:shop, slack_channel: 'C11111111')
+      tool = create(:tool, shop: shop)
+      member = create(:member, :current)
+      groups = [nil, 'C22222222'].map.with_index do |channel, index|
+        ToolGroup.create!(shop: shop, name: "Deleted kit #{index}", included_tool_ids: [tool.id.to_s],
+          announce: true, announce_channel: channel)
+      end
+      requests = groups.map.with_index do |group, index|
+        ToolCheckoutRequest.create!(member: member, tool_group: group, message_id: "request-#{index}")
+      end
+      historical = ToolCheckoutRequest.create!(member: member, tool_group: groups.first,
+        status: 'closed', message_id: 'history-ts')
+      allow(Service::ErrorReporter).to receive(:notify)
+      allow(Service::SlackConnector).to receive(:update_slack_message) do |_channel, timestamp, _message|
+        request = ToolCheckoutRequest.find_by(message_id: timestamp)
+        expect(request.status).to eq('deleted')
+        expect(request.target).to be_nil
+        raise 'Slack unavailable' if slack_failure && timestamp == 'request-0'
+      end
+
+      expect { shop.destroy! }.not_to raise_error
+
+      expect(Shop.where(id: shop.id)).not_to exist
+      expect(requests.map { |row| row.reload.status }).to eq(%w[deleted deleted])
+      expect(historical.reload.status).to eq('closed')
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with('C11111111', 'request-0',
+        include('cancelled their checkout request for *Deleted kit 0*'))
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with('C22222222', 'request-1',
+        include('cancelled their checkout request for *Deleted kit 1*'))
+      expect(Service::SlackConnector).not_to have_received(:update_slack_message).with(anything, 'history-ts', anything)
+      expect(Service::ErrorReporter).to have_received(:notify).with(instance_of(RuntimeError)) if slack_failure
+    end
+  end
+
+  it 'keeps a request announcement intact if resolution wins after deletion captures open posts' do
+    shop = create(:shop, slack_channel: 'C11111111')
+    tool = create(:tool, shop: shop)
+    group = ToolGroup.create!(shop: shop, name: 'Kit', included_tool_ids: [tool.id.to_s])
+    member = create(:member, :current)
+    checkout = ToolCheckout.create!(member: member, tool: tool,
+      defer_users_channel_invitation: true, defer_group_callbacks: true)
+    request = ToolCheckoutRequest.create!(member: member, tool_group: group, message_id: 'resolved-ts')
+    allow_any_instance_of(ToolGroup).to receive(:close_open_requests!).and_wrap_original do |cleanup|
+      # Resolution finishes after the callback captures the announcement but
+      # before its conditional open-request update.
+      request.update!(status: 'closed', checked_out_id: checkout.id)
+      cleanup.call
+    end
+    allow(Service::SlackConnector).to receive(:update_slack_message)
+
+    shop.destroy!
+
+    expect(request.reload.status).to eq('closed')
+    expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+  end
 end

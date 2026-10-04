@@ -13,6 +13,13 @@ references from either kind of group.
 Before a group is destroyed, its open checkout requests become `deleted` and its
 open volunteer requests become `revoked`, using the same cleanup as archival.
 Terminal request history remains stored.
+Group destruction captures announcement names/channels before target removal and
+retires open-request Slack posts after destruction, including during shop cascades.
+Included-tool membership edits reconcile satisfied checkout requests for that group
+inside the catalog transaction: status becomes `closed` with `checked_out_id`
+pointing to an existing active checkout. Unsatisfied and unrelated requests remain
+open; archival instead marks requests `deleted`. These changes add no fields or
+indexes and require no backfill.
 
 `tool_checkouts` remains physical-tool-only. Optional `group_id`, `group_name`,
 `group_revision`, and `approval_batch_id` record provenance. Newly created

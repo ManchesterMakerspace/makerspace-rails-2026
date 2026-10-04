@@ -145,9 +145,11 @@ class ToolGroupCheckout
     raise Error::UnprocessableEntity.new('Every included tool already has an active checkout') if review[:create_tool_ids].empty?
   end
 
-  def self.reconcile!(member_id)
+  def self.reconcile!(member_id, tool_group_id: nil)
     active = ToolCheckout.where(member_id: member_id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
-    ToolCheckoutRequest.where(member_id: member_id, status: 'open').filter_map do |request|
+    requests = ToolCheckoutRequest.where(member_id: member_id, status: 'open')
+    requests = requests.where(tool_group_id: tool_group_id) if tool_group_id
+    requests.filter_map do |request|
       required = request.tool_group ? request.tool_group.included_tool_ids : [request.tool_id.to_s]
       next unless required.present? && (required - active).empty?
       checkout = ToolCheckout.where(member_id: member_id, :tool_id.in => required, revoked_at: nil).first

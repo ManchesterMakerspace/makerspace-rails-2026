@@ -22,7 +22,8 @@ class ToolGroup
   validate :unique_catalog_name
   validate :fixed_shop
   before_validation :normalize_catalog_fields
-  before_destroy :close_open_requests!
+  before_destroy :prepare_request_cleanup
+  after_destroy :remove_request_announcements
 
   def included_tools
     Tool.where(:id.in => included_tool_ids).order_by(name: :asc).to_a
@@ -51,6 +52,24 @@ class ToolGroup
   end
 
   private
+
+  def prepare_request_cleanup
+    @request_announcements = ToolCheckoutRequest.where(tool_group_id: id, status: 'open',
+      :message_id.nin => [nil, '']).to_a
+    @request_announcement_snapshot = {
+      'name' => name, 'channel' => announce_channel.presence || shop&.slack_channel
+    }
+    close_open_requests!
+  end
+
+  def remove_request_announcements
+    Array(@request_announcements).each do |request|
+      CheckoutCreation.notify do
+        request.reload
+        request.remove_announcement(notification_snapshot: @request_announcement_snapshot) if request.status == 'deleted'
+      end
+    end
+  end
 
   def normalize_catalog_fields
     self.name = name.to_s.strip
