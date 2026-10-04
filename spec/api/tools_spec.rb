@@ -575,6 +575,9 @@ RSpec.describe 'Tools API', type: :request do
         ToolGroup.create!(shop: shop, name: "Shop kit #{archived}", archived: archived,
           included_tool_ids: [internal_tool.id.to_s], prerequisite_ids: [visible_tool.id.to_s])
       end
+      ToolCheckout.create!(member: admin, tool: internal_tool, defer_users_channel_invitation: true, defer_group_callbacks: true)
+      checkout_requests = groups.map { |group| ToolCheckoutRequest.create!(member: admin, tool_group: group) }
+      volunteer_requests = groups.map { |group| CheckoutApproverRequest.create!(member: admin, tool_group: group) }
       shop.set(reservation_prerequisite_tool_ids: [visible_tool.id.to_s])
 
       surviving_shop = Shop.create!(name: 'Surviving shop')
@@ -602,6 +605,8 @@ RSpec.describe 'Tools API', type: :request do
       expect(response.body).not_to include('Internal dependent')
       expect(ToolGroup.where(:id.in => groups.map(&:id)).count).to eq(2)
       expect(Shop.where(id: shop.id)).to exist
+      expect(checkout_requests.map { |request| request.reload.status }).to eq(%w[open open])
+      expect(volunteer_requests.map { |request| request.reload.status }).to eq(%w[open open])
 
       checkout_tool.set(prerequisite_ids: [])
       reservation_tool.set(reservation_prerequisite_tool_ids: [])
@@ -615,6 +620,8 @@ RSpec.describe 'Tools API', type: :request do
       expect(Shop.where(id: shop.id)).not_to exist
       expect(Tool.where(id: [visible_tool.id, internal_tool.id])).not_to exist
       expect(ToolGroup.where(:id.in => groups.map(&:id))).not_to exist
+      expect(checkout_requests.map { |request| request.reload.status }).to eq(%w[deleted deleted])
+      expect(volunteer_requests.map { |request| request.reload.status }).to eq(%w[revoked revoked])
     end
   end
 end

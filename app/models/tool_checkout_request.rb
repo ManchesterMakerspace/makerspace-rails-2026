@@ -149,15 +149,29 @@ class ToolCheckoutRequest
     Service::ErrorReporter.notify(e)
   end
 
-  def checkout_success_message
-    return checked_out.checkout_success_message unless tool_group
-    "*#{CheckoutDisplay.escape(member.fullname)}* has completed checkout for *#{CheckoutDisplay.escape(tool_group.name)}*: " \
-      "#{tool_group.included_tools.map { |child| CheckoutDisplay.escape(child.name) }.join(', ')}."
+  def checkout_success_message(notification_snapshot: nil)
+    return checked_out.checkout_success_message unless notification_snapshot || tool_group
+
+    group_name = notification_snapshot ? notification_snapshot.fetch('name') : tool_group.name
+    tool_names = if notification_snapshot
+      notification_snapshot.fetch('tools').map { |child| child.fetch('name') }
+    else
+      tool_group.included_tools.map(&:name)
+    end
+    "*#{CheckoutDisplay.escape(member.fullname)}* has completed checkout for *#{CheckoutDisplay.escape(group_name)}*: " \
+      "#{tool_names.map { |name| CheckoutDisplay.escape(name) }.join(', ')}."
   end
 
-  def refresh_closed_announcement
-    return unless status == 'closed' && message_id.present? && target
-    channel = target.announce_channel.presence || target.shop&.slack_channel
-    Service::SlackConnector.update_slack_message(channel, message_id, checkout_success_message) if channel.present?
+  def refresh_closed_announcement(notification_snapshot: nil)
+    return unless status == 'closed' && message_id.present? && (notification_snapshot || target)
+    channel = if notification_snapshot
+      notification_snapshot['channel']
+    else
+      target.announce_channel.presence || target.shop&.slack_channel
+    end
+    if channel.present?
+      Service::SlackConnector.update_slack_message(channel, message_id,
+        checkout_success_message(notification_snapshot: notification_snapshot))
+    end
   end
 end

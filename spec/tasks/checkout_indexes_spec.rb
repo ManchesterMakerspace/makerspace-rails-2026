@@ -47,6 +47,7 @@ RSpec.describe 'data:ensure_checkout_indexes' do
     [
       [ToolCheckoutRequest, { 'member_id' => 1, 'status' => 1, 'request_date' => 1, '_id' => 1 }],
       [ToolCheckoutRequest, { 'tool_id' => 1, 'status' => 1, 'request_date' => 1, '_id' => 1 }],
+      [ToolCheckoutRequest, { 'tool_group_id' => 1, 'status' => 1 }],
       [Tool, { 'shop_id' => 1, 'name' => 1, '_id' => 1, 'disabled' => 1, 'open' => 1 }]
     ].each do |model, key|
       matches = model.collection.indexes.to_a.select { |index| index['key'] == key }

@@ -17,6 +17,9 @@ Checkout requests accept exactly one `tool_id` or `tool_group_id`. Existing list
 contracts stay tool-only unless `include_groups=true`. Group requests are one
 record and use current membership. The group's Requestable flag governs member
 requests, independently of manual signoff.
+Archiving or destroying a group, including through shop deletion, marks its open
+checkout requests `deleted` and open volunteer requests `revoked`. Terminal request
+history is retained.
 
 GET `/api/tool_groups/:id/review?member_id=...` returns current membership,
 held/new checkout IDs and external prerequisites. POST `:id/approve` accepts
@@ -46,6 +49,10 @@ API calls; portal approvals keep their existing delivery behavior. An ordinary a
 receives one 0.25 credit for a batch with new checkouts; the first revocation
 reverses that shared credit. Groups never retroactively grant previous trainees
 newly added tools.
+Queued all-held request resolution uses the approval-time group name, constituent
+tool names and announcement channel to update the existing Slack message, even
+after the group is edited or destroyed. Reconciled requests for other targets
+continue using their own announcement details.
 
 Slack `/checkout request <name>` resolves shop-scoped groups as well as tools.
 Textual `/checkout MEMBER GROUP` resolves a linked target and opens the signed
@@ -90,7 +97,7 @@ members. Visible requests are oldest first (`request_date: 1, _id: 1`), with the
 ID providing a stable tie-breaker. Bulk checkout data also removes requests with
 unmet prerequisites or an existing disqualifying checkout.
 
-Deploy all six declared nonunique indexes from the application root with:
+Deploy all seven declared nonunique indexes from the application root with:
 
 ```sh
 RAILS_ENV=production bundle exec rake data:ensure_checkout_indexes
@@ -103,6 +110,7 @@ RAILS_ENV=production bundle exec rake data:ensure_checkout_indexes
 | `checkout_approvers` | `member_id` |
 | `tool_checkout_requests` | `member_id, status, request_date, _id` |
 | `tool_checkout_requests` | `tool_id, status, request_date, _id` |
+| `tool_checkout_requests` | `tool_group_id, status` |
 | `tools` | `shop_id, name, _id, disabled, open` (case-insensitive collation) |
 
 The tool index places shop equality and name ordering before availability

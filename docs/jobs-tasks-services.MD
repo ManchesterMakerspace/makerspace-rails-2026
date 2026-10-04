@@ -9,6 +9,10 @@
   catalog lock it acquires assigned members' approver locks in sorted order before
   opening the MongoDB transaction, rechecks revoked checkouts, and holds the locks
   through commit so revocation cannot race grant propagation.
+  Archival and the `ToolGroup` destruction callback share request cleanup: open
+  checkout requests become `deleted`, open volunteer requests become `revoked`,
+  and terminal history is retained. Shop deletion runs this callback for each group
+  before destroying its physical tools.
 - `ToolGroupCheckoutNotificationJob` runs on the Slack queue after Slack-sourced
   group approvals commit. It receives committed checkout/request IDs and the batch
   ID plus a catalog snapshot captured inside the approval transaction and catalog
@@ -18,6 +22,9 @@
   current-catalog lookup; drain those jobs before catalog edits during deployment.
   It then delivers audit, deduplicated users-channel invitations, announcements,
   member DMs, canvas scheduling, and reconciled request announcement updates.
+  All-held resolutions use the queued snapshot for the approved group's existing
+  message, including its channel and group/child names after edits or destruction.
+  Other reconciled requests retain their own target's announcement details.
   Both stateful and signed group modals use it. Enqueue errors are reported without
   rolling back approval or falling back to synchronous Slack delivery. Repeated
   approvals with no new checkouts or reconciled requests do not enqueue again.
@@ -34,6 +41,8 @@
 - `data:ensure_unique_indexes` creates group indexes and replaces the open
   volunteer-request unique key with its tool/group-aware version. Run before
   deploying clients that select groups; no checkout backfill task is required.
+  Run `data:ensure_checkout_indexes` as well to install the nonunique group-request
+  lookup index; the unique-index task does not install `ToolCheckoutRequest` indexes.
 
 ## Shop outage announcements
 
@@ -91,7 +100,8 @@ It creates only the nonunique checkout performance indexes on
 `members(status, expirationTime)`, `tool_checkouts(member_id, revoked_at, tool_id)`,
 `checkout_approvers(member_id)`,
 `tool_checkout_requests(member_id, status, request_date, _id)`,
-`tool_checkout_requests(tool_id, status, request_date, _id)`, and
+`tool_checkout_requests(tool_id, status, request_date, _id)`,
+`tool_checkout_requests(tool_group_id, status)`, and
 `tools(shop_id, name, _id, disabled, open)` (case-insensitive collation),
 using their model declarations. It can be
 rerun and never drops indexes or modifies documents. Unrelated legacy identity

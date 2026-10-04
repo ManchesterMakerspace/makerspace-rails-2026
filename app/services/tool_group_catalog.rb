@@ -29,10 +29,7 @@ class ToolGroupCatalog
               })
               approver.pull(tool_group_ids: group.id.to_s) if group.archived?
             end
-            if group.archived?
-              ToolCheckoutRequest.where(tool_group_id: group.id, status: 'open').update_all(status: 'deleted')
-              CheckoutApproverRequest.where(tool_group_id: group.id, status: 'open').update_all(status: 'revoked')
-            end
+            group.close_open_requests! if group.archived?
           end
         ensure
           session.end_session

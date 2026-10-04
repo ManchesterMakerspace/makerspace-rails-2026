@@ -135,7 +135,8 @@ class ToolGroupCheckout
       # A new batch updates its own announcement in notify; all-held requests
       # still need their closed status reflected in Slack.
       next if group_id && result[:checkouts].any? && request.tool_group_id.to_s == group_id
-      CheckoutCreation.notify { request.refresh_closed_announcement }
+      snapshot = request.tool_group_id.to_s == group_id ? result[:notification_snapshot] : nil
+      CheckoutCreation.notify { request.refresh_closed_announcement(notification_snapshot: snapshot) }
     end
   end
 

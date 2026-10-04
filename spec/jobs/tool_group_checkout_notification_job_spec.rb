@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe ToolGroupCheckoutNotificationJob do
+RSpec.describe ToolGroupCheckoutNotificationJob, requires_transactions: true do
   let(:shop) { create(:shop) }
   let(:tool) { create(:tool, shop: shop) }
   let(:group) { ToolGroup.create!(shop: shop, name: 'Kit', included_tool_ids: [tool.id.to_s]) }
@@ -38,6 +38,45 @@ RSpec.describe ToolGroupCheckoutNotificationJob do
     expect_any_instance_of(ToolCheckoutRequest).to receive(:refresh_closed_announcement)
     described_class.perform_now(group.id.to_s, member.id.to_s, [], [request.id.to_s], nil, result[:notification_snapshot])
     expect(ToolGroupCheckout).not_to have_received(:notify)
+  end
+
+  %w[edited destroyed].each do |catalog_change|
+    it "uses the all-held approval snapshot after the group is #{catalog_change}" do
+      group.update!(announce: true, announce_channel: 'C11111111')
+      request = ToolCheckoutRequest.create!(member: member, tool_group: group, message_id: '123.456')
+      other_group = ToolGroup.create!(shop: shop, name: 'Other kit', included_tool_ids: [tool.id.to_s],
+        announce: true, announce_channel: 'C22222222')
+      other_request = ToolCheckoutRequest.create!(member: member, tool_group: other_group, message_id: '789.012')
+      tool.update!(announce_channel: 'C33333333')
+      tool_request = ToolCheckoutRequest.create!(member: member, tool: tool, message_id: '345.678')
+      ToolCheckout.create!(member: member, tool: tool, defer_users_channel_invitation: true, defer_group_callbacks: true)
+      result = ToolGroupCheckout.approve!(actor: actor, member: member, group: group,
+        revision: group.revision, source: 'slack', request_id: request.id)
+      snapshot = result[:notification_snapshot]
+      group_id = group.id.to_s
+      if catalog_change == 'edited'
+        replacement = create(:tool, shop: shop)
+        group.update!(name: 'Changed kit', included_tool_ids: [replacement.id.to_s], announce_channel: 'C99999999')
+      else
+        group.destroy!
+      end
+      tool.update!(name: 'Changed tool')
+      allow_any_instance_of(ToolCheckoutRequest).to receive(:refresh_closed_announcement).and_call_original
+      allow(Service::SlackConnector).to receive(:update_slack_message)
+      args = [group_id, member.id.to_s, [], result[:reconciled].map { |row| row.id.to_s }, nil, snapshot]
+
+      described_class.perform_now(*ActiveJob::Arguments.deserialize(ActiveJob::Arguments.serialize(args)))
+
+      message = "*#{CheckoutDisplay.escape(member.fullname)}* has completed checkout for *Kit*: " \
+        "#{CheckoutDisplay.escape(snapshot['tools'].first['name'])}."
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with('C11111111', request.message_id, message)
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with('C22222222', other_request.message_id,
+        include('*Other kit*: Changed tool.'))
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with('C33333333', tool_request.message_id,
+        tool_request.reload.checkout_success_message)
+      expect(Service::SlackConnector).not_to have_received(:update_slack_message).with('C99999999', anything, anything)
+      expect(ToolGroupCheckout).not_to have_received(:notify)
+    end
   end
 
   it 'delivers the approved catalog snapshot even after group and child edits' do

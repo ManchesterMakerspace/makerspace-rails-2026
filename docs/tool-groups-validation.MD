@@ -137,3 +137,30 @@ regenerated from the executable specs; its dry run is not additional test covera
 Checkout and jobs documentation were updated. Environment variables and collection
 schemas are unchanged. Existing portal types already support group fields;
 publishing regenerated API-client types remains a separate release step.
+
+## Group request lifecycle and index follow-up — 2026-10-04
+
+All-held Slack approval announcements use the queued approval snapshot for the
+approved group's name, constituent names and announcement channel, including after
+group edits or destruction. Other reconciled group and individual requests keep
+their own announcement details. Group destruction, including shop cascades, shares
+archival cleanup: open checkout requests become deleted, open volunteer requests
+become revoked, and terminal request history remains stored.
+
+`data:ensure_checkout_indexes` now installs the declared nonunique
+`(tool_group_id, status)` checkout-request index. Run
+`RAILS_ENV=production bundle exec rake data:ensure_checkout_indexes` during rollout;
+the unique-index task does not install this model's indexes. This follow-up needs
+no API-client publication or companion UI change.
+
+Validation: 51 focused and related Rails examples passed with no failures or
+pending examples using Ruby 3.4.5, MongoDB 7.0 as a disposable replica set, and
+Redis 7. Coverage includes serialized delayed announcements after edits/destruction,
+other reconciled targets, model and authenticated shop deletion, archival, repeated
+index creation and preservation of unrelated indexes, checkout rollback/concurrency,
+and existing individual notifications. Slack delivery was mocked; lock-focused
+examples used mocked Redis or process-local locks. The independent MongoDB probe
+verified commit and rollback. All 11 changed Ruby/Rake files passed syntax checks,
+and `git diff --check` passed. Checkout, service/job and collection/index inventories
+were updated. The environment-variable inventory and API schemas are unchanged.
+Production index installation and live Slack acceptance were not performed.

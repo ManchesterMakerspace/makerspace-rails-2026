@@ -22,6 +22,7 @@ class ToolGroup
   validate :unique_catalog_name
   validate :fixed_shop
   before_validation :normalize_catalog_fields
+  before_destroy :close_open_requests!
 
   def included_tools
     Tool.where(:id.in => included_tool_ids).order_by(name: :asc).to_a
@@ -41,6 +42,12 @@ class ToolGroup
 
   def effective_requestor_annotation
     shop&.requestor_annotation
+  end
+
+  # Preserve request history while removing pending work for an unavailable group.
+  def close_open_requests!
+    ToolCheckoutRequest.where(tool_group_id: id, status: 'open').update_all(status: 'deleted')
+    CheckoutApproverRequest.where(tool_group_id: id, status: 'open').update_all(status: 'revoked')
   end
 
   private

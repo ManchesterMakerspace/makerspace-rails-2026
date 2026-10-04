@@ -30,9 +30,12 @@ RSpec.describe ToolGroupCatalog do
   it 'archives open requests and retains individual grants' do
     member = create(:member, :current)
     request = ToolCheckoutRequest.create!(member: member, tool_group: group)
+    ToolCheckout.create!(member: member, tool: tool, defer_users_channel_invitation: true, defer_group_callbacks: true)
+    volunteer = CheckoutApproverRequest.create!(member: member, tool_group: group)
     approver = CheckoutApprover.create!(member: actor, tool_group_ids: [group.id.to_s])
     described_class.save!(actor: actor, group: group, revision: 1, attributes: { archived: true })
     expect(request.reload.status).to eq('deleted')
+    expect(volunteer.reload.status).to eq('revoked')
     expect(approver.reload.tool_ids).to include(tool.id.to_s)
     expect(approver.tool_group_ids).to be_empty
     expect(group.reload.revision).to eq(2)

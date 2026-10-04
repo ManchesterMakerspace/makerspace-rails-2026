@@ -10,6 +10,9 @@ case-insensitive collation; member/prerequisite indexes support reference guards
 index cannot span both collections. Shop deletion destroys all of its active and
 archived groups before cascading tool deletion; direct tool deletion still rejects
 references from either kind of group.
+Before a group is destroyed, its open checkout requests become `deleted` and its
+open volunteer requests become `revoked`, using the same cleanup as archival.
+Terminal request history remains stored.
 
 `tool_checkouts` remains physical-tool-only. Optional `group_id`, `group_name`,
 `group_revision`, and `approval_batch_id` record provenance. Newly created
@@ -24,6 +27,10 @@ retains individual grants when a group assignment is removed.
 Before updated clients are released, run `bundle exec rake data:ensure_unique_indexes`.
 This also replaces the old open volunteer-request key with
 `(member_id, tool_id, tool_group_id, status)`. No checkout backfill is needed.
+Also run `RAILS_ENV=production bundle exec rake data:ensure_checkout_indexes` to
+install the nonunique `(tool_group_id, status)` checkout-request lookup index used
+by group lists, duplicate checks, reconciliation and archival. Model declarations
+alone do not install indexes in an existing database.
 MongoDB transactions require a replica set.
 
 This is the source-of-truth inventory of MongoDB collections owned by the
@@ -94,7 +101,7 @@ conditions are included where they are part of the index contract.
 | `slack_identity_conflicts` | `SlackIdentityConflict` | Unresolved and resolved conflicts between Slack identities and member records. | `{ slack_id: 1 }`; `{ member_id: 1 }`; `{ resolved_at: 1 }` |
 | `slack_users` | `SlackUser` | Current and historical mappings between members and Slack identities. | Unique `{ member_id: 1 }`, partial for object IDs with `invalidated_at: nil`; unique `{ slack_email: 1 }`, partial for strings with `invalidated_at: nil`; unique `{ slack_id: 1 }`, partial when `slack_id` is a string |
 | `system_configs` | `SystemConfig` | Runtime feature flags, settings, and tracked job-run results. | Unique `{ key: 1 }` |
-| `tool_checkout_requests` | `ToolCheckoutRequest` | Member requests for a Safety Checkout and their open/closed lifecycle. | None |
+| `tool_checkout_requests` | `ToolCheckoutRequest` | Member requests for a tool or group Safety Checkout and their open/closed/deleted lifecycle. | `{ member_id: 1, status: 1, request_date: 1, _id: 1 }`; `{ tool_id: 1, status: 1, request_date: 1, _id: 1 }`; `{ tool_group_id: 1, status: 1 }` (all installed by `data:ensure_checkout_indexes`) |
 | `tool_checkouts` | `ToolCheckout` | Granted or revoked member Safety Checkouts for tools. | `{ member_id: 1 }` (deployment task) |
 | `tools` | `Tool` | Tool catalog, shop ownership, Safety Checkout prerequisites, and reservation rules. | Unique case-insensitive `{ shop_id: 1, name: 1 }` with `en` strength-2 collation, partial when `name` is a string; `{ shop_id: 1, name: 1, _id: 1, disabled: 1 }` with the same collation |
 | `volunteer_credits` | `VolunteerCredit` | Volunteer credit awards, approvals, discounts, and reversals. | `{ member_id: 1 }` (also enforced as non-unique by the deployment task); `{ status: 1 }`; `{ created_at: 1 }`; unique `{ tool_checkout_id: 1 }`, partial when `tool_checkout_id` is an object ID |
