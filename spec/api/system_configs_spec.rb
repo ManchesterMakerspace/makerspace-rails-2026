@@ -20,7 +20,11 @@ RSpec.describe 'System configuration', type: :request do
       response '200', 'Configuration including the effective open-ticket limit' do
         schema type: :object, required: %w[flags jobs slack volunteer totp security reservation job_schedule], properties: {
           flags: { type: :object }, jobs: { type: :array, items: { type: :object } },
-          slack: { type: :object, required: ['slack_channel_tickets'], properties: { slack_channel_tickets: { type: :string, description: 'Effective ticket announcement channel. Saved override (including blank) takes precedence over SLACK_TICKETS_CHANNEL; no default channel. Blank disables central publication.' } } }, volunteer: { type: :object, required: ['ticket_bounty_max_credit'], properties: {
+          slack: { type: :object, required: %w[slack_channel_rm slack_channel_admin slack_channel_tickets], properties: {
+            slack_channel_rm: { type: :string, default: 'resource_managers', description: 'Resource Managers channel. Unset or blank values use resource_managers. Membership and billing notices use slack_channel_admin instead.' },
+            slack_channel_admin: { type: :string, default: 'members_relations', description: 'Members Relations channel, stored under the legacy slack_channel_admin key. Unset or blank values use members_relations.' },
+            slack_channel_tickets: { type: :string, description: 'Effective ticket announcement channel. Saved override (including blank) takes precedence over SLACK_TICKETS_CHANNEL; no default channel. Blank disables central publication.' }
+          } }, volunteer: { type: :object, required: ['ticket_bounty_max_credit'], properties: {
             ticket_bounty_max_credit: { type: :string, default: '2.0', description: 'Maximum credits for creating a bounty from a repair ticket. Finite number at least 0.5; changes are audited.' }
           } }, totp: { type: :object },
           reservation: { type: :object }, job_schedule: { type: :object },
@@ -30,6 +34,32 @@ RSpec.describe 'System configuration', type: :request do
           } }
         }
         run_test! { |response| expect(JSON.parse(response.body).dig('security', 'ticket_open_limit')).to eq(10) }
+        context 'with default staff channels' do
+          run_test! do |response|
+            expect(JSON.parse(response.body).fetch('slack')).to include(
+              'slack_channel_rm' => 'resource_managers', 'slack_channel_admin' => 'members_relations')
+          end
+        end
+        context 'with independently configured staff channels' do
+          before do
+            SystemConfig.set('slack_channel_rm', 'CRESOURCE')
+            SystemConfig.set('slack_channel_admin', 'CMEMBERS')
+          end
+          run_test! do |response|
+            expect(JSON.parse(response.body).fetch('slack')).to include(
+              'slack_channel_rm' => 'CRESOURCE', 'slack_channel_admin' => 'CMEMBERS')
+          end
+        end
+        context 'with blank staff channel settings' do
+          before do
+            SystemConfig.set('slack_channel_rm', '')
+            SystemConfig.set('slack_channel_admin', '')
+          end
+          run_test! do |response|
+            expect(JSON.parse(response.body).fetch('slack')).to include(
+              'slack_channel_rm' => 'resource_managers', 'slack_channel_admin' => 'members_relations')
+          end
+        end
         context 'without a ticket channel' do
           run_test! { |response| expect(JSON.parse(response.body).dig('slack', 'slack_channel_tickets')).to eq('') }
         end
@@ -58,7 +88,7 @@ RSpec.describe 'System configuration', type: :request do
       parameter name: :setting, in: :body, schema: {
         type: :object, required: %w[key value], properties: {
           key: { type: :string, enum: Admin::SystemConfigsController::SETTING_KEYS },
-          value: { type: :string, description: 'String setting value. For ticket_open_limit, use a positive integer such as "10"; zero, negatives, and fractions are rejected.' }
+          value: { type: :string, description: 'String setting value. slack_channel_rm controls Resource Managers; slack_channel_admin controls Members Relations. Blank staff channel values use their defaults. For ticket_open_limit, use a positive integer such as "10"; zero, negatives, and fractions are rejected.' }
         },
         oneOf: [
           { properties: { key: { enum: ['ticket_open_limit'] }, value: { type: :string, pattern: '^[1-9][0-9]*$' } } },

@@ -23,6 +23,7 @@ class VolunteerEvent
   field :attendee_removals, type: Array, default: []
   field :approval_notification, type: Hash, default: {}
   field :approval_notification_history, type: Array, default: []
+  field :approver_notifications, type: Hash, default: {}
 
   VALID_STATUSES = %w[open closed].freeze
 

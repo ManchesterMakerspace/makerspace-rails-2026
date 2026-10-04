@@ -485,7 +485,11 @@ module Service
     end
 
     def self.members_relations_channel
-      SystemConfig.get('slack_channel_rm') || 'members_relations'
+      SystemConfig.get('slack_channel_admin').presence || 'members_relations'
+    end
+
+    def self.resource_managers_channel
+      SystemConfig.get('slack_channel_rm').presence || 'resource_managers'
     end
 
     def self.logs_channel
@@ -493,7 +497,7 @@ module Service
     end
 
     def self.admin_channel
-      SystemConfig.get('slack_channel_admin') || 'general'
+      members_relations_channel
     end
 
     def self.new_members_channel

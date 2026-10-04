@@ -77,6 +77,21 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
       allow(Service::SlackChannelCache).to receive(:lookup)
     end
 
+    it "defaults resource managers and members relations to their separate channels" do
+      get :index, format: :json
+      channels = JSON.parse(response.body).fetch("slack")
+      expect(channels).to include("slack_channel_rm" => "resource_managers",
+        "slack_channel_admin" => "members_relations")
+    end
+
+    it "returns the configured resource managers and members relations channels independently" do
+      SystemConfig.set("slack_channel_rm", "CRESOURCE")
+      SystemConfig.set("slack_channel_admin", "CMEMBERS")
+      get :index, format: :json
+      channels = JSON.parse(response.body).fetch("slack")
+      expect(channels).to include("slack_channel_rm" => "CRESOURCE", "slack_channel_admin" => "CMEMBERS")
+    end
+
     it "returns Slack channel cache status and its tracked job" do
       get :index, format: :json
 

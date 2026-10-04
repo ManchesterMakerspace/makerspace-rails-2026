@@ -48,6 +48,7 @@ class VolunteerTask
   field :rejection_reason, type: String,           default: nil
   field :approval_notification, type: Hash, default: {}
   field :approval_notification_history, type: Array, default: []
+  field :approver_notifications, type: Hash, default: {}
 
   SINGLE_USE_STATUSES = %w[available claimed pending completed cancelled denied].freeze
   MULTI_USE_STATUSES  = %w[reusable repeatable recurring].freeze
@@ -235,6 +236,7 @@ class VolunteerTask
     previous_notification = approval_notification.deep_dup
     update!(status: 'pending', completed_at: Time.now)
     Service::VolunteerApprovalReminder.reset!(self, previous_notification: previous_notification)
+    VolunteerApproverNotification.notify!(self)
   end
 
   def complete!(verifier)
@@ -332,7 +334,41 @@ class VolunteerTask
   end
 
   def cancel!
+    reload
+    notification = pending_review_outcome_for_status('cancelled')
     update!(status: 'cancelled')
+    close_pending_review_notification!(notification)
+  end
+
+  # Generic status edits do not issue credits or run the verification flow.
+  # Close an outstanding reminder with that actual outcome, including receipts
+  # whose pending-message delivery was already marked finalized.
+  def pending_review_outcome_for_status(new_status, actor: nil)
+    return {} if new_status.blank? || new_status == status
+
+    receipt = approval_notification.to_h
+    open_receipt = receipt['closed_at'].blank? && (receipt['started_at'].present? || receipt['ts'].present?)
+    return {} unless status == 'pending' || open_receipt
+
+    actor_description = actor ? " by #{actor.fullname}" : ''
+    outcome = case new_status
+    when 'cancelled'
+      "Task cancelled#{actor_description}"
+    when 'completed'
+      "Task marked completed#{actor_description} through a status edit; no credits were issued by this edit"
+    when 'denied'
+      "Denied#{actor_description} through a task status edit"
+    else
+      "Pending review ended#{actor_description}; task status changed to #{new_status}"
+    end
+    Service::VolunteerApprovalReminder.outcome_attributes(self, outcome: outcome).fetch(:approval_notification, {})
+  end
+
+  def close_pending_review_notification!(notification)
+    return if notification.empty?
+
+    Service::VolunteerApprovalReminder.record_outcome!(self, notification, expected_status: status)
+    Service::VolunteerApprovalReminder.sync_closed!(self)
   end
 
   private

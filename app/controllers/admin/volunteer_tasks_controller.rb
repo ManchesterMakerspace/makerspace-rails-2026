@@ -47,6 +47,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
     if @task.ticket_id && (task_params.keys - %w[title description credit_value prerequisite_tool_ids]).any?
       raise Error::UnprocessableEntity.new('Linked ticket bounties cannot change shop or lifecycle through generic edits')
     end
+    notification = @task.pending_review_outcome_for_status(task_params[:status], actor: current_member)
     @task.update!(task_params)
     if @task.previous_changes.key?('credit_value')
       Service::AuditLogger.log(log_type: 'portal', event_type: 'volunteer_task_credit_changed',
@@ -54,6 +55,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
         field_changes: { 'credit_value' => @task.previous_changes['credit_value'] },
         after_snapshot: { title: @task.title })
     end
+    @task.close_pending_review_notification!(notification)
     enqueue_canvas_sync(previous_shop_id)
     enqueue_canvas_sync(@task.shop_id) if @task.shop_id.to_s != previous_shop_id.to_s
     render json: @task, serializer: VolunteerTaskSerializer, adapter: :attributes, scope: current_member

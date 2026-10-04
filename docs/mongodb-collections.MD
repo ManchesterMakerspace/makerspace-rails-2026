@@ -108,6 +108,20 @@ event scan.
 See [the job inventory](jobs-tasks-services.MD#volunteer-approval-reminders) for
 age thresholds, channel routing, and recovery behavior.
 
+The proposed shop RM notification rollout adds a separate private
+`approver_notifications` hash on those same documents. Task delivery paths are
+keyed by completion-submission timestamp and manager ID; event paths are keyed
+by event and manager ID. Each recipient stores `state` (`sending`, `sent`,
+`failed`, or `obsolete`), a sending-lease token and `attempted_at`; successful
+posts additionally store `ts`, returned channel, `sent_at`, and
+`destination_mode`. Failed or stale sending attempts can be retried without
+repeating a recipient with a durable successful receipt. An accepted post with
+failed receipt persistence keeps its sending lease and reports uncertainty;
+lease expiry after that failure or a worker crash can permit a duplicate DM.
+These fields remain excluded from
+task/event API serialization, require no new collection or index, and do not
+replace the five-day escalation receipt/history.
+
 ## Keeping indexes in sync
 
 The table describes the indexes expected from model declarations, not a live
