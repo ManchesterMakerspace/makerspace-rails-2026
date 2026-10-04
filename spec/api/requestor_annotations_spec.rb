@@ -38,15 +38,6 @@ RSpec.describe "Checkout requestor annotations", type: :request do
     disabled: { type: :boolean }, color_id: { type: :string }, floor_name: { type: :string },
     capacity: { type: :integer }
   )
-  tool_properties = reservation_properties.merge(
-    name: { type: :string }, shop_id: { type: :string }, requestor_annotation: annotation_schema,
-    wiki_url: { type: :string, nullable: true }, gdrive_id: { type: :string, nullable: true },
-    description: { type: :string, nullable: true }, open: { type: :boolean }, disabled: { type: :boolean },
-    announce: { type: :boolean }, announce_channel: { type: :string, nullable: true },
-    users_channel: { type: :string, nullable: true }, allow_pending: { type: :boolean },
-    prerequisite_ids: { type: :array, items: { type: :string } }
-  )
-
   %w[shops tools].each do |resource|
     path "/admin/#{resource}/{id}" do
       parameter name: :id, in: :path, type: :string
@@ -57,7 +48,7 @@ RSpec.describe "Checkout requestor annotations", type: :request do
           consumes "application/json"
           produces "application/json"
           parameter name: :settings, in: :body, schema: {
-            type: :object, properties: resource == "shops" ? shop_properties : tool_properties
+            allOf: [resource == "shops" ? { type: :object, properties: shop_properties } : { '$ref' => '#/components/schemas/ToolSettingsWrite' }]
           }
           let(:id) { resource == "shops" ? shop.id.to_s : tool.id.to_s }
           let(:settings) { { requestor_annotation: " Updated instructions " } }
@@ -90,8 +81,7 @@ RSpec.describe "Checkout requestor annotations", type: :request do
         consumes "application/json"
         produces "application/json"
         parameter name: :settings, in: :body, schema: {
-          type: :object,
-          properties: resource == "shops" ? shop_properties : tool_properties,
+          allOf: [resource == "shops" ? { type: :object, properties: shop_properties } : { '$ref' => '#/components/schemas/ToolSettingsWrite' }],
           required: resource == "shops" ? ["name"] : ["name", "shop_id"]
         }
         let(:member) { create(:member, :admin, :current) }
@@ -157,6 +147,34 @@ RSpec.describe "Checkout requestor annotations", type: :request do
         run_test! { expect(tool.reload.requestor_annotation).to be_nil }
       end
       response "404", "tool not found" do
+        let(:id) { BSON::ObjectId.new.to_s }
+        run_test!
+      end
+    end
+  end
+
+  path "/admin/shops/{id}/requestor_annotation" do
+    parameter name: :id, in: :path, type: :string
+    patch "Updates only the shop's default annotation for requestors" do
+      tags "Checkouts"
+      description "Requires a signed-in owning-shop resource manager, admin or board member -- same as the full shop #update. Other shop settings cannot be changed through this endpoint. This route previously did not exist (only the equivalent tool route did), so the Shops table's \"Edit annotation\" quick-action always failed with a 404."
+      consumes "application/json"
+      produces "application/json"
+      parameter name: :settings, in: :body, schema: { type: :object, properties: { requestor_annotation: annotation_schema }, required: ["requestor_annotation"] }
+      let(:id) { shop.id.to_s }
+      let(:settings) { { requestor_annotation: "Updated shop instructions", name: "Must not change" } }
+      response "200", "annotation updated" do
+        schema response_schemas.fetch("shops")
+        run_test! do |response|
+          expect(JSON.parse(response.body)["requestorAnnotation"]).to eq("Updated shop instructions")
+          expect(shop.reload.name).not_to eq("Must not change")
+        end
+      end
+      response "403", "not a manager of this shop" do
+        let(:member) { create(:member, :resource_manager, :current, resource_manager_shop_ids: [create(:shop).id.to_s]) }
+        run_test! { expect(shop.reload.requestor_annotation).to eq("Shop instructions") }
+      end
+      response "404", "shop not found" do
         let(:id) { BSON::ObjectId.new.to_s }
         run_test!
       end

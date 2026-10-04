@@ -6,3 +6,13 @@ body{margin:0;background:#fafafa;color:rgba(0,0,0,.87);font-family:Roboto,Helvet
 .resource-calendar { margin-top: 24px; }
 .calendar-frame { display: block; width: 100%; height: 600px; border: 0; }
 @media (max-width: 599px) { .calendar-frame { height: 480px; } }
+
+.storage-map { margin: 24px 0 8px; }
+.storage-map svg { display: block; width: 100%; max-width: 640px; height: auto; background: #fff; border: 1px solid #ccc; }
+.storage-map figcaption { margin-top: 6px; font-size: 0.9em; }
+.storage-map-area { stroke-width: 1.5; stroke-opacity: 0.8; vector-effect: non-scaling-stroke; }
+.storage-map-pin { stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.storage-map-halo { fill: none; stroke: #d62828; stroke-width: 3; vector-effect: non-scaling-stroke; }
+.storage-map-tool { fill: rgba(214, 40, 40, 0.3); stroke: #d62828; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.storage-map-glyph { fill: #fff; pointer-events: none; }
+.storage-map-marker { fill: #d62828; stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; }

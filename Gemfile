@@ -29,8 +29,14 @@ gem 'mongoid', '~> 8.0'
 gem 'mongoid_search', '~> 0.4'
 # Payments
 gem 'paypal-sdk-rest', '~> 1.7'
-gem 'braintree', '~> 4.40'
+gem 'braintree', '~> 4.41'
 gem 'slack-ruby-client', '~> 2.0'
+# Pinned below 3.0: that major release removes the `quirks_mode` keyword
+# multi_json still passes through to the json gem, which raises
+# `ArgumentError: unknown keyword: quirks_mode` on nearly every JSON
+# encode/decode -- json floated to 3.0.2 as an unreviewed transitive bump
+# from an unrelated dependabot update and broke the entire test suite.
+gem 'json', '~> 2.21'
 # Google Drive
 gem 'multi_json', '~> 1.15'
 gem 'faraday', '~> 2.14'
@@ -38,11 +44,11 @@ gem 'google-apis-drive_v3'
 gem 'google-apis-sheets_v4'
 gem 'google-apis-admin_directory_v1'
 gem 'google-apis-calendar_v3'
-gem 'mini_magick', '~> 5.3'
+gem 'mini_magick', '~> 5.4'
 gem 'sprockets-rails'
 gem 'mime-types', '~> 3.5'
 gem 'rest-client', '~> 2.1'
-gem 'git', '~> 5.1'
+gem 'git', '~> 5.6'
 gem 'rswag-api', '~> 2.14'
 gem 'rswag-ui', '~> 2.14'
 # PDF generation
@@ -52,7 +58,7 @@ group :test do
   gem 'rspec-rails', '~> 7.1'
   gem 'mongoid-rspec', '~> 4.1'
   gem 'database_cleaner-mongoid'
-  gem 'simplecov', '~> 1.1'
+  gem 'simplecov', '~> 1.3'
   gem 'rswag-specs', '~> 2.14'
   gem 'parallel_tests'
 end

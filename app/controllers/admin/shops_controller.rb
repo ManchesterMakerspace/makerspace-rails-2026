@@ -6,8 +6,8 @@ class Admin::ShopsController < ApplicationController
   def resource_manager_options
     render json: Member.shop_resource_manager_candidates.order_by(firstname: :asc).map { |m| { id: m.id.to_s, name: m.fullname } }
   end
-  before_action :find_shop, only: [:update, :destroy]
-  before_action :authorize_update, only: [:update]
+  before_action :find_shop, only: [:update, :destroy, :requestor_annotation]
+  before_action :authorize_update, only: [:update, :requestor_annotation]
 
   def index
     shops = if is_admin? || is_board_member?
@@ -74,6 +74,22 @@ class Admin::ShopsController < ApplicationController
       message_details: "shop: #{@shop.name}"
     )
 
+    render json: @shop, serializer: ShopSerializer, adapter: :attributes
+  end
+
+  # Separate from #update: the "Edit annotation" quick-action on the Shops
+  # table only ever needs this one field, mirroring Admin::ToolsController's
+  # own dedicated #requestor_annotation action for the same reason (a
+  # narrower endpoint for a narrower form, not a permissions difference --
+  # both still require can_manage_shop?, same as the full #update).
+  def requestor_annotation
+    before = @shop.requestor_annotation
+    @shop.update_attributes!(params.permit(:requestor_annotation))
+    ::Service::AuditLogger.log(
+      log_type: 'portal', event_type: 'shop_requestor_annotation_updated',
+      resource_type: 'Shop', resource_id: @shop.id, actor: current_member,
+      field_changes: { 'requestor_annotation' => [before, @shop.requestor_annotation] }
+    )
     render json: @shop, serializer: ShopSerializer, adapter: :attributes
   end
 

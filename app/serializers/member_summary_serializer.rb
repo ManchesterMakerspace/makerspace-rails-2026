@@ -103,7 +103,9 @@ class MemberSummarySerializer < ActiveModel::Serializer
     {
       slack_id: slack_user.slack_id,
       name: slack_user.real_name.presence || slack_user.name,
-      url: ::Service::SlackConnector.slack_user_url(slack_user.slack_id)
+      # Home supplies its own cached-only channel link and must not resolve the
+      # workspace through Slack while rendering the member representation.
+      url: instance_options[:resolve_slack_url] == false ? nil : ::Service::SlackConnector.slack_user_url(slack_user.slack_id)
     }
   end
 

@@ -54,6 +54,7 @@ class Admin::ToolsController < ApplicationController
     resolved_channels = resolve_changed_slack_channels(attributes, @tool, current_member)
     before = @tool.attributes.dup
     @tool.update_attributes!(attributes)
+    cleanup_vacated_tool_marker(before['location_id'])
     Service::SlackChannelAssignment.invite_bot_or_notify(resolved_channels, current_member)
     if @tool.resource_email.blank? || @tool.previous_changes.key?("name") || @tool.previous_changes.key?("reservable")
       GoogleResourceSyncJob.perform_later("Tool", @tool.id.to_s)
@@ -137,9 +138,25 @@ class Admin::ToolsController < ApplicationController
     CatalogMutationLock.with([@tool&.shop_id, params[:shop_id]], &block)
   end
 
+  # When a tool moves to a different location, its old marker -- if it only
+  # ever existed to hold this one tool -- is now dead weight. Without this,
+  # reassigning a tool left its previous marker behind as an orphaned shell
+  # (same name, no tool link, indistinguishable from a real location at a
+  # glance): confirmed in production as a real way to accumulate duplicate-
+  # looking "Bambu X1C"-style markers. Only removes a marker that holds
+  # nothing else -- no children, no other tools -- so a shared or
+  # deliberately-kept location is never touched.
+  def cleanup_vacated_tool_marker(old_location_id)
+    return if old_location_id.blank? || old_location_id == @tool.location_id
+    old_location = Location.where(id: old_location_id).first
+    return unless old_location
+    return if old_location.children.exists? || old_location.tools.exists?
+    old_location.destroy
+  end
+
   def tool_params
-    params.permit(:open, :name, :requestor_annotation, :wiki_url, :gdrive_id, :description, :shop_id, :disabled, :announce,
-      :announce_channel, :users_channel, :reservable, :allow_pending,
+    params.permit(:open, :name, :requestor_annotation, :wiki_url, :gdrive_id, :description, :notes, :shop_id, :disabled, :announce,
+      :announce_channel, :users_channel, :reservable, :allow_pending, :location_id,
       :max_concurrent_reservations, :reservation_horizon_days,
       :minimum_advance_notice_hours, :prohibit_same_day_reservations, :reservation_full_day, :max_reservation_duration_hours, :reservation_requires_approval,
       prerequisite_ids: [], duration_fees: [:invoice_option_id, :minimum_hours, :maximum_hours, :full_day], reservation_prerequisite_tool_ids: [])

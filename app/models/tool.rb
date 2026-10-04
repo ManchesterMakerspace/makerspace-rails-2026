@@ -30,6 +30,9 @@ class Tool
   field :reservation_prerequisite_tool_ids, type: Array, default: []
   field :google_resource_id, type: String
   field :resource_email, type: String
+  # Optional placement in the shop's Location tree (map pin or nested
+  # container, e.g. a shelf/drawer) -- see Location.
+  field :location_id, type: BSON::ObjectId, default: nil
 
   belongs_to :shop
 
@@ -52,6 +55,7 @@ class Tool
   validate :reservation_prerequisites_belong_to_shop
   validate :group_catalog_constraints
   before_destroy :prevent_group_reference_deletion
+  validate :location_belongs_to_same_shop
 
   index({ shop_id: 1, name: 1 }, {
     unique: true,
@@ -118,6 +122,10 @@ class Tool
   # Human-readable prerequisite names for display
   def prerequisites
     prerequisite_ids.present? ? Tool.where(:id.in => prerequisite_ids) : []
+  end
+
+  def location
+    Location.find(location_id) if location_id
   end
 
   private
@@ -202,5 +210,11 @@ class Tool
 
     valid_ids = Tool.where(shop_id: shop_id, :id.in => ids).pluck(:id).map(&:to_s)
     errors.add(:reservation_prerequisite_tool_ids, "must belong to this shop") unless (ids - valid_ids).empty?
+  end
+
+  def location_belongs_to_same_shop
+    return unless location_id
+    target = Location.where(id: location_id).first
+    errors.add(:location_id, "must belong to the same shop") if target && target.shop_id != shop_id
   end
 end

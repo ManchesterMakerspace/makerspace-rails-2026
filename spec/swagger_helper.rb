@@ -1,5 +1,6 @@
 require 'rails_helper'
 require_relative 'support/fix_ticket_api_schemas'
+require_relative 'support/home_api_schemas'
 
 RSpec.configure do |config|
   # Specify a root folder where Swagger JSON files are generated
@@ -320,6 +321,17 @@ RSpec.configure do |config|
         expirationTime: { type: :number, 'x-nullable': true },
         memberContractSignedDate: { type: :string, 'x-nullable': true },
         memberContractOnFile: { type: :boolean },
+        paidPendingStart: { type: :boolean },
+        household: {
+          type: :object, nullable: true,
+          properties: {
+            groupName: { type: :string, nullable: true },
+            displayName: { type: :string, nullable: true },
+            role: { type: :string, enum: %w[primary secondary], nullable: true },
+            primaryMemberName: { type: :string, nullable: true },
+            memberCount: { type: :integer }
+          }
+        },
         silenceEmails: { type: :boolean, 'x-nullable': true },
         notes: { type: :string, 'x-nullable': true },
         resourceManagerShopIds: { type: :array, items: { type: :string } },
@@ -375,6 +387,8 @@ RSpec.configure do |config|
             customerId: { type: :string, 'x-nullable': true },
             expiringPaymentCardTypes: { type: :string, 'x-nullable': true },
             earnedMembershipId: { type: :string, 'x-nullable': true },
+            earnedMembershipActive: { type: :boolean },
+            householdRole: { type: :string, enum: %w[primary secondary], nullable: true },
           },
           required: [:id, :expirationTime]
         }
@@ -480,6 +494,34 @@ RSpec.configure do |config|
         }
       ]
     },
+    ToolSettingsWrite: {
+      type: :object,
+      description: 'Editable tool settings for owning-shop managers, admins and board members. Omitted fields retain their values on update. Operational notes are saved with the other settings; additional approvers use the dedicated notes or annotation endpoints.',
+      properties: {
+        name: { type: :string, description: 'Unique within the shop, ignoring case.' },
+        shop_id: { type: :string },
+        location_id: { type: :string, nullable: true, description: 'Location in the selected shop. Empty or null clears it.' },
+        requestor_annotation: { type: :string, nullable: true, description: 'Null or whitespace clears the annotation; tools fall back to their shop.' },
+        wiki_url: { type: :string, nullable: true },
+        gdrive_id: { type: :string, nullable: true },
+        description: { type: :string, nullable: true },
+        notes: { type: :string, nullable: true, description: 'Private operational notes. Empty or null clears them.' },
+        open: { type: :boolean }, disabled: { type: :boolean },
+        allow_pending: { type: :boolean, description: 'Allow pending members to request checkout and reservations. Send false to clear; defaults to false on creation.' },
+        announce: { type: :boolean }, announce_channel: { type: :string, nullable: true },
+        users_channel: { type: :string, nullable: true },
+        prerequisite_ids: { type: :array, items: { type: :string } },
+        reservable: { type: :boolean }, max_concurrent_reservations: { type: :integer },
+        reservation_horizon_days: { type: :integer }, minimum_advance_notice_hours: { type: :number },
+        prohibit_same_day_reservations: { type: :boolean }, reservation_full_day: { type: :boolean },
+        max_reservation_duration_hours: { type: :number }, reservation_requires_approval: { type: :boolean },
+        reservation_prerequisite_tool_ids: { type: :array, items: { type: :string } },
+        duration_fees: { type: :array, items: { type: :object, properties: {
+          invoice_option_id: { type: :string }, minimum_hours: { type: :number },
+          maximum_hours: { type: :number }, full_day: { type: :boolean }
+        } } }
+      }
+    },
     Tool: {
       allOf: [
         { '$ref' => '#/components/schemas/ReservationResourceConfig' },
@@ -503,6 +545,8 @@ RSpec.configure do |config|
             usersChannel: { type: :string, 'x-nullable': true },
             prerequisiteIds: { type: :array, items: { type: :string } },
             prerequisiteNames: { type: :array, items: { type: :string } },
+            locationId: { type: :string, 'x-nullable': true },
+            locationName: { type: :string, 'x-nullable': true },
             effectiveReservationPrerequisiteIds: { type: :array, items: { type: :string } },
             reservationPrerequisiteNames: { type: :array, items: { type: :string } },
             shopName: { type: :string },
@@ -514,6 +558,56 @@ RSpec.configure do |config|
           required: [:id, :shopId, :name, :requestorAnnotation, :wikiUrl, :reservable]
         }
       ]
+    },
+    Location: {
+      type: :object,
+      properties: {
+        id: { type: :string },
+        name: { type: :string },
+        kind: { type: :string, 'x-nullable': true },
+        parentId: { type: :string, 'x-nullable': true },
+        shopId: { type: :string },
+        svgElementId: { type: :string, 'x-nullable': true },
+        xPct: { type: :number, 'x-nullable': true },
+        yPct: { type: :number, 'x-nullable': true },
+        shapePoints: {
+          type: :array,
+          'x-nullable': true,
+          items: {
+            type: :object,
+            properties: { x: { type: :number }, y: { type: :number } },
+            required: [:x, :y]
+          }
+        },
+        floorName: { type: :string, enum: %w[B 1 2], description: 'Floor plan the location is drawn on; the shop\'s own floor when not set on the location.' },
+        icon: { type: :string, enum: Location::ICONS, 'x-nullable': true, description: 'Marker glyph; null draws the default pin.' },
+        toolNames: { type: :array, items: { type: :string } },
+        toolIds: { type: :array, items: { type: :string } }
+      },
+      required: [:id, :name, :shopId, :toolNames, :toolIds]
+    },
+    LocationWrite: {
+      type: :object,
+      properties: {
+        name: { type: :string },
+        kind: { type: :string },
+        parent_id: { type: :string },
+        shop_id: { type: :string },
+        svg_element_id: { type: :string },
+        x_pct: { type: :number },
+        y_pct: { type: :number },
+        floor_name: { type: :string, enum: %w[B 1 2], description: 'Blank uses the shop\'s floor; a nested location inherits its parent\'s.' },
+        icon: { type: :string, enum: Location::ICONS },
+        shape_points: {
+          type: :array,
+          items: {
+            type: :object,
+            properties: { x: { type: :number }, y: { type: :number } },
+            required: [:x, :y]
+          }
+        }
+      },
+      required: [:name, :shop_id]
     },
     CheckoutApprover: {
       type: :object,
@@ -1062,6 +1156,7 @@ RSpec.configure do |config|
 
 
   definitions.merge!(FixTicketApiSchemas::SCHEMAS)
+  definitions.merge!(HomeApiSchemas::SCHEMAS)
 
   config.openapi_specs = {
     'v1/swagger.json' => {
@@ -1083,11 +1178,11 @@ RSpec.configure do |config|
         schemas: {
           MemberStatus: {
             type: :string,
-            enum: ["activeMember", "pending", "inactive", "nonMember", "revoked"]
+            enum: ["activeMember", "pending", "inactive", "nonMember", "revoked", "suspended"]
           },
           MemberRole: {
             type: :string,
-            enum: ["admin", "resource_manager", "member"],
+            enum: ["admin", "board_member", "resource_manager", "member"],
           },
           PayPalAccountSummary: {
             type: :object,
