@@ -3,6 +3,7 @@
 require 'active_support/all'
 require 'active_support/testing/time_helpers'
 require 'mongoid'
+require_relative '../spec_helper'
 require_relative '../../app/services/service/volunteer_approval_reminder'
 
 RSpec.describe 'Volunteer task cancellation and status notification integration' do
@@ -33,11 +34,23 @@ RSpec.describe 'Volunteer task cancellation and status notification integration'
     stub_const('FixTicketId', String)
     stub_const('VolunteerEvent', Class.new)
     stub_const('VolunteerTask', Class.new)
-    stub_const('Service::SlackConnector', Module.new)
-    stub_const('Service::ErrorReporter', Module.new)
-    stub_const('SystemConfig', Class.new)
-    stub_const('Member', Class.new)
-    stub_const('VolunteerCredit', Class.new)
+    stub_const('Service::SlackConnector', Module.new do
+      def self.message_destination_mode; end
+      def self.send_slack_message(_text, _channel); end
+      def self.update_slack_message(_channel, _ts, _text, resolved_channel: false); end
+    end)
+    stub_const('Service::ErrorReporter', Module.new do
+      def self.notify(_error); end
+    end)
+    stub_const('SystemConfig', Class.new do
+      def self.get(_key); end
+    end)
+    stub_const('Member', Class.new do
+      def self.find(_id); end
+    end)
+    stub_const('VolunteerCredit', Class.new do
+      def self.create!(**_attributes); end
+    end)
     allow(SystemConfig).to receive(:get).and_return('2.0')
     allow(Member).to receive(:find).and_return(double(fullname: 'Pat Member'))
     allow(VolunteerCredit).to receive(:create!)

@@ -2,6 +2,7 @@
 # ruby -r rspec/autorun spec/unit/volunteer_approval_reminder_spec.rb
 require 'active_support/all'
 require 'bson'
+require_relative '../spec_helper'
 require_relative '../../app/services/service/volunteer_approval_reminder'
 
 RSpec.describe Service::VolunteerApprovalReminder do
@@ -25,6 +26,8 @@ RSpec.describe Service::VolunteerApprovalReminder do
       def self.records
         @records ||= []
       end
+
+      def self.collection; end
 
       def initialize(attributes)
         @id = self.class.records.length + 1

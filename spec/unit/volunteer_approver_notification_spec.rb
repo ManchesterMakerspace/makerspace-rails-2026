@@ -1,5 +1,6 @@
 # Exercise real delivery logic without booting Rails or contacting MongoDB/Slack:
 # ruby -r rspec/autorun spec/unit/volunteer_approver_notification_spec.rb
+require_relative '../spec_helper'
 require 'active_support/all'
 require 'bson'
 require_relative '../../app/services/volunteer_approver_notification'
@@ -27,6 +28,7 @@ RSpec.describe VolunteerApproverNotification do
     record_class = Class.new do
       attr_accessor :id, :shop_id, :status, :title, :display_number, :claimed_by_id,
         :claimed_by, :completed_at, :event_date, :attendee_count, :approver_notifications
+      def self.collection; end
       def self.records; @records ||= []; end
       def initialize(attributes)
         @approver_notifications = {}
@@ -61,16 +63,27 @@ RSpec.describe VolunteerApproverNotification do
         query
       end
     end
-    stub_const('Member', Class.new)
+    stub_const('Member', Class.new do
+      def self.where(**_conditions); end
+    end)
     allow(Member).to receive(:where).with(role: 'resource_manager', resource_manager_shop_ids: shop_id)
       .and_return([manager, second_manager])
-    stub_const('SlackUser', Class.new)
+    stub_const('SlackUser', Class.new do
+      def self.find_by(**_conditions); end
+    end)
     allow(SlackUser).to receive(:find_by) { |member_id:| double(slack_id: "U-#{member_id}") }
-    stub_const('ShortUrl', Class.new)
+    stub_const('ShortUrl', Class.new do
+      def self.base_url; end
+    end)
     allow(ShortUrl).to receive(:base_url).and_return('https://portal.example.org')
     stub_const('Service', Module.new)
-    stub_const('Service::SlackConnector', Module.new)
-    stub_const('Service::ErrorReporter', Module.new)
+    stub_const('Service::SlackConnector', Module.new do
+      def self.send_slack_message(_text, _channel); end
+      def self.message_destination_mode; end
+    end)
+    stub_const('Service::ErrorReporter', Module.new do
+      def self.notify(_error); end
+    end)
     allow(Service::SlackConnector).to receive(:send_slack_message)
       .and_return({ 'ts' => '123.456', 'channel' => 'DMCHANNEL' })
     allow(Service::SlackConnector).to receive(:message_destination_mode).and_return('production')
