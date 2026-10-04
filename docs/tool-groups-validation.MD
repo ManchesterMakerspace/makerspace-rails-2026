@@ -193,3 +193,25 @@ Checkout, service/job and collection lifecycle inventories were updated. The
 environment-variable inventory, collection/index schemas and API response schemas
 are unchanged. No companion UI change or API-client publication is required.
 Live Slack acceptance and production deployment were not performed.
+
+## Announcement ownership and permission inventory — 2026-10-04
+
+Group batch notifications reuse only a same-group request reconciled by the current
+approval. Without one, they send a fresh group announcement and leave historical
+request timestamps untouched. A reconciled request without a timestamp receives
+the fresh post's timestamp; requests for other groups keep their own updates.
+The canonical member-permission inventory now documents explicit group assignments,
+durable child-tool grants, assignment/revocation paths, and authorization consumers.
+
+Validation: 26 focused and related Rails examples passed with no failures or
+pending examples using Ruby 3.4.5 and MongoDB 7.0 as a disposable replica set.
+The notification regressions serialize queued arguments and cover approvals after
+adding a child and changing channels, with no current request, an announced or
+unannounced same-group request, and an unrelated group's request. Related coverage
+includes checkout rollback/concurrency, scope boundaries, revoked assignments,
+and volunteer eligibility. Slack calls were mocked; this was not a live Slack or
+distributed-lock acceptance test. Both changed Ruby files passed syntax checks,
+and `git diff --check` passed. Checkout, service/job, and member-permission
+inventories were updated. The environment-variable inventory, collection/index
+schemas, and API contracts are unchanged. No companion UI change or API-client
+publication is required.

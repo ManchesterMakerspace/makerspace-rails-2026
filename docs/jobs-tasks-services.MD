@@ -35,6 +35,9 @@
   All-held resolutions use the queued snapshot for the approved group's existing
   message, including its channel and group/child names after edits or destruction.
   Other reconciled requests retain their own target's announcement details.
+  Batch delivery updates only a same-group request present in that approval's
+  reconciled request IDs. It sends a fresh group post when no such request exists;
+  older closed requests and their timestamps are never selected from history.
   Both stateful and signed group modals use it. Enqueue errors are reported without
   rolling back approval or falling back to synchronous Slack delivery. Repeated
   approvals with no new checkouts or reconciled requests do not enqueue again.

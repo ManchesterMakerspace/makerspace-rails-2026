@@ -191,7 +191,8 @@ class ToolGroupCheckout
     channels = created_tools.map { |tool| tool['users_channel'].presence }.compact
     channel = snapshot['channel']
     channels << channel if channel.present?
-    request = ToolCheckoutRequest.where(member_id: member.id, tool_group_id: snapshot.fetch('id'), status: 'closed').order_by(request_date: :desc).first
+    # Only reuse a request announcement resolved by this approval batch.
+    request = Array(result[:reconciled]).find { |row| row.tool_group_id.to_s == snapshot.fetch('id') }
     channels.uniq.each do |destination|
       CheckoutCreation.notify do
         if destination == channel && request&.message_id.present?

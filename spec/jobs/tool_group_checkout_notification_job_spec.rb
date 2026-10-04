@@ -104,6 +104,64 @@ RSpec.describe ToolGroupCheckoutNotificationJob, requires_transactions: true do
     expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'CNEW')
   end
 
+  describe 'announcement ownership after adding a child tool' do
+    let(:added_tool) { create(:tool, shop: shop) }
+    let(:historical_request) { ToolCheckoutRequest.find_by(message_id: 'historical-ts') }
+
+    before do
+      group.update!(announce: true, announce_channel: 'C11111111')
+      held = ToolCheckout.create!(member: member, tool: tool,
+        defer_users_channel_invitation: true, defer_group_callbacks: true)
+      ToolCheckoutRequest.create!(member: member, tool_group: group, status: 'closed',
+        checked_out: held, message_id: 'historical-ts', request_date: 1.day.ago)
+      ToolGroupCatalog.save!(actor: actor, group: group, revision: group.revision,
+        attributes: { included_tool_ids: [tool.id.to_s, added_tool.id.to_s], announce_channel: 'C22222222' })
+      group.reload
+      allow(ToolGroupCheckout).to receive(:notify).and_call_original
+      allow_any_instance_of(ToolCheckoutRequest).to receive(:refresh_closed_announcement).and_call_original
+      allow(Service::AuditLogger).to receive(:log)
+      allow(Service::SlackConnector).to receive(:update_slack_message)
+      allow(Service::SlackConnector).to receive(:send_slack_message).and_return(double(ts: 'fresh-ts'))
+      allow(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later)
+    end
+
+    %w[none matching unannounced other_group].each do |request_kind|
+      it "preserves historical posts when the current approval reconciles #{request_kind} requests" do
+        current = case request_kind
+        when 'matching', 'unannounced'
+          ToolCheckoutRequest.create!(member: member, tool_group: group,
+            message_id: request_kind == 'matching' ? 'current-ts' : nil)
+        when 'other_group'
+          other_group = ToolGroup.create!(shop: shop, name: 'Other kit', included_tool_ids: [added_tool.id.to_s],
+            announce: true, announce_channel: 'C33333333')
+          ToolCheckoutRequest.create!(member: member, tool_group: other_group, message_id: 'other-ts')
+        end
+        result = ToolGroupCheckout.approve!(actor: actor, member: member, group: group,
+          revision: group.revision, source: 'slack')
+        expect(result[:reconciled].map(&:id)).to eq(current ? [current.id] : [])
+        args = [group.id.to_s, member.id.to_s, result[:checkouts].map { |row| row.id.to_s },
+          result[:reconciled].map { |row| row.id.to_s }, result[:approval_batch_id], result[:notification_snapshot]]
+
+        described_class.perform_now(*ActiveJob::Arguments.deserialize(ActiveJob::Arguments.serialize(args)))
+
+        message = include("*Kit*: #{added_tool.name}.")
+        if request_kind == 'matching'
+          expect(Service::SlackConnector).to have_received(:update_slack_message).with('C22222222', 'current-ts', message)
+          expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'C22222222')
+        else
+          expect(Service::SlackConnector).to have_received(:send_slack_message).with(message, 'C22222222')
+        end
+        expect(current.reload.message_id).to eq('fresh-ts') if request_kind == 'unannounced'
+        if request_kind == 'other_group'
+          expect(Service::SlackConnector).to have_received(:update_slack_message).with('C33333333', 'other-ts', include('*Other kit*'))
+        end
+        expect(historical_request.reload.message_id).to eq('historical-ts')
+        expect(Service::SlackConnector).not_to have_received(:update_slack_message).with(anything, 'historical-ts', anything)
+        expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'C11111111')
+      end
+    end
+  end
+
   it 'does not enqueue a rolled-back approval' do
     expect { ToolGroupCheckout.approve!(actor: actor, member: member, group: group, revision: 0, source: 'slack') }.to raise_error(Error::Conflict)
     expect(described_class).not_to have_received(:perform_later)

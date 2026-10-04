@@ -50,6 +50,8 @@ included checkout; existing shop reviewer permissions apply at decision time.
 Direct group assignment also rejects revoked constituent checkouts rather than
 restoring the removed authority. Volunteer review and notification dates use the
 latest active checkout among all current constituent tools, when all are held.
+See [member permissions](member-permissions.md#checkout-approver-assignments) for
+scope mutation paths and consumers.
 
 `ToolGroupCheckout` acquires the catalog lock, approver lock and ordered physical
 checkout locks, then commits grants, request reconciliation and the group credit
@@ -72,6 +74,9 @@ The signed checkout modal carries the reviewed group revision. Group selectors
 follow physical tools and use `:linked_paperclips:` where supported. Group batch
 announcements use the group override or shop channel and preserve deduplicated
 individual users-channel invitations.
+An approval batch reuses a Slack timestamp only from a same-group request that
+the current approval reconciled. Batches without such a request send a fresh
+group announcement, preserving historical request posts.
 
 ## Member Portal lists
 
