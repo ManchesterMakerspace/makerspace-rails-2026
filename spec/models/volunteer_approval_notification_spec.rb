@@ -1,0 +1,258 @@
+require 'rails_helper'
+
+RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
+  let(:now) { Time.utc(2026, 10, 4, 12, 0, 0) }
+  let(:admin) { create(:member, :admin, expirationTime: (now + 30.days).to_i * 1000) }
+  let(:member) { create(:member, expirationTime: (now + 30.days).to_i * 1000) }
+  let(:receipt) do
+    {
+      'ts' => '1727524800.000001',
+      'channel' => 'CADMIN_ORIGINAL',
+      'destination_mode' => 'production',
+      'started_at' => now - 6.days,
+      'subject' => "Task #42: Sort lumber, claimed by #{member.fullname}",
+      'finalized' => false
+    }
+  end
+  let(:task) do
+    VolunteerTask.create!(
+      title: 'Sort lumber', description: 'Label the bins', created_by_id: admin.id,
+      status: 'pending', claimed_by_id: member.id, claimed_at: now - 8.days,
+      completed_at: now - 6.days, approval_notification: receipt
+    )
+  end
+
+  around { |example| travel_to(now) { example.run } }
+
+  before do
+    allow(SlackUser).to receive(:find_by).and_return(nil)
+    allow(Service::SlackConnector).to receive(:send_slack_message)
+    allow(Service::SlackConnector).to receive(:message_destination_mode).and_return('production')
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_return({ 'ok' => true })
+    allow(Service::ErrorReporter).to receive(:notify)
+    allow_any_instance_of(VolunteerCredit).to receive(:check_discount_threshold!)
+  end
+
+  it 'updates the original message on approval with the review duration and issues the credit' do
+    expect { task.complete!(admin) }.to change { VolunteerCredit.count }.by(1)
+
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      receipt.fetch('channel'), receipt.fetch('ts'),
+      a_string_including("Approved by #{admin.fullname}", '6 days'), resolved_channel: true
+    )
+    notification = task.reload.approval_notification
+    expect(task.status).to eq('completed')
+    expect(notification['started_at']).to eq(now - 6.days)
+    expect(notification['closed_at']).to eq(now)
+    expect(notification['finalized']).to be(true)
+  end
+
+  it 'reloads a controller-held task so a newly posted receipt is finalized on approval' do
+    task.update!(approval_notification: {})
+    controller_task = VolunteerTask.find(task.id)
+    task.set(approval_notification: receipt)
+
+    controller_task.complete!(admin)
+
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      receipt.fetch('channel'), receipt.fetch('ts'),
+      a_string_including('Approved', 'Review closed after 6 days.'), resolved_channel: true
+    )
+    expect(controller_task.reload.approval_notification['finalized']).to be(true)
+  end
+
+  it 'preserves the original claim snapshot when rejection clears the ordinary task claimant' do
+    task.reject_pending!(admin, 'Missing labels')
+
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      receipt.fetch('channel'), receipt.fetch('ts'),
+      a_string_including(member.fullname, "Denied by #{admin.fullname}", 'Missing labels', '6 days'), resolved_channel: true
+    )
+    notification = task.reload.approval_notification
+    expect(task.status).to eq('available')
+    expect(task.claimed_by_id).to be_nil
+    expect(task.completed_at).to be_nil
+    expect(notification['subject']).to eq(receipt.fetch('subject'))
+    expect(notification['closed_at']).to eq(now)
+    expect(notification['finalized']).to be(true)
+  end
+
+  it 'keeps approval and its credit durable when the final Slack update fails' do
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_raise(StandardError, 'Slack unavailable')
+
+    expect { task.complete!(admin) }.to change { VolunteerCredit.count }.by(1)
+
+    notification = task.reload.approval_notification
+    expect(task.status).to eq('completed')
+    expect(notification['outcome']).to eq("Approved by #{admin.fullname}")
+    expect(notification['closed_at']).to eq(now)
+    expect(notification['finalized']).to be(false)
+
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_return({ 'ok' => true })
+    travel 1.day
+    Service::VolunteerApprovalReminder.sync_closed!(task)
+
+    expect(task.reload.approval_notification['finalized']).to be(true)
+    expect(VolunteerCredit.where(task_id: task.id).count).to eq(1)
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      receipt.fetch('channel'), receipt.fetch('ts'),
+      a_string_including('Approved', 'Review closed after 6 days.'), resolved_channel: true
+    ).twice
+  end
+
+  it 'issues the task credit before a notification metadata write failure and refuses duplicate approval' do
+    allow(Service::VolunteerApprovalReminder).to receive(:write_notification)
+      .and_raise(StandardError, 'Notification metadata storage unavailable')
+
+    expect { task.complete!(admin) }.to raise_error(StandardError, 'Notification metadata storage unavailable')
+
+    expect(task.reload.status).to eq('completed')
+    expect(VolunteerCredit.where(task_id: task.id, member_id: member.id, status: 'approved').count).to eq(1)
+    expect(Service::ErrorReporter).to have_received(:notify).with(an_instance_of(StandardError))
+    expect { task.complete!(admin) }.to raise_error(Error::Forbidden)
+    expect(VolunteerCredit.where(task_id: task.id).count).to eq(1)
+  end
+
+  it 'saves the final outcome when membership discount evaluation fails after credit issuance' do
+    allow_any_instance_of(VolunteerCredit).to receive(:check_discount_threshold!)
+      .and_raise(StandardError, 'Discount evaluation unavailable')
+
+    expect { task.complete!(admin) }.to raise_error(StandardError, 'Discount evaluation unavailable')
+
+    expect(task.reload.status).to eq('completed')
+    expect(VolunteerCredit.where(task_id: task.id, member_id: member.id, status: 'approved').count).to eq(1)
+    expect(task.approval_notification['outcome']).to eq("Approved by #{admin.fullname}")
+    expect(task.approval_notification['finalized']).to be(true)
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      receipt.fetch('channel'), receipt.fetch('ts'),
+      a_string_including('Approved', 'Review closed after 6 days.'), resolved_channel: true
+    )
+  end
+
+  it 'retains a failed final update through reclaiming and resubmission for later retry' do
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_raise(StandardError, 'Slack unavailable')
+    expect { task.reject_pending!(admin, 'Missing labels') }.not_to raise_error
+    expect(task.reload.approval_notification['finalized']).to be(false)
+
+    task.claim!(member)
+    task.mark_pending!(member)
+
+    expect(task.reload.approval_notification).to be_empty
+    expect(task.approval_notification_history.length).to eq(1)
+    old_claim = task.approval_notification_history.first
+    expect(old_claim['ts']).to eq(receipt.fetch('ts'))
+    expect(old_claim['closed_at']).to eq(now)
+    expect(task.completed_at).to eq(now)
+
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_return({ 'ok' => true })
+    travel 1.day
+    Service::VolunteerApprovalReminder.sync_closed!(task)
+
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      receipt.fetch('channel'), receipt.fetch('ts'),
+      a_string_including('Denied', '6 days'), resolved_channel: true
+    ).twice
+    expect(task.reload.approval_notification_history.first['finalized']).to be(true)
+    expect(task.approval_notification).to be_empty
+    expect(task.status).to eq('pending')
+  end
+
+  it 'archives an earlier receipt when a claimed task is resubmitted' do
+    task.update!(status: 'claimed', approval_notification: receipt.merge(
+      'outcome' => 'Denied earlier', 'closed_at' => now - 1.day, 'finalized' => true
+    ))
+
+    task.mark_pending!(member)
+
+    expect(task.reload.approval_notification).to be_empty
+    expect(task.approval_notification_history.first['ts']).to eq(receipt.fetch('ts'))
+    expect(task.completed_at).to eq(now)
+  end
+
+  it 'finalizes a denied recurring child without changing its parent' do
+    parent = VolunteerTask.create!(
+      title: 'Sort lumber', description: 'Label the bins', created_by_id: admin.id,
+      status: 'recurring', days: 7, next_available: Date.current + 1
+    )
+    task.update!(parent_task_id: parent.id)
+
+    task.reject_pending!(admin, 'Missing labels')
+
+    expect(task.reload.status).to eq('denied')
+    expect(task.claimed_by_id).to eq(member.id)
+    expect(task.approval_notification['finalized']).to be(true)
+    expect(parent.reload.status).to eq('recurring')
+    expect(parent.next_available).to eq(Date.current + 1)
+  end
+
+  it 'delivers linked bounty rejection only after its transaction block finishes' do
+    ticket = create(:fix_ticket, bounty_assignee_ids: [member.id], assignee_ids: [member.id])
+    task.update!(ticket_id: ticket.id)
+    inside_transaction = false
+    allow(FixTicketService).to receive(:transaction) do |_, &block|
+      inside_transaction = true
+      block.call
+      inside_transaction = false
+    end
+    allow(FixTicketService).to receive(:assignment_event!)
+    allow(FixTicketService).to receive(:enqueue)
+    expect(Service::SlackConnector).to receive(:update_slack_message) do |channel, ts, text, **options|
+      expect(inside_transaction).to be(false)
+      expect(channel).to eq(receipt.fetch('channel'))
+      expect(ts).to eq(receipt.fetch('ts'))
+      expect(options).to eq(resolved_channel: true)
+      expect(text).to include('Denied', 'Missing labels', '6 days')
+    end
+
+    task.reject_pending!(admin, 'Missing labels')
+
+    expect(task.reload.approval_notification['finalized']).to be(true)
+    expect(ticket.reload.bounty_assignee_ids).not_to include(member.id)
+  end
+
+  it 'does not finalize or alter the receipt when self-review is refused' do
+    expect { task.complete!(member) }.to raise_error(Error::Forbidden)
+    expect { task.reject_pending!(member, 'Reject myself') }.to raise_error(Error::Forbidden)
+
+    expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+    expect(task.reload.approval_notification).to eq(receipt)
+    expect(task.status).to eq('pending')
+  end
+
+  it 'updates an event receipt after closure even when an attendee award fails' do
+    event = VolunteerEvent.create!(
+      title: 'Cleanup', created_by_id: admin.id, event_date: Date.current - 6,
+      attendee_ids: [member.id], approval_notification: receipt.merge('subject' => 'Event E3: Cleanup')
+    )
+    allow(VolunteerCredit).to receive(:create!).and_raise(StandardError, 'Credit storage unavailable')
+
+    expect { event.close!(admin) }.not_to raise_error
+
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      receipt.fetch('channel'), receipt.fetch('ts'),
+      a_string_including("Event closed by #{admin.fullname}", '6 days'), resolved_channel: true
+    )
+    expect(event.reload.status).to eq('closed')
+    expect(event.approval_notification['closed_at']).to eq(event.closed_at)
+    expect(event.approval_notification['finalized']).to be(true)
+    expect(Service::ErrorReporter).to have_received(:notify).with(an_instance_of(StandardError))
+  end
+
+  it 'issues event attendance credits before a notification metadata write failure and refuses duplicate closure' do
+    event = VolunteerEvent.create!(
+      title: 'Cleanup', created_by_id: admin.id, event_date: Date.current - 6,
+      attendee_ids: [member.id, admin.id], approval_notification: receipt.merge('subject' => 'Event E3: Cleanup')
+    )
+    allow(Service::VolunteerApprovalReminder).to receive(:write_notification)
+      .and_raise(StandardError, 'Notification metadata storage unavailable')
+
+    expect { event.close!(admin) }.to raise_error(StandardError, 'Notification metadata storage unavailable')
+
+    expect(event.reload.status).to eq('closed')
+    credits = VolunteerCredit.where(description: "Attended event: Cleanup (#{event.display_number})", status: 'approved')
+    expect(credits.pluck(:member_id)).to contain_exactly(member.id, admin.id)
+    expect(Service::ErrorReporter).to have_received(:notify).with(an_instance_of(StandardError))
+    expect { event.close!(admin) }.to raise_error(Error::Forbidden)
+    expect(credits.count).to eq(2)
+  end
+end

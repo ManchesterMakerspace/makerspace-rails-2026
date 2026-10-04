@@ -168,7 +168,8 @@ class SlackVolunteerJob < ApplicationJob
       claimed = result.is_a?(VolunteerTask) ? result : task
       done_ref = claimed.task_number || task.task_number
       post_response(response_url, :ephemeral,
-        "🙌 You've claimed *#{task.title}* (#{task.display_number}). When you're done, use `/volunteer done #{done_ref}`")
+        "🙌 You've claimed *#{task.title}* (#{task.display_number}). When you're done, use `/volunteer done #{done_ref}`\n\n" \
+        "#{VolunteerCreditMessaging::CLAIM_NOTICE}")
     rescue Error::AlreadyClaimed
       post_response(response_url, :ephemeral, "❌ You've already claimed *#{task.title}*. Each member may only claim this task once.")
     rescue Error::CoolingDown
@@ -219,7 +220,8 @@ class SlackVolunteerJob < ApplicationJob
     )
 
     post_response(response_url, :ephemeral,
-      "✅ Task *#{task.title}* marked as complete. An admin or RM will verify shortly.")
+      "✅ Task *#{task.title}* marked as complete and is awaiting volunteer approver review.\n\n" \
+      "#{VolunteerCreditMessaging::CLAIM_NOTICE}")
   rescue Error::Forbidden
     post_response(response_url, :ephemeral, "❌ Unable to mark this task complete.")
   end
@@ -243,15 +245,20 @@ class SlackVolunteerJob < ApplicationJob
     all_claims = (child_claims + standard_claims).sort_by { |t| t.claimed_at || Time.at(0) }.reverse
 
     if all_claims.empty?
-      post_response(response_url, :ephemeral, "📋 You have no active task claims.")
+      post_response(response_url, :ephemeral,
+        "📋 You have no active task claims.\n\n#{VolunteerCreditMessaging::CLAIM_NOTICE}")
       return
     end
 
     lines = ["📋 *Your Active Claims*"]
     all_claims.each do |t|
-      status_label = t.status == 'pending' ? '_(awaiting verification)_' : '_(claimed)_'
-      lines << "• *#{t.title}* #{status_label} — use `/volunteer done #{t.task_number || t.parent_task&.task_number}` to mark complete"
+      if t.status == 'pending'
+        lines << "• *#{t.title}* _(awaiting volunteer approver review)_ — `#{t.display_number}`"
+      else
+        lines << "• *#{t.title}* _(claimed)_ — use `/volunteer done #{t.task_number || t.parent_task&.task_number}` to mark complete"
+      end
     end
+    lines << "\n#{VolunteerCreditMessaging::CLAIM_NOTICE}"
 
     post_response(response_url, :ephemeral, lines.join("\n"))
   end
@@ -302,7 +309,8 @@ class SlackVolunteerJob < ApplicationJob
 
     event.checkin!(invoker)
     post_response(response_url, :ephemeral,
-      "✅ You're checked in to *#{event.title}* (#{event.display_number}). Credits will be issued when the event closes.")
+      "✅ You're checked in to *#{event.title}* (#{event.display_number}). Credits will be issued when the event closes.\n\n" \
+      "#{VolunteerCreditMessaging::CLAIM_NOTICE}")
   rescue Error::Forbidden
     post_response(response_url, :ephemeral, "❌ Unable to check in. The event may be closed or you may not be an active member.")
   end

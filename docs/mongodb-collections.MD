@@ -72,11 +72,41 @@ conditions are included where they are part of the index contract.
 | `tool_checkouts` | `ToolCheckout` | Granted or revoked member Safety Checkouts for tools. | `{ member_id: 1 }` (deployment task) |
 | `tools` | `Tool` | Tool catalog, shop ownership, Safety Checkout prerequisites, and reservation rules. | Unique case-insensitive `{ shop_id: 1, name: 1 }` with `en` strength-2 collation, partial when `name` is a string; `{ shop_id: 1, name: 1, _id: 1, disabled: 1 }` with the same collation |
 | `volunteer_credits` | `VolunteerCredit` | Volunteer credit awards, approvals, discounts, and reversals. | `{ member_id: 1 }` (also enforced as non-unique by the deployment task); `{ status: 1 }`; `{ created_at: 1 }`; unique `{ tool_checkout_id: 1 }`, partial when `tool_checkout_id` is an object ID |
-| `volunteer_events` | `VolunteerEvent` | Volunteer events, attendees, eligibility prerequisites, and open/closed state. | `{ status: 1 }`; unique `{ event_number: 1 }`; `{ shop_id: 1 }` |
-| `volunteer_tasks` | `VolunteerTask` | Volunteer bounties/tasks, claims, verification, recurrence, and credit values. | `{ status: 1 }`; `{ claimed_by_id: 1 }`; `{ parent_task_id: 1 }`; `{ shop_id: 1 }`; unique `{ task_number: 1 }` |
+| `volunteer_events` | `VolunteerEvent` | Volunteer events, attendees, eligibility prerequisites, and open/closed state. | `{ status: 1 }`; `{ status: 1, event_date: 1 }`; unique `{ event_number: 1 }`; `{ shop_id: 1 }` |
+| `volunteer_tasks` | `VolunteerTask` | Volunteer bounties/tasks, claims, verification, recurrence, and credit values. | `{ status: 1 }`; `{ status: 1, completed_at: 1 }`; `{ claimed_by_id: 1 }`; `{ parent_task_id: 1 }`; `{ shop_id: 1 }`; unique `{ task_number: 1 }` |
 
 `EarnedMembership::ReportRequirement` is not listed as a collection because it
 is embedded inside `earned_membership__report` documents.
+
+## Volunteer approval reminder receipts
+
+Existing `volunteer_tasks` and `volunteer_events` documents store private
+`approval_notification` hashes and `approval_notification_history` arrays;
+there is no separate claim or notification collection. The current state stores
+wait start (`started_at`) and subject intent before posting, and adds Slack's
+message `ts`, returned channel, and `destination_mode` (`production` or `test`)
+after a successful acknowledgment. It also stores final `outcome` and `closed_at`.
+`finalized: false` marks a closed outcome awaiting its final Slack update;
+pending receipts and outcomes with no posted message need no final-delivery
+retry. Review clocks use native UTC timestamps. These fields are not included
+in task/event API serialization.
+
+The reminder job posts after more than five days, then updates the saved message
+in place. Final outcomes are persisted before their Slack update so future runs
+can retry delivery. A closed snapshot without a `ts` does not create a new final
+post. For a task that returns to available and is claimed again, the preceding
+intent or receipt moves to `approval_notification_history`; a late post receipt
+or final update does not overwrite the later claim's state. Conditional writes
+retain a competing post's first registered receipt and duplicate messages are
+removed best effort. Saved conversation IDs remain tied to their original
+production/test destination mode; mismatched-mode updates are refused and
+retained for the intended environment.
+
+The compound `{ status: 1, completed_at: 1 }` task index supports the
+pending-completion scan; `{ status: 1, event_date: 1 }` supports the dated open
+event scan.
+See [the job inventory](jobs-tasks-services.MD#volunteer-approval-reminders) for
+age thresholds, channel routing, and recovery behavior.
 
 ## Keeping indexes in sync
 

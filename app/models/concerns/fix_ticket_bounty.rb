@@ -62,6 +62,7 @@ module FixTicketBounty
       update!(status: 'cancelled') unless ticket.active?
       FixTicketService.assignment_event!(ticket, actor, previous)
     end
+    Service::VolunteerApprovalReminder.sync_closed!(self)
     FixTicketService.enqueue(ticket)
     enqueue_volunteer_canvas_sync
     send(notification, former, reason)

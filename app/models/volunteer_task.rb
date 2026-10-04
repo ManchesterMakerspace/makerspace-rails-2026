@@ -46,6 +46,8 @@ class VolunteerTask
   field :completed_at,     type: Time,            default: nil
   field :verified_by_id,   type: BSON::ObjectId,  default: nil
   field :rejection_reason, type: String,           default: nil
+  field :approval_notification, type: Hash, default: {}
+  field :approval_notification_history, type: Array, default: []
 
   SINGLE_USE_STATUSES = %w[available claimed pending completed cancelled denied].freeze
   MULTI_USE_STATUSES  = %w[reusable repeatable recurring].freeze
@@ -183,12 +185,15 @@ class VolunteerTask
   # Repeatable: creates a child task; same member may claim multiple times.
   # Recurring:  creates a child task; respects next_available cooldown; sets parent claimed_at + status + next_available.
   def claim!(member, sync_canvas: true)
+    reload
     raise Error::Forbidden.new unless member.status == "activeMember"
     raise Error::Forbidden.new unless eligible_for?(member)
 
     result = case status
     when 'available'
+      previous_notification = approval_notification.deep_dup
       update!(status: 'claimed', claimed_by_id: member.id, claimed_at: Time.now)
+      Service::VolunteerApprovalReminder.reset!(self, previous_notification: previous_notification)
       self
 
     when 'reusable'
@@ -225,28 +230,50 @@ class VolunteerTask
   end
 
   def mark_pending!(member)
+    reload
     raise Error::Forbidden.new unless status == 'claimed' && claimed_by_id == member.id
+    previous_notification = approval_notification.deep_dup
     update!(status: 'pending', completed_at: Time.now)
+    Service::VolunteerApprovalReminder.reset!(self, previous_notification: previous_notification)
   end
 
   def complete!(verifier)
+    reload
     raise Error::Forbidden.new if verifier.id == claimed_by_id
     raise Error::Forbidden.new unless status == 'pending'
 
+    notification = Service::VolunteerApprovalReminder.outcome_attributes(
+      self, outcome: "Approved by #{verifier.fullname}"
+    ).fetch(:approval_notification, {})
     update!(status: 'completed', verified_by_id: verifier.id)
 
-    credit = VolunteerCredit.create!(
-      member_id:    claimed_by_id,
-      issued_by_id: verifier.id,
-      task_id:      id,
-      description:  "Completed bounty task: #{effective_title}",
-      credit_value: credit_value,
-      status:       'approved'
-    )
-    credit.send(:notify_member_credit_awarded)
-    credit.send(:check_discount_threshold!)
+    approval_error = nil
+    begin
+      credit = VolunteerCredit.create!(
+        member_id:    claimed_by_id,
+        issued_by_id: verifier.id,
+        task_id:      id,
+        description:  "Completed bounty task: #{effective_title}",
+        credit_value: credit_value,
+        status:       'approved'
+      )
+      credit.send(:notify_member_credit_awarded)
+      credit.send(:check_discount_threshold!)
 
-    notify_task_verified(verifier)
+      notify_task_verified(verifier)
+    rescue => error
+      approval_error = error
+      raise
+    ensure
+      begin
+        Service::VolunteerApprovalReminder.record_outcome!(self, notification, expected_status: 'completed')
+        Service::VolunteerApprovalReminder.sync_closed!(self)
+      rescue
+        # The service reports metadata failures. Preserve a simultaneous award
+        # failure rather than replacing the existing domain error.
+        raise unless approval_error
+      end
+    end
   end
 
   # Release a claimed task back to available (or deny a child task).
@@ -275,10 +302,14 @@ class VolunteerTask
 
   # Reject a pending task (or deny a child task).
   def reject_pending!(admin, reason, notify: true)
+    reload
     raise Error::Forbidden.new unless status == 'pending'
     raise Error::Forbidden.new if admin.id == claimed_by_id
 
     former_claimant_id = claimed_by_id
+    notification = Service::VolunteerApprovalReminder.outcome_attributes(
+      self, outcome: "Denied by #{admin.fullname}. Reason: #{reason}"
+    ).fetch(:approval_notification, {})
 
     if child_task?
       update!(status: 'denied', rejection_reason: reason)
@@ -291,10 +322,12 @@ class VolunteerTask
         rejection_reason: reason
       )
     end
+    Service::VolunteerApprovalReminder.record_outcome!(self, notification, expected_status: status)
 
     if notify
       notify_member_task_rejected(former_claimant_id, reason)
       enqueue_volunteer_canvas_sync
+      Service::VolunteerApprovalReminder.sync_closed!(self)
     end
   end
 
