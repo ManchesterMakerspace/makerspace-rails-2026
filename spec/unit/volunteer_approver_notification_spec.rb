@@ -75,7 +75,9 @@ RSpec.describe VolunteerApproverNotification do
     stub_const('SlackUser', Class.new do
       def self.find_by(**_conditions); end
     end)
-    allow(SlackUser).to receive(:find_by) { |member_id:| double(slack_id: "U-#{member_id}") }
+    allow(SlackUser).to receive(:find_by) do |member_id:|
+      double(member_id: member_id, slack_id: "U-#{member_id}", invalidated_at: nil)
+    end
     stub_const('ShortUrl', Class.new do
       def self.base_url; end
     end)
@@ -227,10 +229,65 @@ RSpec.describe VolunteerApproverNotification do
     allow(SlackUser).to receive(:find_by).with(member_id: manager.id).and_return(nil)
     notify
     expect(Service::SlackConnector).to have_received(:send_slack_message).once
-    allow(SlackUser).to receive(:find_by).with(member_id: manager.id).and_return(double(slack_id: 'ULINKED'))
+    allow(SlackUser).to receive(:find_by).with(member_id: manager.id)
+      .and_return(double(member_id: manager.id, slack_id: 'ULINKED', invalidated_at: nil))
     notify
     expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'ULINKED').once
     expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+  end
+
+  %i[task event].each do |kind|
+    it "retries a #{kind} DM after the manager's Slack link disappears during lease acquisition" do
+      record = public_send(kind)
+      old_identity = double(member_id: manager.id, slack_id: 'UOLD', invalidated_at: nil)
+      allow(SlackUser).to receive(:find_by).with(member_id: manager.id).and_return(old_identity, nil)
+
+      notify(record)
+
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UOLD')
+      expect(record.approver_notifications.values.first[manager.id]['state']).to eq('failed')
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+      expect(Service::ErrorReporter).not_to have_received(:notify)
+
+      current_identity = double(member_id: manager.id, slack_id: 'UCURRENT', invalidated_at: nil)
+      allow(SlackUser).to receive(:find_by).with(member_id: manager.id).and_return(current_identity)
+      2.times { notify(record, at: now + 1.minute) }
+
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'UCURRENT').once
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+      expect(record.approver_notifications.values.first[manager.id]['state']).to eq('sent')
+    end
+
+    it "sends a #{kind} DM to the replacement Slack identity found after the lease" do
+      old_identity = double(member_id: manager.id, slack_id: 'UOLD', invalidated_at: nil)
+      current_identity = double(member_id: manager.id, slack_id: 'UCURRENT', invalidated_at: nil)
+      allow(SlackUser).to receive(:find_by).with(member_id: manager.id).and_return(old_identity, current_identity)
+      record = public_send(kind)
+
+      2.times { notify(record) }
+
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UOLD')
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'UCURRENT').once
+      expect(record.approver_notifications.values.first[manager.id]['state']).to eq('sent')
+    end
+  end
+
+  {
+    'invalidated identity' => { member_id: 'rm-wood', slack_id: 'UOLD', invalidated_at: Time.utc(2026, 10, 4, 16) },
+    'reassigned identity' => { member_id: 'someone-else', slack_id: 'UOLD', invalidated_at: nil },
+    'blank replacement ID' => { member_id: 'rm-wood', slack_id: '', invalidated_at: nil }
+  }.each do |reason, attributes|
+    it "keeps delivery retryable if the final identity lookup returns #{reason}" do
+      old_identity = double(member_id: manager.id, slack_id: 'UOLD', invalidated_at: nil)
+      allow(SlackUser).to receive(:find_by).with(member_id: manager.id).and_return(old_identity, double(attributes))
+
+      notify
+
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UOLD')
+      expect(task.approver_notifications.values.first[manager.id]['state']).to eq('failed')
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+      expect(Service::ErrorReporter).not_to have_received(:notify)
+    end
   end
 
   it 'retries only a manager whose initial delivery failed' do

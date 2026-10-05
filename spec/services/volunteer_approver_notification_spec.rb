@@ -54,6 +54,15 @@ RSpec.describe VolunteerApproverNotification do
     record.approver_notifications.fetch(key)
   end
 
+  def change_before_delivery(record, &change)
+    reload_count = 0
+    allow(record).to receive(:reload).and_wrap_original do |original, *arguments|
+      reload_count += 1
+      change.call if reload_count == 2
+      original.call(*arguments)
+    end
+  end
+
   it 'persists one DM receipt only for an actual resource manager assigned to the task shop' do
     assigned = reviewer(slack_id: 'UASSIGNED')
     reviewer(slack_id: 'UOTHER', shop_ids: [create(:shop).id.to_s])
@@ -142,6 +151,81 @@ RSpec.describe VolunteerApproverNotification do
     expect(receipts.fetch(assigned.id.to_s)['state']).to eq('obsolete')
     expect(receipts.fetch(remaining.id.to_s)['state']).to eq('sent')
     expect(Service::ErrorReporter).not_to have_received(:notify)
+  end
+
+  %i[task event].each do |kind|
+    context "when the #{kind} approver's Slack identity changes before delivery" do
+      let(:claim) { kind == :task ? task : event(event_date: now.to_date - 1) }
+      let(:assigned) { reviewer(slack_id: 'UOLD') }
+      let(:slack_user) { SlackUser.find_by(member_id: assigned.id) }
+
+      def receipts_for(record)
+        record.is_a?(VolunteerTask) ? task_receipts(record) : record.reload.approver_notifications.fetch('event')
+      end
+
+      %w[invalidated detached reassigned].each do |change|
+        it "skips the #{change} identity, retaining a retryable receipt and continuing to other managers" do
+          old_identity = slack_user
+          remaining = reviewer(slack_id: 'UREMAINING')
+          replacement_owner = create(:member) if change == 'reassigned'
+          allow(Member).to receive(:where).with(role: 'resource_manager', resource_manager_shop_ids: shop.id.to_s)
+            .and_return([assigned, remaining])
+          change_before_delivery(claim) do
+            attributes = case change
+            when 'invalidated' then { 'invalidated_at' => now }
+            when 'detached' then { 'member_id' => nil }
+            when 'reassigned' then { 'member_id' => replacement_owner.id }
+            end
+            SlackUser.collection.find('_id' => old_identity.id).update_one('$set' => attributes)
+          end
+
+          described_class.notify!(claim, now: now)
+
+          expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UOLD')
+          expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(anything, 'UREMAINING')
+          receipts = receipts_for(claim)
+          expect(receipts.fetch(assigned.id.to_s)['state']).to eq('failed')
+          expect(receipts.fetch(remaining.id.to_s)['state']).to eq('sent')
+          expect(Service::ErrorReporter).not_to have_received(:notify)
+        end
+      end
+
+      it 'sends only to the current linked identity when the original link is replaced during lease acquisition' do
+        old_identity = slack_user
+        change_before_delivery(claim) do
+          SlackUser.collection.find('_id' => old_identity.id).update_one('$set' => { 'invalidated_at' => now })
+          SlackUser.create!(member: assigned, slack_id: 'UCURRENT', slack_email: assigned.email)
+        end
+
+        2.times { described_class.notify!(claim, now: now) }
+
+        expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UOLD')
+        expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(anything, 'UCURRENT')
+        expect(receipts_for(claim).fetch(assigned.id.to_s)).to include(
+          'state' => 'sent', 'ts' => 'receipt-UCURRENT', 'channel' => 'D-UCURRENT'
+        )
+        expect(Service::ErrorReporter).not_to have_received(:notify)
+      end
+
+      it 'delivers once after relinking an identity whose first attempt was skipped' do
+        old_identity = slack_user
+        change_before_delivery(claim) do
+          SlackUser.collection.find('_id' => old_identity.id).update_one('$set' => { 'invalidated_at' => now })
+        end
+        described_class.notify!(claim, now: now)
+        expect(receipts_for(claim).fetch(assigned.id.to_s)['state']).to eq('failed')
+
+        SlackUser.create!(member: assigned, slack_id: 'URELINKED', slack_email: assigned.email)
+        2.times { described_class.notify!(claim, now: now) }
+
+        expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UOLD')
+        expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(anything, 'URELINKED')
+        expect(receipts_for(claim).fetch(assigned.id.to_s)).to include(
+          'state' => 'sent', 'ts' => 'receipt-URELINKED', 'channel' => 'D-URELINKED'
+        )
+        expect(Service::ErrorReporter).not_to have_received(:notify)
+      end
+    end
   end
 
   it 'notifies immediately on a child claim submission and the job does not resend its DM' do

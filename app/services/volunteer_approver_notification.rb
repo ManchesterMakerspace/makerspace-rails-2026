@@ -19,7 +19,7 @@ class VolunteerApproverNotification
         slack_user = SlackUser.find_by(member_id: manager.id)
         next unless slack_user&.slack_id.present?
 
-        deliver!(record, manager, slack_user.slack_id, now)
+        deliver!(record, manager, now)
       rescue => error
         Service::ErrorReporter.notify(error)
       end
@@ -46,7 +46,7 @@ class VolunteerApproverNotification
       record.is_a?(VolunteerEvent) ? 'event' : "submission_#{(record.completed_at.to_f * 1000).round}"
     end
 
-    def deliver!(record, manager, slack_id, now)
+    def deliver!(record, manager, now)
       claim_key = submission_key(record)
       path = "approver_notifications.#{claim_key}.#{manager.id}"
       token = SecureRandom.uuid
@@ -83,7 +83,15 @@ class VolunteerApproverNotification
           return
         end
 
-        response = Service::SlackConnector.send_slack_message(message(record), slack_id)
+        # Provisioning can invalidate or reassign the link after enumeration.
+        # Keep the delivery retryable until this manager has a current identity.
+        slack_user = SlackUser.find_by(member_id: manager.id)
+        unless slack_user&.slack_id.present? && slack_user.member_id == manager.id && slack_user.invalidated_at.blank?
+          finish!(record, path, token, { 'state' => 'failed' })
+          return
+        end
+
+        response = Service::SlackConnector.send_slack_message(message(record), slack_user.slack_id)
         ts = response && (response['ts'] || response[:ts])
         channel = response && (response['channel'] || response[:channel])
         raise 'Slack did not return an approver DM receipt' if ts.blank? || channel.blank?

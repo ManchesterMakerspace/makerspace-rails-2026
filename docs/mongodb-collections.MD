@@ -164,7 +164,9 @@ by event and manager ID. Each recipient stores `state` (`sending`, `sent`,
 `failed`, or `obsolete`), a sending-lease token and `attempted_at`; successful
 posts additionally store `ts`, returned channel, `sent_at`, and
 `destination_mode`. Failed or stale sending attempts can be retried without
-repeating a recipient with a durable successful receipt. An accepted post with
+repeating a recipient with a durable successful receipt. If the manager's Slack
+identity is unavailable or no longer belongs to them at the post-lease check,
+delivery remains `failed` without posting and can retry after relinking. An accepted post with
 failed receipt persistence keeps its sending lease and reports uncertainty;
 lease expiry after that failure or a worker crash can permit a duplicate DM.
 These fields remain excluded from

@@ -446,10 +446,13 @@ by later runs, while `sent` receipts are not repeated. Before sending, delivery
 reloads both the activity and the recipient, then rechecks the same submission,
 current resource-manager role, shop assignment, and manager notification
 suppression. Deleted or newly ineligible managers have their attempts marked
-obsolete without a DM. Missing Slack links are
-skipped and can receive their DM
-on a later scan after linking. Individual errors are reported without aborting
-the remaining recipients.
+obsolete without a DM. Delivery also queries the manager's active `SlackUser`
+again after acquiring the lease and verifies its ownership, active state, and
+nonblank Slack ID. A replacement identity found then receives the DM. If the
+link has disappeared, been invalidated or reassigned, or lost its Slack ID,
+the attempt sends no message and remains `failed` so a later scan can retry
+after relinking. Managers missing a Slack link before leasing are skipped.
+Individual errors are reported without aborting the remaining recipients.
 
 An accepted Slack post whose receipt cannot be saved is reported as uncertain
 delivery and retains its sending lease rather than immediately reposting.
