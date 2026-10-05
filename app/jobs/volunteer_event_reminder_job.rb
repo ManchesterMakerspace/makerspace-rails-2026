@@ -11,6 +11,11 @@ class VolunteerEventReminderJob < ApplicationJob
     end
     reminder_tasks(now).each { |task| Service::VolunteerApprovalReminder.remind!(task, now: now) }
     reminder_events(now).each { |event| Service::VolunteerApprovalReminder.remind!(event, now: now) }
+    # Keep unindexed receipt retries out of the indexed status/date scans.
+    # A record selected by both scans only refreshes its pending message once.
+    [VolunteerTask, VolunteerEvent].each do |model|
+      retry_notifications(model).each { |record| Service::VolunteerApprovalReminder.sync_closed!(record) }
+    end
     SystemConfig.record_run('volunteer_event_reminder', success: true)
   rescue => e
     SystemConfig.record_run('volunteer_event_reminder', success: false)
@@ -21,23 +26,21 @@ class VolunteerEventReminderJob < ApplicationJob
   private
 
   def reminder_tasks(now)
-    VolunteerTask.any_of(
-      { status: 'pending', completed_at: { '$ne' => nil, '$lt' => now - Service::VolunteerApprovalReminder::WAIT_DAYS.days } },
-      *unfinished_notifications
+    VolunteerTask.where(
+      status: 'pending', completed_at: { '$ne' => nil, '$lt' => now - Service::VolunteerApprovalReminder::WAIT_DAYS.days }
     )
   end
 
   def reminder_events(now)
-    VolunteerEvent.any_of(
-      { status: 'open', event_date: { '$ne' => nil, '$lt' => now.to_date - Service::VolunteerApprovalReminder::WAIT_DAYS } },
-      *unfinished_notifications
+    VolunteerEvent.where(
+      status: 'open', event_date: { '$ne' => nil, '$lt' => now.to_date - Service::VolunteerApprovalReminder::WAIT_DAYS }
     )
   end
 
-  def unfinished_notifications
-    [
+  def retry_notifications(model)
+    model.any_of(
       { 'approval_notification.finalized' => false },
       { approval_notification_history: { '$elemMatch' => { 'finalized' => false } } }
-    ]
+    )
   end
 end

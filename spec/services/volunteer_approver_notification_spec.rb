@@ -89,6 +89,61 @@ RSpec.describe VolunteerApproverNotification do
     expect(task_receipts(claim).keys).to eq([assigned.id.to_s])
   end
 
+  {
+    'shop assignment removal' => { 'resource_manager_shop_ids' => [] },
+    'role removal' => { 'role' => 'member' },
+    'suspension' => { 'status' => 'suspended' },
+    'revocation' => { 'status' => 'revoked' }
+  }.each do |change, attributes|
+    it "does not DM a manager whose #{change} occurs after enumeration but before delivery" do
+      assigned = reviewer(slack_id: 'UCHANGED')
+      remaining = reviewer(slack_id: 'UREMAINING')
+      allow(Member).to receive(:where).with(role: 'resource_manager', resource_manager_shop_ids: shop.id.to_s)
+        .and_return([assigned, remaining])
+      claim = task
+      reload_count = 0
+      allow(claim).to receive(:reload).and_wrap_original do |original, *arguments|
+        reload_count += 1
+        if reload_count == 2
+          Member.collection.find('_id' => assigned.id).update_one('$set' => attributes)
+        end
+        original.call(*arguments)
+      end
+
+      described_class.notify!(claim, now: now)
+
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UCHANGED')
+      expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(anything, 'UREMAINING')
+      receipts = task_receipts(claim)
+      expect(receipts.fetch(assigned.id.to_s)['state']).to eq('obsolete')
+      expect(receipts.fetch(remaining.id.to_s)['state']).to eq('sent')
+      expect(Service::ErrorReporter).not_to have_received(:notify)
+    end
+  end
+
+  it 'marks a deleted manager receipt obsolete and continues notifying remaining managers' do
+    assigned = reviewer(slack_id: 'UDELETED')
+    remaining = reviewer(slack_id: 'UREMAINING')
+    allow(Member).to receive(:where).with(role: 'resource_manager', resource_manager_shop_ids: shop.id.to_s)
+      .and_return([assigned, remaining])
+    claim = task
+    reload_count = 0
+    allow(claim).to receive(:reload).and_wrap_original do |original, *arguments|
+      reload_count += 1
+      Member.collection.find('_id' => assigned.id).delete_one if reload_count == 2
+      original.call(*arguments)
+    end
+
+    described_class.notify!(claim, now: now)
+
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UDELETED')
+    expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(anything, 'UREMAINING')
+    receipts = task_receipts(claim)
+    expect(receipts.fetch(assigned.id.to_s)['state']).to eq('obsolete')
+    expect(receipts.fetch(remaining.id.to_s)['state']).to eq('sent')
+    expect(Service::ErrorReporter).not_to have_received(:notify)
+  end
+
   it 'notifies immediately on a child claim submission and the job does not resend its DM' do
     assigned = reviewer(slack_id: 'UCHILD')
     parent = task(status: 'repeatable', claimed_by_id: nil, claimed_at: nil, completed_at: nil)

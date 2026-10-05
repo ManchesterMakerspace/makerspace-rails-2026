@@ -126,9 +126,15 @@ reported as errors for operator review.
 `data:ensure_unique_indexes` runs in the release phase for both buildpack and
 container deployments. In addition to the core identity constraints, it installs
 the partial unique indexes that permit only one open checkout-approver request
-per member/tool and only one volunteer credit per tool checkout. Deployments stop
-for operator review when existing duplicate data prevents either constraint from
-being created.
+per member/tool and only one volunteer credit per tool checkout, plus the
+nonunique reminder indexes on `volunteer_tasks(status, completed_at)` and
+`volunteer_events(status, event_date)`. These two indexes are installed from
+their individual model declarations; this does not install the unrelated unique
+task/event number indexes on legacy data. For an existing deployment that has
+not run the updated release task, run
+`RAILS_ENV=production bundle exec rake data:ensure_unique_indexes` before relying
+on the reminder age indexes. Deployments stop for operator review when existing
+duplicate data prevents either constraint from being created.
 
 The Tool index keeps the equality-scoped shop and case-insensitive name ordering
 before the availability inequalities. A test-database `executionStats` comparison
@@ -404,6 +410,15 @@ calendar days** before today. A task still being worked on (`claimed`) is not
 awaiting approval; an undated event has no date from which to age a reminder.
 There is one event reminder for the event, regardless of attendee count.
 
+Overdue tasks and events use separate status/date queries supported by the
+compound indexes installed by `data:ensure_unique_indexes` during release.
+Saved final-delivery retries run in separate queries for current and archived
+receipts, without a pending/open status restriction. Those receipt queries can
+still scan a collection; their unindexed predicates are never combined with the
+overdue range query. Retry processing only synchronizes closed messages, so an
+overdue record also selected for retry does not receive a second pending-age
+refresh.
+
 The proposed shop-reviewer notification rollout requires deploying the Rails
 changes that provide `VolunteerApproverNotification` together with React's
 `/volunteer?task=:id` and `/volunteer?event=:id` selection handling. The preceding
@@ -428,8 +443,10 @@ post stores its `ts`, returned channel, destination mode, and sent time. A
 five-minute tokenized sending lease prevents concurrent attempts from sending
 the same manager again; failed attempts and expired sending leases are retried
 by later runs, while `sent` receipts are not repeated. Before sending, delivery
-rechecks the same submission, shop assignment, and manager notification
-suppression, marking obsolete attempts accordingly. Missing Slack links are
+reloads both the activity and the recipient, then rechecks the same submission,
+current resource-manager role, shop assignment, and manager notification
+suppression. Deleted or newly ineligible managers have their attempts marked
+obsolete without a DM. Missing Slack links are
 skipped and can receive their DM
 on a later scan after linking. Individual errors are reported without aborting
 the remaining recipients.

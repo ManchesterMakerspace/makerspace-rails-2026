@@ -67,8 +67,14 @@ class VolunteerApproverNotification
 
       posted = false
       begin
-        # The record can be approved while the delivery lease is acquired.
+        # The record or manager's eligibility can change while the lease is acquired.
         record.reload
+        begin
+          manager.reload
+        rescue Mongoid::Errors::DocumentNotFound
+          finish!(record, path, token, { 'state' => 'obsolete' })
+          return
+        end
         unless ready?(record, now) && submission_key(record) == claim_key &&
             record.shop_id.present? && manager.manages_shop?(record.shop_id) &&
             !manager.direct_notifications_suppressed? &&

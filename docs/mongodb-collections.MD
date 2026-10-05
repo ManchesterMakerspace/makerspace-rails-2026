@@ -112,8 +112,8 @@ conditions are included where they are part of the index contract.
 | `tool_checkouts` | `ToolCheckout` | Granted or revoked member Safety Checkouts for tools. | `{ member_id: 1 }` (deployment task) |
 | `tools` | `Tool` | Tool catalog, shop ownership, Safety Checkout prerequisites, and reservation rules. | Unique case-insensitive `{ shop_id: 1, name: 1 }` with `en` strength-2 collation, partial when `name` is a string; `{ shop_id: 1, name: 1, _id: 1, disabled: 1 }` with the same collation |
 | `volunteer_credits` | `VolunteerCredit` | Volunteer credit awards, approvals, discounts, and reversals. | `{ member_id: 1 }` (also enforced as non-unique by the deployment task); `{ status: 1 }`; `{ created_at: 1 }`; unique `{ tool_checkout_id: 1 }`, partial when `tool_checkout_id` is an object ID |
-| `volunteer_events` | `VolunteerEvent` | Volunteer events, attendees, eligibility prerequisites, and open/closed state. | `{ status: 1 }`; `{ status: 1, event_date: 1 }`; unique `{ event_number: 1 }`; `{ shop_id: 1 }` |
-| `volunteer_tasks` | `VolunteerTask` | Volunteer bounties/tasks, claims, verification, recurrence, and credit values. | `{ status: 1 }`; `{ status: 1, completed_at: 1 }`; `{ claimed_by_id: 1 }`; `{ parent_task_id: 1 }`; `{ shop_id: 1 }`; unique `{ task_number: 1 }` |
+| `volunteer_events` | `VolunteerEvent` | Volunteer events, attendees, eligibility prerequisites, and open/closed state. | `{ status: 1 }`; `{ status: 1, event_date: 1 }` (deployment task); unique `{ event_number: 1 }`; `{ shop_id: 1 }` |
+| `volunteer_tasks` | `VolunteerTask` | Volunteer bounties/tasks, claims, verification, recurrence, and credit values. | `{ status: 1 }`; `{ status: 1, completed_at: 1 }` (deployment task); `{ claimed_by_id: 1 }`; `{ parent_task_id: 1 }`; `{ shop_id: 1 }`; unique `{ task_number: 1 }` |
 
 `EarnedMembership::ReportRequirement` is not listed as a collection because it
 is embedded inside `earned_membership__report` documents.
@@ -144,7 +144,16 @@ retained for the intended environment.
 
 The compound `{ status: 1, completed_at: 1 }` task index supports the
 pending-completion scan; `{ status: 1, event_date: 1 }` supports the dated open
-event scan.
+event scan. These indexed age scans run separately from final-delivery retries,
+whose private receipt predicates have no declared indexes.
+The [Procfile release command](../Procfile) runs
+`data:ensure_unique_indexes` to install both nonunique reminder indexes on existing
+databases. Deployments that bypass that release command must run
+`RAILS_ENV=production bundle exec rake data:ensure_unique_indexes` before enabling
+the updated reminder job. This step creates only these volunteer lookup indexes;
+it does not attempt to install the task/event number unique indexes or require a
+number backfill. Repeating it retains compatible indexes. Model declarations
+alone do not install indexes on existing collections.
 See [the job inventory](jobs-tasks-services.MD#volunteer-approval-reminders) for
 age thresholds, channel routing, and recovery behavior.
 

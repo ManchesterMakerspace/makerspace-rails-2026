@@ -25,6 +25,10 @@ RSpec.describe VolunteerApproverNotification do
   before do
     @selectors = []
     @fail_receipt_writes = false
+    stub_const('Mongoid::Errors::DocumentNotFound', Class.new(StandardError)) unless
+      defined?(Mongoid::Errors::DocumentNotFound)
+    allow(manager).to receive(:reload).and_return(manager)
+    allow(second_manager).to receive(:reload).and_return(second_manager)
     record_class = Class.new do
       attr_accessor :id, :shop_id, :status, :title, :display_number, :claimed_by_id,
         :claimed_by, :completed_at, :event_date, :attendee_count, :approver_notifications
@@ -186,6 +190,37 @@ RSpec.describe VolunteerApproverNotification do
     notify
     expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'U-rm-wood')
     expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+  end
+
+  [
+    ['removed shop authority', :manages_shop?, false],
+    ['suspended or revoked notifications', :direct_notifications_suppressed?, true]
+  ].each do |change, predicate, eligible|
+    it "rechecks #{change} on the reloaded manager after acquiring the lease" do
+      allow(manager).to receive(:reload) do
+        allow(manager).to receive(predicate).and_return(eligible)
+        manager
+      end
+
+      notify
+
+      expect(manager).to have_received(:reload).once
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'U-rm-wood')
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+      expect(task.approver_notifications.values.first[manager.id]['state']).to eq('obsolete')
+      expect(Service::ErrorReporter).not_to have_received(:notify)
+    end
+  end
+
+  it 'marks the leased receipt obsolete when the manager was deleted before delivery' do
+    allow(manager).to receive(:reload).and_raise(Mongoid::Errors::DocumentNotFound.allocate)
+
+    notify
+
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'U-rm-wood')
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+    expect(task.approver_notifications.values.first[manager.id]['state']).to eq('obsolete')
+    expect(Service::ErrorReporter).not_to have_received(:notify)
   end
 
   it 'does not mark an unlinked manager notified and delivers after their Slack account is linked' do

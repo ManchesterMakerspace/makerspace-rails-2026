@@ -161,7 +161,7 @@ RSpec.describe 'Volunteer task cancellation and status notification integration'
     expect { task.cancel! }.not_to raise_error
     expect(task.reload.status).to eq('cancelled')
     expect(task.approval_notification).to include('closed_at' => now, 'finalized' => false)
-    criteria = VolunteerEventReminderJob.new.send(:reminder_tasks, now + 1.day)
+    criteria = VolunteerEventReminderJob.new.send(:retry_notifications, VolunteerTask)
     expect(matches?(@persisted, criteria.selector)).to be(true)
     expect(criteria.selector.fetch('$or')).to include('approval_notification.finalized' => false)
 
