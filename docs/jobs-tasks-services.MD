@@ -537,8 +537,19 @@ error is preserved for the caller. The initial unconfirmed warning remains
 durable whenever the completed-status write succeeded, including when credit
 creation actually succeeded but recording its confirmation failed. Verify the
 saved credit before manual correction; the job cannot infer the award outcome.
-Event closure reports closure without claiming every attendee credit succeeded:
-the existing per-attendee award failures remain possible. No final message is
+Event closure saves a `Credit award not confirmed` warning atomically with its
+closed status before processing attendees. After processing, it confirms closure
+only if no attendee operation raised. Member lookup failures (other than deleted
+members), credit creation, award notification, and membership discount processing
+failures produce a warning identifying the affected member IDs and processing
+stage. Other attendees are still processed; deleted and inactive members are
+skipped as before. Verify saved credits and follow-up processing before correcting
+an award, since a credit can have been saved before the failure. Event closure
+opts into error propagation from the credit notification and discount helpers;
+other callers retain their existing rescued-error behavior. A failed outcome
+write leaves the original unconfirmed warning durable. A delivered warning can
+be `finalized: true`: this confirms message delivery, not correction of the credit
+problem. The job retries warning delivery, not attendee credit operations. No final message is
 created if that activity never had an overdue reminder. An outcome snapshot can
 exist before a posted-message receipt; if an in-flight post finishes after
 review, its returned `ts` is attached to the matching snapshot and finalized.
@@ -569,8 +580,16 @@ schedule/status change aborts the guarded reschedule, so reload before retrying.
 Proposed task cancellation and generic status edits also finalize an outstanding
 review reminder with the actual outcome. Setting a task to completed through a
 generic edit does not issue credits, and the final notice states that distinction.
-Deleting the underlying task/event still removes its receipt without finalizing
-the Slack message; an actually deleted record cannot be retried by this job.
+Before destroying an unlinked task, its model callback withdraws pending review
+(saving cancelled status and a deletion-requested outcome together), closes any
+outstanding historical reminders, and synchronizes final Slack text. If a known
+posted message cannot be finalized, destruction raises and preserves the record
+and retry receipts; the daily job can finish delivery, then deletion can be
+retried. Existing approved/denied outcomes are preserved. A post or age update
+already in flight when the task disappears removes its message best effort;
+cleanup failures are reported. Low-level `delete`/`delete_all` bypass model
+callbacks. Event destruction still removes its receipt without finalizing the
+Slack message; an actually deleted event cannot be retried by this job.
 
 Individual post/update failures are reported and the scan continues. The job's
 `success` status means its scan completed, not that every reminder was delivered.

@@ -172,6 +172,25 @@ warning delivery uses the same retry fields; the reminder job does not retry
 creating credits. A successful lifecycle write always includes its initial
 closure metadata; confirmation of the credit outcome can still fail separately.
 
+Event closure uses the same provisional unconfirmed warning before processing
+attendee awards. The final outcome reports any member lookup, credit creation,
+award notification, or discount-processing failures with the affected member IDs
+and processing stages. Deleted or inactive members are skipped. Other attendees
+still receive their awards. Event closure requests error propagation from the
+credit notification and discount helpers; other callers retain their existing
+rescued-error behavior. The job retries warning delivery rather than creating
+credits again. Failed outcome persistence leaves the unconfirmed warning in place.
+
+Unlinked task destruction runs a model callback before removing its receipts.
+It withdraws pending review with cancelled status and a deletion-requested
+outcome in one write, closes open historical reminders, and requires successful
+final delivery for every known posted message before destruction proceeds.
+Slack failures retain the cancelled task and retryable receipt for the daily job;
+retry deletion after delivery recovers. Already closed review outcomes remain
+unchanged. A reminder worker whose post or update outlives task deletion removes
+that message best effort and reports cleanup failures. Low-level `delete` and
+`delete_all` bypass callbacks; event deletion remains outside this cleanup.
+
 The compound `{ status: 1, completed_at: 1 }` task index supports the
 pending-completion scan; `{ status: 1, event_date: 1 }` supports the dated open
 event scan. These indexed age scans run separately from final-delivery retries,

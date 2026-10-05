@@ -81,6 +81,39 @@ module Service
         ) }
       end
 
+      # Keep the document (and its retry receipts) until all known Slack messages
+      # have their final text. Withdrawing pending status also prevents a worker
+      # from preparing a fresh reminder between this cleanup and destruction.
+      def prepare_task_destruction!(record, now: Time.current)
+        record.reload
+        receipt = record.approval_notification.to_h
+        if receipt['closed_at'].blank? && (record.status == 'pending' || receipt.present?)
+          notification = outcome_attributes(record,
+            outcome: 'Task deletion requested; pending review withdrawn', closed_at: now
+          ).fetch(:approval_notification, {})
+          attributes = record.status == 'pending' ? { status: 'cancelled' } : {}
+          transition_with_outcome!(record, attributes, notification: notification)
+        end
+        record.reload
+        Array(record.approval_notification_history).each_with_index do |past, index|
+          next if past['closed_at'].present?
+
+          fields = {
+            'started_at' => past['started_at'] || native_time(now),
+            'subject' => past['subject'] || subject(record),
+            'outcome' => 'Task deletion requested; pending review withdrawn', 'closed_at' => native_time(now)
+          }.merge('finalized' => false)
+          path = "approval_notification_history.#{index}"
+          write_notification(record, receipt_selector(record, path, past).merge("#{path}.closed_at" => nil), path, fields)
+        end
+        sync_closed!(record)
+        record.reload
+        receipts = [record.approval_notification.to_h] + Array(record.approval_notification_history)
+        if receipts.any? { |saved| saved['ts'].present? && (!saved['finalized'] || saved['closed_at'].blank?) }
+          raise 'Cannot delete task until its Slack reminders have been finalized; retry deletion after delivery recovers'
+        end
+      end
+
       # Mongoid combines delayed dotted sets with update!'s lifecycle fields in
       # one write, preserving validation/callbacks and a concurrently posted ts.
       def transition_with_outcome!(record, attributes, notification:)
@@ -186,7 +219,17 @@ module Service
         record.reload
         sync_closed!(record)
       rescue => error
-        ErrorReporter.notify(error)
+        if defined?(Mongoid::Errors::DocumentNotFound) && error.is_a?(Mongoid::Errors::DocumentNotFound) && receipt&.dig('ts').present?
+          # Deletion can win while chat.postMessage or chat.update is in flight.
+          # The receipt no longer has a document to attach to or retry from.
+          begin
+            delete_duplicate!(receipt)
+          rescue => cleanup_error
+            ErrorReporter.notify(cleanup_error)
+          end
+        else
+          ErrorReporter.notify(error)
+        end
       end
 
       # A Slack failure never reverses an approval/denial. The saved outcome is

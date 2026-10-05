@@ -230,7 +230,7 @@ class VolunteerCredit
 
   # DM the member when their credit is approved.
   # Also sends a subscription nudge if discounts are configured but no subscription.
-  def notify_member_credit_awarded
+  def notify_member_credit_awarded(raise_errors: false)
     m          = member
     year_total = VolunteerCredit.year_count_for(m.id)
     slack_user = SlackUser.find_by(member_id: m.id)
@@ -279,6 +279,7 @@ class VolunteerCredit
     ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
   rescue => e
     Service::ErrorReporter.notify(e)
+    raise if raise_errors
   end
 
   # DM the member when one of their credits is reversed
@@ -324,7 +325,7 @@ class VolunteerCredit
 
   # Check if this credit crosses the discount threshold and apply Braintree discount.
   # Skips reversal records entirely — they are accounting offsets, not new credits.
-  def check_discount_threshold!
+  def check_discount_threshold!(raise_errors: false)
     return if status == 'reversal'
     return if VolunteerCredit.discount_id.blank?
     # This specific credit was earned while an active earned membership
@@ -344,7 +345,7 @@ class VolunteerCredit
     return unless year_total >= threshold * (discounts_used + 1)
 
     unless m.subscription_id.present?
-      notify_no_subscription(m)
+      notify_no_subscription(m, raise_errors: raise_errors)
       return
     end
 
@@ -379,24 +380,25 @@ class VolunteerCredit
       end
     end
 
-    apply_braintree_discount(m)
+    apply_braintree_discount(m, raise_errors: raise_errors)
   end
 
-  def apply_braintree_discount(m)
+  def apply_braintree_discount(m, raise_errors: false)
     discount_id = VolunteerCredit.discount_id
     result      = BraintreeService::VolunteerDiscount.apply(m, discount_id, 1)
 
     if result == :no_subscription
-      notify_no_subscription(m)
+      notify_no_subscription(m, raise_errors: raise_errors)
     else
-      notify_discount_applied(m, result)
+      notify_discount_applied(m, result, raise_errors: raise_errors)
     end
   rescue => e
     Service::ErrorReporter.notify(e)
     notify_discount_error(m, e)
+    raise if raise_errors
   end
 
-  def notify_discount_applied(m, discount_info)
+  def notify_discount_applied(m, discount_info, raise_errors: false)
     amount      = discount_info[:amount]
     cycles      = discount_info[:cycles_added]
     total       = discount_info[:total_cycles]
@@ -432,9 +434,10 @@ class VolunteerCredit
   rescue => e
     Service::ErrorReporter.notify(e)
     notify_discount_error(m, e) rescue nil
+    raise if raise_errors
   end
 
-  def notify_no_subscription(m)
+  def notify_no_subscription(m, raise_errors: false)
     message = ::Service::EmailTemplate.render(
       :volunteer_discount_no_subscription,
       ::Service::EmailTemplate.common_variables(m),
@@ -444,6 +447,7 @@ class VolunteerCredit
     ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.logs_channel)
   rescue => e
     Service::ErrorReporter.notify(e)
+    raise if raise_errors
   end
 
   def notify_discount_error(m, error)

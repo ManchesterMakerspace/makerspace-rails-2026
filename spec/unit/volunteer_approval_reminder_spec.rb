@@ -658,4 +658,35 @@ RSpec.describe Service::VolunteerApprovalReminder do
     expect(Service::SlackConnector).not_to have_received(:delete_slack_message)
     expect(Service::SlackConnector).to have_received(:send_slack_message).once
   end
+
+  %i[post update].each do |operation|
+    it "removes an in-flight #{operation} message when task deletion wins before the receipt reload" do
+      stub_const('Mongoid::Errors::DocumentNotFound', Class.new(StandardError))
+      post_reminder if operation == :update
+      deleted = false
+      allow(task).to receive(:reload) do
+        raise Mongoid::Errors::DocumentNotFound, 'Task was deleted' if deleted
+        task
+      end
+      if operation == :post
+        allow(Service::SlackConnector).to receive(:send_slack_message) do
+          deleted = true
+          { 'ts' => 'LATE', 'channel' => 'CLATE' }
+        end
+      else
+        allow(Service::SlackConnector).to receive(:update_slack_message) do
+          deleted = true
+          { 'ok' => true }
+        end
+      end
+
+      post_reminder
+
+      channel, timestamp = operation == :post ? %w[CLATE LATE] : %w[CADMIN 123.456]
+      expect(Service::SlackConnector).to have_received(:delete_slack_message).with(
+        channel, timestamp, resolved_channel: true
+      ).once
+      expect(Service::ErrorReporter).not_to have_received(:notify)
+    end
+  end
 end

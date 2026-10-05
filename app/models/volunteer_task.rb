@@ -68,6 +68,7 @@ class VolunteerTask
   validate :prerequisites_belong_to_shop
 
   before_create :assign_task_number
+  before_destroy :retire_approval_reminders_before_destruction
 
   index({ status: 1 })
   index({ status: 1, completed_at: 1 })
@@ -392,6 +393,12 @@ class VolunteerTask
   end
 
   private
+
+  def retire_approval_reminders_before_destruction
+    return unless persisted? && ticket_id.blank?
+
+    Service::VolunteerApprovalReminder.prepare_task_destruction!(self)
+  end
 
   # Build and save a child task document for multi-use claim patterns.
   def create_child_task!(member)
