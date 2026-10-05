@@ -76,7 +76,9 @@ RSpec.describe VolunteerApproverNotification do
       def self.base_url; end
     end)
     allow(ShortUrl).to receive(:base_url).and_return('https://portal.example.org')
-    stub_const('Service', Module.new)
+    # Keep the real Service module when Rails is loaded; replacing it would hide
+    # Service::DatabaseSafety from the suite-wide DatabaseCleaner hook.
+    stub_const('Service', Module.new) unless defined?(Service)
     stub_const('Service::SlackConnector', Module.new do
       def self.send_slack_message(_text, _channel); end
       def self.message_destination_mode; end
