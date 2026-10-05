@@ -180,6 +180,52 @@ RSpec.describe VolunteerApproverNotification do
     expect(Service::SlackConnector).not_to have_received(:send_slack_message)
   end
 
+  %i[future undated].each do |schedule|
+    it "retries an event review after its date becomes #{schedule} during lease acquisition" do
+      rescheduled_date = now.in_time_zone.to_date + 3
+      reloaded = 0
+      allow(event).to receive(:reload) do
+        reloaded += 1
+        event.event_date = schedule == :future ? rescheduled_date : nil if reloaded == 2
+        event
+      end
+
+      notify(event)
+
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+      expect(event.approver_notifications.fetch('event').values).to all(include('state' => 'failed'))
+      expect(Service::ErrorReporter).not_to have_received(:notify)
+
+      event.event_date = rescheduled_date
+      notify(event, at: now + 1.day)
+      notify(event, at: now + 3.days)
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+
+      2.times { notify(event, at: now + 4.days) }
+
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-wood').once
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+      expect(event.approver_notifications.keys).to eq(['event'])
+      expect(event.approver_notifications.fetch('event').values).to all(include('state' => 'sent'))
+    end
+  end
+
+  it 'keeps a closed event receipt obsolete when closure races with lease acquisition' do
+    reloaded = 0
+    allow(event).to receive(:reload) do
+      reloaded += 1
+      event.status = 'closed' if reloaded == 2
+      event
+    end
+
+    notify(event)
+    notify(event, at: now + 4.days)
+
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+    expect(event.approver_notifications.fetch('event').values).to all(include('state' => 'obsolete'))
+    expect(Service::ErrorReporter).not_to have_received(:notify)
+  end
+
   it 'excludes managers who do not manage the shop and the task claimant themselves' do
     allow(manager).to receive(:manages_shop?).and_return(false)
     allow(second_manager).to receive(:id).and_return(claimant.id)

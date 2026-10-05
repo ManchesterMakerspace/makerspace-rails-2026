@@ -47,6 +47,8 @@ class VolunteerApproverNotification
     end
 
     def deliver!(record, manager, now)
+      return unless ready?(record, now)
+
       claim_key = submission_key(record)
       path = "approver_notifications.#{claim_key}.#{manager.id}"
       token = SecureRandom.uuid
@@ -75,11 +77,19 @@ class VolunteerApproverNotification
           finish!(record, path, token, { 'state' => 'obsolete' })
           return
         end
-        unless ready?(record, now) && submission_key(record) == claim_key &&
+        unless submission_key(record) == claim_key &&
             record.shop_id.present? && manager.manages_shop?(record.shop_id) &&
             !manager.direct_notifications_suppressed? &&
             !(record.is_a?(VolunteerTask) && manager.id == record.claimed_by_id)
           finish!(record, path, token, { 'state' => 'obsolete' })
+          return
+        end
+
+        unless ready?(record, now)
+          # An open event's date can be moved forward or cleared while leasing.
+          # Its receipt key is unchanged, so allow delivery when it is ready again.
+          state = record.is_a?(VolunteerEvent) && record.status == 'open' ? 'failed' : 'obsolete'
+          finish!(record, path, token, { 'state' => state })
           return
         end
 

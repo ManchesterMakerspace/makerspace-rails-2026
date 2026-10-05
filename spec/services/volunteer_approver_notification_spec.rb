@@ -276,6 +276,50 @@ RSpec.describe VolunteerApproverNotification do
     excluded.each { |record| expect(record.reload.approver_notifications).to be_empty }
   end
 
+  {
+    'rescheduled to a future day' => false,
+    'temporarily removed' => true
+  }.each do |change, undated|
+    it "keeps the event review retryable when its date is #{change} after lease acquisition" do
+      assigned = reviewer(slack_id: 'URESCHEDULED')
+      activity = event(event_date: now.to_date - 1)
+      rescheduled_date = now.to_date + 3
+      stored_date = Time.utc(rescheduled_date.year, rescheduled_date.month, rescheduled_date.day)
+      change_before_delivery(activity) do
+        VolunteerEvent.collection.find('_id' => activity.id).update_one(
+          '$set' => { 'event_date' => undated ? nil : stored_date }
+        )
+      end
+
+      described_class.notify!(activity, now: now)
+
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+      expect(activity.reload.approver_notifications.fetch('event').fetch(assigned.id.to_s)['state']).to eq('failed')
+
+      if undated
+        VolunteerEvent.collection.find('_id' => activity.id).update_one('$set' => { 'event_date' => stored_date })
+      end
+      travel 2.days
+      described_class.notify!(activity, now: Time.current)
+      travel 1.day
+      described_class.notify!(activity, now: Time.current)
+
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+      expect(activity.reload.approver_notifications.fetch('event').fetch(assigned.id.to_s)['state']).to eq('failed')
+
+      travel 1.day
+      2.times { described_class.notify!(activity, now: Time.current) }
+
+      expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(
+        a_string_including("https://portal.example.org/volunteer?event=#{activity.id}"), 'URESCHEDULED'
+      )
+      expect(activity.reload.approver_notifications.fetch('event').fetch(assigned.id.to_s)).to include(
+        'state' => 'sent', 'ts' => 'receipt-URESCHEDULED', 'channel' => 'D-URESCHEDULED', 'sent_at' => Time.current
+      )
+      expect(Service::ErrorReporter).not_to have_received(:notify)
+    end
+  end
+
   it 'retries only the manager whose DM failed and preserves another manager\'s successful receipt' do
     successful = reviewer(slack_id: 'USUCCESS')
     failed = reviewer(slack_id: 'UFAILURE')

@@ -446,7 +446,12 @@ by later runs, while `sent` receipts are not repeated. Before sending, delivery
 reloads both the activity and the recipient, then rechecks the same submission,
 current resource-manager role, shop assignment, and manager notification
 suppression. Deleted or newly ineligible managers have their attempts marked
-obsolete without a DM. Delivery also queries the manager's active `SlackUser`
+obsolete without a DM. If an otherwise eligible manager's open event is
+rescheduled to today or a future date, or loses its date after leasing, delivery
+sends no DM and leaves the receipt `failed` for retry. Later scans wait until
+the scheduled date is before today; a restored date uses the same rule. A closed
+event remains obsolete, and a successful `sent` receipt is not repeated when
+the event is rescheduled. Delivery also queries the manager's active `SlackUser`
 again after acquiring the lease and verifies its ownership, active state, and
 nonblank Slack ID. A replacement identity found then receives the DM. If the
 link has disappeared, been invalidated or reassigned, or lost its Slack ID,
