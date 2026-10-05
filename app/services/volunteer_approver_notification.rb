@@ -46,11 +46,16 @@ class VolunteerApproverNotification
       record.is_a?(VolunteerEvent) ? 'event' : "submission_#{(record.completed_at.to_f * 1000).round}"
     end
 
+    def terminal_submission?(record)
+      record.is_a?(VolunteerEvent) ? record.status == 'closed' : %w[completed cancelled denied].include?(record.status)
+    end
+
     def deliver!(record, manager, now)
       return unless ready?(record, now)
 
       claim_key = submission_key(record)
-      path = "approver_notifications.#{claim_key}.#{manager.id}"
+      manager_id = manager.id
+      path = "approver_notifications.#{claim_key}.#{manager_id}"
       token = SecureRandom.uuid
       selector = { '_id' => record.id, 'status' => record.status }
       selector['completed_at'] = native_time(record.completed_at) if record.is_a?(VolunteerTask)
@@ -77,26 +82,26 @@ class VolunteerApproverNotification
           finish!(record, path, token, { 'state' => 'obsolete' })
           return
         end
-        unless submission_key(record) == claim_key &&
-            record.shop_id.present? && manager.manages_shop?(record.shop_id) &&
-            !manager.direct_notifications_suppressed? &&
-            !(record.is_a?(VolunteerTask) && manager.id == record.claimed_by_id)
+        # With raise_not_found_error disabled, a missing member reloads with a
+        # new default ID rather than raising. Its original receipt is obsolete.
+        if manager.id != manager_id || submission_key(record) != claim_key || terminal_submission?(record)
           finish!(record, path, token, { 'state' => 'obsolete' })
           return
         end
 
-        unless ready?(record, now)
-          # An open event's date can be moved forward or cleared while leasing.
-          # Its receipt key is unchanged, so allow delivery when it is ready again.
-          state = record.is_a?(VolunteerEvent) && record.status == 'open' ? 'failed' : 'obsolete'
-          finish!(record, path, token, { 'state' => state })
+        # Readiness, authority and notification eligibility can be restored
+        # while the same submission still awaits review.
+        unless ready?(record, now) && record.shop_id.present? && manager.manages_shop?(record.shop_id) &&
+            !manager.direct_notifications_suppressed? &&
+            !(record.is_a?(VolunteerTask) && manager_id == record.claimed_by_id)
+          finish!(record, path, token, { 'state' => 'failed' })
           return
         end
 
         # Provisioning can invalidate or reassign the link after enumeration.
         # Keep the delivery retryable until this manager has a current identity.
-        slack_user = SlackUser.find_by(member_id: manager.id)
-        unless slack_user&.slack_id.present? && slack_user.member_id == manager.id && slack_user.invalidated_at.blank?
+        slack_user = SlackUser.find_by(member_id: manager_id)
+        unless slack_user&.slack_id.present? && slack_user.member_id == manager_id && slack_user.invalidated_at.blank?
           finish!(record, path, token, { 'state' => 'failed' })
           return
         end

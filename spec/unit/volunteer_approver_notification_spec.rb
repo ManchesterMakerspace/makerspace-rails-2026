@@ -240,23 +240,67 @@ RSpec.describe VolunteerApproverNotification do
     expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
   end
 
-  [
-    ['removed shop authority', :manages_shop?, false],
-    ['suspended or revoked notifications', :direct_notifications_suppressed?, true]
-  ].each do |change, predicate, eligible|
-    it "rechecks #{change} on the reloaded manager after acquiring the lease" do
-      allow(manager).to receive(:reload) do
-        allow(manager).to receive(predicate).and_return(eligible)
-        manager
+  %i[task event].each do |kind|
+    [
+      ['removed shop authority', :manages_shop?, false],
+      ['suspended or revoked notifications', :direct_notifications_suppressed?, true]
+    ].each do |change, predicate, ineligible_value|
+      it "retries the #{kind} DM after #{change} is restored following a post-lease change" do
+        record = public_send(kind)
+        allow(manager).to receive(:reload) do
+          allow(manager).to receive(predicate).and_return(ineligible_value)
+          manager
+        end
+
+        notify(record)
+
+        expect(manager).to have_received(:reload).once
+        expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'U-rm-wood')
+        expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+        expect(record.approver_notifications.values.first[manager.id]['state']).to eq('failed')
+        expect(Service::ErrorReporter).not_to have_received(:notify)
+
+        allow(manager).to receive(:reload).and_return(manager)
+        allow(manager).to receive(predicate).and_return(!ineligible_value)
+        2.times { notify(record, at: now + 1.minute) }
+
+        expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-wood').once
+        expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+        expect(record.approver_notifications.values.first.values).to all(include('state' => 'sent'))
       end
+    end
 
-      notify
+    %i[moved cleared].each do |change|
+      it "retries the #{kind} DM after its shop is #{change} during leasing then restored" do
+        record = public_send(kind)
+        other_shop_id = 'shop-metal'
+        [manager, second_manager].each do |recipient|
+          allow(recipient).to receive(:manages_shop?).and_return(false)
+          allow(recipient).to receive(:manages_shop?).with(shop_id).and_return(true)
+        end
+        allow(Member).to receive(:where).with(role: 'resource_manager', resource_manager_shop_ids: other_shop_id)
+          .and_return([])
+        reloaded = 0
+        allow(record).to receive(:reload) do
+          reloaded += 1
+          record.shop_id = change == :moved ? other_shop_id : nil if reloaded == 2
+          record
+        end
 
-      expect(manager).to have_received(:reload).once
-      expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'U-rm-wood')
-      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
-      expect(task.approver_notifications.values.first[manager.id]['state']).to eq('obsolete')
-      expect(Service::ErrorReporter).not_to have_received(:notify)
+        notify(record)
+        notify(record, at: now + 1.minute)
+
+        expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+        expect(record.approver_notifications.values.first.values).to all(include('state' => 'failed'))
+
+        record.shop_id = shop_id
+        2.times { notify(record, at: now + 2.minutes) }
+
+        expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-wood').once
+        expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+        expect(record.approver_notifications.values.first.values).to all(include('state' => 'sent'))
+        expect(Service::ErrorReporter).not_to have_received(:notify)
+      end
     end
   end
 
@@ -269,6 +313,40 @@ RSpec.describe VolunteerApproverNotification do
     expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
     expect(task.approver_notifications.values.first[manager.id]['state']).to eq('obsolete')
     expect(Service::ErrorReporter).not_to have_received(:notify)
+  end
+
+  it 'keeps deletion obsolete when a no-error reload replaces the manager ID with defaults' do
+    original_id = manager.id
+    allow(manager).to receive(:reload) do
+      allow(manager).to receive(:id).and_return('default-id-after-deletion')
+      allow(manager).to receive(:manages_shop?).and_return(false)
+      manager
+    end
+
+    notify
+
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'U-rm-wood')
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+    expect(task.approver_notifications.values.first[original_id]['state']).to eq('obsolete')
+    expect(Service::ErrorReporter).not_to have_received(:notify)
+  end
+
+  %w[completed cancelled denied].each do |status|
+    it "marks a task receipt obsolete when it becomes #{status} during leasing" do
+      reloaded = 0
+      allow(task).to receive(:reload) do
+        reloaded += 1
+        task.status = status if reloaded == 2
+        task
+      end
+
+      notify
+      notify(at: now + 1.minute)
+
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+      expect(task.approver_notifications.values.first.values).to all(include('state' => 'obsolete'))
+      expect(Service::ErrorReporter).not_to have_received(:notify)
+    end
   end
 
   it 'does not mark an unlinked manager notified and delivers after their Slack account is linked' do

@@ -57,6 +57,19 @@ RSpec.describe VolunteerApproverNotification do
     record.approver_notifications.fetch(key)
   end
 
+  def receipts_for(record)
+    record.is_a?(VolunteerTask) ? task_receipts(record) : record.reload.approver_notifications.fetch('event')
+  end
+
+  def enumerate_reviewers_once(*managers)
+    enumeration_count = 0
+    allow(Member).to receive(:where).with(role: 'resource_manager', resource_manager_shop_ids: shop.id.to_s)
+      .and_wrap_original do |original, *arguments|
+        enumeration_count += 1
+        enumeration_count == 1 ? managers : original.call(*arguments)
+      end
+  end
+
   def change_before_delivery(record, &change)
     reload_count = 0
     allow(record).to receive(:reload).and_wrap_original do |original, *arguments|
@@ -101,35 +114,75 @@ RSpec.describe VolunteerApproverNotification do
     expect(task_receipts(claim).keys).to eq([assigned.id.to_s])
   end
 
-  {
-    'shop assignment removal' => { 'resource_manager_shop_ids' => [] },
-    'role removal' => { 'role' => 'member' },
-    'suspension' => { 'status' => 'suspended' },
-    'revocation' => { 'status' => 'revoked' }
-  }.each do |change, attributes|
-    it "does not DM a manager whose #{change} occurs after enumeration but before delivery" do
-      assigned = reviewer(slack_id: 'UCHANGED')
-      remaining = reviewer(slack_id: 'UREMAINING')
-      allow(Member).to receive(:where).with(role: 'resource_manager', resource_manager_shop_ids: shop.id.to_s)
-        .and_return([assigned, remaining])
-      claim = task
-      reload_count = 0
-      allow(claim).to receive(:reload).and_wrap_original do |original, *arguments|
-        reload_count += 1
-        if reload_count == 2
-          Member.collection.find('_id' => assigned.id).update_one('$set' => attributes)
+  %i[task event].each do |kind|
+    {
+      'shop assignment removal' => { 'resource_manager_shop_ids' => [] },
+      'role removal' => { 'role' => 'member' },
+      'suspension' => { 'status' => 'suspended' },
+      'revocation' => { 'status' => 'revoked' }
+    }.each do |change, attributes|
+      it "retries the #{kind} manager after #{change} during delivery is reversed" do
+        assigned = reviewer(slack_id: 'UCHANGED')
+        assigned_id = assigned.id
+        original_attributes = attributes.keys.to_h { |name| [name, assigned.read_attribute(name)] }
+        remaining = reviewer(slack_id: 'UREMAINING')
+        enumerate_reviewers_once(assigned, remaining)
+        claim = kind == :task ? task : event(event_date: now.to_date - 1)
+        change_before_delivery(claim) do
+          Member.collection.find('_id' => assigned_id).update_one('$set' => attributes)
         end
-        original.call(*arguments)
+
+        2.times { described_class.notify!(claim, now: now) }
+
+        expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UCHANGED')
+        expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(anything, 'UREMAINING')
+        receipts = receipts_for(claim)
+        expect(receipts.fetch(assigned_id.to_s)['state']).to eq('failed')
+        expect(receipts.fetch(remaining.id.to_s)['state']).to eq('sent')
+
+        Member.collection.find('_id' => assigned_id).update_one('$set' => original_attributes)
+        2.times { described_class.notify!(claim, now: now) }
+
+        expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(
+          a_string_including("https://portal.example.org/volunteer?#{kind}=#{claim.id}"), 'UCHANGED'
+        )
+        expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(anything, 'UREMAINING')
+        expect(receipts_for(claim).fetch(assigned_id.to_s)).to include(
+          'state' => 'sent', 'ts' => 'receipt-UCHANGED', 'channel' => 'D-UCHANGED'
+        )
+        expect(Service::ErrorReporter).not_to have_received(:notify)
       end
+    end
 
-      described_class.notify!(claim, now: now)
+    %w[moved cleared].each do |change|
+      it "retries a #{kind} review when its shop is #{change} during delivery and then restored" do
+        successful = reviewer(slack_id: 'USUCCESS')
+        claim = kind == :task ? task : event(event_date: now.to_date - 1)
+        described_class.notify!(claim, now: now)
+        expect(receipts_for(claim).fetch(successful.id.to_s)['state']).to eq('sent')
 
-      expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UCHANGED')
-      expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(anything, 'UREMAINING')
-      receipts = task_receipts(claim)
-      expect(receipts.fetch(assigned.id.to_s)['state']).to eq('obsolete')
-      expect(receipts.fetch(remaining.id.to_s)['state']).to eq('sent')
-      expect(Service::ErrorReporter).not_to have_received(:notify)
+        assigned = reviewer(slack_id: 'URESTORED')
+        changed_shop_id = change == 'moved' ? create(:shop).id : nil
+        change_before_delivery(claim) do
+          claim.class.collection.find('_id' => claim.id).update_one('$set' => { 'shop_id' => changed_shop_id })
+        end
+        2.times { described_class.notify!(claim, now: now) }
+
+        expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'URESTORED')
+        expect(receipts_for(claim).fetch(assigned.id.to_s)['state']).to eq('failed')
+
+        claim.class.collection.find('_id' => claim.id).update_one('$set' => { 'shop_id' => shop.id })
+        2.times { described_class.notify!(claim, now: now) }
+
+        expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(
+          a_string_including("https://portal.example.org/volunteer?#{kind}=#{claim.id}"), 'URESTORED'
+        )
+        expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(anything, 'USUCCESS')
+        expect(receipts_for(claim).fetch(assigned.id.to_s)).to include(
+          'state' => 'sent', 'ts' => 'receipt-URESTORED', 'channel' => 'D-URESTORED'
+        )
+        expect(Service::ErrorReporter).not_to have_received(:notify)
+      end
     end
   end
 
@@ -162,10 +215,6 @@ RSpec.describe VolunteerApproverNotification do
       let(:claim) { kind == :task ? task : event(event_date: now.to_date - 1) }
       let(:assigned) { reviewer(slack_id: 'UOLD') }
       let(:slack_user) { SlackUser.find_by(member_id: assigned.id) }
-
-      def receipts_for(record)
-        record.is_a?(VolunteerTask) ? task_receipts(record) : record.reload.approver_notifications.fetch('event')
-      end
 
       %w[invalidated detached reassigned].each do |change|
         it "skips the #{change} identity, retaining a retryable receipt and continuing to other managers" do

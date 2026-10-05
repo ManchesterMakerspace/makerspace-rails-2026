@@ -445,9 +445,14 @@ the same manager again; failed attempts and expired sending leases are retried
 by later runs, while `sent` receipts are not repeated. Before sending, delivery
 reloads both the activity and the recipient, then rechecks the same submission,
 current resource-manager role, shop assignment, and manager notification
-suppression. Deleted or newly ineligible managers have their attempts marked
-obsolete without a DM. If an otherwise eligible manager's open event is
-rescheduled to today or a future date, or loses its date after leasing, delivery
+suppression. Deleted managers, terminal tasks/events, and superseded task
+submissions have their attempts marked `obsolete` without a DM. Temporary
+suspension/revocation, removal of the manager's role or shop assignment, a
+changed/missing activity shop, or the manager becoming the task claimant leaves
+the receipt `failed` without posting. Later scans skip ineligible recipients;
+when eligibility is restored while that submission still awaits review, the
+same receipt can be retried without repeating successful recipients. If an open
+event is rescheduled to today or a future date, or loses its date after leasing, delivery
 sends no DM and leaves the receipt `failed` for retry. Later scans wait until
 the scheduled date is before today; a restored date uses the same rule. A closed
 event remains obsolete, and a successful `sent` receipt is not repeated when

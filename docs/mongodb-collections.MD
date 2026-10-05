@@ -176,9 +176,13 @@ repeating a recipient with a durable successful receipt. If the manager's Slack
 identity is unavailable or no longer belongs to them at the post-lease check,
 delivery remains `failed` without posting and can retry after relinking. An open
 event rescheduled to today or later, or made undated after leasing, also keeps a
-`failed` receipt until its scheduled/restored date has passed. Closed events and
-ineligible recipients become `obsolete`; successful `sent` receipts remain
-unchanged by rescheduling. An accepted post with
+`failed` receipt until its scheduled/restored date has passed. Reversible
+manager eligibility changes (role/shop removal, suspension/revocation or becoming
+the task claimant) and a moved/cleared activity shop also leave `failed` receipts;
+they can retry once eligibility is restored for the same pending submission.
+Deleted managers, terminal tasks/events, and superseded task submissions become
+`obsolete`; successful `sent` receipts remain unchanged by eligibility changes
+or rescheduling. An accepted post with
 failed receipt persistence keeps its sending lease and reports uncertainty;
 lease expiry after that failure or a worker crash can permit a duplicate DM.
 These fields remain excluded from
