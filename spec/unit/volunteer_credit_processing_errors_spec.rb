@@ -140,6 +140,35 @@ RSpec.describe 'Volunteer credit follow-up error propagation' do
           expect(@event.approval_notification['outcome']).to include('follow-up processing failed', member.id.to_s)
         end
       end
+
+      %i[dm template].each do |failed_operation|
+        it "still applies the threshold discount after the award #{failed_operation} fails" do
+          allow(@credit).to receive(:notify_member_credit_awarded).and_call_original
+          allow(VolunteerCredit).to receive(:year_count_for).and_return(8)
+          allow(SlackUser).to receive(:find_by).and_return(double(slack_id: 'UMEMBER'))
+          allow(BraintreeService::VolunteerDiscount).to receive(:apply)
+            .and_return(amount: 10, cycles_added: 1, total_cycles: 1, description: 'Volunteer')
+          allow(Service::SlackConnector).to receive(:send_slack_message) do |message, _channel|
+            raise failure if failed_operation == :dm && message == 'volunteer_credit_awarded'
+            { 'ok' => true }
+          end
+          if failed_operation == :template
+            allow(Service::EmailTemplate).to receive(:render) do |kind, *_arguments|
+              raise failure if kind.to_s == 'volunteer_credit_awarded'
+              kind.to_s
+            end
+          end
+
+          @event.close!(double(id: BSON::ObjectId.new, fullname: 'Reviewer'))
+
+          expect(VolunteerCredit).to have_received(:create!).once
+          expect(BraintreeService::VolunteerDiscount).to have_received(:apply).with(member, 'discount', 1).once
+          expect(Service::ErrorReporter).to have_received(:notify).with(failure).once
+          expect(@credit).not_to have_received(:notify_discount_error)
+          expect(@event.approval_notification['outcome']).to include('failed for 1 attendee', 'award notification')
+          expect(@event.approval_notification['outcome']).not_to include('membership discount processing')
+        end
+      end
     end
   end
 

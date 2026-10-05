@@ -65,6 +65,7 @@ RSpec.describe Service::VolunteerApprovalReminder do
       allow(model_class).to receive(:collection).and_return(collection)
       allow(collection).to receive(:find) do |selector|
         query = double('Atomic update')
+        allow(query).to receive(:read).with(mode: :primary).and_return(query)
         allow(query).to receive(:first) do
           model_class.records.find { |candidate| matches_document?(candidate.document, selector) }&.document
         end
@@ -671,11 +672,13 @@ RSpec.describe Service::VolunteerApprovalReminder do
       if operation == :post
         allow(Service::SlackConnector).to receive(:send_slack_message) do
           deleted = true
+          VolunteerTask.records.delete(task)
           { 'ts' => 'LATE', 'channel' => 'CLATE' }
         end
       else
         allow(Service::SlackConnector).to receive(:update_slack_message) do
           deleted = true
+          VolunteerTask.records.delete(task)
           { 'ok' => true }
         end
       end
@@ -688,5 +691,40 @@ RSpec.describe Service::VolunteerApprovalReminder do
       ).once
       expect(Service::ErrorReporter).not_to have_received(:notify)
     end
+  end
+
+  it 'keeps an existing task reminder when its claimant lookup raises DocumentNotFound' do
+    stub_const('Mongoid::Errors::DocumentNotFound', Class.new(StandardError))
+    saved = post_reminder.deep_dup
+    missing_member = Mongoid::Errors::DocumentNotFound.new('Claimant was deleted')
+    allow(task).to receive(:claimed_by).and_raise(missing_member)
+
+    post_reminder
+
+    expect(task.approval_notification).to eq(saved)
+    expect(Service::SlackConnector).not_to have_received(:delete_slack_message)
+    expect(Service::ErrorReporter).to have_received(:notify).with(missing_member).once
+    allow(task).to receive(:claimed_by).and_return(claimant)
+    post_reminder(at: now + 1.day)
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CADMIN', '123.456', a_string_including('7 days'), resolved_channel: true
+    ).once
+    expect(Service::SlackConnector).to have_received(:send_slack_message).once
+  end
+
+  it 'keeps the message if checking whether the reminder record exists fails' do
+    stub_const('Mongoid::Errors::DocumentNotFound', Class.new(StandardError))
+    saved = post_reminder.deep_dup
+    allow(task).to receive(:claimed_by).and_raise(Mongoid::Errors::DocumentNotFound, 'Claimant was deleted')
+    primary_query = double('Primary query')
+    allow(primary_query).to receive(:read).with(mode: :primary).and_return(primary_query)
+    allow(primary_query).to receive(:first).and_raise('Database unavailable')
+    allow(VolunteerTask.collection).to receive(:find).with('_id' => task.id).and_return(primary_query)
+
+    post_reminder
+
+    expect(task.approval_notification).to eq(saved)
+    expect(Service::SlackConnector).not_to have_received(:delete_slack_message)
+    expect(Service::ErrorReporter).to have_received(:notify).with(have_attributes(message: 'Database unavailable')).once
   end
 end

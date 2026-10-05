@@ -196,19 +196,26 @@ class VolunteerEvent
         status:       'approved'
       )
       stage = 'award notification'
-      credit.send(:notify_member_credit_awarded, raise_errors: true)
+      begin
+        credit.send(:notify_member_credit_awarded, raise_errors: true)
+      rescue => e
+        failures << { member_id: member_id, stage: stage }
+        Service::ErrorReporter.notify(e)
+      end
       stage = 'membership discount processing'
       credit.send(:check_discount_threshold!, raise_errors: true)
     rescue => e
-      failures << "#{member_id} (#{stage})"
+      failures << { member_id: member_id, stage: stage }
       Service::ErrorReporter.notify(e)
       credit.send(:notify_discount_error, member, e) if stage == 'membership discount processing'
     end
 
     if failures.any? && notification.present?
-      notification['outcome'] = "Credit award failed or follow-up processing failed for #{failures.length} " \
-        "attendee#{'s' unless failures.length == 1} during event closure by #{closed_by_member.fullname}; " \
-        "affected member IDs: #{failures.join(', ')}. Verify saved credits and follow-up processing " \
+      affected_count = failures.map { |failure| failure.fetch(:member_id) }.uniq.length
+      details = failures.map { |failure| "#{failure.fetch(:member_id)} (#{failure.fetch(:stage)})" }.join(', ')
+      notification['outcome'] = "Credit award failed or follow-up processing failed for #{affected_count} " \
+        "attendee#{'s' unless affected_count == 1} during event closure by #{closed_by_member.fullname}; " \
+        "affected member IDs: #{details}. Verify saved credits and follow-up processing " \
         'before correcting awards manually; do not blindly award duplicate credits'
     end
     begin

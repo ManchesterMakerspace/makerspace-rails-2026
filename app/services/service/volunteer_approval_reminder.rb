@@ -222,10 +222,15 @@ module Service
         sync_closed!(record)
       rescue => error
         if defined?(Mongoid::Errors::DocumentNotFound) && error.is_a?(Mongoid::Errors::DocumentNotFound) && receipt&.dig('ts').present?
-          # Deletion can win while chat.postMessage or chat.update is in flight.
-          # The receipt no longer has a document to attach to or retry from.
+          # A missing claimant also raises DocumentNotFound. Only remove the
+          # message after confirming its task/event is absent on the primary.
           begin
-            delete_duplicate!(receipt)
+            reminder_record = record.class.collection.find('_id' => record.id).read(mode: :primary).first
+            if reminder_record
+              ErrorReporter.notify(error)
+            else
+              delete_duplicate!(receipt)
+            end
           rescue => cleanup_error
             ErrorReporter.notify(cleanup_error)
           end

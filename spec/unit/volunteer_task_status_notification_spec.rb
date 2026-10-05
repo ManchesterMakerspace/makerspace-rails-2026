@@ -620,6 +620,7 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
           'CORIGINAL', '123.456', a_string_including('⚠️', stage, '6 days'), resolved_channel: true
         )
         expect(VolunteerCredit).to have_received(:create!).once
+        expect(credit).to have_received(:check_discount_threshold!).with(raise_errors: true).once
         expect(Service::ErrorReporter).to have_received(:notify).with(have_attributes(message: 'Follow-up unavailable')).once
         if method == :check_discount_threshold!
           expect(credit).to have_received(:notify_discount_error).with(anything, have_attributes(message: 'Follow-up unavailable')).once
@@ -627,6 +628,27 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
           expect(credit).not_to have_received(:notify_discount_error)
         end
       end
+    end
+
+    it 'records both follow-up failures for one attendee without duplicating their credit' do
+      award_error = RuntimeError.new('Award DM unavailable')
+      discount_error = RuntimeError.new('Billing unavailable')
+      credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil, notify_discount_error: nil)
+      allow(credit).to receive(:notify_member_credit_awarded).and_raise(award_error)
+      allow(credit).to receive(:check_discount_threshold!).and_raise(discount_error)
+      allow(VolunteerCredit).to receive(:create!).and_return(credit)
+
+      task.close!(verifier)
+
+      expect(task.reload.status).to eq('closed')
+      expect(task.approval_notification).to include('finalized' => true)
+      expect(task.approval_notification['outcome']).to include('failed for 1 attendee', attendee_id.to_s,
+        'award notification', 'membership discount processing')
+      expect(VolunteerCredit).to have_received(:create!).once
+      expect(credit).to have_received(:check_discount_threshold!).with(raise_errors: true).once
+      expect(credit).to have_received(:notify_discount_error).with(anything, discount_error).once
+      expect(Service::ErrorReporter).to have_received(:notify).with(award_error).once
+      expect(Service::ErrorReporter).to have_received(:notify).with(discount_error).once
     end
 
     it 'retains the durable unconfirmed warning when recording the award outcome fails' do

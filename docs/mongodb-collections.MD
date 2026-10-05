@@ -175,7 +175,8 @@ closure metadata; confirmation of the credit outcome can still fail separately.
 Event closure uses the same provisional unconfirmed warning before processing
 attendee awards. The final outcome reports any member lookup, credit creation,
 award notification, or discount-processing failures with the affected member IDs
-and processing stages. Deleted or inactive members are skipped. Other attendees
+and processing stages, counting each affected attendee once. Award notification
+failures do not skip discount processing for the saved credit. Deleted or inactive members are skipped. Other attendees
 still receive their awards. Event closure requests error propagation from the
 credit notification and discount helpers; other callers retain their existing
 rescued-error behavior. In propagation mode, event closure owns the single
@@ -193,7 +194,9 @@ the authenticated task DELETE endpoint returns structured HTTP 503
 deletion still returns 204; deleting a linked bounty remains forbidden with 422.
 retry deletion after delivery recovers. Already closed review outcomes remain
 unchanged. A reminder worker whose post or update outlives task deletion removes
-that message best effort and reports cleanup failures. Low-level `delete` and
+that message best effort only after confirming the task/event document is absent
+on the MongoDB primary. Missing claimant records or failed existence checks
+retain the message and report the error. Cleanup failures are reported. Low-level `delete` and
 `delete_all` bypass callbacks; event deletion remains outside this cleanup.
 
 The compound `{ status: 1, completed_at: 1 }` task index supports the

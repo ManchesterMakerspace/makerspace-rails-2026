@@ -542,7 +542,9 @@ closed status before processing attendees. After processing, it confirms closure
 only if no attendee operation raised. Member lookup failures (other than deleted
 members), credit creation, award notification, and membership discount processing
 failures produce a warning identifying the affected member IDs and processing
-stage. Other attendees are still processed; deleted and inactive members are
+stage, counting each affected attendee once even if multiple stages fail. An
+award DM or template failure is recorded independently; discount processing
+still runs for that attendee's saved credit. Other attendees are still processed; deleted and inactive members are
 skipped as before. Verify saved credits and follow-up processing before correcting
 an award, since a credit can have been saved before the failure. Event closure
 opts into error propagation from the credit notification and discount helpers;
@@ -593,7 +595,9 @@ and `DELETE /api/admin/volunteer_tasks/:id` returns HTTP 503 with the usual
 It preserves the cancelled record and retry receipts; the daily job can finish delivery, then deletion can be
 retried. Existing approved/denied outcomes are preserved. A post or age update
 already in flight when the task disappears removes its message best effort;
-cleanup failures are reported. Low-level `delete`/`delete_all` bypass model
+the worker first verifies absence of the task/event document on the MongoDB
+primary. A missing claimant or failed existence check retains the Slack message
+and reports the error. Cleanup failures are reported. Low-level `delete`/`delete_all` bypass model
 callbacks. Event destruction still removes its receipt without finalizing the
 Slack message; an actually deleted event cannot be retried by this job.
 
