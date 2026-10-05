@@ -161,7 +161,7 @@ GEM
       ostruct
     globalid (1.4.0)
       activesupport (>= 6.1)
-    google-apis-admin_directory_v1 (0.81.0)
+    google-apis-admin_directory_v1 (0.82.0)
       google-apis-core (>= 0.15.0, < 2.a)
     google-apis-calendar_v3 (0.57.0)
       google-apis-core (>= 0.15.0, < 2.a)
@@ -174,7 +174,7 @@ GEM
       multi_json (~> 1.11)
       representable (~> 3.0)
       retriable (>= 3.1, < 5.0)
-    google-apis-drive_v3 (0.87.0)
+    google-apis-drive_v3 (0.88.0)
       google-apis-core (>= 0.15.0, < 2.a)
     google-apis-sheets_v4 (0.48.0)
       google-apis-core (>= 0.15.0, < 2.a)
@@ -378,7 +378,7 @@ GEM
       redis (>= 4, < 7)
     reline (0.6.3)
       io-console (~> 0.5)
-    representable (3.3.0)
+    representable (3.3.1)
       declarative (< 0.1.0)
       trailblazer-option (>= 0.1.1, < 0.2.0)
       uber (< 0.2.0)
@@ -601,10 +601,10 @@ CHECKSUMS
   git (5.6.0) sha256=f10227e352b12804ae6c1947b520f6fb027261c5952e93dafcb08ba7cad65363
   gli (2.22.2) sha256=580e8d6c88b0f0f0cb8e8b2ca18c3485ed0f742cece855de46bf8e36202f5db0
   globalid (1.4.0) sha256=037f12fbf1d9d7a014d501c2d5c77356fd4ddd96d7a7991d6700bba96706f427
-  google-apis-admin_directory_v1 (0.81.0) sha256=2320da8893de28ff61e93c65eb5ee0a363a28d149f3808d6a4053730b591c7c5
+  google-apis-admin_directory_v1 (0.82.0) sha256=33991a75dd42c49d10a668637446443659d9124d83b58552d8e5aea17fa056c8
   google-apis-calendar_v3 (0.57.0) sha256=85a1836d1b5e3745720c28f219d8f599564b9cdd4a72f97b8a4e61ce67498cb7
   google-apis-core (1.2.5) sha256=e21562b5627a0fc6a0c3165e429c3afed0f6a628eaa514e83f7204dda1adff69
-  google-apis-drive_v3 (0.87.0) sha256=b5e47976c0be877853c9ed64f12d75eeb5260828f9d821222ed79913088501e3
+  google-apis-drive_v3 (0.88.0) sha256=2e71bf7ce6c2e370206aeb29f0582259beba84865cf519a27a4848cc2e26b0f9
   google-apis-sheets_v4 (0.48.0) sha256=ef76dfa6e8c9d322add2e3faeb2c320ffa82d2d1130aa31d78ad65f3da9ab7e3
   google-cloud-env (2.4.0) sha256=01cb35ecee5d1c4d1cd4deaed8bb5bddc838e296bcc2a35c5d1ddd07ce40d28d
   google-logging-utils (0.2.0) sha256=675462b4ea5affa825a3442694ca2d75d0069455a1d0956127207498fca3df7b
@@ -688,7 +688,7 @@ CHECKSUMS
   redis-rack (3.0.0) sha256=abb50b82ae10ad4d11ca2e4901bfc2b98256cdafbbd95f80c86fc9e001478380
   redis-store (1.12.0) sha256=bea7ed3f9a602d991934761bd56a3bdc78de068a1497d4ccf5e071d39e11d3da
   reline (0.6.3) sha256=1198b04973565b36ec0f11542ab3f5cfeeec34823f4e54cebde90968092b1835
-  representable (3.3.0) sha256=22beca7d07104d8dfe30667eb267756c764c8bdc6c0f1481922502ecc4f0d8cf
+  representable (3.3.1) sha256=8a5fc8eef99f598147eee0390f606386268b429a840419fcfd3f7a8ccc40f566
   responders (3.2.0) sha256=89c2d6ac0ae16f6458a11524cae4a8efdceba1a3baea164d28ee9046bd3df55a
   rest-client (2.1.0) sha256=35a6400bdb14fae28596618e312776c158f7ebbb0ccad752ff4fa142bf2747e3
   retriable (4.2.0) sha256=90c3b257472a1c02f2a3dfa64dd35a420f7a624cef1a5981e20fdac5730f8cdc
