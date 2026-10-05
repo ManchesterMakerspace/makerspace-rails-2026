@@ -123,8 +123,8 @@ is embedded inside `earned_membership__report` documents.
 Existing `volunteer_tasks` and `volunteer_events` documents store private
 `approval_notification` hashes and `approval_notification_history` arrays;
 there is no separate claim or notification collection. The current state stores
-wait start (`started_at`) and subject intent before posting, and adds Slack's
-message `ts`, returned channel, and `destination_mode` (`production` or `test`)
+wait start (`started_at`), subject, and unique intent `generation_id` before
+posting, and adds Slack's message `ts`, returned channel, and `destination_mode` (`production` or `test`)
 after a successful acknowledgment. It also stores final `outcome` and `closed_at`.
 `finalized: false` marks a closed outcome awaiting final-delivery processing.
 Closure fields and this flag are persisted in the same MongoDB write as the
@@ -144,6 +144,22 @@ retain a competing post's first registered receipt and duplicate messages are
 removed best effort. Saved conversation IDs remain tied to their original
 production/test destination mode; mismatched-mode updates are refused and
 retained for the intended environment.
+
+Changing an open event's date archives its live channel reminder with a
+`Rescheduled from ... to ...` outcome, `rescheduled: true`, closure time, and
+`finalized: false`; the same guarded MongoDB write saves the new date and clears
+`approval_notification`. It appends history rather than replacing it, and
+retries if a concurrent post adds its Slack receipt before that write. A
+concurrent schedule/status change aborts the reschedule instead of reporting
+success. Normal model validation and callbacks still run. The old Slack message
+is updated immediately to retire the previous schedule's reminder; failed
+delivery remains in the existing history retry scan even when the new date is
+in the future or absent. If the new schedule becomes overdue, it creates a fresh
+intent, timestamp, and wait clock. Generation IDs distinguish separate intents
+even when the date is later changed back to its original value; legacy receipts
+without an ID remain supported. A late post attaches to its archived intent and
+reopens final delivery, leaving the current schedule's reminder untouched. Date
+changes without a channel intent do not create reminder history.
 
 A task approval initially stores `Credit award not confirmed` with the completed
 status, then replaces it with an approved outcome after credit creation succeeds

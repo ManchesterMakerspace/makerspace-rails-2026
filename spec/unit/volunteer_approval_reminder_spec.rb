@@ -45,6 +45,10 @@ RSpec.describe Service::VolunteerApprovalReminder do
         self
       end
 
+      def event_date=(value)
+        @event_date = value&.to_date
+      end
+
       def document
         instance_variables.to_h do |name|
           key = name == :@id ? '_id' : name.to_s.delete_prefix('@')
@@ -61,8 +65,12 @@ RSpec.describe Service::VolunteerApprovalReminder do
       allow(model_class).to receive(:collection).and_return(collection)
       allow(collection).to receive(:find) do |selector|
         query = double('Atomic update')
+        allow(query).to receive(:first) do
+          model_class.records.find { |candidate| matches_document?(candidate.document, selector) }&.document
+        end
         allow(query).to receive(:find_one_and_update) do |update, **_options|
           @raw_notification_updates << [selector.deep_dup, update.deep_dup]
+          @before_atomic_update&.call(selector, update)
           record = model_class.records.find { |candidate| matches_document?(candidate.document, selector) }
           if record
             apply_document_update(record, update)
@@ -105,6 +113,13 @@ RSpec.describe Service::VolunteerApprovalReminder do
     described_class.sync_closed!(record)
   end
 
+  def reschedule_event(date, at: now)
+    updates = { '$set' => { 'event_date' => Time.utc(date.year, date.month, date.day) } }
+    described_class.reschedule_event!(event, updates, previous_date: event.event_date, now: at)
+    event.reload
+    described_class.sync_closed!(event)
+  end
+
   # A small database adapter exercises the service's real atomic selectors and
   # dotted-field updates. It never opens MongoDB or replaces persistence helpers.
   def value_at(document, path)
@@ -116,7 +131,9 @@ RSpec.describe Service::VolunteerApprovalReminder do
   def matches_document?(document, selector)
     selector.all? do |path, expected|
       actual = value_at(document, path)
-      if expected.is_a?(Hash) && expected.key?('$not')
+      if path == '$or'
+        expected.any? { |branch| matches_document?(document, branch) }
+      elsif expected.is_a?(Hash) && expected.key?('$not')
         condition = expected.fetch('$not').fetch('$elemMatch')
         Array(actual).none? { |saved| matches_document?(saved, condition) }
       elsif expected.is_a?(Hash) && expected.key?('$elemMatch')
@@ -138,7 +155,8 @@ RSpec.describe Service::VolunteerApprovalReminder do
       end
     end
     update.fetch('$push', {}).each do |path, value|
-      value_at(record.document, path) << value
+      values = value.is_a?(Hash) && value.key?('$each') ? value.fetch('$each') : [value]
+      value_at(record.document, path).concat(values)
     end
   end
 
@@ -509,5 +527,135 @@ RSpec.describe Service::VolunteerApprovalReminder do
     end
     expect(finalized_selector['approval_notification.started_at']).to be_instance_of(Time)
     expect(finalized_selector['approval_notification.closed_at']).to be_instance_of(Time)
+  end
+
+  it 'archives and finalizes the old schedule before posting a new overdue reminder from the new date' do
+    old_receipt = post_reminder(event).deep_dup
+    next_date = now.in_time_zone.to_date + 10
+
+    reschedule_event(next_date)
+
+    expect(event.event_date).to eq(next_date)
+    expect(event.approval_notification).to be_empty
+    expect(event.approval_notification_history).to contain_exactly(hash_including(
+      'ts' => old_receipt.fetch('ts'), 'started_at' => old_receipt.fetch('started_at'),
+      'closed_at' => now, 'outcome' => a_string_including('Rescheduled'), 'finalized' => true
+    ))
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CADMIN', '123.456', a_string_including('Rescheduled', '6 days'), resolved_channel: true
+    ).once
+    allow(Service::SlackConnector).to receive(:send_slack_message).and_return('ts' => 'NEW', 'channel' => 'CNEW')
+
+    fresh_receipt = post_reminder(event, at: (next_date + 6).in_time_zone.change(hour: 12))
+
+    expect(fresh_receipt).to include('ts' => 'NEW', 'channel' => 'CNEW',
+      'started_at' => next_date.in_time_zone.beginning_of_day.to_time.getutc)
+    expect(event.approval_notification_history.first['ts']).to eq('123.456')
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+      a_string_including(next_date.strftime('%m/%d/%Y'), '6 days'), 'administrators'
+    ).once
+  end
+
+  it 'retries a failed reschedule message without reposting while the new date is still in the future' do
+    post_reminder(event)
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_raise('Slack unavailable')
+
+    reschedule_event(now.in_time_zone.to_date + 10)
+
+    expect(event.approval_notification).to be_empty
+    expect(event.approval_notification_history.first).to include('closed_at' => now, 'finalized' => false)
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
+    post_reminder(event, at: now + 1.day)
+
+    expect(event.approval_notification).to be_empty
+    expect(event.approval_notification_history.first['finalized']).to be(true)
+    expect(Service::SlackConnector).to have_received(:send_slack_message).once
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CADMIN', '123.456', a_string_including('Rescheduled', '6 days'), resolved_channel: true
+    ).twice
+  end
+
+  it 'registers an in-flight old post on its archived intent after rescheduling back to the same date' do
+    original_date = event.event_date
+    attempts = 0
+    allow(Service::SlackConnector).to receive(:send_slack_message) do
+      attempts += 1
+      if attempts == 1
+        reschedule_event(original_date + 20)
+        reschedule_event(original_date)
+        post_reminder(event)
+        { 'ts' => 'OLD-INFLIGHT', 'channel' => 'COLD' }
+      else
+        { 'ts' => 'NEW-INTENT', 'channel' => 'CNEW' }
+      end
+    end
+
+    post_reminder(event)
+
+    expect(event.approval_notification).to include('ts' => 'NEW-INTENT', 'channel' => 'CNEW')
+    expect(event.approval_notification['closed_at']).to be_nil
+    expect(event.approval_notification_history).to contain_exactly(hash_including(
+      'ts' => 'OLD-INFLIGHT', 'channel' => 'COLD', 'outcome' => a_string_including('Rescheduled'),
+      'closed_at' => now, 'finalized' => true
+    ))
+    archived = event.approval_notification_history.first
+    expect(archived.fetch('generation_id')).not_to eq(event.approval_notification.fetch('generation_id'))
+    expect(archived.fetch('started_at')).to eq(event.approval_notification.fetch('started_at'))
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'COLD', 'OLD-INFLIGHT', a_string_including('Rescheduled', '6 days'), resolved_channel: true
+    ).once
+    expect(Service::SlackConnector).not_to have_received(:delete_slack_message)
+    expect(Service::SlackConnector).to have_received(:send_slack_message).twice
+  end
+
+  it 'retries the date change when a concurrent post registers its timestamp after the archive snapshot was read' do
+    intent = described_class.send(:prepare_intent!, event, now).deep_dup
+    @before_atomic_update = proc do |_selector, update|
+      next unless update.fetch('$set', {}).key?('event_date')
+
+      @before_atomic_update = nil
+      event.approval_notification = intent.merge(
+        'ts' => 'LATEST', 'channel' => 'CLATEST', 'destination_mode' => 'production'
+      )
+    end
+
+    reschedule_event(now.in_time_zone.to_date + 10)
+
+    expect(event.approval_notification).to be_empty
+    expect(event.approval_notification_history).to contain_exactly(hash_including(
+      'ts' => 'LATEST', 'channel' => 'CLATEST', 'generation_id' => intent.fetch('generation_id'),
+      'outcome' => a_string_including('Rescheduled'), 'finalized' => true
+    ))
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CLATEST', 'LATEST', a_string_including('Rescheduled', '6 days'), resolved_channel: true
+    ).once
+    expect(Service::SlackConnector).not_to have_received(:delete_slack_message)
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+  end
+
+  it 'attaches a legacy in-flight post to its archive when rescheduled back to the same date with no new intent' do
+    original_date = event.event_date
+    original_start = original_date.in_time_zone.beginning_of_day.to_time.getutc
+    event.approval_notification = {
+      'started_at' => original_start, 'subject' => 'Legacy Event E8: Cleanup', 'finalized' => true
+    }
+    allow(Service::SlackConnector).to receive(:send_slack_message) do
+      reschedule_event(original_date + 20)
+      reschedule_event(original_date)
+      { 'ts' => 'LEGACY-INFLIGHT', 'channel' => 'CLEGACY' }
+    end
+
+    post_reminder(event)
+
+    expect(event.approval_notification).to be_empty
+    expect(event.approval_notification_history).to contain_exactly(hash_including(
+      'ts' => 'LEGACY-INFLIGHT', 'channel' => 'CLEGACY', 'started_at' => original_start,
+      'outcome' => a_string_including('Rescheduled'), 'closed_at' => now, 'finalized' => true
+    ))
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CLEGACY', 'LEGACY-INFLIGHT', a_string_including('Rescheduled', '6 days'), resolved_channel: true
+    ).once
+    expect(Service::SlackConnector).not_to have_received(:delete_slack_message)
+    expect(Service::SlackConnector).to have_received(:send_slack_message).once
   end
 end

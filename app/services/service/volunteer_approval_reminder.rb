@@ -1,3 +1,5 @@
+require 'securerandom'
+
 module Service
   module VolunteerApprovalReminder
     WAIT_DAYS = 5
@@ -13,6 +15,7 @@ module Service
           record.reload
           current = record.approval_notification.to_h
           return if current.empty? || current['started_at'] != previous['started_at']
+          return if current['generation_id'] != previous['generation_id']
           return if previous['ts'].present? && current['ts'] != previous['ts']
 
           changed = record.class.collection.find(
@@ -27,6 +30,41 @@ module Service
           end
         end
         raise 'Volunteer reminder changed repeatedly while resetting a claim'
+      end
+
+      # Commit the new schedule and retire its old channel intent together.
+      # Read the live receipt: a Slack post may have registered after the model
+      # was loaded. Retrying a receipt-only conflict preserves that timestamp.
+      def reschedule_event!(record, updates, previous_date:, now: Time.current)
+        selector = { '_id' => record.id, 'status' => 'open', 'event_date' => native_date(previous_date) }
+        session = record.send(:_session) if record.respond_to?(:_session, true)
+        new_date = updates.fetch('$set').fetch('event_date')&.to_date
+
+        5.times do
+          document = record.class.collection.find(selector, session: session).first
+          raise 'Event schedule changed while rescheduling its reminder' unless document
+
+          receipt = document['approval_notification'].to_h
+          changes = updates.deep_dup
+          changes['$set']['approval_notification'] = {}
+          unless receipt.empty?
+            archived = receipt.merge(
+              'started_at' => native_time(receipt['started_at'] || previous_date&.in_time_zone&.beginning_of_day || now),
+              'subject' => receipt['subject'] || event_subject(record, previous_date),
+              'outcome' => "Rescheduled from #{schedule_label(previous_date)} to #{schedule_label(new_date)}",
+              'closed_at' => native_time(now), 'rescheduled' => true, 'finalized' => false
+            )
+            pushes = (changes['$push'] ||= {})
+            existing_push = pushes['approval_notification_history']
+            entries = existing_push ? existing_push.fetch('$each') : []
+            pushes['approval_notification_history'] = { '$each' => entries + [archived] }
+          end
+          changed = record.class.collection.find(selector.merge(
+            'approval_notification' => document['approval_notification']
+          )).find_one_and_update(changes, return_document: :after, session: session)
+          return changed if changed
+        end
+        raise 'Volunteer reminder changed repeatedly while rescheduling an event'
       end
 
       def outcome_attributes(record, outcome:, closed_at: Time.current)
@@ -82,10 +120,11 @@ module Service
             selector = {
               '_id' => record.id,
               "#{path}.started_at" => existing['started_at'],
+              "#{path}.generation_id" => existing['generation_id'],
               "#{path}.ts" => existing['ts']
             }
             selector['status'] = expected_status if path == 'approval_notification' && existing.empty?
-            attributes = snapshot.slice('started_at', 'outcome', 'closed_at')
+            attributes = snapshot.slice('started_at', 'outcome', 'closed_at', 'generation_id')
             attributes['subject'] = existing['subject'] || snapshot['subject']
             attributes['finalized'] = existing['ts'].blank?
             if write_notification(record, selector, path, attributes)
@@ -98,7 +137,7 @@ module Service
             changed = record.class.collection.find(
               '_id' => record.id,
               'approval_notification_history' => {
-                '$not' => { '$elemMatch' => { 'started_at' => snapshot['started_at'] } }
+                '$not' => { '$elemMatch' => snapshot.slice('started_at', 'generation_id') }
               }
             ).find_one_and_update(
               { '$push' => { 'approval_notification_history' => snapshot.merge('finalized' => snapshot['ts'].blank?) } },
@@ -195,7 +234,10 @@ module Service
             '_id' => record.id, 'approval_notification.started_at' => nil,
             'approval_notification.ts' => receipt['ts']
           )
-          attributes = { 'started_at' => started_at, 'subject' => subject(record), 'finalized' => true }
+          attributes = {
+            'started_at' => started_at, 'subject' => subject(record),
+            'generation_id' => SecureRandom.uuid, 'finalized' => true
+          }
           if write_notification(record, selector, 'approval_notification', attributes)
             record.reload
             return record.approval_notification.to_h
@@ -219,13 +261,21 @@ module Service
 
       def subject(record)
         if record.is_a?(VolunteerEvent)
-          "Event *#{escape(record.title)}* (#{record.display_number}), " \
-            "scheduled for #{record.event_date.strftime('%m/%d/%Y')}, " \
-            "with #{record.attendee_count} checked-in attendee#{'s' unless record.attendee_count == 1}"
+          event_subject(record, record.event_date)
         else
           claimant = record.claimed_by&.fullname || 'Unknown member'
           "Task *#{escape(record.title)}* (#{record.display_number}) for *#{escape(claimant)}*"
         end
+      end
+
+      def event_subject(record, date)
+        "Event *#{escape(record.title)}* (#{record.display_number}), " \
+          "scheduled for #{schedule_label(date)}, " \
+          "with #{record.attendee_count} checked-in attendee#{'s' unless record.attendee_count == 1}"
+      end
+
+      def schedule_label(date)
+        date ? date.strftime('%m/%d/%Y') : 'no scheduled date'
       end
 
       def elapsed(record, receipt, finish)
@@ -255,8 +305,13 @@ module Service
         else
           '✅'
         end
-        text = "#{icon} #{receipt.fetch('subject')}: #{escape(outcome)}. " \
-          "Review closed after #{elapsed(record, receipt, receipt.fetch('closed_at'))}."
+        text = if receipt['rescheduled']
+          "🔄 #{receipt.fetch('subject')}: #{escape(outcome)}. " \
+            "Previous schedule reminder retired after #{elapsed(record, receipt, receipt.fetch('closed_at'))}."
+        else
+          "#{icon} #{receipt.fetch('subject')}: #{escape(outcome)}. " \
+            "Review closed after #{elapsed(record, receipt, receipt.fetch('closed_at'))}."
+        end
         SlackConnector.update_slack_message(receipt.fetch('channel'), receipt.fetch('ts'), text, resolved_channel: true)
       end
 
@@ -280,12 +335,13 @@ module Service
           selector = {
             '_id' => record.id,
             "#{path}.started_at" => existing['started_at'],
+            "#{path}.generation_id" => existing['generation_id'],
             "#{path}.ts" => nil
           }
           if path == 'approval_notification' && existing['started_at'].nil?
             selector.merge!(waiting_selector(record, receipt['started_at']))
           end
-          attributes = receipt.slice('ts', 'channel', 'started_at', 'destination_mode')
+          attributes = receipt.slice('ts', 'channel', 'started_at', 'destination_mode', 'generation_id')
           attributes['subject'] = existing['subject'] || receipt['subject']
           attributes['finalized'] = existing['closed_at'].blank?
           return if write_notification(record, selector, path, attributes)
@@ -319,12 +375,26 @@ module Service
         current = record.approval_notification.to_h
         candidates = [['approval_notification', current]] +
           Array(record.approval_notification_history).each_with_index.map { |saved, index| ["approval_notification_history.#{index}", saved] }
-        candidates.find do |path, saved|
-          same_start = saved['started_at'] == receipt['started_at']
-          if path == 'approval_notification' && saved['started_at'].nil?
-            same_start = waiting?(record) && waiting_since(record) == receipt['started_at']
+        location = candidates.find do |_path, saved|
+          # Dates may repeat (A -> B -> A). The old in-flight post belongs to
+          # its archived intent even when a new intent has the same wait start.
+          same_generation = saved['generation_id'] == receipt['generation_id']
+          # An outcome snapshot may predate an intent registered during the
+          # lifecycle write. Match that saved closure, without relaxing the
+          # generation check for an in-flight Slack delivery snapshot.
+          if !match_timestamp && receipt['generation_id'].nil? && receipt['closed_at'].present?
+            same_generation ||= saved['closed_at'] == receipt['closed_at']
           end
-          same_start && (!match_timestamp || saved['ts'] == receipt['ts'])
+          same_start = saved['started_at'] == receipt['started_at']
+          same_generation && same_start && (!match_timestamp || saved['ts'] == receipt['ts'])
+        end
+        return location if location
+
+        # Prefer an archived legacy intent over an empty current receipt when
+        # rescheduling returns to the same date before the old post finishes.
+        if current.empty? && receipt['generation_id'].nil? && waiting?(record) &&
+            waiting_since(record) == receipt['started_at'] && (!match_timestamp || receipt['ts'].nil?)
+          ['approval_notification', current]
         end
       end
 
@@ -342,7 +412,10 @@ module Service
       end
 
       def receipt_selector(record, path, receipt)
-        { '_id' => record.id, "#{path}.ts" => receipt['ts'], "#{path}.started_at" => receipt['started_at'] }
+        {
+          '_id' => record.id, "#{path}.ts" => receipt['ts'],
+          "#{path}.started_at" => receipt['started_at'], "#{path}.generation_id" => receipt['generation_id']
+        }
       end
 
       def write_notification(record, selector, path, attributes)
@@ -366,6 +439,10 @@ module Service
       # Use native UTC Time values for every persisted review clock and query.
       def native_time(value)
         value&.to_time&.getutc
+      end
+
+      def native_date(value)
+        Time.utc(value.year, value.month, value.day) if value
       end
 
       def normalize_receipt(receipt)

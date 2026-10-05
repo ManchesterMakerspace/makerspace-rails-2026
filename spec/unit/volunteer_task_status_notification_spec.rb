@@ -53,6 +53,9 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
     stub_const('VolunteerCredit', Class.new do
       def self.create!(**_attributes); end
     end)
+    stub_const('VolunteerApproverNotification', Class.new do
+      def self.preserve_event_receipts!(_record, event_date:); end
+    end)
     allow(SystemConfig).to receive(:get).and_return('2.0')
     allow(Member).to receive(:find).and_return(double(fullname: 'Pat Member'))
     allow(VolunteerCredit).to receive(:create!)
@@ -60,6 +63,7 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
     allow(Service::SlackConnector).to receive(:send_slack_message)
     allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
     allow(Service::ErrorReporter).to receive(:notify)
+    allow(VolunteerApproverNotification).to receive(:preserve_event_receipts!)
     load File.expand_path('../../app/models/volunteer_task.rb', __dir__)
     load File.expand_path('../../app/models/volunteer_event.rb', __dir__)
 
@@ -130,7 +134,41 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
       container = names.length == 1 ? document : value_at(document, names.take(names.length - 1).join('.'))
       container.is_a?(Array) ? container[names.last.to_i] = value : container[names.last] = value
     end
-    update.fetch('$push', {}).each { |path, value| value_at(document, path) << value }
+    update.fetch('$push', {}).each do |path, value|
+      values = value.is_a?(Hash) && value.key?('$each') ? value.fetch('$each') : [value]
+      value_at(document, path).concat(values)
+    end
+  end
+
+  def persisted_model_with_real_callbacks
+    loaded = Mongoid::Factory.from_db(task.class, @persisted.deep_dup)
+    collection = double('MongoDB event write boundary')
+    @model_commands = []
+    allow(loaded).to receive(:collection).and_return(collection)
+    allow(task.class).to receive(:collection).and_return(collection)
+    allow(collection).to receive(:find) do |selector|
+      view = double('MongoDB event collection view')
+      allow(view).to receive(:read).and_return(view)
+      allow(view).to receive(:first) { matches?(@persisted, selector) ? @persisted.deep_dup : nil }
+      allow(view).to receive(:update_one) do |update, **_options|
+        expect(matches?(@persisted, selector)).to be(true)
+        apply_update!(@persisted, update)
+        @model_commands << [selector.deep_dup, update.deep_dup, @persisted.deep_dup]
+        double(matched_count: 1, modified_count: 1)
+      end
+      allow(view).to receive(:find_one_and_update) do |update, **_options|
+        @raw_updates << [selector.deep_dup, update.deep_dup]
+        if matches?(@persisted, selector)
+          apply_update!(@persisted, update)
+          if update.fetch('$set', {}).key?('event_date')
+            @model_commands << [selector.deep_dup, update.deep_dup, @persisted.deep_dup]
+          end
+          @persisted.deep_dup
+        end
+      end
+      view
+    end
+    loaded
   end
 
   def persist_lifecycle_update(attributes)
@@ -342,6 +380,30 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
     expect(Service::SlackConnector).not_to have_received(:send_slack_message)
   end
 
+  it 'promotes an approval snapshot when a reminder generation is registered during the lifecycle write' do
+    task.update!(approval_notification: {})
+    credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil)
+    allow(VolunteerCredit).to receive(:create!).and_return(credit)
+    allow(task).to receive(:notify_task_verified)
+    allow(task).to receive(:update!) do |attributes|
+      @persisted['approval_notification'] = receipt.merge('generation_id' => 'CONCURRENT-GENERATION')
+      persist_lifecycle_update(attributes)
+    end
+
+    task.complete!(verifier)
+
+    expect(task.reload.status).to eq('completed')
+    expect(task.approval_notification).to include(
+      'generation_id' => 'CONCURRENT-GENERATION', 'ts' => receipt.fetch('ts'),
+      'outcome' => 'Approved by Sam Reviewer', 'closed_at' => now, 'finalized' => true
+    )
+    expect(task.approval_notification_history).to be_empty
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CORIGINAL', '123.456', a_string_including('Approved by Sam Reviewer', '6 days'), resolved_channel: true
+    ).once
+    expect(VolunteerCredit).to have_received(:create!).once
+  end
+
   it 'closes cancellation even when the pending receipt was already marked finalized' do
     task.cancel!
 
@@ -509,6 +571,85 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
         'CORIGINAL', '123.456', a_string_including('Event closed by Sam Reviewer', '6 days'), resolved_channel: true
       ).twice
       expect(VolunteerCredit).to have_received(:create!).once
+    end
+  end
+
+  context 'when rescheduling an open event' do
+    let(:receipt) do
+      super().merge('started_at' => (now.in_time_zone.to_date - 6).in_time_zone.beginning_of_day.to_time.getutc,
+        'subject' => 'Event E8: Community cleanup')
+    end
+    let(:task) do
+      VolunteerEvent.new(title: 'Community cleanup', event_number: 8,
+        event_date: now.in_time_zone.to_date - 6, approval_notification: receipt.deep_dup)
+    end
+    let(:new_date) { now.in_time_zone.to_date + 10 }
+
+    it 'stores the new date, old receipt archive, and empty current receipt in one actual Mongoid command' do
+      event = persisted_model_with_real_callbacks
+
+      event.update!(event_date: new_date)
+
+      expect(@model_commands.length).to eq(1)
+      selector, command, saved = @model_commands.fetch(0)
+      expect(selector).to include('_id' => event.id)
+      expect(command.fetch('$set')).to include('event_date' => Time.utc(new_date.year, new_date.month, new_date.day))
+      expect(saved.fetch('approval_notification')).to be_empty
+      expect(saved.fetch('approval_notification_history')).to contain_exactly(hash_including(
+        'ts' => receipt.fetch('ts'), 'channel' => receipt.fetch('channel'), 'started_at' => receipt.fetch('started_at'),
+        'closed_at' => now, 'outcome' => a_string_including('Rescheduled'), 'finalized' => false
+      ))
+      expect(event.reload.approval_notification_history.first['finalized']).to be(true)
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        'CORIGINAL', '123.456', a_string_including('Rescheduled', '6 days'), resolved_channel: true
+      ).once
+    end
+
+    it 'does not archive or send when actual Mongoid validation rejects the date edit' do
+      event = persisted_model_with_real_callbacks
+      original = @persisted.deep_dup
+
+      expect { event.update!(title: '', event_date: new_date) }.to raise_error(Mongoid::Errors::Validations)
+
+      expect(@persisted).to eq(original)
+      expect(@model_commands).to be_empty
+      expect(event.reload.approval_notification).to eq(receipt)
+      expect(event.approval_notification_history).to be_empty
+      expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+      expect(VolunteerApproverNotification).not_to have_received(:preserve_event_receipts!)
+    end
+
+    it 'updates a date without manufacturing notification history when no receipt exists' do
+      @persisted['approval_notification'] = {}
+      event = persisted_model_with_real_callbacks
+
+      event.update!(event_date: new_date)
+
+      expect(event.reload.event_date).to eq(new_date)
+      expect(event.approval_notification).to be_empty
+      expect(event.approval_notification_history).to be_empty
+      expect(@model_commands.length).to eq(1)
+      expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+    end
+
+    it 'retires the previous dated reminder when the supported date edit clears the schedule' do
+      event = persisted_model_with_real_callbacks
+
+      event.update!(event_date: nil)
+
+      expect(event.reload.event_date).to be_nil
+      expect(event.approval_notification).to be_empty
+      expect(event.approval_notification_history).to contain_exactly(hash_including(
+        'ts' => receipt.fetch('ts'), 'closed_at' => now,
+        'outcome' => a_string_including('Rescheduled'), 'finalized' => true
+      ))
+      expect(@model_commands.length).to eq(1)
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        'CORIGINAL', '123.456', a_string_including('Rescheduled', '6 days'), resolved_channel: true
+      ).once
+      Service::VolunteerApprovalReminder.remind!(event, now: now + 40.days)
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
     end
   end
 end

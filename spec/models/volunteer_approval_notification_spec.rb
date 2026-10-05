@@ -389,4 +389,103 @@ RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
     ).twice
     expect(credits.count).to eq(2)
   end
+
+  context 'when rescheduling an open event with a channel reminder' do
+    let(:event) do
+      VolunteerEvent.create!(title: 'Cleanup', created_by_id: admin.id, event_date: Date.current - 6,
+        attendee_ids: [member.id], approval_notification: receipt.merge(
+          'started_at' => (Date.current - 6).in_time_zone.beginning_of_day.to_time.getutc,
+          'subject' => 'Event E3: Cleanup', 'finalized' => true
+        ))
+    end
+    let(:new_date) { Date.current + 10 }
+
+    before { allow(Service::SlackConnector).to receive(:delete_slack_message) }
+
+    it 'finalizes the old message and posts a fresh reminder with the rescheduled activity date' do
+      old_start = event.approval_notification.fetch('started_at')
+      scheduled_date = new_date
+
+      event.update!(event_date: scheduled_date)
+
+      expect(event.reload.approval_notification).to be_empty
+      expect(event.approval_notification_history).to contain_exactly(hash_including(
+        'ts' => receipt.fetch('ts'), 'channel' => receipt.fetch('channel'), 'started_at' => old_start,
+        'closed_at' => now, 'outcome' => a_string_including('Rescheduled'), 'finalized' => true
+      ))
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        receipt.fetch('channel'), receipt.fetch('ts'), a_string_including('Rescheduled', '6 days'), resolved_channel: true
+      ).once
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+
+      allow(Service::SlackConnector).to receive(:send_slack_message).and_return('ts' => 'NEW', 'channel' => 'CNEW')
+      travel_to((scheduled_date + 6).in_time_zone.change(hour: 12))
+      Service::VolunteerApprovalReminder.remind!(event)
+
+      expect(event.reload.approval_notification).to include(
+        'ts' => 'NEW', 'channel' => 'CNEW', 'started_at' => scheduled_date.in_time_zone.beginning_of_day.to_time.getutc
+      )
+      expect(event.approval_notification_history.first['ts']).to eq(receipt.fetch('ts'))
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+        a_string_including(scheduled_date.strftime('%m/%d/%Y'), '6 days'), Service::SlackConnector.admin_channel
+      ).once
+    end
+
+    it 'keeps a failed reschedule update selectable by the daily job and retries the original message' do
+      allow(Service::SlackConnector).to receive(:update_slack_message).and_raise('Slack unavailable')
+      allow(SystemConfig).to receive(:record_run)
+
+      expect { event.update!(event_date: new_date) }.not_to raise_error
+
+      expect(event.reload.approval_notification).to be_empty
+      expect(event.approval_notification_history.first).to include(
+        'ts' => receipt.fetch('ts'), 'closed_at' => now, 'finalized' => false
+      )
+      expect(VolunteerEventReminderJob.new.send(:retry_notifications, VolunteerEvent).where(id: event.id)).to exist
+
+      allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
+      travel 1.day
+      VolunteerEventReminderJob.perform_now
+
+      expect(event.reload.approval_notification_history.first['finalized']).to be(true)
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        receipt.fetch('channel'), receipt.fetch('ts'), a_string_including('Rescheduled', '6 days'), resolved_channel: true
+      ).twice
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+    end
+
+    it 'attaches an in-flight reminder post to the old schedule after the event date changes' do
+      event.update!(approval_notification: {})
+      old_start = event.event_date.in_time_zone.beginning_of_day.to_time.getutc
+      allow(Service::SlackConnector).to receive(:send_slack_message) do
+        event.update!(event_date: new_date)
+        { 'ts' => 'INFLIGHT', 'channel' => 'COLD' }
+      end
+
+      Service::VolunteerApprovalReminder.remind!(event)
+
+      expect(event.reload.approval_notification).to be_empty
+      expect(event.approval_notification_history).to contain_exactly(hash_including(
+        'ts' => 'INFLIGHT', 'channel' => 'COLD', 'started_at' => old_start,
+        'closed_at' => now, 'outcome' => a_string_including('Rescheduled'), 'finalized' => true
+      ))
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        'COLD', 'INFLIGHT', a_string_including('Rescheduled', '6 days'), resolved_channel: true
+      ).once
+      expect(Service::SlackConnector).not_to have_received(:delete_slack_message)
+    end
+
+    it 'retains the old date and receipt when validation rejects the date edit' do
+      old_date = event.event_date
+      original_receipt = event.approval_notification.deep_dup
+
+      expect { event.update!(title: '', event_date: new_date) }.to raise_error(Mongoid::Errors::Validations)
+
+      expect(event.reload.event_date).to eq(old_date)
+      expect(event.approval_notification).to eq(original_receipt)
+      expect(event.approval_notification_history).to be_empty
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+      expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+    end
+  end
 end

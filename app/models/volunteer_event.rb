@@ -195,6 +195,23 @@ class VolunteerEvent
 
   private
 
+  # Keep Mongoid's normal validation and callbacks, but guard the schedule write
+  # against a concurrent receipt registration or event closure. Archiving after
+  # a separate date write could leave a future event's old reminder unrecoverable.
+  def update_document(options = {})
+    return super unless event_date_changed? && status == 'open'
+
+    previous_date = event_date_was
+    result = prepare_update(options) do
+      updates, conflicts = init_atomic_updates
+      raise 'Conflicting updates while rescheduling a volunteer event' unless conflicts.empty?
+
+      Service::VolunteerApprovalReminder.reschedule_event!(self, updates, previous_date: previous_date)
+    end
+    Service::VolunteerApprovalReminder.sync_closed!(self) if result
+    result
+  end
+
   def preserve_scheduled_review_receipts
     VolunteerApproverNotification.preserve_event_receipts!(self, event_date: event_date_was)
   end

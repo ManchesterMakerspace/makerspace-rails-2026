@@ -397,7 +397,7 @@ synchronous diagnostic invocation where one is useful.
 | `Service::ReservationSlackCanvas.rebuild_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::ReservationSlackCanvas.rebuild_all!'` | Rebuilds the two rolling reservation canvases only for shops with an existing daily canvas or relevant blocking reservation/blackout; it does not create empty canvases for other shops. It calls volunteer-canvas synchronization for every shop, but a shop needs a resolvable Slack channel, and a missing volunteer canvas is created only when a claimable top-level task or current/future active event exists. Newly created reservation canvases require manual attachment to their Slack shop-channel headers. Prefer the Rake task or job for the normal operational path. |
 | `Service::GoogleDrive.upload_backup` | Do not call alone; use `RAILS_ENV=production bundle exec rake backup`. | Uploads the archive created by the backup task to Google Drive. Calling it directly requires an existing archive filename and does not create a database dump. |
 | `Service::MembershipExpirationNotice.run!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::MembershipExpirationNotice.run!'` | Performs the daily membership-expiration-notice scan and email sends described above. Outside production, it logs each candidate date window and the comma-delimited names (or `nil`) in the expiring-soon and expired lists. Prefer the job if admin-visible status is required. |
-| `Service::VolunteerApprovalReminder` | Use `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Owns pending-approval Slack message content, saved delivery receipts, in-place age updates, final-outcome updates, and recovery of failed final updates. Task/event lifecycle methods invoke it after approval, rejection, or event closure; use the job for recurring scans and status tracking. |
+| `Service::VolunteerApprovalReminder` | Use `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Owns pending-approval Slack message content, saved delivery receipts, in-place age updates, final-outcome updates, retirement of rescheduled event reminders, and recovery of failed final updates. Task/event lifecycle methods invoke it after approval, rejection, event closure, or rescheduling; use the job for recurring scans and status tracking. |
 | `VolunteerApproverNotification` | Use the task completion flow or `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Delivers one review DM per shop resource manager per task completion submission, or per scheduled event date ready for closure. Stores per-recipient delivery state and retries failed/stale attempts. Direct links select the task claim or event on the authenticated React Volunteer page. |
 
 ### Volunteer approval reminders
@@ -549,6 +549,22 @@ so the old outcome can still be delivered without overwriting the new claim's
 reminder. Conditional MongoDB writes guard against concurrent receipt/review
 changes; competing posts retain the first registered message and attempt to
 delete duplicates. A failed duplicate cleanup is reported.
+
+Rescheduling an open event retires its Members Relations Channel reminder as
+well as versioning the separate RM DM receipts. The new date and archival of
+the live channel intent are saved in one guarded database write, preserving a
+Slack timestamp that arrived after the event was loaded. The old reminder is
+updated immediately to show `Rescheduled from ... to ...` and the elapsed wait
+for its previous schedule; this does not close the event or issue credits. Its
+current `approval_notification` is cleared, and failed updates remain retryable
+in `approval_notification_history` even while the new date is in the future or
+absent. After the new date becomes more than five days overdue, a fresh channel
+message starts its wait clock at that date. A unique intent `generation_id`
+keeps in-flight posts attached to their archived reminder even after a date is
+changed back to its previous value. Legacy receipts without IDs are still
+supported. Changes without a channel intent do not manufacture old reminders.
+Validation failures leave the date and reminder unchanged; a concurrent
+schedule/status change aborts the guarded reschedule, so reload before retrying.
 
 Proposed task cancellation and generic status edits also finalize an outstanding
 review reminder with the actual outcome. Setting a task to completed through a
