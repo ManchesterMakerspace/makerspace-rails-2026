@@ -21,12 +21,13 @@ RSpec.describe FixTicketDelivery do
     described_class.call(ticket, event)
   end
   [false, true].each do |fallback|
-    it "delivers unscoped staff events with central disabled (admin fallback: #{fallback})" do
+    it "delivers unscoped staff events with central disabled (RM default: #{fallback})" do
       SystemConfig.set('slack_channel_tickets', '')
       SystemConfig.set('slack_channel_rm', fallback ? '' : 'C1111111111')
       SystemConfig.set('slack_channel_admin', 'C2222222222')
       event.set(unscoped_staff_notification: true, central_enabled: false)
-      destination = fallback ? 'C2222222222' : 'C1111111111'
+      destination = fallback ? 'C3333333333' : 'C1111111111'
+      allow(Service::SlackConnector).to receive(:resolved_channel_id).with('resource_managers').and_return(destination) if fallback
       expect(client).to receive(:chat_postMessage).with(hash_including(channel: destination, text: include("Ticket ##{ticket.id}", 'Switch &lt;@USER&gt; failed'))).once.and_return('ts' => '100.001', 'channel' => destination)
       2.times { described_class.call(ticket, event) }
       expect(event.reload.delivered['unscoped-staff-0']['channel']).to eq(destination)

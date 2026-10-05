@@ -23,7 +23,7 @@ class FixTicketDelivery
       end
       text += "\n#{url(ticket)}"
       if event.unscoped_staff_notification
-        channel = SystemConfig.get('slack_channel_rm').presence || Service::SlackConnector.admin_channel
+        channel = Service::SlackConnector.resource_managers_channel
         publish(event, 'unscoped-staff', Service::SlackConnector.resolved_channel_id(channel), text)
       end
       central = SystemConfig.slack_tickets_channel

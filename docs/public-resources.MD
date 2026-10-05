@@ -51,3 +51,13 @@ separately, with `outOfService` true if either is true. Without a tool filter,
 retaining existing reservations.
 
 `/fix-tickets`, `/fix-tickets/:id`, and `/volunteer/tasks/:id` are authenticated portal routes. Public (read-only) tickets require an active unexpired member, not an anonymous browser. Existing shortcode mappings may target the authenticated bounty detail route; resolving a shortcode does not bypass target authorization. Unauthenticated bounty feeds do not include source-ticket content.
+
+The proposed volunteer review notification rollout uses authenticated React
+links `/volunteer?task=:id` and `/volunteer?event=:id`. They select the exact task
+claim (including a child claim) or event for staff review; login and existing
+shop-scoped review authorization still apply. They are handled by the portal
+catch-all, add no public Rails endpoint, and do not allocate shortcode records.
+Background reviewer DMs build their absolute origin from `APP_DOMAIN` and require
+deploying the matching Rails notification service and React selection handling.
+See [the volunteer handbook](../../makerspace-react-2026/docs/VolunteerCredit.MD#notification-matrix)
+and [the job inventory](jobs-tasks-services.MD#volunteer-approval-reminders).

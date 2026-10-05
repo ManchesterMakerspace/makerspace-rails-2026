@@ -274,6 +274,24 @@ describe VolunteerTask, type: :model do
       task.update!(status: 'claimed')
       expect { task.complete!(admin) }.to raise_error(Error::Forbidden)
     end
+
+    it 'keeps closure metadata retryable when the follow-up credit confirmation write fails' do
+      closed_time = Time.current
+      task.update!(completed_at: closed_time - 6.days, approval_notification: {
+        'ts' => '123.456', 'channel' => 'CREVIEW', 'destination_mode' => 'production',
+        'started_at' => closed_time - 6.days, 'subject' => 'Submitted cleanup', 'finalized' => true
+      })
+      allow(Service::VolunteerApprovalReminder).to receive(:record_outcome!).and_raise('Outcome storage unavailable')
+
+      expect { task.complete!(admin) }.to raise_error(RuntimeError, 'Outcome storage unavailable')
+
+      expect(task.reload.status).to eq('completed')
+      expect(task.approval_notification).to include('ts' => '123.456', 'channel' => 'CREVIEW', 'finalized' => false)
+      expect(task.approval_notification['closed_at']).to be_present
+      expect(task.approval_notification['outcome']).to include('Credit award not confirmed', 'correct the award manually')
+      expect(VolunteerCredit.where(task_id: task.id, status: 'approved')).to exist
+      expect(VolunteerEventReminderJob.new.send(:retry_notifications, VolunteerTask).where(id: task.id)).to exist
+    end
   end
 
   # ── #release! ────────────────────────────────────────────────────────────

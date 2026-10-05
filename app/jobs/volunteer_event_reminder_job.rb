@@ -2,7 +2,20 @@ class VolunteerEventReminderJob < ApplicationJob
   queue_as :default
 
   def perform
-    stale_events.each { |event| send_reminder(event) }
+    now = Time.current
+    VolunteerTask.where(status: 'pending', :completed_at.ne => nil, :shop_id.ne => nil).each do |task|
+      VolunteerApproverNotification.notify!(task, now: now)
+    end
+    VolunteerEvent.where(status: 'open', :event_date.lt => now.in_time_zone.to_date, :shop_id.ne => nil).each do |event|
+      VolunteerApproverNotification.notify!(event, now: now)
+    end
+    reminder_tasks(now).each { |task| Service::VolunteerApprovalReminder.remind!(task, now: now) }
+    reminder_events(now).each { |event| Service::VolunteerApprovalReminder.remind!(event, now: now) }
+    # Keep unindexed receipt retries out of the indexed status/date scans.
+    # A record selected by both scans only refreshes its pending message once.
+    [VolunteerTask, VolunteerEvent].each do |model|
+      retry_notifications(model).each { |record| Service::VolunteerApprovalReminder.sync_closed!(record) }
+    end
     SystemConfig.record_run('volunteer_event_reminder', success: true)
   rescue => e
     SystemConfig.record_run('volunteer_event_reminder', success: false)
@@ -12,20 +25,22 @@ class VolunteerEventReminderJob < ApplicationJob
 
   private
 
-  def stale_events
-    VolunteerEvent.where(status: 'open', :event_date.ne => nil, :event_date.lt => Date.today)
+  def reminder_tasks(now)
+    VolunteerTask.where(
+      status: 'pending', completed_at: { '$ne' => nil, '$lt' => now - Service::VolunteerApprovalReminder::WAIT_DAYS.days }
+    )
   end
 
-  def send_reminder(event)
-    days_overdue = (Date.today - event.event_date).to_i
-    ::Service::SlackConnector.send_slack_message(
-      "⏰ *#{event.title}* (#{event.display_number}) was scheduled for " \
-      "#{event.event_date.strftime('%m/%d/%Y')} (#{days_overdue} day#{'s' unless days_overdue == 1} ago) " \
-      "and is still open with #{event.attendee_count} checked-in attendee#{'s' unless event.attendee_count == 1}. " \
-      "Close it to issue credits.",
-      VolunteerCredit.pending_slack_channel
+  def reminder_events(now)
+    VolunteerEvent.where(
+      status: 'open', event_date: { '$ne' => nil, '$lt' => now.to_date - Service::VolunteerApprovalReminder::WAIT_DAYS }
     )
-  rescue => e
-    Service::ErrorReporter.notify(e)
+  end
+
+  def retry_notifications(model)
+    model.any_of(
+      { 'approval_notification.finalized' => false },
+      { approval_notification_history: { '$elemMatch' => { 'finalized' => false } } }
+    )
   end
 end

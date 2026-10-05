@@ -46,6 +46,9 @@ class VolunteerTask
   field :completed_at,     type: Time,            default: nil
   field :verified_by_id,   type: BSON::ObjectId,  default: nil
   field :rejection_reason, type: String,           default: nil
+  field :approval_notification, type: Hash, default: {}
+  field :approval_notification_history, type: Array, default: []
+  field :approver_notifications, type: Hash, default: {}
 
   SINGLE_USE_STATUSES = %w[available claimed pending completed cancelled denied].freeze
   MULTI_USE_STATUSES  = %w[reusable repeatable recurring].freeze
@@ -183,12 +186,15 @@ class VolunteerTask
   # Repeatable: creates a child task; same member may claim multiple times.
   # Recurring:  creates a child task; respects next_available cooldown; sets parent claimed_at + status + next_available.
   def claim!(member, sync_canvas: true)
+    reload
     raise Error::Forbidden.new unless member.status == "activeMember"
     raise Error::Forbidden.new unless eligible_for?(member)
 
     result = case status
     when 'available'
+      previous_notification = approval_notification.deep_dup
       update!(status: 'claimed', claimed_by_id: member.id, claimed_at: Time.now)
+      Service::VolunteerApprovalReminder.reset!(self, previous_notification: previous_notification)
       self
 
     when 'reusable'
@@ -225,28 +231,63 @@ class VolunteerTask
   end
 
   def mark_pending!(member)
+    reload
     raise Error::Forbidden.new unless status == 'claimed' && claimed_by_id == member.id
+    previous_notification = approval_notification.deep_dup
     update!(status: 'pending', completed_at: Time.now)
+    Service::VolunteerApprovalReminder.reset!(self, previous_notification: previous_notification)
+    VolunteerApproverNotification.notify!(self)
   end
 
   def complete!(verifier)
+    reload
     raise Error::Forbidden.new if verifier.id == claimed_by_id
     raise Error::Forbidden.new unless status == 'pending'
 
-    update!(status: 'completed', verified_by_id: verifier.id)
-
-    credit = VolunteerCredit.create!(
-      member_id:    claimed_by_id,
-      issued_by_id: verifier.id,
-      task_id:      id,
-      description:  "Completed bounty task: #{effective_title}",
-      credit_value: credit_value,
-      status:       'approved'
+    notification = Service::VolunteerApprovalReminder.outcome_attributes(
+      self, outcome: "Approved by #{verifier.fullname}"
+    ).fetch(:approval_notification, {})
+    provisional_notification = notification.empty? ? {} : notification.merge(
+      'outcome' => "Credit award not confirmed during approval by #{verifier.fullname}; " \
+        'verify whether a credit was saved and correct the award manually'
     )
-    credit.send(:notify_member_credit_awarded)
-    credit.send(:check_discount_threshold!)
+    Service::VolunteerApprovalReminder.transition_with_outcome!(
+      self, { status: 'completed', verified_by_id: verifier.id }, notification: provisional_notification
+    )
 
-    notify_task_verified(verifier)
+    approval_error = nil
+    credit_created = false
+    begin
+      credit = VolunteerCredit.create!(
+        member_id:    claimed_by_id,
+        issued_by_id: verifier.id,
+        task_id:      id,
+        description:  "Completed bounty task: #{effective_title}",
+        credit_value: credit_value,
+        status:       'approved'
+      )
+      credit_created = true
+      credit.send(:notify_member_credit_awarded)
+      credit.send(:check_discount_threshold!)
+
+      notify_task_verified(verifier)
+    rescue => error
+      approval_error = error
+      raise
+    ensure
+      begin
+        if !credit_created && notification.present?
+          notification['outcome'] = "Credit award failed during approval by #{verifier.fullname}; " \
+            'verify whether a credit was saved and correct the award manually'
+        end
+        Service::VolunteerApprovalReminder.record_outcome!(self, notification, expected_status: 'completed')
+        Service::VolunteerApprovalReminder.sync_closed!(self)
+      rescue
+        # The service reports metadata failures. Preserve a simultaneous award
+        # failure rather than replacing the existing domain error.
+        raise unless approval_error
+      end
+    end
   end
 
   # Release a claimed task back to available (or deny a child task).
@@ -275,31 +316,79 @@ class VolunteerTask
 
   # Reject a pending task (or deny a child task).
   def reject_pending!(admin, reason, notify: true)
+    reload
     raise Error::Forbidden.new unless status == 'pending'
     raise Error::Forbidden.new if admin.id == claimed_by_id
 
     former_claimant_id = claimed_by_id
+    notification = Service::VolunteerApprovalReminder.outcome_attributes(
+      self, outcome: "Denied by #{admin.fullname}. Reason: #{reason}"
+    ).fetch(:approval_notification, {})
 
     if child_task?
-      update!(status: 'denied', rejection_reason: reason)
+      Service::VolunteerApprovalReminder.transition_with_outcome!(
+        self, { status: 'denied', rejection_reason: reason }, notification: notification
+      )
     else
-      update!(
+      Service::VolunteerApprovalReminder.transition_with_outcome!(self, {
         status:           'available',
         claimed_by_id:    nil,
         claimed_at:       nil,
         completed_at:     nil,
         rejection_reason: reason
-      )
+      }, notification: notification)
     end
 
     if notify
       notify_member_task_rejected(former_claimant_id, reason)
       enqueue_volunteer_canvas_sync
+      Service::VolunteerApprovalReminder.sync_closed!(self)
     end
   end
 
   def cancel!
-    update!(status: 'cancelled')
+    reload
+    notification = pending_review_outcome_for_status('cancelled')
+    Service::VolunteerApprovalReminder.transition_with_outcome!(
+      self, { status: 'cancelled' }, notification: notification
+    )
+    close_pending_review_notification!(notification)
+  end
+
+  def update_with_review_outcome!(attributes, actor: nil)
+    notification = pending_review_outcome_for_status(attributes[:status] || attributes['status'], actor: actor)
+    Service::VolunteerApprovalReminder.transition_with_outcome!(self, attributes, notification: notification)
+    notification
+  end
+
+  # Generic status edits do not issue credits or run the verification flow.
+  # Close an outstanding reminder with that actual outcome, including receipts
+  # whose pending-message delivery was already marked finalized.
+  def pending_review_outcome_for_status(new_status, actor: nil)
+    return {} if new_status.blank? || new_status == status
+
+    receipt = approval_notification.to_h
+    open_receipt = receipt['closed_at'].blank? && (receipt['started_at'].present? || receipt['ts'].present?)
+    return {} unless status == 'pending' || open_receipt
+
+    actor_description = actor ? " by #{actor.fullname}" : ''
+    outcome = case new_status
+    when 'cancelled'
+      "Task cancelled#{actor_description}"
+    when 'completed'
+      "Task marked completed#{actor_description} through a status edit; no credits were issued by this edit"
+    when 'denied'
+      "Denied#{actor_description} through a task status edit"
+    else
+      "Pending review ended#{actor_description}; task status changed to #{new_status}"
+    end
+    Service::VolunteerApprovalReminder.outcome_attributes(self, outcome: outcome).fetch(:approval_notification, {})
+  end
+
+  def close_pending_review_notification!(notification)
+    return if notification.empty?
+
+    Service::VolunteerApprovalReminder.sync_closed!(self)
   end
 
   private

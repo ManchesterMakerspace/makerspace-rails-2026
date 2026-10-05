@@ -1,5 +1,5 @@
 namespace :data do
-  desc "Verify and create core unique, lookup, and repair ticket indexes"
+  desc "Verify and create core unique, lookup, repair ticket, and volunteer reminder indexes"
   task ensure_unique_indexes: :environment do
     member_index_collections = %w[
       permissions
@@ -236,6 +236,20 @@ namespace :data do
 
       collection.indexes.create_one(member_id: 1)
       puts "#{collection_name}.member_id: non-unique index enabled"
+    end
+
+    # Install only the reminder lookup indexes. Creating every volunteer model
+    # index could introduce number uniqueness on legacy records with no number.
+    [
+      [VolunteerTask, { status: 1, completed_at: 1 }],
+      [VolunteerEvent, { status: 1, event_date: 1 }]
+    ].each do |model, key|
+      specification = model.index_specifications.find { |index| index.key.stringify_keys == key.stringify_keys }
+      raise "Missing volunteer reminder index declaration on #{model.collection_name}: #{key}" unless specification
+      raise "Volunteer reminder indexes must be nonunique" if specification.options[:unique]
+
+      model.collection.indexes.create_one(specification.key, specification.options)
+      puts "#{model.collection_name}: volunteer reminder index ensured (#{key.keys.join(', ')})"
     end
 
     # Keep compound uniqueness and repair lookup/outbox indexes with the same

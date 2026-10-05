@@ -89,7 +89,9 @@ shops even when they have no reservations or existing canvases.
 
 Unscoped repair-ticket creation and note events capture an explicit staff-channel
 notification intent. `FixTicketDelivery` sends those events to the configured
-`slack_channel_rm`, falling back to the Admin Channel when RM Channel is blank.
+`slack_channel_rm` (**RM Channel**), defaulting to `resource_managers` when the
+setting is absent or blank. The separate **Members Relations Channel** uses
+`slack_channel_admin`, defaulting to `members_relations`.
 This is independent of the optional central ticket feed and uses the normal
 delivery receipts/retry handling. Scoped tickets retain their RM/approver routing.
 
@@ -124,9 +126,15 @@ reported as errors for operator review.
 `data:ensure_unique_indexes` runs in the release phase for both buildpack and
 container deployments. In addition to the core identity constraints, it installs
 the partial unique indexes that permit only one open checkout-approver request
-per member/tool and only one volunteer credit per tool checkout. Deployments stop
-for operator review when existing duplicate data prevents either constraint from
-being created.
+per member/tool and only one volunteer credit per tool checkout, plus the
+nonunique reminder indexes on `volunteer_tasks(status, completed_at)` and
+`volunteer_events(status, event_date)`. These two indexes are installed from
+their individual model declarations; this does not install the unrelated unique
+task/event number indexes on legacy data. For an existing deployment that has
+not run the updated release task, run
+`RAILS_ENV=production bundle exec rake data:ensure_unique_indexes` before relying
+on the reminder age indexes. Deployments stop for operator review when existing
+duplicate data prevents either constraint from being created.
 
 The Tool index keeps the equality-scoped shop and case-insensitive name ordering
 before the availability inequalities. A test-database `executionStats` comparison
@@ -296,6 +304,7 @@ job wrapper records `job_status_<admin key>` with a completion time and
 | `card_expiration_check` | `card_on_file_expiration_check` | `RAILS_ENV=production bundle exec rake card_on_file_expiration_check` | Finds active subscribers whose Braintree cards expire in the current Eastern-time month, caches the affected count and card types in Redis until next month, DMs members who have Slack identities, and reports every affected member to Member Relations. Only the job wrapper records status. |
 | `reservation_canvas_rebuild` | `reservations:rebuild_slack_canvases` | `RAILS_ENV=production bundle exec rake reservations:rebuild_slack_canvases` | Processes every shop, but rebuilds today's and tomorrow's reservation canvases only when the shop already has either canvas or has a blocking reservation/blackout in that two-day window. Thus it does not provision empty reservation canvases for an inactive shop. It creates a missing daily canvas when the shop qualifies, refreshes agendas and owner access, and stores its ID. Slack does not attach a newly created canvas to the shop channel header; after its first build, a channel manager must manually attach each daily canvas to its respective shop channel with Slack's **+** button. For every shop, including shops skipped by the reservation path, the command calls volunteer-canvas synchronization with `create_if_needed: true` and owner-access synchronization. That call still leaves a shop unchanged when it has no Slack channel (or the channel cannot be resolved), and it creates a missing volunteer canvas only when the shop has at least one claimable top-level task or active event dated today or later. The command also rebuilds every recorded checkout canvas; it warns the interface-log Slack channel and writes an audit entry for a failed checkout canvas before continuing to the next shop. It retries reservation Slack rate limits and fails after collecting reservation/volunteer failures. Only the job wrapper records status. |
 | `membership_expiration_notice` | `membership_expiration_notice` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'MembershipExpirationNoticeJob.perform_now'`. | Finds active, non-landlord members with no Braintree subscription (`subscription` not true and `subscription_id` blank) and no active Earned Membership whose `expirationTime` falls exactly 3 days out, and emails each a renewal reminder; separately finds the same population whose `expirationTime` fell exactly 1 day ago and emails an expired notice. Each email is sent at most once per expiration -- the sent state is keyed to the exact `expirationTime` value, so it resets automatically once the member renews to a new date. Only the job wrapper records status. |
+| `volunteer_event_reminder` | `volunteer_event_reminder` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Sends/retries assigned shop RM review DMs for submitted tasks and dated open events ready for closure; posts or updates Members Relations Channel reminders after more than five days and retries saved final-outcome updates. See the volunteer approval reminder workflow below. Individual delivery failures do not fail the complete scan. |
 
 ### Triggering through the admin API
 
@@ -331,7 +340,7 @@ values and would use the chosen scheduler's timezone.
 | Monthly at 03:15 | Rake `slack:refresh_public_channel_cache` | `RAILS_ENV=production bundle exec rake slack:refresh_public_channel_cache` | Refreshes the public-channel Redis cache described above. Whenever's `1.month` interval is translated by Whenever; verify the generated crontab when deploying. |
 | Hourly | `MemberProvisioningReconciliationJob.perform_now` | `RAILS_ENV=production bundle exec rails runner 'MemberProvisioningReconciliationJob.perform_now'` | First retries durable pending checkout-revocation cleanup, isolating and reporting failures per checkout, then reconciles initialized members with live Slack state, promotes eligible Slack guests, and periodically revalidates/provisions Google Drive access when Drive invitations are enabled. Provisioning errors are isolated per member and reported without aborting the complete scan. |
 | At 08:00 on the first of each month | `CardExpirationCheckJob.perform_later` | `RAILS_ENV=production bundle exec rake card_on_file_expiration_check` | Runs the monthly card-expiration workflow described above. The Rake command performs the service but does not update the admin job status. |
-| Daily at 08:00 | `VolunteerEventReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'` | Finds open volunteer events whose date has passed and attempts to post a reminder for each to the pending-volunteer Slack channel. Individual delivery errors are reported and do not stop later events. The job records success after the scan completes even if one or every delivery failed, so its status does not represent delivery success. This template job is not exposed in the admin jobs list. |
+| Daily at 08:00 | `VolunteerEventReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'` | Sends/retries assigned shop RM review DMs for submitted tasks and dated open events ready for closure, then posts or updates Members Relations Channel reminders after more than five days and retries saved final-outcome updates. The job records success after the scan completes even if individual Slack deliveries fail; inspect error reporting to confirm delivery. Also exposed as `volunteer_event_reminder` in the admin jobs list. |
 | Daily at 09:00 | `MembershipExpirationNoticeJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'MembershipExpirationNoticeJob.perform_now'` | Runs the membership-expiration-notice workflow described above. |
 
 ## Recurring production Rake tasks not installed by Whenever
@@ -388,6 +397,186 @@ synchronous diagnostic invocation where one is useful.
 | `Service::ReservationSlackCanvas.rebuild_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::ReservationSlackCanvas.rebuild_all!'` | Rebuilds the two rolling reservation canvases only for shops with an existing daily canvas or relevant blocking reservation/blackout; it does not create empty canvases for other shops. It calls volunteer-canvas synchronization for every shop, but a shop needs a resolvable Slack channel, and a missing volunteer canvas is created only when a claimable top-level task or current/future active event exists. Newly created reservation canvases require manual attachment to their Slack shop-channel headers. Prefer the Rake task or job for the normal operational path. |
 | `Service::GoogleDrive.upload_backup` | Do not call alone; use `RAILS_ENV=production bundle exec rake backup`. | Uploads the archive created by the backup task to Google Drive. Calling it directly requires an existing archive filename and does not create a database dump. |
 | `Service::MembershipExpirationNotice.run!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::MembershipExpirationNotice.run!'` | Performs the daily membership-expiration-notice scan and email sends described above. Outside production, it logs each candidate date window and the comma-delimited names (or `nil`) in the expiring-soon and expired lists. Prefer the job if admin-visible status is required. |
+| `Service::VolunteerApprovalReminder` | Use `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Owns pending-approval Slack message content, saved delivery receipts, in-place age updates, final-outcome updates, retirement of rescheduled event reminders, and recovery of failed final updates. Task/event lifecycle methods invoke it after approval, rejection, event closure, or rescheduling; use the job for recurring scans and status tracking. |
+| `VolunteerApproverNotification` | Use the task completion flow or `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Delivers one review DM per shop resource manager per task completion submission, or per scheduled event date ready for closure. Stores per-recipient delivery state and retries failed/stale attempts. Direct links select the task claim or event on the authenticated React Volunteer page. |
+
+### Volunteer approval reminders
+
+`VolunteerEventReminderJob` keeps its daily 08:00 schedule template and
+`volunteer_event_reminder` admin key. It now considers submitted task completions
+whose `pending` state has lasted **more than five elapsed days** from
+`completed_at`, and open dated events whose `event_date` is **more than five
+calendar days** before today. A task still being worked on (`claimed`) is not
+awaiting approval; an undated event has no date from which to age a reminder.
+There is one event reminder for the event, regardless of attendee count.
+
+Overdue tasks and events use separate status/date queries supported by the
+compound indexes installed by `data:ensure_unique_indexes` during release.
+Saved final-delivery retries run in separate queries for current and archived
+receipts, without a pending/open status restriction. Those receipt queries can
+still scan a collection; their unindexed predicates are never combined with the
+overdue range query. Retry processing only synchronizes closed messages, so an
+overdue record also selected for retry does not receive a second pending-age
+refresh.
+
+The proposed shop-reviewer notification rollout requires deploying the Rails
+changes that provide `VolunteerApproverNotification` together with React's
+`/volunteer?task=:id` and `/volunteer?event=:id` selection handling. The preceding
+Rails revision `5789f76b051490c20ad283771b115048ba727662` includes the five-day
+reminder workflow but not these reviewer DMs or the renamed channel defaults.
+
+Task completion submission invokes `VolunteerApproverNotification` immediately
+in both portal and Slack flows. The daily job retries all shop-assigned pending
+submissions, and sends/retries event DMs once an open dated event's date is
+before today in the application time zone. This event DM is independent of the
+five-day escalation threshold. Recipients have role `resource_manager`, an
+assignment to that shop, and a current non-invalidated linked Slack identity;
+the task claimant is excluded. Events without a shop/date and tasks without a
+shop send no RM review DMs. Membership expiration is not an additional DM
+eligibility filter. Managers whose direct notifications are suppressed
+(`revoked` or `suspended`) are skipped both before taking a delivery lease and
+when eligibility is rechecked before sending.
+
+Each recipient is tracked in the task/event's private `approver_notifications`
+hash, keyed by task submission time or scheduled event date and manager ID. A successful Slack
+post stores its `ts`, returned channel, destination mode, and sent time. A
+five-minute tokenized sending lease prevents concurrent attempts from sending
+the same manager again; failed attempts and expired sending leases are retried
+by later runs, while `sent` receipts are not repeated. Before sending, delivery
+reloads both the activity and the recipient, then rechecks the same submission,
+current resource-manager role, shop assignment, and manager notification
+suppression. Deleted managers, terminal tasks/events, and superseded task
+submissions have their attempts marked `obsolete` without a DM. Temporary
+suspension/revocation, removal of the manager's role or shop assignment, a
+changed/missing activity shop, or the manager becoming the task claimant leaves
+the receipt `failed` without posting. Later scans skip ineligible recipients;
+when eligibility is restored while that submission still awaits review, the
+same receipt can be retried without repeating successful recipients. If an open
+event is rescheduled to today or a future date, or loses its date after leasing, delivery
+sends no DM and leaves the receipt `failed` for retry. Later scans wait until
+the scheduled date is before today; a restored date uses the same rule. A closed
+event remains obsolete. Event buckets use `event_YYYYMMDD` keys: a successful
+`sent` receipt suppresses repeats only for that scheduled date. Rescheduling
+through the normal event update creates a separate review cycle; after the new
+date passes, eligible managers receive a fresh DM. Old date buckets remain for
+audit, and restoring a previously notified date reuses its successful receipts.
+Pre-versioning `event` buckets are atomically renamed to the existing date on
+the first scan or before a model update changes the date, preserving successful
+notices and active delivery leases. Missing old dates use `event_undated`.
+The rename checks the stored date and refuses to overwrite an existing date
+bucket; a conflict is reported and blocks that date update rather than losing
+either set of receipts. Before deploying date-versioned notifications, drain
+or stop workers running the preceding implementation. An old worker still
+sending through the legacy `event` path cannot save its acknowledgment after
+that bucket is renamed, and lease recovery could then repeat the DM. Workers
+using date keys can finish their original schedule's delivery normally.
+Delivery also queries the manager's active `SlackUser`
+again after acquiring the lease and verifies its ownership, active state, and
+nonblank Slack ID. A replacement identity found then receives the DM. If the
+link has disappeared, been invalidated or reassigned, or lost its Slack ID,
+the attempt sends no message and remains `failed` so a later scan can retry
+after relinking. Managers missing a Slack link before leasing are skipped.
+Individual errors are reported without aborting the remaining recipients.
+
+An accepted Slack post whose receipt cannot be saved is reported as uncertain
+delivery and retains its sending lease rather than immediately reposting.
+If that lease later expires, or a worker crashes between Slack acceptance and
+receipt persistence, recovery can send a duplicate DM. Successful durable
+receipts prevent repeats during normal scans; this is not an absolute
+exactly-once guarantee across remote-post/database failures.
+
+The DM contains the activity/claimant summary and an absolute review link built
+by `ShortUrl.base_url` from `APP_DOMAIN`. The link selects the exact child claim
+when applicable; it does not grant review authority or bypass login. This
+background path has no validated-request-host fallback: missing/invalid
+`APP_DOMAIN` makes delivery fail and remain retryable. These review links do not
+allocate shortcodes or create public endpoints. No email fallback is sent.
+
+The first reminder goes to `Service::SlackConnector.admin_channel`, the retained
+helper alias for **Members Relations Channel**: `slack_channel_admin`, default
+`members_relations` when absent or blank. **RM Channel** remains the separate
+`slack_channel_rm` setting, default `resource_managers` when absent or blank.
+This is separate from the pending-volunteer channel used when a member submits
+task completion. The job persists the wait start and subject before making the
+Slack request, then saves Slack's message `ts`, returned channel, and
+`destination_mode` (`production` or `test`) with that intent when Slack
+acknowledges the post. Subsequent runs update that same message with the current
+elapsed wait instead of posting another reminder. Pending text uses the current
+title and attendee count; final text retains the claimant or event/attendee
+subject snapshot from the original intent.
+
+Updates use the saved conversation ID even if the configured Members Relations Channel later
+changes. Normal post redirection to `test_channel` still applies outside
+production. A saved receipt is edited only when its `destination_mode` matches
+the running Slack environment; a mismatch is reported and retained for retry
+in the original environment. This prevents changing destinations when a saved
+message is processed under a different production/test mode.
+
+Task approval or denial and event closure save closure metadata in the same
+MongoDB update as the lifecycle transition. Cancellation and generic task
+status edits use the same mechanism. Genuine dotted receipt fields preserve
+concurrently registered Slack timestamps, channels and destination modes;
+normal Mongoid validation and callbacks still run. The transition saves
+`finalized: false`, so the existing final-delivery scan can recover even if a
+later metadata write or Slack update fails. Sync finalizes a closed snapshot
+without a timestamp without posting; late receipt registration reopens delivery.
+Recorded reminders are then updated in place with the outcome and total wait.
+Task approval first saves a `Credit award not confirmed` outcome with the
+completed status, and changes it to approved only after credit creation returns
+successfully. If creation raises, it instead saves a `Credit award failed`
+outcome and updates the existing message with a warning to verify the saved
+credit and correct the award manually. The task remains completed and cannot
+be approved again through the normal completion flow. Check credits linked to
+the task before correcting it: a write can have succeeded before the exception,
+so blindly awarding another credit can duplicate it. A later notification or
+billing failure after successful creation retains the approved outcome.
+Failed delivery of the warning uses the normal final-message retry scan; the
+job retries message delivery, not credit creation. If the later outcome write
+also fails, error reporting records that failure and the original creation
+error is preserved for the caller. The initial unconfirmed warning remains
+durable whenever the completed-status write succeeded, including when credit
+creation actually succeeded but recording its confirmation failed. Verify the
+saved credit before manual correction; the job cannot infer the award outcome.
+Event closure reports closure without claiming every attendee credit succeeded:
+the existing per-attendee award failures remain possible. No final message is
+created if that activity never had an overdue reminder. An outcome snapshot can
+exist before a posted-message receipt; if an in-flight post finishes after
+review, its returned `ts` is attached to the matching snapshot and finalized.
+A failed final update leaves durable state for a future job run to retry,
+including a rejected task that is available again. If that task is claimed
+again, its old intent or receipt is retained in `approval_notification_history`
+so the old outcome can still be delivered without overwriting the new claim's
+reminder. Conditional MongoDB writes guard against concurrent receipt/review
+changes; competing posts retain the first registered message and attempt to
+delete duplicates. A failed duplicate cleanup is reported.
+
+Rescheduling an open event retires its Members Relations Channel reminder as
+well as versioning the separate RM DM receipts. The new date and archival of
+the live channel intent are saved in one guarded database write, preserving a
+Slack timestamp that arrived after the event was loaded. The old reminder is
+updated immediately to show `Rescheduled from ... to ...` and the elapsed wait
+for its previous schedule; this does not close the event or issue credits. Its
+current `approval_notification` is cleared, and failed updates remain retryable
+in `approval_notification_history` even while the new date is in the future or
+absent. After the new date becomes more than five days overdue, a fresh channel
+message starts its wait clock at that date. A unique intent `generation_id`
+keeps in-flight posts attached to their archived reminder even after a date is
+changed back to its previous value. Legacy receipts without IDs are still
+supported. Changes without a channel intent do not manufacture old reminders.
+Validation failures leave the date and reminder unchanged; a concurrent
+schedule/status change aborts the guarded reschedule, so reload before retrying.
+
+Proposed task cancellation and generic status edits also finalize an outstanding
+review reminder with the actual outcome. Setting a task to completed through a
+generic edit does not issue credits, and the final notice states that distinction.
+Deleting the underlying task/event still removes its receipt without finalizing
+the Slack message; an actually deleted record cannot be retried by this job.
+
+Individual post/update failures are reported and the scan continues. The job's
+`success` status means its scan completed, not that every reminder was delivered.
+It does not approve claims, close events, award credits, or change the monthly
+processing policy. No new collection, environment setting, or public API field
+is introduced; these receipts remain internal task/event data.
 
 ## Operational cautions
 
@@ -420,7 +609,7 @@ synchronous diagnostic invocation where one is useful.
   shops with no existing daily canvas and no relevant blocking reservation or
   blackout, and Slack requires a channel manager to attach each newly created
   daily canvas manually to its shop channel header.
-- `VolunteerEventReminderJob` records success when its event scan completes,
+- `VolunteerEventReminderJob` records success when its task/event and final-update scan completes,
   not when its Slack messages are delivered. Each delivery error is rescued and
   reported separately, so check error reporting when delivery confirmation
   matters even if `job_status_volunteer_event_reminder` says `success`.
@@ -451,6 +640,17 @@ Linked bounty claims also suppress the superclass canvas enqueue inside the tran
 Checkout canvas catalog synchronization includes out_of_service changes. Visible unavailable tools show an Out of service - do not use warning; Hidden remains independent.
 
 `SlackVolunteerJob` filters personalized bounty listings through `VolunteerTask#eligible_for?` for every role, before the 15-task limit. Linked-ticket reporter and prerequisite restrictions apply; ordinary-task privileged exemptions remain.
+
+Slack task-claim and event-check-in confirmations, completion acknowledgments,
+and `/volunteer myclaims` (including an empty list) show the shared
+`VolunteerCreditMessaging` timing and review guidance. Event check-in DMs use the
+same guidance, including when staff add an attendee. It explains the manually
+managed policy that credits from activity in one month are reflected in the next
+month's totals (for example, April activity in May), and asks members to wait
+patiently for unpaid volunteer approvers. Pending task rows await volunteer
+approver review rather than asking members to submit completion again. This is
+member-facing guidance for approvers' manual workflow; it does not add a monthly
+job, defer automatic credit creation, or change ledger or discount calculations.
 
 Repair-ticket delivery skips missing optional shop destinations, and scopes central reply receipts to the current Slack thread so recovery can republish pending events after root deletion.
 

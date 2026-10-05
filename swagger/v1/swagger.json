@@ -14222,9 +14222,21 @@
                     "slack": {
                       "type": "object",
                       "required": [
+                        "slack_channel_rm",
+                        "slack_channel_admin",
                         "slack_channel_tickets"
                       ],
                       "properties": {
+                        "slack_channel_rm": {
+                          "type": "string",
+                          "default": "resource_managers",
+                          "description": "Resource Managers channel. Unset or blank values use resource_managers. Membership and billing notices use slack_channel_admin instead."
+                        },
+                        "slack_channel_admin": {
+                          "type": "string",
+                          "default": "members_relations",
+                          "description": "Members Relations channel, stored under the legacy slack_channel_admin key. Unset or blank values use members_relations."
+                        },
                         "slack_channel_tickets": {
                           "type": "string",
                           "description": "Effective ticket announcement channel. Saved override (including blank) takes precedence over SLACK_TICKETS_CHANNEL; no default channel. Blank disables central publication."
@@ -14359,7 +14371,7 @@
                   },
                   "value": {
                     "type": "string",
-                    "description": "String setting value. For ticket_open_limit, use a positive integer such as \"10\"; zero, negatives, and fractions are rejected."
+                    "description": "String setting value. slack_channel_rm controls Resource Managers; slack_channel_admin controls Members Relations. Blank staff channel values use their defaults. For ticket_open_limit, use a positive integer such as \"10\"; zero, negatives, and fractions are rejected."
                   }
                 },
                 "oneOf": [

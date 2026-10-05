@@ -81,9 +81,15 @@ module Service
         end
       end
     end
-    def self.update_slack_message(channel, ts, message)
+    def self.update_slack_message(channel, ts, message, resolved_channel: false)
       return if Rails.env.test?
-      client.chat_update(channel: safe_channel(channel), ts: ts, text: message)
+      # A posted-message receipt already identifies the actual conversation,
+      # including Slack's ID for the redirected test_channel. Callers using
+      # that ID must also verify the receipt's destination mode before editing.
+      client.chat_update(channel: resolved_channel ? channel : safe_channel(channel), ts: ts, text: message)
+    end
+    def self.message_destination_mode
+      ENV['SLACK_ENV'] == 'production' ? 'production' : 'test'
     end
     def self.open_modal(trigger_id, view)
       return if Rails.env.test?
@@ -99,9 +105,9 @@ module Service
 
       client.pins_add(channel: safe_channel(channel), timestamp: ts)
     end
-    def self.delete_slack_message(channel, ts)
+    def self.delete_slack_message(channel, ts, resolved_channel: false)
       return if Rails.env.test?
-      client.chat_delete(channel: safe_channel(channel), ts: ts)
+      client.chat_delete(channel: resolved_channel ? channel : safe_channel(channel), ts: ts)
     end
 
     def self.schedule_slack_message(channel:, text:, post_at:)
@@ -479,7 +485,11 @@ module Service
     end
 
     def self.members_relations_channel
-      SystemConfig.get('slack_channel_rm') || 'members_relations'
+      SystemConfig.get('slack_channel_admin').presence || 'members_relations'
+    end
+
+    def self.resource_managers_channel
+      SystemConfig.get('slack_channel_rm').presence || 'resource_managers'
     end
 
     def self.logs_channel
@@ -487,7 +497,7 @@ module Service
     end
 
     def self.admin_channel
-      SystemConfig.get('slack_channel_admin') || 'general'
+      members_relations_channel
     end
 
     def self.new_members_channel

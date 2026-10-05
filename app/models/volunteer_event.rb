@@ -21,6 +21,9 @@ class VolunteerEvent
 
   # Audit trail for check-in removals.
   field :attendee_removals, type: Array, default: []
+  field :approval_notification, type: Hash, default: {}
+  field :approval_notification_history, type: Array, default: []
+  field :approver_notifications, type: Hash, default: {}
 
   VALID_STATUSES = %w[open closed].freeze
 
@@ -30,8 +33,10 @@ class VolunteerEvent
   validate :prerequisites_belong_to_shop
 
   before_create :assign_event_number
+  before_update :preserve_scheduled_review_receipts, if: :event_date_changed?
 
   index({ status: 1 })
+  index({ status: 1, event_date: 1 })
   index({ event_number: 1 }, { unique: true })
   index({ shop_id: 1 })
 
@@ -154,13 +159,18 @@ class VolunteerEvent
 
   # Close event and issue credits to all attendees.
   def close!(closed_by_member)
+    reload
     raise Error::Forbidden.new unless status == 'open'
 
-    update!(
+    closed_time = Time.current
+    notification = Service::VolunteerApprovalReminder.outcome_attributes(
+      self, outcome: "Event closed by #{closed_by_member.fullname}", closed_at: closed_time
+    ).fetch(:approval_notification, {})
+    Service::VolunteerApprovalReminder.transition_with_outcome!(self, {
       status:    'closed',
       closed_by_id: closed_by_member.id,
-      closed_at: Time.now
-    )
+      closed_at: closed_time
+    }, notification: notification)
 
     attendee_ids.each do |member_id|
       member = Member.find(member_id) rescue nil
@@ -179,9 +189,32 @@ class VolunteerEvent
     rescue => e
       Service::ErrorReporter.notify(e)
     end
+
+    Service::VolunteerApprovalReminder.sync_closed!(self)
   end
 
   private
+
+  # Keep Mongoid's normal validation and callbacks, but guard the schedule write
+  # against a concurrent receipt registration or event closure. Archiving after
+  # a separate date write could leave a future event's old reminder unrecoverable.
+  def update_document(options = {})
+    return super unless event_date_changed? && status == 'open'
+
+    previous_date = event_date_was
+    result = prepare_update(options) do
+      updates, conflicts = init_atomic_updates
+      raise 'Conflicting updates while rescheduling a volunteer event' unless conflicts.empty?
+
+      Service::VolunteerApprovalReminder.reschedule_event!(self, updates, previous_date: previous_date)
+    end
+    Service::VolunteerApprovalReminder.sync_closed!(self) if result
+    result
+  end
+
+  def preserve_scheduled_review_receipts
+    VolunteerApproverNotification.preserve_event_receipts!(self, event_date: event_date_was)
+  end
 
   def prerequisites_belong_to_shop
     ids = Array(prerequisite_tool_ids).map(&:to_s).reject(&:blank?).uniq
@@ -208,7 +241,8 @@ class VolunteerEvent
     slack_user = SlackUser.find_by(member_id: member.id)
     return unless slack_user
     ::Service::SlackConnector.send_slack_message(
-      "✅ You're checked in to *#{title}* (#{display_number}). Credits will be issued when the event closes.",
+      "✅ You're checked in to *#{title}* (#{display_number}). Credits will be issued when the event closes.\n\n" \
+      "#{VolunteerCreditMessaging::CLAIM_NOTICE}",
       slack_user.slack_id
     )
   rescue => e

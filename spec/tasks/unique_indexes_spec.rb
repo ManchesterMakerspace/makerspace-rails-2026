@@ -42,6 +42,35 @@ RSpec.describe 'data:ensure_unique_indexes' do
     expect(Rake::Task['fix_tickets:ensure_indexes'].actions).to be_empty
   end
 
+  it 'installs reminder age indexes on legacy volunteer collections and safely repeats' do
+    targets = [
+      [VolunteerTask, { 'status' => 1, 'completed_at' => 1 }, 'task_number'],
+      [VolunteerEvent, { 'status' => 1, 'event_date' => 1 }, 'event_number']
+    ]
+    targets.each do |model, _key, _number_field|
+      model.collection.drop
+      # Missing sequence numbers must not prevent installing nonunique lookups.
+      model.collection.insert_many([{ status: 'pending' }, { status: 'pending' }])
+    end
+
+    2.times do
+      task.reenable
+      expect { task.invoke }.not_to raise_error
+      targets.each do |model, key, number_field|
+        indexes = model.collection.indexes.to_a
+        matching = indexes.select { |index| index['key'] == key }
+        expect(matching.length).to eq(1)
+        expect(matching.first['unique']).not_to be(true)
+        expect(indexes.map { |index| index['key'] }).not_to include(number_field => 1)
+      end
+    end
+  ensure
+    targets.each do |model, _key, _number_field|
+      model.collection.delete_many({})
+      model.create_indexes
+    end
+  end
+
   [nil, :partial, :sparse].each do |existing_kind|
     it "creates full shortcode indexes from #{existing_kind || 'a clean collection'}" do
       Shortcode.collection.drop

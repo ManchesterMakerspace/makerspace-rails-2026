@@ -112,11 +112,114 @@ conditions are included where they are part of the index contract.
 | `tool_checkouts` | `ToolCheckout` | Granted or revoked member Safety Checkouts for tools. | `{ member_id: 1 }` (deployment task) |
 | `tools` | `Tool` | Tool catalog, shop ownership, Safety Checkout prerequisites, and reservation rules. | Unique case-insensitive `{ shop_id: 1, name: 1 }` with `en` strength-2 collation, partial when `name` is a string; `{ shop_id: 1, name: 1, _id: 1, disabled: 1 }` with the same collation |
 | `volunteer_credits` | `VolunteerCredit` | Volunteer credit awards, approvals, discounts, and reversals. | `{ member_id: 1 }` (also enforced as non-unique by the deployment task); `{ status: 1 }`; `{ created_at: 1 }`; unique `{ tool_checkout_id: 1 }`, partial when `tool_checkout_id` is an object ID |
-| `volunteer_events` | `VolunteerEvent` | Volunteer events, attendees, eligibility prerequisites, and open/closed state. | `{ status: 1 }`; unique `{ event_number: 1 }`; `{ shop_id: 1 }` |
-| `volunteer_tasks` | `VolunteerTask` | Volunteer bounties/tasks, claims, verification, recurrence, and credit values. | `{ status: 1 }`; `{ claimed_by_id: 1 }`; `{ parent_task_id: 1 }`; `{ shop_id: 1 }`; unique `{ task_number: 1 }` |
+| `volunteer_events` | `VolunteerEvent` | Volunteer events, attendees, eligibility prerequisites, and open/closed state. | `{ status: 1 }`; `{ status: 1, event_date: 1 }` (deployment task); unique `{ event_number: 1 }`; `{ shop_id: 1 }` |
+| `volunteer_tasks` | `VolunteerTask` | Volunteer bounties/tasks, claims, verification, recurrence, and credit values. | `{ status: 1 }`; `{ status: 1, completed_at: 1 }` (deployment task); `{ claimed_by_id: 1 }`; `{ parent_task_id: 1 }`; `{ shop_id: 1 }`; unique `{ task_number: 1 }` |
 
 `EarnedMembership::ReportRequirement` is not listed as a collection because it
 is embedded inside `earned_membership__report` documents.
+
+## Volunteer approval reminder receipts
+
+Existing `volunteer_tasks` and `volunteer_events` documents store private
+`approval_notification` hashes and `approval_notification_history` arrays;
+there is no separate claim or notification collection. The current state stores
+wait start (`started_at`), subject, and unique intent `generation_id` before
+posting, and adds Slack's message `ts`, returned channel, and `destination_mode` (`production` or `test`)
+after a successful acknowledgment. It also stores final `outcome` and `closed_at`.
+`finalized: false` marks a closed outcome awaiting final-delivery processing.
+Closure fields and this flag are persisted in the same MongoDB write as the
+lifecycle transition, using dotted updates that preserve concurrent Slack
+receipt fields. Sync finalizes closed snapshots without a posted message;
+late receipt registration reopens final delivery. Review clocks use native UTC
+timestamps. These fields are not included
+in task/event API serialization.
+
+The reminder job posts after more than five days, then updates the saved message
+in place. Final outcomes are persisted before their Slack update so future runs
+can retry delivery. A closed snapshot without a `ts` does not create a new final
+post. For a task that returns to available and is claimed again, the preceding
+intent or receipt moves to `approval_notification_history`; a late post receipt
+or final update does not overwrite the later claim's state. Conditional writes
+retain a competing post's first registered receipt and duplicate messages are
+removed best effort. Saved conversation IDs remain tied to their original
+production/test destination mode; mismatched-mode updates are refused and
+retained for the intended environment.
+
+Changing an open event's date archives its live channel reminder with a
+`Rescheduled from ... to ...` outcome, `rescheduled: true`, closure time, and
+`finalized: false`; the same guarded MongoDB write saves the new date and clears
+`approval_notification`. It appends history rather than replacing it, and
+retries if a concurrent post adds its Slack receipt before that write. A
+concurrent schedule/status change aborts the reschedule instead of reporting
+success. Normal model validation and callbacks still run. The old Slack message
+is updated immediately to retire the previous schedule's reminder; failed
+delivery remains in the existing history retry scan even when the new date is
+in the future or absent. If the new schedule becomes overdue, it creates a fresh
+intent, timestamp, and wait clock. Generation IDs distinguish separate intents
+even when the date is later changed back to its original value; legacy receipts
+without an ID remain supported. A late post attaches to its archived intent and
+reopens final delivery, leaving the current schedule's reminder untouched. Date
+changes without a channel intent do not create reminder history.
+
+A task approval initially stores `Credit award not confirmed` with the completed
+status, then replaces it with an approved outcome after credit creation succeeds
+or a `Credit award failed` outcome if creation raises. If that later metadata
+write fails, the initial warning remains available for final-message retry and
+manual verification. For a posted reminder, a
+finalized warning means its Slack update was delivered, not that the credit
+problem was resolved. Failed
+warning delivery uses the same retry fields; the reminder job does not retry
+creating credits. A successful lifecycle write always includes its initial
+closure metadata; confirmation of the credit outcome can still fail separately.
+
+The compound `{ status: 1, completed_at: 1 }` task index supports the
+pending-completion scan; `{ status: 1, event_date: 1 }` supports the dated open
+event scan. These indexed age scans run separately from final-delivery retries,
+whose private receipt predicates have no declared indexes.
+The [Procfile release command](../Procfile) runs
+`data:ensure_unique_indexes` to install both nonunique reminder indexes on existing
+databases. Deployments that bypass that release command must run
+`RAILS_ENV=production bundle exec rake data:ensure_unique_indexes` before enabling
+the updated reminder job. This step creates only these volunteer lookup indexes;
+it does not attempt to install the task/event number unique indexes or require a
+number backfill. Repeating it retains compatible indexes. Model declarations
+alone do not install indexes on existing collections.
+See [the job inventory](jobs-tasks-services.MD#volunteer-approval-reminders) for
+age thresholds, channel routing, and recovery behavior.
+
+The proposed shop RM notification rollout adds a separate private
+`approver_notifications` hash on those same documents. Task delivery paths are
+keyed by completion-submission timestamp and manager ID; event paths are keyed
+by scheduled date (`event_YYYYMMDD`) and manager ID. Existing date buckets remain
+as notification history. Legacy `event` buckets are atomically renamed to the
+existing date on the first scan or before a normal model update reschedules the
+event; a missing old date uses `event_undated`. Renames guard the stored date and
+refuse collisions with an existing date bucket, preserving both sets of receipts
+and blocking that date update on conflict. Deployment must drain or stop workers
+using the legacy path before renaming buckets; their in-flight acknowledgments
+otherwise target a removed path and can lead to a duplicate on lease recovery.
+Each recipient stores `state` (`sending`, `sent`,
+`failed`, or `obsolete`), a sending-lease token and `attempted_at`; successful
+posts additionally store `ts`, returned channel, `sent_at`, and
+`destination_mode`. Failed or stale sending attempts can be retried without
+repeating a recipient with a durable successful receipt. If the manager's Slack
+identity is unavailable or no longer belongs to them at the post-lease check,
+delivery remains `failed` without posting and can retry after relinking. An open
+event rescheduled to today or later, or made undated after leasing, also keeps a
+`failed` receipt until its scheduled/restored date has passed. Reversible
+manager eligibility changes (role/shop removal, suspension/revocation or becoming
+the task claimant) and a moved/cleared activity shop also leave `failed` receipts;
+they can retry once eligibility is restored for the same pending submission.
+Deleted managers, terminal tasks/events, and superseded task submissions become
+`obsolete`; successful `sent` receipts remain unchanged by eligibility changes.
+A different event date uses a new bucket and can notify the same manager again
+after that date passes; returning to a previous date reuses its saved receipts.
+An accepted post with
+failed receipt persistence keeps its sending lease and reports uncertainty;
+lease expiry after that failure or a worker crash can permit a duplicate DM.
+These fields remain excluded from
+task/event API serialization, require no new collection or index, and do not
+replace the five-day escalation receipt/history.
 
 ## Keeping indexes in sync
 
