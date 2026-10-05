@@ -4,7 +4,7 @@ require 'mongoid'
 require_relative '../spec_helper'
 
 RSpec.describe 'Volunteer credit follow-up error propagation' do
-  let(:member) { double(id: BSON::ObjectId.new) }
+  let(:member) { double(id: BSON::ObjectId.new, subscription_id: 'subscription') }
   let(:failure) { RuntimeError.new('Processing unavailable') }
 
   before do
@@ -47,7 +47,15 @@ RSpec.describe 'Volunteer credit follow-up error propagation' do
       end)
       active_memberships = double(where: double(exists?: false))
       allow(EarnedMembership).to receive(:active).and_return(active_memberships)
-      allow(VolunteerCredit).to receive(:discount_eligible_year_count_for).and_raise(failure)
+      allow(VolunteerCredit).to receive(:discount_eligible_year_count_for).and_return(8)
+      allow(VolunteerCredit).to receive(:discounts_applied_this_year_for).and_return(0)
+      allow(VolunteerCredit).to receive(:credits_per_discount).and_return(8)
+      allow(VolunteerCredit).to receive(:max_discounts_per_year).and_return(2)
+      allow(VolunteerCredit).to receive(:collection).and_return(double(find_one_and_update: { 'credit_value' => 8 }))
+      stub_const('BraintreeService::VolunteerDiscount', Class.new do
+        def self.apply(*_arguments); end
+      end)
+      allow(BraintreeService::VolunteerDiscount).to receive(:apply).and_raise(failure)
       allow(@credit).to receive(:notify_discount_error)
     end
 
@@ -62,6 +70,29 @@ RSpec.describe 'Volunteer credit follow-up error propagation' do
         .to raise_error { |error| expect(error).to equal(failure) }
       expect(Service::ErrorReporter).to have_received(:notify).with(failure)
       expect(@credit).to have_received(:notify_discount_error).with(member, failure)
+    end
+  end
+
+  context 'discount notices' do
+    before do
+      stub_const('Service::EmailTemplate', Module.new do
+        def self.common_variables(_member); end
+      end)
+      allow(Service::EmailTemplate).to receive(:common_variables).and_raise(failure)
+      stub_const('SlackUser', Class.new do
+        def self.find_by(**_attributes); end
+      end)
+      allow(SlackUser).to receive(:find_by).and_return(nil)
+      allow(@credit).to receive(:notify_discount_error)
+    end
+
+    { notify_no_subscription: [], notify_discount_applied: [{ amount: 10, cycles_added: 1 }] }.each do |method, arguments|
+      it "keeps #{method}'s default handling and propagates the error when requested" do
+        expect { @credit.send(method, member, *arguments) }.not_to raise_error
+        expect { @credit.send(method, member, *arguments, raise_errors: true) }
+          .to raise_error { |error| expect(error).to equal(failure) }
+        expect(Service::ErrorReporter).to have_received(:notify).with(failure).twice
+      end
     end
   end
 end
