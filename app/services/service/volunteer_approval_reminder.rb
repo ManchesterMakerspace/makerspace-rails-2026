@@ -110,7 +110,9 @@ module Service
         record.reload
         receipts = [record.approval_notification.to_h] + Array(record.approval_notification_history)
         if receipts.any? { |saved| saved['ts'].present? && (!saved['finalized'] || saved['closed_at'].blank?) }
-          raise 'Cannot delete task until its Slack reminders have been finalized; retry deletion after delivery recovers'
+          raise ::Error::ServiceUnavailable.new(
+            'Cannot delete task until its Slack reminders have been finalized; retry deletion after delivery recovers'
+          )
         end
       end
 

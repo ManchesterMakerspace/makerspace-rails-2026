@@ -178,7 +178,9 @@ award notification, or discount-processing failures with the affected member IDs
 and processing stages. Deleted or inactive members are skipped. Other attendees
 still receive their awards. Event closure requests error propagation from the
 credit notification and discount helpers; other callers retain their existing
-rescued-error behavior. The job retries warning delivery rather than creating
+rescued-error behavior. In propagation mode, event closure owns the single
+error report and discount error notice rather than repeating them at each helper
+layer. The job retries warning delivery rather than creating
 credits again. Failed outcome persistence leaves the unconfirmed warning in place.
 
 Unlinked task destruction runs a model callback before removing its receipts.
@@ -186,6 +188,9 @@ It withdraws pending review with cancelled status and a deletion-requested
 outcome in one write, closes open historical reminders, and requires successful
 final delivery for every known posted message before destruction proceeds.
 Slack failures retain the cancelled task and retryable receipt for the daily job;
+the authenticated task DELETE endpoint returns structured HTTP 503
+(`error: service_unavailable`) rather than an unhandled exception. Successful
+deletion still returns 204; deleting a linked bounty remains forbidden with 422.
 retry deletion after delivery recovers. Already closed review outcomes remain
 unchanged. A reminder worker whose post or update outlives task deletion removes
 that message best effort and reports cleanup failures. Low-level `delete` and

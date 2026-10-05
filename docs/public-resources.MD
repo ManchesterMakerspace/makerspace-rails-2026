@@ -61,3 +61,12 @@ Background reviewer DMs build their absolute origin from `APP_DOMAIN` and requir
 deploying the matching Rails notification service and React selection handling.
 See [the volunteer handbook](../../makerspace-react-2026/docs/VolunteerCredit.MD#notification-matrix)
 and [the job inventory](jobs-tasks-services.MD#volunteer-approval-reminders).
+
+The authenticated `DELETE /api/admin/volunteer_tasks/:id` requires an admin or
+board member. It returns 204 after finalizing outstanding Slack reminders, 422
+for linked ticket bounties, and 503 (`error: service_unavailable`) when final
+reminder delivery cannot complete. A 503 preserves the cancelled task and
+retryable receipt; retry deletion after delivery recovers. See the executable
+[task response contracts](../spec/api/volunteer_task_responses_spec.rb) and
+[generated API specification](../swagger/v1/swagger.json). No anonymous route is
+added by this workflow.

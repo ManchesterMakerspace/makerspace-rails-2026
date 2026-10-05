@@ -5,6 +5,7 @@ require 'active_support/testing/time_helpers'
 require 'mongoid'
 require_relative '../spec_helper'
 require_relative '../../app/services/service/volunteer_approval_reminder'
+require_relative '../../lib/error/service_unavailable'
 
 RSpec.describe 'Volunteer lifecycle and status notification integration' do
   include ActiveSupport::Testing::TimeHelpers
@@ -606,7 +607,7 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
 
     { notify_member_credit_awarded: 'award notification', check_discount_threshold!: 'membership discount processing' }.each do |method, stage|
       it "records a warning when #{stage} fails after the credit was created" do
-        credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil)
+        credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil, notify_discount_error: nil)
         allow(credit).to receive(method).and_raise('Follow-up unavailable')
         allow(VolunteerCredit).to receive(:create!).and_return(credit)
 
@@ -619,6 +620,12 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
           'CORIGINAL', '123.456', a_string_including('⚠️', stage, '6 days'), resolved_channel: true
         )
         expect(VolunteerCredit).to have_received(:create!).once
+        expect(Service::ErrorReporter).to have_received(:notify).with(have_attributes(message: 'Follow-up unavailable')).once
+        if method == :check_discount_threshold!
+          expect(credit).to have_received(:notify_discount_error).with(anything, have_attributes(message: 'Follow-up unavailable')).once
+        else
+          expect(credit).not_to have_received(:notify_discount_error)
+        end
       end
     end
 
@@ -655,7 +662,11 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
       loaded = persisted_model_with_real_callbacks
       allow(Service::SlackConnector).to receive(:update_slack_message).and_raise('Slack unavailable')
 
-      expect { loaded.destroy }.to raise_error(/Cannot delete task until its Slack reminders/)
+      expect { loaded.destroy }.to raise_error(Error::ServiceUnavailable) do |error|
+        expect(error.error).to eq(503)
+        expect(error.status).to eq(:service_unavailable)
+        expect(error.message).to include('Cannot delete task until its Slack reminders')
+      end
 
       expect(@deletion_snapshot).to be_nil
       expect(@persisted['status']).to eq('cancelled')

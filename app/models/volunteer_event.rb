@@ -202,6 +202,7 @@ class VolunteerEvent
     rescue => e
       failures << "#{member_id} (#{stage})"
       Service::ErrorReporter.notify(e)
+      credit.send(:notify_discount_error, member, e) if stage == 'membership discount processing'
     end
 
     if failures.any? && notification.present?

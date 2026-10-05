@@ -278,8 +278,8 @@ class VolunteerCredit
 
     ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
   rescue => e
-    Service::ErrorReporter.notify(e)
     raise if raise_errors
+    Service::ErrorReporter.notify(e)
   end
 
   # DM the member when one of their credits is reversed
@@ -393,9 +393,9 @@ class VolunteerCredit
       notify_discount_applied(m, result, raise_errors: raise_errors)
     end
   rescue => e
+    raise if raise_errors
     Service::ErrorReporter.notify(e)
     notify_discount_error(m, e)
-    raise if raise_errors
   end
 
   def notify_discount_applied(m, discount_info, raise_errors: false)
@@ -432,9 +432,9 @@ class VolunteerCredit
     )
     ::Service::SlackConnector.send_slack_message(admin_message, ::Service::SlackConnector.treasurer_channel)
   rescue => e
+    raise if raise_errors
     Service::ErrorReporter.notify(e)
     notify_discount_error(m, e) rescue nil
-    raise if raise_errors
   end
 
   def notify_no_subscription(m, raise_errors: false)
@@ -446,8 +446,8 @@ class VolunteerCredit
     )
     ::Service::SlackConnector.send_slack_message(message, ::Service::SlackConnector.logs_channel)
   rescue => e
-    Service::ErrorReporter.notify(e)
     raise if raise_errors
+    Service::ErrorReporter.notify(e)
   end
 
   def notify_discount_error(m, error)

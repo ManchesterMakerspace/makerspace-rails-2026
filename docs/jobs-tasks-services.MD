@@ -546,7 +546,11 @@ stage. Other attendees are still processed; deleted and inactive members are
 skipped as before. Verify saved credits and follow-up processing before correcting
 an award, since a credit can have been saved before the failure. Event closure
 opts into error propagation from the credit notification and discount helpers;
-other callers retain their existing rescued-error behavior. A failed outcome
+those helpers only propagate the original error in this mode. Event closure
+owns its single error report and, for discount-processing failures, a single
+logs-channel discount error notice. Other callers retain their existing
+rescued-error behavior. Failure to deliver the error notice itself is reported
+as a separate notification failure. A failed outcome
 write leaves the original unconfirmed warning durable. A delivered warning can
 be `finalized: true`: this confirms message delivery, not correction of the credit
 problem. The job retries warning delivery, not attendee credit operations. No final message is
@@ -583,8 +587,10 @@ generic edit does not issue credits, and the final notice states that distinctio
 Before destroying an unlinked task, its model callback withdraws pending review
 (saving cancelled status and a deletion-requested outcome together), closes any
 outstanding historical reminders, and synchronizes final Slack text. If a known
-posted message cannot be finalized, destruction raises and preserves the record
-and retry receipts; the daily job can finish delivery, then deletion can be
+posted message cannot be finalized, destruction raises `Error::ServiceUnavailable`
+and `DELETE /api/admin/volunteer_tasks/:id` returns HTTP 503 with the usual
+`status`, `error: service_unavailable`, and retry-guidance `message` JSON fields.
+It preserves the cancelled record and retry receipts; the daily job can finish delivery, then deletion can be
 retried. Existing approved/denied outcomes are preserved. A post or age update
 already in flight when the task disappears removes its message best effort;
 cleanup failures are reported. Low-level `delete`/`delete_all` bypass model
