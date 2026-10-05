@@ -1,7 +1,7 @@
 # Tool group implementation validation
 
-Validated on Windows on 2026-09-27, using the supplied `MLAB_URI` test replica
-set (`dev_test_rspec`). The replica set advertises `mongo:27017`; a temporary,
+Validated using the supplied `MLAB_URI` test replica set (`dev_test_rspec`). 
+The replica set advertises `mongo:27017`; a temporary,
 process-local Ruby socket alias resolved that hostname to the supplied host.
 No application database configuration or system DNS was changed.
 
