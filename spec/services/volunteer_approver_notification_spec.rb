@@ -11,6 +11,9 @@ RSpec.describe VolunteerApproverNotification do
   end
 
   before do
+    # Race examples override only reviewer enumeration; fixture initialization
+    # and reload callbacks still need Member's default-scope queries.
+    allow(Member).to receive(:where).and_call_original
     allow(Service::MemberProvisioning).to receive(:invite_slack)
     allow(VolunteerSlackCanvasSyncJob).to receive(:perform_later)
     allow(ShortUrl).to receive(:base_url).and_return('https://portal.example.org')
@@ -132,6 +135,7 @@ RSpec.describe VolunteerApproverNotification do
 
   it 'marks a deleted manager receipt obsolete and continues notifying remaining managers' do
     assigned = reviewer(slack_id: 'UDELETED')
+    assigned_id = assigned.id
     remaining = reviewer(slack_id: 'UREMAINING')
     allow(Member).to receive(:where).with(role: 'resource_manager', resource_manager_shop_ids: shop.id.to_s)
       .and_return([assigned, remaining])
@@ -139,7 +143,7 @@ RSpec.describe VolunteerApproverNotification do
     reload_count = 0
     allow(claim).to receive(:reload).and_wrap_original do |original, *arguments|
       reload_count += 1
-      Member.collection.find('_id' => assigned.id).delete_one if reload_count == 2
+      Member.collection.find('_id' => assigned_id).delete_one if reload_count == 2
       original.call(*arguments)
     end
 
@@ -148,7 +152,7 @@ RSpec.describe VolunteerApproverNotification do
     expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'UDELETED')
     expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(anything, 'UREMAINING')
     receipts = task_receipts(claim)
-    expect(receipts.fetch(assigned.id.to_s)['state']).to eq('obsolete')
+    expect(receipts.fetch(assigned_id.to_s)['state']).to eq('obsolete')
     expect(receipts.fetch(remaining.id.to_s)['state']).to eq('sent')
     expect(Service::ErrorReporter).not_to have_received(:notify)
   end
