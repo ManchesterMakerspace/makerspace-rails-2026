@@ -25,7 +25,7 @@ gem 'rotp',    '~> 6.0'
 gem 'rqrcode', '~> 3.2'
 gem 'bcrypt', '~> 3.1'
 # MongoDB
-gem 'mongoid', '~> 8.0'
+gem 'mongoid', '~> 8.1'
 gem 'mongoid_search', '~> 0.4'
 # Payments
 gem 'paypal-sdk-rest', '~> 1.7'
@@ -38,7 +38,7 @@ gem 'slack-ruby-client', '~> 2.0'
 # from an unrelated dependabot update and broke the entire test suite.
 gem 'json', '~> 2.21'
 # Google Drive
-gem 'multi_json', '~> 1.15'
+gem 'multi_json', '~> 1.21'
 gem 'faraday', '~> 2.14'
 gem 'google-apis-drive_v3'
 gem 'google-apis-sheets_v4'
@@ -63,7 +63,7 @@ group :test do
   gem 'parallel_tests'
 end
 group :development do
-  gem 'listen', '~> 3.8'
+  gem 'listen', '~> 3.10'
 end
 group :development, :test do
   gem 'debug'
