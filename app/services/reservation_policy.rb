@@ -47,7 +47,7 @@ class ReservationPolicy
         "#{horizon_resources.map(&:name).join(', ')} limit booking to #{final_start_date.strftime('%B %-d')}.")
     end
 
-    def prerequisite_ids(shop:, reservation_scope:, tools:, member: nil)
+    def prerequisite_ids(shop:, reservation_scope:, tools:, member: nil, additional_prerequisite_ids: [])
       selected_tools = Array(tools)
       ids = if reservation_scope == "shop"
         Array(shop.reservation_prerequisite_tool_ids).map(&:to_s)
@@ -61,15 +61,16 @@ class ReservationPolicy
         end
         ids -= selected_tools.select(&:allow_pending).map { |tool| tool.id.to_s } - explicit_ids
       end
-      ids
+      ids | Array(additional_prerequisite_ids).map(&:to_s)
     end
 
-    def prerequisite_names(shop:, reservation_scope:, tools:, member: nil, read_context: nil)
+    def prerequisite_names(shop:, reservation_scope:, tools:, member: nil, read_context: nil, additional_prerequisite_ids: [])
       ids = prerequisite_ids(
         shop: shop,
         reservation_scope: reservation_scope,
         tools: tools,
-        member: member
+        member: member,
+        additional_prerequisite_ids: additional_prerequisite_ids
       )
       read_context ||= ReservationReadContext.new(resources: tools)
       names_by_id = read_context.tool_names(ids)

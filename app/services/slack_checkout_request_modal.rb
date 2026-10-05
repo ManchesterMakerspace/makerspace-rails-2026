@@ -3,7 +3,7 @@ class SlackCheckoutRequestModal
 
   class << self
     def build(shop, member, response_url: nil)
-      tools = eligible_tools(shop, member)
+      tools = eligible_tools(shop, member) + CheckoutInteractionQuery.new(member: member, shop: shop).requestable_groups
       raise ::Error::UnprocessableEntity.new("This shop has no tools you can request") if tools.empty?
       raise ::Error::UnprocessableEntity.new("This shop has more than 100 eligible tools; use the Member Portal") if tools.length > MAX_OPTIONS
 
@@ -19,7 +19,7 @@ class SlackCheckoutRequestModal
             type: "input", block_id: "tool", label: plain("Tool"),
             element: {
               type: "static_select", action_id: "tool", placeholder: plain("Select a tool"),
-              options: tools.map { |tool| { text: plain(tool.name.first(75)), value: tool.id.to_s } }
+              options: tools.map { |tool| option(tool) }
             }
           },
           {
@@ -45,7 +45,8 @@ class SlackCheckoutRequestModal
     end
 
     def option(tool)
-      { text: plain(tool.name.to_s.first(75)), value: tool.id.to_s }
+      group = tool.is_a?(ToolGroup)
+      { text: plain("#{group ? ':linked_paperclips: ' : ''}#{tool.name}".first(75)), value: "#{group ? 'group:' : ''}#{tool.id}" }
     end
   end
 end

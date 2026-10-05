@@ -18,9 +18,9 @@ describe "Slack commands API", type: :request do
           command: { type: :string, example: "/checkout" },
           text: {
             type: :string,
-            description: "Empty text opens the stateful checkout menu (my checkouts, request a checkout, volunteer to do checkouts, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Legacy text: MEMBER TOOL, request [TOOL], active|list [all], volunteer, or help. Active lists share the modal query and detail fields; final results replace the initial ephemeral response asynchronously, with DM fallback."
+            description: "Empty text opens the stateful checkout menu (my checkouts, request a checkout, volunteer to do checkouts, open requests). Shop channels lock the shop; elsewhere the modal offers enabled shops. Linked pending members may enter; expired, revoked, suspended and inactive members receive specific ephemeral errors. Textual MEMBER GROUP opens a signed group review synchronously using trigger_id; unknown target identities should use their linked Member Portal email. Legacy text: MEMBER TOOL, request [TOOL], active|list [all], volunteer, or help. Active lists share the modal query and detail fields; final results replace the initial ephemeral response asynchronously, with DM fallback."
           },
-          trigger_id: { type: :string, example: "T12345678", description: "Required to open the checkout modal (empty text, volunteer, or legacy request without a tool)" },
+          trigger_id: { type: :string, example: "T12345678", description: "Required to open the checkout modal (empty text, MEMBER GROUP, volunteer, or legacy request without a tool)" },
           channel_id: { type: :string },
           channel_name: { type: :string },
           user_id: { type: :string },

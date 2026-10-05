@@ -11,6 +11,14 @@ class ReservationCatalogController < ApplicationController
     ).order_by(name: :asc)
     tools = tools.where(allow_pending: true) if current_member.status == 'pending'
     shop_ids = tools.pluck(:shop_id)
+    groups = []
+    if params[:include_groups] == 'true'
+      groups = ToolGroup.where(archived: false, reservable: true, :shop_id.in => enabled_shops.pluck(:id))
+        .order_by(name: :asc).to_a.select do |group|
+          group.included_tools.none? { |tool| tool.disabled? || tool.out_of_service? || (current_member.status == 'pending' && !tool.allow_pending) }
+        end
+      shop_ids |= groups.map(&:shop_id)
+    end
     shops = if current_member.status == 'pending'
       enabled_shops.where(:id.in => shop_ids)
     else
@@ -21,6 +29,9 @@ class ReservationCatalogController < ApplicationController
     end.order_by(name: :asc)
 
     render json: {
+      **(params[:include_groups] == 'true' ? { toolGroups: ActiveModelSerializers::SerializableResource.new(
+        groups, each_serializer: ToolGroupSerializer, adapter: :attributes, scope: current_member
+      ) } : {}),
       shops: ActiveModelSerializers::SerializableResource.new(
         shops, each_serializer: ShopSerializer, adapter: :attributes, scope: current_member
       ),

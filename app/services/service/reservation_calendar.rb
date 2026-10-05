@@ -211,7 +211,8 @@ module Service
 
       def resource_names(reservation)
         return reservation.shop.name if reservation.reservation_scope == "shop"
-        "#{reservation.tools.map(&:name).join(', ')} in #{reservation.shop.name}"
+        tools = "#{reservation.tools.map(&:name).join(', ')} in #{reservation.shop.name}"
+        reservation.group_snapshots.present? ? "#{reservation.group_label} — #{tools}" : tools
       end
     end
   end

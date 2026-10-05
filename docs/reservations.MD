@@ -1,5 +1,22 @@
 # Shop and Tool Reservations
 
+## Group selection
+
+Reservation inputs accept `tool_group_ids` alongside `tool_ids`. The service
+expands groups and deduplicates all physical tools before policy, conflict,
+capacity and fee evaluation. A reservable group permits individually
+non-reservable children; hidden/out-of-service restrictions and all other child
+policies still apply. Group prerequisites supplement child prerequisites.
+Groups have no price or Google Calendar resource of their own.
+
+Saved `group_snapshots` preserve the selected name, revision, membership and
+prerequisites. Updates omitting both resource arrays retain those snapshots.
+Legacy clients resending unchanged physical IDs without group IDs also retain
+them. Calendar descriptions, Slack summaries and portal history use saved names.
+Explicit resource selection performs a fresh expansion and fee preview; the
+portal clears fee acceptance when the selection changes. The reservation catalog
+adds `toolGroups` only for `include_groups=true`, preserving older native clients.
+
 ## Overview
 
 The reservation feature allows eligible members to reserve an entire shop or one
@@ -906,3 +923,9 @@ The published `ReservationPreview` contract includes required `feeLines`, `feeTo
 For deleted tools, payment notifications resolve each selected tool by its current name, then its saved fee-snapshot name, then "Deleted tool". Historical fee lines for tools no longer selected are not included.
 
 The shared published resource configuration includes minimumAdvanceNoticeHours (default 2, minimum 0), prohibitSameDayReservations, reservationFullDay, and durationFees with invoiceOptionId, minimumHours, maximumHours, and fullDay. Reservation responses publish fullDay and the optional owner/manager billing fields invoice, feeSnapshot, and notifiedAt. Invoice and notification IDs may be null; notifiedAt is a Slack message timestamp string, not a date-time.
+
+Slack group reservation previews include group prerequisites alongside physical
+resource prerequisites. Missing checkouts display an error and Review selection;
+prerequisite tools are not added to reserved resources or their duration/fee rules.
+Board-member overrides match server validation. Switching to whole-shop scope
+uses the shop's prerequisites instead of stale group selections.

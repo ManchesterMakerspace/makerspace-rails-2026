@@ -102,7 +102,7 @@ module Service
         else
           "#{reservation.tools.map(&:name).join(', ')} in #{reservation.shop.name}"
         end
-
+        resources = "#{reservation.group_label} — #{resources}" if reservation.group_snapshots.present?
         Service::EmailTemplate.render(
           :reservation_reminder,
           Service::EmailTemplate.common_variables(reservation.member).merge(

@@ -53,6 +53,7 @@ class ReservationService
     def create!(member:, attributes:, source: "portal", actor: member)
       normalized = normalize(attributes)
       with_shop_locks([normalized[:shop_id], "member-#{member.id}"]) do
+        normalized = normalize(attributes)
         evaluation = evaluate(member: member, attributes: normalized, actor: actor)
         raise_for_evaluation!(
           evaluation,
@@ -97,6 +98,7 @@ class ReservationService
       normalized = normalize(attributes, reservation)
       with_shop_locks([reservation.shop_id, normalized[:shop_id], "member-#{reservation.member_id}"]) do
         reservation.reload
+        normalized = normalize(attributes, reservation)
         previous_canvas_targets = slack_canvas_targets(reservation)
         unless reservation.blocking? && reservation.end_at > Time.current
           raise ::Error::UnprocessableEntity.new("Only future active reservations can be changed")
@@ -218,6 +220,8 @@ class ReservationService
 
     def normalize(attributes, reservation = nil)
       source = attributes.to_h.symbolize_keys
+      source[:shop_id] ||= reservation&.shop_id
+      source[:reservation_scope] ||= reservation&.reservation_scope
       {
         full_day: source.key?(:full_day) ? ActiveModel::Type::Boolean.new.cast(source[:full_day]) : !!reservation&.full_day,
         title: source[:title].presence || reservation&.title,
@@ -226,7 +230,7 @@ class ReservationService
         tool_ids: source.key?(:tool_ids) ? Array(source[:tool_ids]).map(&:to_s).uniq : Array(reservation&.tool_ids).map(&:to_s),
         start_at: parse_time(source[:start_at].presence || reservation&.start_at),
         end_at: parse_time(source[:end_at].presence || reservation&.end_at)
-      }
+      }.merge(ReservationGroupExpansion.call(source, reservation))
     end
 
     def parse_time(value)
@@ -327,7 +331,7 @@ class ReservationService
       end
       errors << "The selected shop is not reservable" if attributes[:reservation_scope] == "shop" && (!shop.reservable || shop.disabled?)
       if attributes[:reservation_scope] == "tools" &&
-          (shop.disabled? || tools.any? { |tool| !tool.reservable || tool.disabled? })
+          (shop.disabled? || tools.any? { |tool| (!tool.reservable && !Array(attributes[:group_snapshots]).flat_map { |group| group['tool_ids'] }.include?(tool.id.to_s)) || tool.disabled? })
         errors << "One or more selected tools are not reservable"
       end
 
@@ -381,6 +385,7 @@ class ReservationService
         tools: tools,
         member: member
       )
+      prerequisite_ids |= Array(attributes[:group_snapshots]).flat_map { |group| group['prerequisite_ids'] }.map(&:to_s)
       unless board_override
         missing_ids = prerequisite_ids.reject { |id| read_context.checked_out_tool_ids.include?(id) }
         names = read_context.tool_names(missing_ids)
@@ -697,6 +702,7 @@ class ReservationService
 
     def material_edit?(reservation, attributes)
       reservation.shop_id.to_s != attributes[:shop_id].to_s ||
+        Array(reservation.group_snapshots) != Array(attributes[:group_snapshots]) ||
         reservation.reservation_scope != attributes[:reservation_scope] ||
         Array(reservation.tool_ids).map(&:to_s).sort != Array(attributes[:tool_ids]).map(&:to_s).sort ||
         reservation.start_at != attributes[:start_at] ||
@@ -752,7 +758,7 @@ class ReservationService
 
         with_shop_lock(ids[index], ttl: ttl) { acquire.call(index + 1) }
       end
-      acquire.call(0)
+      CatalogMutationLock.with(ids.reject { |id| id.start_with?('member-') }) { acquire.call(0) }
     end
 
     def enqueue_external_syncs(reservation, previous_canvas_targets: [])

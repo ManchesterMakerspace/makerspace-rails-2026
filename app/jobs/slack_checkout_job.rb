@@ -42,23 +42,8 @@ class SlackCheckoutJob < ApplicationJob
     token.start_with?('<@')
   end
 
-  def slack_username?(token)
-    token.start_with?('@') && !token.start_with?('<@')
-  end
-
   def find_member_from_token(token)
-    if slack_mention?(token)
-      slack_id = token.match(/<@([^|>]+)/i)&.captures&.first
-      return nil unless slack_id
-      slack_user = SlackUser.find_by(slack_id: slack_id)
-      slack_user ? Member.find(slack_user.member_id) : nil
-    elsif slack_username?(token)
-      username   = token.sub(/\A@/, '')
-      slack_user = SlackUser.where(name: /\A#{Regexp.escape(username)}\z/i).first
-      slack_user ? Member.find(slack_user.member_id) : nil
-    else
-      Member.find_by(email: token.downcase)
-    end
+    SlackCheckoutMember.resolve(token)
   end
 
   def find_invoker(slack_id)

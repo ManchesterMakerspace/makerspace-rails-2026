@@ -18,6 +18,7 @@ RSpec.describe 'Tools API', type: :request do
 
   before do
     allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
     allow(Service::SlackChannelAssignment).to receive(:resolve!) do |channels|
       channels.to_h.transform_keys(&:to_s).transform_values do |name|
         { id: "C#{name.hash.abs.to_s.first(8).ljust(8, '0')}", name: name }
@@ -570,6 +571,13 @@ RSpec.describe 'Tools API', type: :request do
         prerequisite_ids: [visible_tool.id.to_s],
         reservation_prerequisite_tool_ids: [visible_tool.id.to_s]
       )
+      groups = [false, true].map do |archived|
+        ToolGroup.create!(shop: shop, name: "Shop kit #{archived}", archived: archived,
+          included_tool_ids: [internal_tool.id.to_s], prerequisite_ids: [visible_tool.id.to_s])
+      end
+      ToolCheckout.create!(member: admin, tool: internal_tool, defer_users_channel_invitation: true, defer_group_callbacks: true)
+      checkout_requests = groups.map { |group| ToolCheckoutRequest.create!(member: admin, tool_group: group) }
+      volunteer_requests = groups.map { |group| CheckoutApproverRequest.create!(member: admin, tool_group: group) }
       shop.set(reservation_prerequisite_tool_ids: [visible_tool.id.to_s])
 
       surviving_shop = Shop.create!(name: 'Surviving shop')
@@ -595,7 +603,10 @@ RSpec.describe 'Tools API', type: :request do
         'External volunteer task', 'External volunteer event'
       )
       expect(response.body).not_to include('Internal dependent')
+      expect(ToolGroup.where(:id.in => groups.map(&:id)).count).to eq(2)
       expect(Shop.where(id: shop.id)).to exist
+      expect(checkout_requests.map { |request| request.reload.status }).to eq(%w[open open])
+      expect(volunteer_requests.map { |request| request.reload.status }).to eq(%w[open open])
 
       checkout_tool.set(prerequisite_ids: [])
       reservation_tool.set(reservation_prerequisite_tool_ids: [])
@@ -608,6 +619,9 @@ RSpec.describe 'Tools API', type: :request do
       expect(response).to have_http_status(:no_content)
       expect(Shop.where(id: shop.id)).not_to exist
       expect(Tool.where(id: [visible_tool.id, internal_tool.id])).not_to exist
+      expect(ToolGroup.where(:id.in => groups.map(&:id))).not_to exist
+      expect(checkout_requests.map { |request| request.reload.status }).to eq(%w[deleted deleted])
+      expect(volunteer_requests.map { |request| request.reload.status }).to eq(%w[revoked revoked])
     end
   end
 end

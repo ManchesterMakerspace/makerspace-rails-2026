@@ -53,6 +53,8 @@ class Tool
   validates :max_reservation_duration_hours, numericality: { greater_than: 0 }
   validate :reservation_duration_uses_half_hours
   validate :reservation_prerequisites_belong_to_shop
+  validate :group_catalog_constraints
+  before_destroy :prevent_group_reference_deletion
   validate :location_belongs_to_same_shop
 
   index({ shop_id: 1, name: 1 }, {
@@ -128,6 +130,19 @@ class Tool
 
   private
 
+  def group_catalog_constraints
+    if ToolGroup.where(shop_id: shop_id, name: name.to_s.strip).collation(locale: 'en', strength: 2).exists?
+      errors.add(:name, 'already exists in this shop')
+    end
+    if persisted? && shop_id_changed? && ToolGroup.referencing(id).exists?
+      errors.add(:shop, 'cannot change while this tool is referenced by a group')
+    end
+  end
+
+  def prevent_group_reference_deletion
+    raise Error::Conflict.new('Remove this tool from its groups before deleting it') if ToolGroup.referencing(id).exists?
+  end
+
   CHECKOUT_CANVAS_FIELDS = %w[
     shop_id name description wiki_url prerequisite_ids disabled out_of_service
   ].freeze
@@ -160,6 +175,7 @@ class Tool
   end
 
   def normalize_external_fields
+    self.name = name.to_s.strip
     self.requestor_annotation = requestor_annotation.to_s.strip.presence
     self.wiki_url = wiki_url.to_s.strip.presence
     self.gdrive_id = gdrive_id.to_s.strip.presence

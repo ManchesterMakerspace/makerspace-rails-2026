@@ -330,7 +330,7 @@ RSpec.describe SlackReservationModal do
     tools.concat(101.times.map { |index| resource_double(Tool, name: "Tool #{index}") })
 
     expect { described_class.build(shop, member) }
-      .to raise_error(Error::UnprocessableEntity, "This shop has more than 100 reservable tools; use the portal")
+        .to raise_error(Error::UnprocessableEntity, "This shop has more than 100 reservable resources; use the portal")
   end
 end
 
@@ -356,5 +356,29 @@ RSpec.describe 'Slack reservation picker availability' do
     expect { SlackReservationModal.build(shop, member) }.to raise_error(Error::UnprocessableEntity, /no reservable resources/)
     shop.set(reservable: true)
     expect(SlackReservationModal.build(shop, member)[:blocks].pluck(:block_id)).not_to include('tools')
+  end
+end
+
+RSpec.describe 'Slack group reservation prerequisites' do
+  it 'warns about group requirements without reserving them or applying their duration limits' do
+    shop = create(:shop, reservable: true)
+    member = create(:member, :current)
+    included = create(:tool, shop: shop, reservable: true, open: true, max_reservation_duration_hours: 4)
+    prerequisite = create(:tool, shop: shop, name: 'Group orientation', max_reservation_duration_hours: 0.5)
+    group = ToolGroup.create!(shop: shop, name: 'Starter kit', reservable: true,
+      included_tool_ids: [included.id.to_s], prerequisite_ids: [prerequisite.id.to_s])
+    build = -> { SlackReservationModal.build(shop, member, reservation_scope: 'tools', tool_ids: ["group:#{group.id}"]) }
+    view = build.call
+    expect(view[:blocks].find { |block| block[:block_id] == 'reservation_policy' }[:text][:text]).to include('Missing required checkout(s): Group orientation')
+    expect(view[:blocks].find { |block| block[:block_id] == 'reservation_policy_details' }[:text][:text]).to include('Required active checkout(s): Group orientation')
+    expect(view[:submit][:text]).to eq('Review selection')
+    duration = view[:blocks].find { |block| block[:block_id] == 'duration' }
+    expect(duration[:element][:options].last[:value]).to eq('hours:4.0')
+
+    ToolCheckout.create!(member: member, tool: prerequisite, defer_users_channel_invitation: true)
+    expect(build.call[:submit][:text]).to eq('Reserve')
+    # Switching to the whole shop discards the previous group selection's rules.
+    ToolCheckout.where(member_id: member.id).delete_all
+    expect(SlackReservationModal.build(shop, member, reservation_scope: 'shop', tool_ids: ["group:#{group.id}"])[:submit][:text]).to eq('Reserve')
   end
 end

@@ -1,7 +1,8 @@
 # MongoDB member permissions
 
-This page is the canonical reference for the member-permission system. The
-system has two similarly shaped Mongoid collections with different roles:
+This page is the canonical reference for named member permissions and Safety
+Checkout approver assignments. The named-permission system has two similarly
+shaped Mongoid collections with different roles:
 
 | Model | MongoDB collection | Schema and role |
 | --- | --- | --- |
@@ -106,6 +107,65 @@ default value of `true` never supersedes a member's later per-member value.
 Merely inserting an arbitrary `name` passes current model validation, but does
 not make the permission functional. Some controller, service, or task must
 consume that name.
+
+## Checkout approver assignments
+
+Safety Checkout signoff also uses member-associated `CheckoutApprover` records
+in `checkout_approvers`. These scopes operate alongside the named `Permission`
+records above. All assignment arrays default to empty. Group signoff still
+enforces membership, group/tool availability, and the reviewed group revision.
+
+| Field | Scope and effect |
+| --- | --- |
+| `shop_ids` | Whole-shop signoff authority for physical tools and groups in the assigned shops. |
+| `tool_ids` | Individual physical-tool authority, additive with shop assignments. Having every child-tool assignment does not confer signoff authority for the group itself. |
+| `tool_group_ids` | Explicit authority for the selected, nonarchived groups. `CheckoutApprover#can_approve_group?` accepts either the group's shop assignment or its explicit group assignment. |
+| `group_granted_tool_ids` | Internal ledger of physical-tool grants materialized from group assignments. Validation unions these IDs into `tool_ids`; administrative assignment parameters do not accept this ledger. |
+
+`CheckoutApprover#expand_group_authority` expands an assigned group's current
+included tools into both the ledger and `tool_ids`. `ToolGroupCatalog.save!`
+propagates newly included tools to existing group approvers under the catalog and
+approver locks. This changes signoff authority without creating Safety Checkouts
+or volunteer credit for the assignee. Removed child tools retain their materialized
+grants. Removing a group assignment or archiving its group retains these individual
+grants as well, including when an update supplies an empty `tool_ids` array.
+Archival removes the explicit group assignment.
+
+Revoking an individual checkout calls `CheckoutApproverVolunteering.revoke_for!`:
+it removes that child from `tool_ids` and `group_granted_tool_ids` and removes
+assignments to groups that contain the revoked tool. Direct assignment or
+reassignment to such a group fails validation while the revoked checkout exists.
+Catalog edits that add a revoked child remove the affected explicit group assignment
+instead of extending its grants.
+Deleting the approver record removes all of its persisted signoff scopes. Group
+signoff assignments do not grant catalog management; catalog writes require
+Admin/Board or the shop's assigned resource manager.
+
+| Mutation path | Authorization and behavior |
+| --- | --- |
+| `Admin::CheckoutApproversController#create/update/destroy` | Admin/Board manage scopes through `POST /api/admin/checkout_approvers` and `PUT`/`PATCH`/`DELETE /api/admin/checkout_approvers/:id`. Create merges shop/tool/group assignments; update replaces supplied scopes while validation retains materialized child grants; delete removes the record. Changes are audited. |
+| `ToolGroupVolunteering#create!/decide!` | The member must be current and hold active checkouts for every included tool to volunteer. Approval rechecks eligibility and adds the group ID to the approver record. The decision actor must pass `CheckoutApproverVolunteering.reviewer?`: Admin, Board, or RM role with the group shop in `resource_manager_shop_ids`. |
+| `ToolGroupCatalog.save!` | Group membership edits extend persistent child grants; archival removes explicit group IDs. The actor must be Admin/Board or the group's shop RM. |
+| `ToolCheckout` revocation callbacks | Call `CheckoutApproverVolunteering.revoke_for!` to remove the revoked child and affected group assignments, coordinating through the member's approver lock. |
+
+Current consumers include:
+
+- `ToolGroupCheckout.authorized?`, used by the group API, `ToolGroupSerializer`'s
+  `can_approve`, Slack approval modals and workflows, and
+  `CheckoutInteractionQuery#visible_group_requests`, enforces group
+  signoff through administrative/shop-management authority or an eligible member's
+  `CheckoutApprover#can_approve_group?` scope.
+- `ToolGroupVolunteering.create!`, `CheckoutInteractionQuery#volunteerable_groups`,
+  and the Slack workflow use `can_approve_group?` to exclude already assigned
+  volunteers.
+- `CheckoutApprover#can_approve_tool?`, `CheckoutCreation.authorized?`, and
+  `CheckoutInteractionQuery#approvable_tools` consume the materialized `tool_ids`
+  through the existing physical-tool signoff paths.
+- `CheckoutApproverSerializer` exposes explicit group IDs and group summaries;
+  `CheckoutReadContext.for_approvers` batches their catalog details for approver
+  management responses.
+
+This assignment path needs no `DefaultPermission` name or copied-default backfill.
 
 ## Rails console examples
 

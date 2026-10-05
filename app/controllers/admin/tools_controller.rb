@@ -7,6 +7,7 @@ class Admin::ToolsController < ApplicationController
   before_action :authorize_notes, only: [:notes]
   before_action :authorize_annotation, only: [:requestor_annotation]
   before_action :prevent_move_with_active_reservations, only: [:update]
+  around_action :lock_catalog_mutation, only: [:create, :update, :destroy]
 
   def index
     tools = params[:shop_id] ? Tool.where(shop_id: params[:shop_id]) : Tool.all
@@ -132,6 +133,10 @@ class Admin::ToolsController < ApplicationController
   end
 
   private
+
+  def lock_catalog_mutation(&block)
+    CatalogMutationLock.with([@tool&.shop_id, params[:shop_id]], &block)
+  end
 
   # When a tool moves to a different location, its old marker -- if it only
   # ever existed to hold this one tool -- is now dead weight. Without this,

@@ -1,5 +1,45 @@
 # MongoDB Collections
 
+## Tool groups
+
+`tool_groups` stores shop-scoped physical-tool sets, disjoint prerequisites,
+description, requestable/reservable/announce flags, announcement channel,
+archive state, and revision. Its `(shop_id, name)` index is unique with English
+case-insensitive collation; member/prerequisite indexes support reference guards.
+`CatalogMutationLock` coordinates groups and physical tools because a unique
+index cannot span both collections. Shop deletion destroys all of its active and
+archived groups before cascading tool deletion; direct tool deletion still rejects
+references from either kind of group.
+Before a group is destroyed, its open checkout requests become `deleted` and its
+open volunteer requests become `revoked`, using the same cleanup as archival.
+Terminal request history remains stored.
+Group destruction captures announcement names/channels before target removal and
+retires open-request Slack posts after destruction, including during shop cascades.
+Included-tool membership edits reconcile satisfied checkout requests for that group
+inside the catalog transaction: status becomes `closed` with `checked_out_id`
+pointing to an existing active checkout. Unsatisfied and unrelated requests remain
+open; archival instead marks requests `deleted`. These changes add no fields or
+indexes and require no backfill.
+
+`tool_checkouts` remains physical-tool-only. Optional `group_id`, `group_name`,
+`group_revision`, and `approval_batch_id` record provenance. Newly created
+checkouts in one group batch share an approver credit ID. Checkout and approver
+requests target exactly one of `tool_id` and `tool_group_id`.
+
+`reservations` stores expanded `tool_ids`, `selected_tool_ids`, `tool_group_ids`,
+and `group_snapshots`. Snapshots contain the group name, revision, tool IDs and
+prerequisite IDs at selection time. `checkout_approvers.group_granted_tool_ids`
+retains individual grants when a group assignment is removed.
+
+Before updated clients are released, run `bundle exec rake data:ensure_unique_indexes`.
+This also replaces the old open volunteer-request key with
+`(member_id, tool_id, tool_group_id, status)`. No checkout backfill is needed.
+Also run `RAILS_ENV=production bundle exec rake data:ensure_checkout_indexes` to
+install the nonunique `(tool_group_id, status)` checkout-request lookup index used
+by group lists, duplicate checks, reconciliation and archival. Model declarations
+alone do not install indexes in an existing database.
+MongoDB transactions require a replica set.
+
 This is the source-of-truth inventory of MongoDB collections owned by the
 Rails application. Collection names are Mongoid's default pluralized model
 name unless the model declares `store_in` explicitly.
@@ -39,7 +79,7 @@ conditions are included where they are part of the index contract.
 | `checkins` | None (direct collection access) | Facility check-in events used by administrative check-in and space-usage reporting. | None beyond `_id` is declared by this repository |
 | `counter` | `Counter` | Atomic `seq` values for named client sequences, with one document per sequence (for example, `_id: "tickets"`). | None |
 | `checkout_approvers` | `CheckoutApprover` | Members authorized to approve Safety Checkouts, optionally scoped to shops or tools. | None |
-| `checkout_approver_requests` | `CheckoutApproverRequest` | Open, approved, or revoked requests from checked-out members volunteering to approve checkouts for a tool. | Unique `{ member_id: 1, tool_id: 1, status: 1 }`, partial when `status` is `open` |
+| `checkout_approver_requests` | `CheckoutApproverRequest` | Open, approved, declined, or revoked requests from checked-out members volunteering to approve checkouts for a tool or group. | Unique `{ member_id: 1, tool_id: 1, tool_group_id: 1, status: 1 }`, partial when `status` is `open` |
 | `default_permissions` | `DefaultPermission` | Default enabled/disabled values applied to member permissions. | None |
 | `earned_memberships` | `EarnedMembership` | A member's earned-membership program and its requirement/report relationships. | `{ member_id: 1 }` (deployment task) |
 | `earned_membership__report` | `EarnedMembership::Report` | Periodic earned-membership reports; report-requirement snapshots are embedded in these documents. | None |
@@ -68,7 +108,7 @@ conditions are included where they are part of the index contract.
 | `slack_identity_conflicts` | `SlackIdentityConflict` | Unresolved and resolved conflicts between Slack identities and member records. | `{ slack_id: 1 }`; `{ member_id: 1 }`; `{ resolved_at: 1 }` |
 | `slack_users` | `SlackUser` | Current and historical mappings between members and Slack identities. | Unique `{ member_id: 1 }`, partial for object IDs with `invalidated_at: nil`; unique `{ slack_email: 1 }`, partial for strings with `invalidated_at: nil`; unique `{ slack_id: 1 }`, partial when `slack_id` is a string |
 | `system_configs` | `SystemConfig` | Runtime feature flags, settings, and tracked job-run results. | Unique `{ key: 1 }` |
-| `tool_checkout_requests` | `ToolCheckoutRequest` | Member requests for a Safety Checkout and their open/closed lifecycle. | None |
+| `tool_checkout_requests` | `ToolCheckoutRequest` | Member requests for a tool or group Safety Checkout and their open/closed/deleted lifecycle. | `{ member_id: 1, status: 1, request_date: 1, _id: 1 }`; `{ tool_id: 1, status: 1, request_date: 1, _id: 1 }`; `{ tool_group_id: 1, status: 1 }` (all installed by `data:ensure_checkout_indexes`) |
 | `tool_checkouts` | `ToolCheckout` | Granted or revoked member Safety Checkouts for tools. | `{ member_id: 1 }` (deployment task) |
 | `tools` | `Tool` | Tool catalog, shop ownership, Safety Checkout prerequisites, and reservation rules. | Unique case-insensitive `{ shop_id: 1, name: 1 }` with `en` strength-2 collation, partial when `name` is a string; `{ shop_id: 1, name: 1, _id: 1, disabled: 1 }` with the same collation |
 | `volunteer_credits` | `VolunteerCredit` | Volunteer credit awards, approvals, discounts, and reversals. | `{ member_id: 1 }` (also enforced as non-unique by the deployment task); `{ status: 1 }`; `{ created_at: 1 }`; unique `{ tool_checkout_id: 1 }`, partial when `tool_checkout_id` is an object ID |

@@ -35,6 +35,7 @@ class SlackCheckoutRequestJob < ApplicationJob
     return list_eligible_tools(response_url, invoker, shop) if tool_name.nil?
 
     tool = Tool.where(shop_id: shop.id).find_by(name: /\A#{Regexp.escape(tool_name)}\z/i)
+    tool ||= ToolGroup.where(shop_id: shop.id, archived: false).find_by(name: /\A#{Regexp.escape(tool_name)}\z/i)
     unless tool
       tool_list = ToolCheckoutRequestEligibility.eligible_tools(member: invoker, shop: shop).map(&:name).join(', ')
       post_response(response_url, :ephemeral, "No eligible tool matching '#{tool_name}' in #{shop.name}. Available: #{tool_list.presence || 'none'}")
@@ -57,17 +58,22 @@ class SlackCheckoutRequestJob < ApplicationJob
 
   def list_eligible_tools(response_url, invoker, shop)
     tools = ToolCheckoutRequestEligibility.eligible_tools(member: invoker, shop: shop)
+    tools += CheckoutInteractionQuery.new(member: invoker, shop: shop).requestable_groups
     if tools.empty?
       post_response(response_url, :ephemeral, "No eligible tools found in #{shop.name}. Your membership must be active (or, if pending, the tool must allow pending members) before requesting a checkout.")
       return
     end
 
-    lines = tools.map { |tool| "• #{tool.name}" }
+    lines = tools.map { |tool| "• #{tool.is_a?(ToolGroup) ? ':linked_paperclips: ' : ''}#{tool.name}" }
     post_response(response_url, :ephemeral, "*Eligible tools:*\n#{lines.join("\n")}\n\nUse `/checkout request <tool name>` to request one.")
   end
 
   def create_request(response_url, invoker, tool)
+    if tool.is_a?(ToolGroup)
+      ToolGroupCheckout.request!(member: invoker, group: tool)
+    else
     CheckoutRequestCreation.create!(member_id: invoker.id, tool_id: tool.id, shop_id: tool.shop_id)
+    end
     post_response(response_url, :ephemeral, "Requested checkout on #{CheckoutDisplay.escape(tool.name)}. An approver will be notified.")
   rescue Error::CustomError => error
     post_response(response_url, :ephemeral, error.message)

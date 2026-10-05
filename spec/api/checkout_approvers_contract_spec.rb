@@ -4,7 +4,8 @@ RSpec.describe 'Checkout approver contracts', type: :request do
   let(:member) { create(:member, :admin, :current) }
   let(:shop) { create(:shop) }
   let(:tool) { create(:tool, shop: shop, out_of_service: true) }
-  let(:approver) { CheckoutApprover.create!(member_id: member.id, shop_ids: [shop.id.to_s], tool_ids: [tool.id.to_s]) }
+  let(:group) { ToolGroup.create!(shop: shop, name: 'Assigned kit', included_tool_ids: [tool.id.to_s]) }
+  let(:approver) { CheckoutApprover.create!(member_id: member.id, shop_ids: [], tool_group_ids: [group.id.to_s]) }
   before { sign_in member; allow(REDIS).to receive(:set).and_return(true) }
   path '/admin/checkout_approvers' do
     get 'List checkout approvers including per-tool availability' do
@@ -14,7 +15,12 @@ RSpec.describe 'Checkout approver contracts', type: :request do
       response('200', 'Approvers') do
         schema type: :array, items: { '$ref' => '#/components/schemas/CheckoutApprover' }
         before { approver }
-        run_test! { |r| expect(JSON.parse(r.body).first['tools'].first['outOfService']).to eq(true) }
+        run_test! do |response|
+          row = JSON.parse(response.body).first
+          expect(row['tools'].first['outOfService']).to eq(true)
+          expect(row['shopIds']).to eq([])
+          expect(row['toolGroups']).to eq([{ 'id' => group.id.to_s, 'name' => group.name, 'shopId' => shop.id.to_s }])
+        end
       end
     end
     post 'Create or extend an approver scope (admin/board)' do

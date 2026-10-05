@@ -299,6 +299,43 @@ RSpec.describe Slack::CommandsController, type: :controller do
       expect(response.parsed_body.fetch("text")).to include("Link your Slack account")
     end
 
+    it "opens textual group approval synchronously using the command trigger" do
+      member.update!(role: 'admin')
+      target = create(:member, :current)
+      SlackUser.create!(member: target, slack_id: 'UTARGET', name: 'target')
+      group = ToolGroup.create!(shop: shop, name: 'Starter kit', included_tool_ids: [tool.id.to_s])
+      body = { text: '<@UTARGET> Starter kit', user_id: 'U123', channel_name: 'woodshop', trigger_id: 'fresh-trigger' }
+      sign_request!(body)
+      expect(SlackCheckoutJob).not_to receive(:perform_later)
+      expect(Service::SlackUserSync).not_to receive(:sync_single)
+      expect(Service::SlackConnector).to receive(:open_modal).with('fresh-trigger', hash_including(callback_id: 'group_checkout_approve'))
+      post :checkout, params: body
+      expect(response.parsed_body.fetch('text')).to include('Review the group checkout')
+      expect(ToolCheckout.where(member_id: target.id)).not_to exist
+    end
+
+    it "rejects unauthorized group commands without opening a modal or queuing a job" do
+      group = ToolGroup.create!(shop: shop, name: 'Starter kit', included_tool_ids: [tool.id.to_s])
+      body = { text: "#{member.email} #{group.name}", user_id: 'U123', channel_name: 'woodshop', trigger_id: 'fresh-trigger' }
+      sign_request!(body)
+      expect(SlackCheckoutJob).not_to receive(:perform_later)
+      expect(Service::SlackConnector).not_to receive(:open_modal)
+      post :checkout, params: body
+      expect(response.parsed_body.fetch('text')).not_to include('Review the group checkout')
+    end
+
+    it "offers email recovery for an unlinked group target without synchronizing Slack" do
+      member.update!(role: 'admin')
+      group = ToolGroup.create!(shop: shop, name: 'Starter kit', included_tool_ids: [tool.id.to_s])
+      body = { text: "<@UNKNOWN> #{group.name}", user_id: 'U123', channel_name: 'woodshop', trigger_id: 'fresh-trigger' }
+      sign_request!(body)
+      expect(Service::SlackUserSync).not_to receive(:sync_single)
+      expect(SlackCheckoutJob).not_to receive(:perform_later)
+      expect(Service::SlackConnector).not_to receive(:open_modal)
+      post :checkout, params: body
+      expect(response.parsed_body.fetch('text')).to include('Member Portal email')
+    end
+
     it "still routes a plain '/checkout @member tool' to SlackCheckoutJob" do
       sign_request!({ text: '@someone Bandsaw', user_id: "U123", channel_name: "woodshop" })
       expect(SlackCheckoutJob).to receive(:perform_later)
