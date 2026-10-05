@@ -129,6 +129,110 @@ RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
     )
   end
 
+  context 'when the task credit cannot be created' do
+    let(:credit_error) { StandardError.new('Credit storage unavailable') }
+    let(:failure_outcome) do
+      "Credit award failed during approval by #{admin.fullname}; " \
+        'verify whether a credit was saved and correct the award manually'
+    end
+
+    before do
+      allow(VolunteerCredit).to receive(:create!).and_raise(credit_error)
+    end
+
+    it 'records an actionable failure instead of approved success and refuses duplicate approval' do
+      expect { task.complete!(admin) }.to raise_error { |error| expect(error).to equal(credit_error) }
+
+      notification = task.reload.approval_notification
+      expect(task.status).to eq('completed')
+      expect(VolunteerCredit.where(task_id: task.id).count).to eq(0)
+      expect(notification).to include(
+        'outcome' => failure_outcome, 'started_at' => now - 6.days,
+        'closed_at' => now, 'finalized' => true
+      )
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        receipt.fetch('channel'), receipt.fetch('ts'),
+        a_string_starting_with('⚠️').and(a_string_including(failure_outcome, 'Review closed after 6 days.')),
+        resolved_channel: true
+      )
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+      expect { task.complete!(admin) }.to raise_error(Error::Forbidden)
+      expect(VolunteerCredit).to have_received(:create!).once
+    end
+
+    it 'leaves a failed Slack update retryable by the daily job without recreating the credit' do
+      task.update!(approval_notification: receipt.merge('finalized' => true))
+      allow(Service::SlackConnector).to receive(:update_slack_message).and_raise(StandardError, 'Slack unavailable')
+      allow(SystemConfig).to receive(:record_run)
+
+      expect { task.complete!(admin) }.to raise_error { |error| expect(error).to equal(credit_error) }
+
+      notification = task.reload.approval_notification
+      expect(notification).to include('outcome' => failure_outcome, 'closed_at' => now, 'finalized' => false)
+      allow(Service::SlackConnector).to receive(:update_slack_message).and_return({ 'ok' => true })
+      travel 1.day
+      VolunteerEventReminderJob.perform_now
+
+      expect(task.reload.approval_notification['finalized']).to be(true)
+      expect(task.approval_notification['outcome']).to eq(failure_outcome)
+      expect(VolunteerCredit.where(task_id: task.id).count).to eq(0)
+      expect(VolunteerCredit).to have_received(:create!).once
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        receipt.fetch('channel'), receipt.fetch('ts'),
+        a_string_including(failure_outcome, 'Review closed after 6 days.'), resolved_channel: true
+      ).twice
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+    end
+
+    it 'preserves the credit creation error when recording its failure outcome also fails' do
+      metadata_error = StandardError.new('Notification metadata storage unavailable')
+      allow(Service::VolunteerApprovalReminder).to receive(:write_notification).and_raise(metadata_error)
+
+      expect { task.complete!(admin) }.to raise_error { |error| expect(error).to equal(credit_error) }
+
+      expect(task.reload.status).to eq('completed')
+      expect(VolunteerCredit.where(task_id: task.id).count).to eq(0)
+      expect(task.approval_notification['outcome']).to be_nil
+      expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+      expect(Service::ErrorReporter).to have_received(:notify).with(metadata_error)
+      expect { task.complete!(admin) }.to raise_error(Error::Forbidden)
+    end
+
+    it 'records the failure without posting a new message when there is no overdue receipt' do
+      task.update!(approval_notification: {})
+
+      expect { task.complete!(admin) }.to raise_error { |error| expect(error).to equal(credit_error) }
+
+      expect(task.reload.approval_notification).to include(
+        'outcome' => failure_outcome, 'closed_at' => now, 'finalized' => true
+      )
+      expect(task.approval_notification['ts']).to be_nil
+      expect(VolunteerCredit.where(task_id: task.id).count).to eq(0)
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+      expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+    end
+
+    it 'flags an ambiguous save failure for manual review without creating a second award' do
+      allow(VolunteerCredit).to receive(:create!).and_wrap_original do |original, *arguments, **options|
+        original.call(*arguments, **options)
+        raise credit_error
+      end
+
+      expect { task.complete!(admin) }.to raise_error { |error| expect(error).to equal(credit_error) }
+
+      expect(task.reload.status).to eq('completed')
+      expect(VolunteerCredit.where(task_id: task.id, member_id: member.id, status: 'approved').count).to eq(1)
+      expect(task.approval_notification['outcome']).to eq(failure_outcome)
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        receipt.fetch('channel'), receipt.fetch('ts'),
+        a_string_starting_with('⚠️').and(a_string_including(failure_outcome)), resolved_channel: true
+      )
+      expect { task.complete!(admin) }.to raise_error(Error::Forbidden)
+      expect(VolunteerCredit).to have_received(:create!).once
+      expect(VolunteerCredit.where(task_id: task.id).count).to eq(1)
+    end
+  end
+
   it 'retains a failed final update through reclaiming and resubmission for later retry' do
     allow(Service::SlackConnector).to receive(:update_slack_message).and_raise(StandardError, 'Slack unavailable')
     expect { task.reject_pending!(admin, 'Missing labels') }.not_to raise_error

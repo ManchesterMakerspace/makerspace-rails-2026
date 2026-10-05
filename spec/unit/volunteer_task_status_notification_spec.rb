@@ -6,11 +6,12 @@ require 'mongoid'
 require_relative '../spec_helper'
 require_relative '../../app/services/service/volunteer_approval_reminder'
 
-RSpec.describe 'Volunteer task cancellation and status notification integration' do
+RSpec.describe 'Volunteer task lifecycle and status notification integration' do
   include ActiveSupport::Testing::TimeHelpers
 
   let(:now) { Time.utc(2026, 10, 4, 16) }
   let(:actor) { double(fullname: 'Sam Reviewer') }
+  let(:verifier) { double(id: BSON::ObjectId.new, fullname: 'Sam Reviewer') }
   let(:receipt) do
     {
       'ts' => '123.456', 'channel' => 'CORIGINAL', 'destination_mode' => 'production',
@@ -34,6 +35,7 @@ RSpec.describe 'Volunteer task cancellation and status notification integration'
     stub_const('FixTicketId', String)
     stub_const('VolunteerEvent', Class.new)
     stub_const('VolunteerTask', Class.new)
+    stub_const('Error::Forbidden', Class.new(StandardError)) unless defined?(Error::Forbidden)
     stub_const('Service::SlackConnector', Module.new do
       def self.message_destination_mode; end
       def self.send_slack_message(_text, _channel); end
@@ -137,6 +139,76 @@ RSpec.describe 'Volunteer task cancellation and status notification integration'
     task.update!(status: new_status)
     task.close_pending_review_notification!(notification)
     task.reload.approval_notification
+  end
+
+  it 'records an actionable credit failure rather than an approved outcome when creation raises' do
+    creation_error = RuntimeError.new('Credit storage unavailable')
+    allow(VolunteerCredit).to receive(:create!).and_raise(creation_error)
+    allow(task).to receive(:notify_task_verified)
+
+    expect { task.complete!(verifier) }.to raise_error { |error| expect(error).to equal(creation_error) }
+
+    expect(task.reload.status).to eq('completed')
+    expect(task.approval_notification).to include(
+      'closed_at' => now, 'finalized' => true,
+      'outcome' => 'Credit award failed during approval by Sam Reviewer; verify whether a credit was saved and correct the award manually'
+    )
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CORIGINAL', '123.456', a_string_including('⚠️', 'Credit award failed', 'correct the award manually', '6 days'),
+      resolved_channel: true
+    ).once
+    expect(task).not_to have_received(:notify_task_verified)
+    expect { task.complete!(verifier) }.to raise_error(Error::Forbidden)
+    expect(VolunteerCredit).to have_received(:create!).once
+  end
+
+  it 'keeps a failed credit warning retryable by the job when its Slack update fails' do
+    allow(VolunteerCredit).to receive(:create!).and_raise('Credit storage unavailable')
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_raise('Slack unavailable')
+
+    expect { task.complete!(verifier) }.to raise_error(RuntimeError, 'Credit storage unavailable')
+
+    criteria = VolunteerEventReminderJob.new.send(:retry_notifications, VolunteerTask)
+    expect(matches?(@persisted, criteria.selector)).to be(true)
+    expect(task.reload.approval_notification).to include('closed_at' => now, 'finalized' => false)
+
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
+    Service::VolunteerApprovalReminder.sync_closed!(task)
+
+    expect(task.reload.approval_notification['finalized']).to be(true)
+    expect(matches?(@persisted, criteria.selector)).to be(false)
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CORIGINAL', '123.456', a_string_including('⚠️', 'Credit award failed', '6 days'), resolved_channel: true
+    ).twice
+    expect(VolunteerCredit).to have_received(:create!).once
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+  end
+
+  it 'preserves the credit creation error when saving failure metadata also fails' do
+    creation_error = RuntimeError.new('Credit storage unavailable')
+    allow(VolunteerCredit).to receive(:create!).and_raise(creation_error)
+    allow(Service::VolunteerApprovalReminder).to receive(:write_notification).and_raise('Metadata storage unavailable')
+
+    expect { task.complete!(verifier) }.to raise_error { |error| expect(error).to equal(creation_error) }
+
+    expect(task.reload.approval_notification).to eq(receipt)
+    expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+    expect(Service::ErrorReporter).to have_received(:notify).with(an_instance_of(RuntimeError)).once
+  end
+
+  it 'retains the approved outcome when discount processing fails after credit creation succeeds' do
+    credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil)
+    allow(VolunteerCredit).to receive(:create!).and_return(credit)
+    allow(credit).to receive(:check_discount_threshold!).and_raise('Discount processing unavailable')
+
+    expect { task.complete!(verifier) }.to raise_error(RuntimeError, 'Discount processing unavailable')
+
+    expect(task.reload.approval_notification).to include(
+      'outcome' => 'Approved by Sam Reviewer', 'finalized' => true
+    )
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CORIGINAL', '123.456', a_string_including('✅', 'Approved by Sam Reviewer', '6 days'), resolved_channel: true
+    ).once
   end
 
   it 'closes cancellation even when the pending receipt was already marked finalized' do

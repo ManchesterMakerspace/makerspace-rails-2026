@@ -142,6 +142,14 @@ removed best effort. Saved conversation IDs remain tied to their original
 production/test destination mode; mismatched-mode updates are refused and
 retained for the intended environment.
 
+A task whose credit creation raises can store a distinct `Credit award failed`
+outcome for manual verification and correction. For a posted reminder, a
+finalized warning means its Slack update was delivered, not that the credit
+problem was resolved. Failed
+warning delivery uses the same retry fields; the reminder job does not retry
+creating credits. Outcome metadata cannot be guaranteed if its database write
+also fails.
+
 The compound `{ status: 1, completed_at: 1 }` task index supports the
 pending-completion scan; `{ status: 1, event_date: 1 }` supports the dated open
 event scan. These indexed age scans run separately from final-delivery retries,

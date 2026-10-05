@@ -490,6 +490,19 @@ message is processed under a different production/test mode.
 
 Task approval or denial and event closure save the final outcome and closure
 time, then update a recorded reminder in place with the outcome and total wait.
+Task approval records an approved outcome only after credit creation returns
+successfully. If creation raises, it instead saves a `Credit award failed`
+outcome and updates the existing message with a warning to verify the saved
+credit and correct the award manually. The task remains completed and cannot
+be approved again through the normal completion flow. Check credits linked to
+the task before correcting it: a write can have succeeded before the exception,
+so blindly awarding another credit can duplicate it. A later notification or
+billing failure after successful creation retains the approved outcome.
+Failed delivery of the warning uses the normal final-message retry scan; the
+job retries message delivery, not credit creation. If saving outcome metadata
+also fails, error reporting records that failure and the original creation
+error is preserved for the caller; a durable warning cannot be guaranteed
+while the database is unavailable.
 Event closure reports closure without claiming every attendee credit succeeded:
 the existing per-attendee award failures remain possible. No final message is
 created if that activity never had an overdue reminder. An outcome snapshot can

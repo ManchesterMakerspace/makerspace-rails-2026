@@ -250,6 +250,7 @@ class VolunteerTask
     update!(status: 'completed', verified_by_id: verifier.id)
 
     approval_error = nil
+    credit_created = false
     begin
       credit = VolunteerCredit.create!(
         member_id:    claimed_by_id,
@@ -259,6 +260,7 @@ class VolunteerTask
         credit_value: credit_value,
         status:       'approved'
       )
+      credit_created = true
       credit.send(:notify_member_credit_awarded)
       credit.send(:check_discount_threshold!)
 
@@ -268,6 +270,10 @@ class VolunteerTask
       raise
     ensure
       begin
+        if !credit_created && notification.present?
+          notification['outcome'] = "Credit award failed during approval by #{verifier.fullname}; " \
+            'verify whether a credit was saved and correct the award manually'
+        end
         Service::VolunteerApprovalReminder.record_outcome!(self, notification, expected_status: 'completed')
         Service::VolunteerApprovalReminder.sync_closed!(self)
       rescue

@@ -228,8 +228,15 @@ module Service
 
       def update_final(record, receipt)
         ensure_destination_mode!(receipt)
-        icon = receipt.fetch('outcome').start_with?('Denied') ? '❌' : '✅'
-        text = "#{icon} #{receipt.fetch('subject')}: #{escape(receipt.fetch('outcome'))}. " \
+        outcome = receipt.fetch('outcome')
+        icon = if outcome.start_with?('Credit award failed')
+          '⚠️'
+        elsif outcome.start_with?('Denied')
+          '❌'
+        else
+          '✅'
+        end
+        text = "#{icon} #{receipt.fetch('subject')}: #{escape(outcome)}. " \
           "Review closed after #{elapsed(record, receipt, receipt.fetch('closed_at'))}."
         SlackConnector.update_slack_message(receipt.fetch('channel'), receipt.fetch('ts'), text, resolved_channel: true)
       end
