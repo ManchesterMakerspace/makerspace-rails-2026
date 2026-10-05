@@ -36,7 +36,7 @@ gem 'slack-ruby-client', '~> 2.0'
 # `ArgumentError: unknown keyword: quirks_mode` on nearly every JSON
 # encode/decode -- json floated to 3.0.2 as an unreviewed transitive bump
 # from an unrelated dependabot update and broke the entire test suite.
-gem 'json', '~> 2.21'
+gem 'json', '~> 3.0'
 # Google Drive
 gem 'multi_json', '~> 1.15'
 gem 'faraday', '~> 2.14'
