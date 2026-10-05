@@ -313,7 +313,11 @@ module Service
         if record.is_a?(VolunteerEvent)
           event_subject(record, record.event_date)
         else
-          claimant = record.claimed_by&.fullname || 'Unknown member'
+          claimant = begin
+            record.claimed_by&.fullname || 'Unknown member'
+          rescue Mongoid::Errors::DocumentNotFound
+            'Unknown member'
+          end
           "Task *#{escape(record.title)}* (#{record.display_number}) for *#{escape(claimant)}*"
         end
       end

@@ -703,7 +703,10 @@ RSpec.describe Service::VolunteerApprovalReminder do
 
     expect(task.approval_notification).to eq(saved)
     expect(Service::SlackConnector).not_to have_received(:delete_slack_message)
-    expect(Service::ErrorReporter).to have_received(:notify).with(missing_member).once
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CADMIN', '123.456', a_string_including('Unknown member', '6 days'), resolved_channel: true
+    ).once
+    expect(Service::ErrorReporter).not_to have_received(:notify)
     allow(task).to receive(:claimed_by).and_return(claimant)
     post_reminder(at: now + 1.day)
     expect(Service::SlackConnector).to have_received(:update_slack_message).with(
@@ -715,7 +718,8 @@ RSpec.describe Service::VolunteerApprovalReminder do
   it 'keeps the message if checking whether the reminder record exists fails' do
     stub_const('Mongoid::Errors::DocumentNotFound', Class.new(StandardError))
     saved = post_reminder.deep_dup
-    allow(task).to receive(:claimed_by).and_raise(Mongoid::Errors::DocumentNotFound, 'Claimant was deleted')
+    allow(Service::SlackConnector).to receive(:update_slack_message)
+      .and_raise(Mongoid::Errors::DocumentNotFound, 'Task disappeared during update')
     primary_query = double('Primary query')
     allow(primary_query).to receive(:read).with(mode: :primary).and_return(primary_query)
     allow(primary_query).to receive(:first).and_raise('Database unavailable')

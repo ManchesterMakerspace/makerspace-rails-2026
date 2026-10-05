@@ -155,6 +155,7 @@ server schema or foreign-key constraint.
 | `reporter_id` | ObjectId | Model presence required; service sets current reporter. Read-only in model. Private attribution. |
 | `title` | String | Model presence required; maximum 150 characters; allowed ASCII letters, digits, spaces and `. , _ ( ) / -`. Format checked on creation/change. |
 | `description` | String | Model presence required; maximum 10,000 characters. |
+| `image_url` (proposed) | String; optional, no default | Full image/view URL associated with the initial report, such as a Google Drive file URL. Stores a reference only, not image bytes. Not yet declared or accepted by the current application. |
 | `category` | String; no default | Model inclusion required: `damaged`, `broken`, `missing`, `donation_offer`, `other`. |
 | `submission_key` | String | Model presence required; creation service requires 8–100 word characters or hyphens. Read-only; idempotency scope is reporter plus key. |
 | `status` | String; `open` | Model inclusion required: `open`, `in_progress`, `waiting_for_parts`, `resolved`, `rejected`, `withdrawn`. |
@@ -218,6 +219,7 @@ arrays, booleans, and timestamps fill the other fields. There is no `updated_at`
 | `actor_id` | ObjectId | Acting member; private, projected through privacy-aware actor labels. |
 | `kind` | String | Service writes `created`, `updated`, `note`, `assigned`, `bounty`, `reward`; no model enum validation. |
 | `note` | String | Optional validated service note; full discussion text. |
+| `image_url` (proposed) | String; optional, no default | Full image/view URL associated with this individual event or discussion message, such as a Google Drive file URL. Stores a reference only, not image bytes. Not yet declared or accepted by the current application. |
 | `note_role` | String | Optional captured author context: `reporter`, `assignee`, or nil for staff/legacy notes. Private. |
 | `field_changes` | Hash; `{}` | Typically field name to `[before, after]`; assignment events omit `assignees` deltas. Presenter additionally redacts legacy deltas/catalog references. |
 | `recipients` | Array; `[]` | Deduplicated member ObjectIds selected at event creation; delivery rechecks current access/suppression. |
@@ -260,6 +262,30 @@ are skipped. DMs require an existing member, current ticket access, an unsuppres
 direct-notification state, and a linked Slack user. Full notes in a configured
 central channel can be seen by its participants regardless of portal access.
 Human Slack replies are not imported. See the operational guide for configuration.
+
+### Proposed image URL references
+
+The proposed `image_url` field belongs on both `fix_tickets` and
+`fix_ticket_events` (the existing collection name is singular `ticket`). A ticket
+URL represents the initial report's photo; an event URL represents the photo
+attached to that particular follow-up message. Each field holds one URL, for
+example `https://drive.google.com/file/d/<file-id>/view`. It is optional, so
+reports and discussion messages can continue without a photo. A Drive view URL
+opens a file viewer; it is not necessarily a direct image URL suitable for an
+inline image element.
+
+This is a documented schema proposal, not implemented behavior. The current
+models do not declare `image_url`, and the service input allowlists and API
+presenters do not support it. No required-field validation, URL validation,
+index, upload handling, or Slack rendering has been implemented for these
+fields. Implementing them requires corresponding model, service, presentation,
+and API contract changes.
+
+Only the URL would be stored in MongoDB; image content remains in Google Drive
+or another external host. Saving a URL does not grant access to the image.
+Drive sharing must allow the intended viewers, and a member-readable shared
+folder can expose a photo more widely than its private ticket. Keep reporter
+identity out of filenames and URL labels, consistently with ticket privacy.
 
 ## `fix_ticket_reveals` schema and privacy lifecycle
 

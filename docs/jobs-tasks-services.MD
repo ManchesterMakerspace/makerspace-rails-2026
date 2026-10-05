@@ -588,7 +588,10 @@ review reminder with the actual outcome. Setting a task to completed through a
 generic edit does not issue credits, and the final notice states that distinction.
 Before destroying an unlinked task, its model callback withdraws pending review
 (saving cancelled status and a deletion-requested outcome together), closes any
-outstanding historical reminders, and synchronizes final Slack text. If a known
+outstanding historical reminders, and synchronizes final Slack text. Subject
+generation uses `Unknown member` when the claimant record has been deleted,
+including when deletion must build an outcome without a saved reminder subject.
+If a known
 posted message cannot be finalized, destruction raises `Error::ServiceUnavailable`
 and `DELETE /api/admin/volunteer_tasks/:id` returns HTTP 503 with the usual
 `status`, `error: service_unavailable`, and retry-guidance `message` JSON fields.
@@ -596,8 +599,9 @@ It preserves the cancelled record and retry receipts; the daily job can finish d
 retried. Existing approved/denied outcomes are preserved. A post or age update
 already in flight when the task disappears removes its message best effort;
 the worker first verifies absence of the task/event document on the MongoDB
-primary. A missing claimant or failed existence check retains the Slack message
-and reports the error. Cleanup failures are reported. Low-level `delete`/`delete_all` bypass model
+primary. A missing claimant uses the subject fallback and retains the Slack
+message; a failed existence check retains the message and reports the error.
+Cleanup failures are reported. Low-level `delete`/`delete_all` bypass model
 callbacks. Event destruction still removes its receipt without finalizing the
 Slack message; an actually deleted event cannot be retried by this job.
 

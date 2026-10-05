@@ -666,6 +666,31 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
   end
 
   context 'when destroying an unlinked task' do
+    [false, true].each do |posted|
+      it "deletes a pending task with a deleted claimant and #{posted ? 'a posted reminder missing its subject' : 'no reminder'}" do
+        @persisted['claimed_by_id'] = BSON::ObjectId.new
+        @persisted['approval_notification'] = posted ? receipt.except('subject') : {}
+        loaded = persisted_model_with_real_callbacks
+        missing_member = Mongoid::Errors::DocumentNotFound.new(Member, { id: loaded.claimed_by_id })
+        allow(Member).to receive(:find).with(loaded.claimed_by_id).and_raise(missing_member)
+
+        expect { loaded.destroy }.not_to raise_error
+
+        expect(loaded).to be_destroyed
+        expect(@deletion_snapshot['status']).to eq('cancelled')
+        expect(@deletion_snapshot['approval_notification']).to include('finalized' => true,
+          'subject' => a_string_including('Unknown member'),
+          'outcome' => 'Task deletion requested; pending review withdrawn')
+        if posted
+          expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+            'CORIGINAL', '123.456', a_string_including('Unknown member', 'deletion requested'), resolved_channel: true
+          ).once
+        else
+          expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+        end
+      end
+    end
+
     it 'finalizes a pending reminder through the real destroy callback before removing the record' do
       loaded = persisted_model_with_real_callbacks
 
