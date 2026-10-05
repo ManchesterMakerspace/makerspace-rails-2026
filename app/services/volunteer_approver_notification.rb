@@ -1,14 +1,15 @@
 require 'securerandom'
 
-# A task submission has one review per claimant; an event has one attendance
-# review. Persist each manager's receipt separately so retries do not notify
-# managers whose DM has already succeeded.
+# A task submission has one review per claimant; each scheduled event date has
+# one attendance review. Persist each manager's receipt separately so retries
+# do not notify managers whose DM has already succeeded for that schedule.
 class VolunteerApproverNotification
   DELIVERY_LEASE = 5.minutes
 
   class << self
     def notify!(record, now: Time.current)
       record.reload
+      preserve_event_receipts!(record, event_date: record.event_date) if record.is_a?(VolunteerEvent)
       return unless ready?(record, now) && record.shop_id.present?
 
       Member.where(role: 'resource_manager', resource_manager_shop_ids: record.shop_id.to_s).each do |manager|
@@ -40,10 +41,40 @@ class VolunteerApproverNotification
       "#{ShortUrl.base_url}/volunteer?#{parameter}=#{record.id}"
     end
 
+    # Bind pre-versioning receipts to their existing schedule before a normal
+    # reschedule changes event_date. Also adopt them on the first daily scan so
+    # deploying date-versioned receipts does not resend an unchanged event DM.
+    def preserve_event_receipts!(record, event_date:)
+      return if record.approver_notifications.fetch('event', {}).blank?
+
+      destination = "approver_notifications.#{event_submission_key(event_date)}"
+      saved = record.class.collection.find(
+        '_id' => record.id,
+        'event_date' => native_date(event_date),
+        'approver_notifications.event' => { '$exists' => true },
+        destination => { '$exists' => false }
+      ).find_one_and_update(
+        { '$rename' => { 'approver_notifications.event' => destination } }, return_document: :after
+      )
+      return if saved
+      # A concurrent adopter may already have moved the legacy bucket. Any
+      # still-present legacy receipts must be bound before a date update saves.
+      return unless record.class.collection.find(
+        '_id' => record.id, 'approver_notifications.event' => { '$exists' => true }
+      ).first
+
+      raise 'Legacy event approver receipts could not be bound to the existing schedule'
+    end
+
     private
 
     def submission_key(record)
-      record.is_a?(VolunteerEvent) ? 'event' : "submission_#{(record.completed_at.to_f * 1000).round}"
+      record.is_a?(VolunteerEvent) ? event_submission_key(record.event_date) :
+        "submission_#{(record.completed_at.to_f * 1000).round}"
+    end
+
+    def event_submission_key(date)
+      date.present? ? "event_#{date.strftime('%Y%m%d')}" : 'event_undated'
     end
 
     def terminal_submission?(record)
@@ -59,7 +90,7 @@ class VolunteerApproverNotification
       token = SecureRandom.uuid
       selector = { '_id' => record.id, 'status' => record.status }
       selector['completed_at'] = native_time(record.completed_at) if record.is_a?(VolunteerTask)
-      selector['event_date'] = Time.utc(record.event_date.year, record.event_date.month, record.event_date.day) if record.is_a?(VolunteerEvent)
+      selector['event_date'] = native_date(record.event_date) if record.is_a?(VolunteerEvent)
       selector['$or'] = [
         { path => { '$exists' => false } },
         { "#{path}.state" => 'failed' },
@@ -84,14 +115,16 @@ class VolunteerApproverNotification
         end
         # With raise_not_found_error disabled, a missing member reloads with a
         # new default ID rather than raising. Its original receipt is obsolete.
-        if manager.id != manager_id || submission_key(record) != claim_key || terminal_submission?(record)
+        if manager.id != manager_id || terminal_submission?(record) ||
+            (record.is_a?(VolunteerTask) && submission_key(record) != claim_key)
           finish!(record, path, token, { 'state' => 'obsolete' })
           return
         end
 
         # Readiness, authority and notification eligibility can be restored
         # while the same submission still awaits review.
-        unless ready?(record, now) && record.shop_id.present? && manager.manages_shop?(record.shop_id) &&
+        unless submission_key(record) == claim_key && ready?(record, now) &&
+            record.shop_id.present? && manager.manages_shop?(record.shop_id) &&
             !manager.direct_notifications_suppressed? &&
             !(record.is_a?(VolunteerTask) && manager_id == record.claimed_by_id)
           finish!(record, path, token, { 'state' => 'failed' })
@@ -150,6 +183,10 @@ class VolunteerApproverNotification
 
     def native_time(value)
       Time.at(value.to_r).utc
+    end
+
+    def native_date(value)
+      Time.utc(value.year, value.month, value.day) if value
     end
   end
 end

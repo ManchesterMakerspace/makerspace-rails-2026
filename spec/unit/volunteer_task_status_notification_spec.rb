@@ -6,11 +6,11 @@ require 'mongoid'
 require_relative '../spec_helper'
 require_relative '../../app/services/service/volunteer_approval_reminder'
 
-RSpec.describe 'Volunteer task lifecycle and status notification integration' do
+RSpec.describe 'Volunteer lifecycle and status notification integration' do
   include ActiveSupport::Testing::TimeHelpers
 
   let(:now) { Time.utc(2026, 10, 4, 16) }
-  let(:actor) { double(fullname: 'Sam Reviewer') }
+  let(:actor) { double(id: BSON::ObjectId.new, fullname: 'Sam Reviewer') }
   let(:verifier) { double(id: BSON::ObjectId.new, fullname: 'Sam Reviewer') }
   let(:receipt) do
     {
@@ -61,6 +61,7 @@ RSpec.describe 'Volunteer task lifecycle and status notification integration' do
     allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
     allow(Service::ErrorReporter).to receive(:notify)
     load File.expand_path('../../app/models/volunteer_task.rb', __dir__)
+    load File.expand_path('../../app/models/volunteer_event.rb', __dir__)
 
     stub_const('ApplicationJob', Class.new do
       def self.queue_as(_queue); end
@@ -74,25 +75,23 @@ RSpec.describe 'Volunteer task lifecycle and status notification integration' do
     # task lifecycle helpers, raw receipt selectors, and Slack text remain real.
     @persisted = task.attributes.deep_dup
     @raw_updates = []
+    @lifecycle_snapshots = []
     allow(task).to receive(:reload) do
       task.assign_attributes(@persisted.deep_dup)
       task
     end
     allow(task).to receive(:update!) do |attributes|
-      task.assign_attributes(attributes)
-      raise Mongoid::Errors::Validations.new(task) unless task.valid?
-
-      @persisted = task.attributes.deep_dup
-      task
+      persist_lifecycle_update(attributes)
     end
-    collection = double('In-memory task collection')
-    allow(VolunteerTask).to receive(:collection).and_return(collection)
+    collection = double('In-memory volunteer collection')
+    allow(task.class).to receive(:collection).and_return(collection)
     allow(collection).to receive(:find) do |selector|
       query = double('Atomic receipt update')
       allow(query).to receive(:find_one_and_update) do |update, **_options|
         @raw_updates << [selector.deep_dup, update.deep_dup]
         if matches?(@persisted, selector)
           apply_update!(@persisted, update)
+          @lifecycle_snapshots << @persisted.deep_dup if update.fetch('$set', {}).key?('status')
           @persisted.deep_dup
         end
       end
@@ -134,11 +133,67 @@ RSpec.describe 'Volunteer task lifecycle and status notification integration' do
     update.fetch('$push', {}).each { |path, value| value_at(document, path) << value }
   end
 
+  def persist_lifecycle_update(attributes)
+    task.assign_attributes(attributes)
+    raise Mongoid::Errors::Validations.new(task) unless task.valid?
+
+    attributes.each_key { |name| @persisted[name.to_s] = task.attributes[name.to_s].deep_dup }
+    apply_update!(@persisted, '$set' => task.delayed_atomic_sets.deep_dup)
+    @lifecycle_snapshots << @persisted.deep_dup if attributes.key?(:status) || attributes.key?('status')
+    task.assign_attributes(@persisted.deep_dup)
+    task
+  end
+
   def edit_status(new_status, reviewer: actor)
-    notification = task.pending_review_outcome_for_status(new_status, actor: reviewer)
-    task.update!(status: new_status)
+    notification = task.update_with_review_outcome!({ status: new_status }, actor: reviewer)
     task.close_pending_review_notification!(notification)
     task.reload.approval_notification
+  end
+
+  def expect_durable_closure(status, outcome: nil)
+    saved = @lifecycle_snapshots.find { |snapshot| snapshot.fetch('status') == status }
+    expect(saved).to be_present
+    expect(saved.fetch('approval_notification')).to include(
+      'ts' => receipt['ts'], 'channel' => receipt['channel'], 'closed_at' => now, 'finalized' => false
+    )
+    expect(saved.fetch('approval_notification')['outcome']).to be_present
+    expect(saved.fetch('approval_notification')['outcome']).to eq(outcome) if outcome
+    criteria = VolunteerEventReminderJob.new.send(:retry_notifications, task.class)
+    expect(matches?(saved, criteria.selector)).to be(true)
+    saved.fetch('approval_notification')
+  end
+
+  it 'combines the actual Mongoid lifecycle and dotted closure changes into one database update' do
+    loaded = Mongoid::Factory.from_db(VolunteerTask, @persisted.deep_dup)
+    expect(loaded).to be_persisted
+    expect(loaded).not_to be_changed
+    commands = []
+    collection = double('MongoDB write boundary')
+    allow(loaded).to receive(:collection).and_return(collection)
+    allow(collection).to receive(:find) do |selector|
+      view = double('MongoDB collection view')
+      allow(view).to receive(:update_one) do |update, **_options|
+        commands << [selector.deep_dup, update.deep_dup]
+        double(matched_count: 1, modified_count: 1)
+      end
+      view
+    end
+    notification = loaded.pending_review_outcome_for_status('cancelled')
+
+    Service::VolunteerApprovalReminder.transition_with_outcome!(loaded, { status: 'cancelled' }, notification: notification)
+
+    expect(commands.length).to eq(1)
+    selector, update = commands.fetch(0)
+    expect(selector).to include('_id' => loaded.id)
+    expect(update.fetch('$set')).to include(
+      'status' => 'cancelled',
+      'approval_notification.started_at' => now - 6.days,
+      'approval_notification.closed_at' => now,
+      'approval_notification.outcome' => 'Task cancelled',
+      'approval_notification.finalized' => false
+    )
+    expect(update.fetch('$set')).not_to include('approval_notification', 'approval_notification.ts', 'approval_notification.channel')
+    expect(loaded.delayed_atomic_sets).to be_empty
   end
 
   it 'records an actionable credit failure rather than an approved outcome when creation raises' do
@@ -149,6 +204,7 @@ RSpec.describe 'Volunteer task lifecycle and status notification integration' do
     expect { task.complete!(verifier) }.to raise_error { |error| expect(error).to equal(creation_error) }
 
     expect(task.reload.status).to eq('completed')
+    expect_durable_closure('completed')
     expect(task.approval_notification).to include(
       'closed_at' => now, 'finalized' => true,
       'outcome' => 'Credit award failed during approval by Sam Reviewer; verify whether a credit was saved and correct the award manually'
@@ -191,9 +247,35 @@ RSpec.describe 'Volunteer task lifecycle and status notification integration' do
 
     expect { task.complete!(verifier) }.to raise_error { |error| expect(error).to equal(creation_error) }
 
-    expect(task.reload.approval_notification).to eq(receipt)
+    expect_durable_closure('completed')
+    expect(task.reload.approval_notification).to include('closed_at' => now, 'finalized' => false)
     expect(Service::SlackConnector).not_to have_received(:update_slack_message)
     expect(Service::ErrorReporter).to have_received(:notify).with(an_instance_of(RuntimeError)).once
+  end
+
+  it 'keeps a completed task actionable when credit succeeds but recording the approved outcome fails' do
+    credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil)
+    allow(VolunteerCredit).to receive(:create!).and_return(credit)
+    allow(task).to receive(:notify_task_verified)
+    allow(Service::VolunteerApprovalReminder).to receive(:write_notification).and_raise('Metadata storage unavailable')
+
+    expect { task.complete!(verifier) }.to raise_error(RuntimeError, 'Metadata storage unavailable')
+
+    initial = expect_durable_closure('completed')
+    expect(initial['outcome']).not_to eq('Approved by Sam Reviewer')
+    expect(task.reload.status).to eq('completed')
+    expect(task.approval_notification).to eq(initial)
+    expect(VolunteerCredit).to have_received(:create!).once
+    expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+
+    allow(Service::VolunteerApprovalReminder).to receive(:write_notification).and_call_original
+    Service::VolunteerApprovalReminder.sync_closed!(task)
+
+    expect(task.reload.approval_notification['finalized']).to be(true)
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CORIGINAL', '123.456', a_string_including(initial.fetch('outcome'), '6 days'), resolved_channel: true
+    ).once
+    expect(VolunteerCredit).to have_received(:create!).once
   end
 
   it 'retains the approved outcome when discount processing fails after credit creation succeeds' do
@@ -211,10 +293,60 @@ RSpec.describe 'Volunteer task lifecycle and status notification integration' do
     ).once
   end
 
+  [false, true].each do |child|
+    it "saves #{child ? 'child' : 'ordinary'} denial metadata in the same write that ends pending review" do
+      claimant_id = BSON::ObjectId.new
+      task.update!(claimed_by_id: claimant_id, parent_task_id: child ? BSON::ObjectId.new : nil)
+      allow(Service::VolunteerApprovalReminder).to receive(:record_outcome!).and_raise('Later metadata write unavailable')
+
+      expect { task.reject_pending!(verifier, 'Incomplete cleanup', notify: false) }.not_to raise_error
+
+      status = child ? 'denied' : 'available'
+      expect_durable_closure(status, outcome: 'Denied by Sam Reviewer. Reason: Incomplete cleanup')
+      expect(task.reload.status).to eq(status)
+      expect(task.approval_notification['finalized']).to be(false)
+      expect(task.claimed_by_id).to eq(child ? claimant_id : nil)
+      expect(task.completed_at).to eq(child ? now - 6.days : nil)
+      expect(Service::VolunteerApprovalReminder).not_to have_received(:record_outcome!)
+      expect(VolunteerCredit).not_to have_received(:create!)
+
+      Service::VolunteerApprovalReminder.sync_closed!(task)
+      expect(task.reload.approval_notification['finalized']).to be(true)
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        'CORIGINAL', '123.456', a_string_including('Denied by Sam Reviewer', 'Incomplete cleanup', '6 days'),
+        resolved_channel: true
+      ).once
+    end
+  end
+
+  it 'preserves a reminder timestamp registered after the closure snapshot was created' do
+    task.update!(approval_notification: receipt.except('ts', 'channel', 'destination_mode'))
+    allow(task).to receive(:update!) do |attributes|
+      @persisted.fetch('approval_notification').merge!(
+        'ts' => 'CONCURRENT', 'channel' => 'CLATE', 'destination_mode' => 'production'
+      )
+      persist_lifecycle_update(attributes)
+    end
+
+    task.cancel!
+
+    saved = @lifecycle_snapshots.find { |snapshot| snapshot.fetch('status') == 'cancelled' }
+    expect(saved.fetch('approval_notification')).to include(
+      'ts' => 'CONCURRENT', 'channel' => 'CLATE', 'outcome' => 'Task cancelled', 'closed_at' => now,
+      'finalized' => false
+    )
+    expect(task.reload.approval_notification).to include('ts' => 'CONCURRENT', 'channel' => 'CLATE', 'finalized' => true)
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      'CLATE', 'CONCURRENT', a_string_including('Task cancelled', '6 days'), resolved_channel: true
+    ).once
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+  end
+
   it 'closes cancellation even when the pending receipt was already marked finalized' do
     task.cancel!
 
     expect(task.reload.status).to eq('cancelled')
+    expect_durable_closure('cancelled', outcome: 'Task cancelled')
     expect(task.approval_notification).to include(
       'ts' => receipt['ts'], 'channel' => receipt['channel'], 'outcome' => 'Task cancelled',
       'closed_at' => now, 'started_at' => now - 6.days, 'finalized' => true
@@ -261,6 +393,7 @@ RSpec.describe 'Volunteer task lifecycle and status notification integration' do
       notification = edit_status(status)
 
       expect(task.status).to eq(status)
+      expect_durable_closure(status, outcome: outcome)
       expect(notification).to include('outcome' => outcome, 'closed_at' => now, 'finalized' => true)
       expect(Service::SlackConnector).to have_received(:update_slack_message).with(
         'CORIGINAL', '123.456', a_string_including(outcome, 'Review closed after 6 days.'),
@@ -320,6 +453,7 @@ RSpec.describe 'Volunteer task lifecycle and status notification integration' do
 
     expect(task.reload.status).to eq('pending')
     expect(task.approval_notification).to eq(receipt)
+    expect(task.delayed_atomic_sets).to be_empty
     expect(Service::SlackConnector).not_to have_received(:update_slack_message)
   end
 
@@ -332,5 +466,49 @@ RSpec.describe 'Volunteer task lifecycle and status notification integration' do
       'outcome' => 'Pending review ended; task status changed to available', 'closed_at' => now, 'finalized' => true
     )
     expect(Service::SlackConnector).to have_received(:update_slack_message).once
+  end
+
+  context 'when closing an event' do
+    let(:receipt) do
+      super().merge('subject' => 'Event E8 with 1 checked-in attendee')
+    end
+    let(:attendee_id) { BSON::ObjectId.new }
+    let(:task) do
+      VolunteerEvent.new(
+        title: 'Community cleanup', event_number: 8, event_date: now.in_time_zone.to_date - 6,
+        attendee_ids: [attendee_id], approval_notification: receipt.deep_dup
+      )
+    end
+
+    before do
+      allow(Member).to receive(:find).with(attendee_id).and_return(double(active_membership_status?: true))
+      allow(Service::VolunteerApprovalReminder).to receive(:record_outcome!).and_raise('Later metadata write unavailable')
+    end
+
+    it 'persists the event outcome before issuing attendance credits and can retry the final Slack message' do
+      credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil)
+      allow(VolunteerCredit).to receive(:create!) do
+        expect_durable_closure('closed', outcome: 'Event closed by Sam Reviewer')
+        credit
+      end
+      allow(Service::SlackConnector).to receive(:update_slack_message).and_raise('Slack unavailable')
+
+      expect { task.close!(verifier) }.not_to raise_error
+
+      expect(task.reload.status).to eq('closed')
+      expect(task.closed_at).to eq(now)
+      expect(task.approval_notification).to include('closed_at' => now, 'finalized' => false)
+      expect_durable_closure('closed', outcome: 'Event closed by Sam Reviewer')
+      expect(Service::VolunteerApprovalReminder).not_to have_received(:record_outcome!)
+      expect(VolunteerCredit).to have_received(:create!).once
+
+      allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
+      Service::VolunteerApprovalReminder.sync_closed!(task)
+      expect(task.reload.approval_notification['finalized']).to be(true)
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        'CORIGINAL', '123.456', a_string_including('Event closed by Sam Reviewer', '6 days'), resolved_channel: true
+      ).twice
+      expect(VolunteerCredit).to have_received(:create!).once
+    end
   end
 end

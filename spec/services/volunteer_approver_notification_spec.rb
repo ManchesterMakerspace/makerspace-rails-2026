@@ -58,7 +58,11 @@ RSpec.describe VolunteerApproverNotification do
   end
 
   def receipts_for(record)
-    record.is_a?(VolunteerTask) ? task_receipts(record) : record.reload.approver_notifications.fetch('event')
+    record.is_a?(VolunteerTask) ? task_receipts(record) : record.reload.approver_notifications.fetch(event_key(record.event_date))
+  end
+
+  def event_key(date)
+    date ? "event_#{date.strftime('%Y%m%d')}" : 'event_undated'
   end
 
   def enumerate_reviewers_once(*managers)
@@ -319,10 +323,79 @@ RSpec.describe VolunteerApproverNotification do
       a_string_including(activity.display_number, '2 checked-in attendees',
         "https://portal.example.org/volunteer?event=#{activity.id}"), 'UEVENT'
     )
-    expect(activity.reload.approver_notifications.fetch('event').fetch(assigned.id.to_s)).to include(
+    expect(activity.reload.approver_notifications.fetch(event_key(activity.event_date)).fetch(assigned.id.to_s)).to include(
       'state' => 'sent', 'ts' => 'receipt-UEVENT', 'channel' => 'D-UEVENT'
     )
     excluded.each { |record| expect(record.reload.approver_notifications).to be_empty }
+  end
+
+  it 'sends fresh event review DMs after a supported date update and only after the new day passes' do
+    assigned = reviewer(slack_id: 'URESCHEDULED')
+    remaining = reviewer(slack_id: 'UREMAINING')
+    activity = event(event_date: now.to_date - 1)
+    original_date = activity.event_date
+    described_class.notify!(activity, now: now)
+    original_receipts = receipts_for(activity).deep_dup
+
+    rescheduled_date = now.to_date + 3
+    activity.update!(event_date: rescheduled_date)
+    travel 2.days
+    VolunteerEventReminderJob.perform_now
+    travel 1.day
+    VolunteerEventReminderJob.perform_now
+    expect(Service::SlackConnector).to have_received(:send_slack_message).exactly(2).times
+
+    travel 1.day
+    2.times { VolunteerEventReminderJob.perform_now }
+
+    [assigned, remaining].each do |manager|
+      slack_id = manager == assigned ? 'URESCHEDULED' : 'UREMAINING'
+      expect(Service::SlackConnector).to have_received(:send_slack_message).twice.with(
+        a_string_including("https://portal.example.org/volunteer?event=#{activity.id}"), slack_id
+      )
+      expect(receipts_for(activity).fetch(manager.id.to_s)).to include('state' => 'sent', 'sent_at' => Time.current)
+    end
+    expect(activity.reload.approver_notifications.fetch(event_key(original_date))).to eq(original_receipts)
+    expect(Service::ErrorReporter).not_to have_received(:notify)
+  end
+
+  it 'adopts successful legacy event receipts without resending an unchanged event review' do
+    assigned = reviewer(slack_id: 'ULEGACY')
+    activity = event(event_date: now.to_date - 1)
+    original_receipt = { 'state' => 'sent', 'ts' => 'legacy.ts', 'channel' => 'DLEGACY', 'sent_at' => now }
+    activity.set(approver_notifications: { 'event' => { assigned.id.to_s => original_receipt } })
+
+    2.times { described_class.notify!(activity, now: now) }
+
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+    expect(activity.reload.approver_notifications).not_to have_key('event')
+    expect(receipts_for(activity).fetch(assigned.id.to_s)).to eq(original_receipt)
+    expect(Service::ErrorReporter).not_to have_received(:notify)
+  end
+
+  it 'binds legacy event receipts to the old date when rescheduled before its first new-service scan' do
+    assigned = reviewer(slack_id: 'ULEGACY')
+    activity = event(event_date: now.to_date - 1)
+    original_date = activity.event_date
+    original_receipt = { 'state' => 'sent', 'ts' => 'legacy.ts', 'channel' => 'DLEGACY', 'sent_at' => now }
+    activity.set(approver_notifications: { 'event' => { assigned.id.to_s => original_receipt } })
+
+    activity.update!(event_date: now.to_date + 3)
+    expect(activity.reload.approver_notifications).not_to have_key('event')
+    expect(activity.approver_notifications.fetch(event_key(original_date)).fetch(assigned.id.to_s)).to eq(original_receipt)
+    travel 3.days
+    described_class.notify!(activity, now: Time.current)
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+
+    travel 1.day
+    2.times { described_class.notify!(activity, now: Time.current) }
+
+    expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(
+      a_string_including("https://portal.example.org/volunteer?event=#{activity.id}"), 'ULEGACY'
+    )
+    expect(receipts_for(activity).fetch(assigned.id.to_s)).to include('state' => 'sent', 'sent_at' => Time.current)
+    expect(activity.approver_notifications.fetch(event_key(original_date)).fetch(assigned.id.to_s)).to eq(original_receipt)
+    expect(Service::ErrorReporter).not_to have_received(:notify)
   end
 
   {
@@ -332,6 +405,7 @@ RSpec.describe VolunteerApproverNotification do
     it "keeps the event review retryable when its date is #{change} after lease acquisition" do
       assigned = reviewer(slack_id: 'URESCHEDULED')
       activity = event(event_date: now.to_date - 1)
+      original_date = activity.event_date
       rescheduled_date = now.to_date + 3
       stored_date = Time.utc(rescheduled_date.year, rescheduled_date.month, rescheduled_date.day)
       change_before_delivery(activity) do
@@ -343,7 +417,7 @@ RSpec.describe VolunteerApproverNotification do
       described_class.notify!(activity, now: now)
 
       expect(Service::SlackConnector).not_to have_received(:send_slack_message)
-      expect(activity.reload.approver_notifications.fetch('event').fetch(assigned.id.to_s)['state']).to eq('failed')
+      expect(activity.reload.approver_notifications.fetch(event_key(original_date)).fetch(assigned.id.to_s)['state']).to eq('failed')
 
       if undated
         VolunteerEvent.collection.find('_id' => activity.id).update_one('$set' => { 'event_date' => stored_date })
@@ -354,7 +428,7 @@ RSpec.describe VolunteerApproverNotification do
       described_class.notify!(activity, now: Time.current)
 
       expect(Service::SlackConnector).not_to have_received(:send_slack_message)
-      expect(activity.reload.approver_notifications.fetch('event').fetch(assigned.id.to_s)['state']).to eq('failed')
+      expect(activity.reload.approver_notifications.fetch(event_key(original_date)).fetch(assigned.id.to_s)['state']).to eq('failed')
 
       travel 1.day
       2.times { described_class.notify!(activity, now: Time.current) }
@@ -362,7 +436,7 @@ RSpec.describe VolunteerApproverNotification do
       expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(
         a_string_including("https://portal.example.org/volunteer?event=#{activity.id}"), 'URESCHEDULED'
       )
-      expect(activity.reload.approver_notifications.fetch('event').fetch(assigned.id.to_s)).to include(
+      expect(activity.reload.approver_notifications.fetch(event_key(rescheduled_date)).fetch(assigned.id.to_s)).to include(
         'state' => 'sent', 'ts' => 'receipt-URESCHEDULED', 'channel' => 'D-URESCHEDULED', 'sent_at' => Time.current
       )
       expect(Service::ErrorReporter).not_to have_received(:notify)

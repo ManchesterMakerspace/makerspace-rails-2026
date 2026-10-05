@@ -126,9 +126,12 @@ there is no separate claim or notification collection. The current state stores
 wait start (`started_at`) and subject intent before posting, and adds Slack's
 message `ts`, returned channel, and `destination_mode` (`production` or `test`)
 after a successful acknowledgment. It also stores final `outcome` and `closed_at`.
-`finalized: false` marks a closed outcome awaiting its final Slack update;
-pending receipts and outcomes with no posted message need no final-delivery
-retry. Review clocks use native UTC timestamps. These fields are not included
+`finalized: false` marks a closed outcome awaiting final-delivery processing.
+Closure fields and this flag are persisted in the same MongoDB write as the
+lifecycle transition, using dotted updates that preserve concurrent Slack
+receipt fields. Sync finalizes closed snapshots without a posted message;
+late receipt registration reopens final delivery. Review clocks use native UTC
+timestamps. These fields are not included
 in task/event API serialization.
 
 The reminder job posts after more than five days, then updates the saved message
@@ -142,13 +145,16 @@ removed best effort. Saved conversation IDs remain tied to their original
 production/test destination mode; mismatched-mode updates are refused and
 retained for the intended environment.
 
-A task whose credit creation raises can store a distinct `Credit award failed`
-outcome for manual verification and correction. For a posted reminder, a
+A task approval initially stores `Credit award not confirmed` with the completed
+status, then replaces it with an approved outcome after credit creation succeeds
+or a `Credit award failed` outcome if creation raises. If that later metadata
+write fails, the initial warning remains available for final-message retry and
+manual verification. For a posted reminder, a
 finalized warning means its Slack update was delivered, not that the credit
 problem was resolved. Failed
 warning delivery uses the same retry fields; the reminder job does not retry
-creating credits. Outcome metadata cannot be guaranteed if its database write
-also fails.
+creating credits. A successful lifecycle write always includes its initial
+closure metadata; confirmation of the credit outcome can still fail separately.
 
 The compound `{ status: 1, completed_at: 1 }` task index supports the
 pending-completion scan; `{ status: 1, event_date: 1 }` supports the dated open
@@ -168,7 +174,15 @@ age thresholds, channel routing, and recovery behavior.
 The proposed shop RM notification rollout adds a separate private
 `approver_notifications` hash on those same documents. Task delivery paths are
 keyed by completion-submission timestamp and manager ID; event paths are keyed
-by event and manager ID. Each recipient stores `state` (`sending`, `sent`,
+by scheduled date (`event_YYYYMMDD`) and manager ID. Existing date buckets remain
+as notification history. Legacy `event` buckets are atomically renamed to the
+existing date on the first scan or before a normal model update reschedules the
+event; a missing old date uses `event_undated`. Renames guard the stored date and
+refuse collisions with an existing date bucket, preserving both sets of receipts
+and blocking that date update on conflict. Deployment must drain or stop workers
+using the legacy path before renaming buckets; their in-flight acknowledgments
+otherwise target a removed path and can lead to a duplicate on lease recovery.
+Each recipient stores `state` (`sending`, `sent`,
 `failed`, or `obsolete`), a sending-lease token and `attempted_at`; successful
 posts additionally store `ts`, returned channel, `sent_at`, and
 `destination_mode`. Failed or stale sending attempts can be retried without
@@ -181,8 +195,10 @@ manager eligibility changes (role/shop removal, suspension/revocation or becomin
 the task claimant) and a moved/cleared activity shop also leave `failed` receipts;
 they can retry once eligibility is restored for the same pending submission.
 Deleted managers, terminal tasks/events, and superseded task submissions become
-`obsolete`; successful `sent` receipts remain unchanged by eligibility changes
-or rescheduling. An accepted post with
+`obsolete`; successful `sent` receipts remain unchanged by eligibility changes.
+A different event date uses a new bucket and can notify the same manager again
+after that date passes; returning to a previous date reuses its saved receipts.
+An accepted post with
 failed receipt persistence keeps its sending lease and reports uncertainty;
 lease expiry after that failure or a worker crash can permit a duplicate DM.
 These fields remain excluded from

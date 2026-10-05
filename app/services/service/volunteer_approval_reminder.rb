@@ -43,6 +43,29 @@ module Service
         ) }
       end
 
+      # Mongoid combines delayed dotted sets with update!'s lifecycle fields in
+      # one write, preserving validation/callbacks and a concurrently posted ts.
+      def transition_with_outcome!(record, attributes, notification:)
+        return record.update!(attributes) if notification.empty?
+
+        final_fields = normalize_receipt(notification).slice('started_at', 'subject', 'outcome', 'closed_at')
+        # A timestamp may arrive after the snapshot was taken. Always leave the
+        # closure retryable; syncing can finalize a receipt that has no message.
+        final_fields['finalized'] = false
+        fields = final_fields.to_h { |name, value| ["approval_notification.#{name}", value] }
+        previous = record.delayed_atomic_sets.slice(*fields.keys)
+        persisted = false
+        begin
+          record.delayed_atomic_sets.merge!(fields)
+          result = record.update!(attributes)
+          persisted = true
+          result
+        ensure
+          fields.each_key { |name| record.delayed_atomic_sets.delete(name) }
+          record.delayed_atomic_sets.merge!(previous) unless persisted
+        end
+      end
+
       # The domain transition has already succeeded. Add only final fields so
       # a Slack receipt registered concurrently cannot be erased by the review.
       def record_outcome!(record, snapshot, expected_status:)
@@ -132,9 +155,9 @@ module Service
       def sync_closed!(record)
         record.reload
         receipt = record.approval_notification.to_h
-        if final_update_needed?(receipt)
+        if receipt['closed_at'].present? && !receipt['finalized']
           begin
-            update_final(record, receipt)
+            update_final(record, receipt) if receipt['ts'].present?
             mark_finalized!(record, receipt)
           rescue => error
             ErrorReporter.notify(error)
@@ -143,10 +166,10 @@ module Service
 
         record.reload
         Array(record.approval_notification_history).each do |past_receipt|
-          next unless final_update_needed?(past_receipt)
+          next unless past_receipt['closed_at'].present? && !past_receipt['finalized']
 
           begin
-            update_final(record, past_receipt)
+            update_final(record, past_receipt) if past_receipt['ts'].present?
             mark_finalized!(record, past_receipt)
           rescue => error
             ErrorReporter.notify(error)
@@ -222,14 +245,10 @@ module Service
           "#{elapsed(record, receipt, now)}. #{action}"
       end
 
-      def final_update_needed?(receipt)
-        receipt['ts'].present? && receipt['closed_at'].present? && !receipt['finalized']
-      end
-
       def update_final(record, receipt)
         ensure_destination_mode!(receipt)
         outcome = receipt.fetch('outcome')
-        icon = if outcome.start_with?('Credit award failed')
+        icon = if outcome.start_with?('Credit award failed', 'Credit award not confirmed')
           '⚠️'
         elsif outcome.start_with?('Denied')
           '❌'

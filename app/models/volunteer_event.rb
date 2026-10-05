@@ -33,6 +33,7 @@ class VolunteerEvent
   validate :prerequisites_belong_to_shop
 
   before_create :assign_event_number
+  before_update :preserve_scheduled_review_receipts, if: :event_date_changed?
 
   index({ status: 1 })
   index({ status: 1, event_date: 1 })
@@ -165,11 +166,11 @@ class VolunteerEvent
     notification = Service::VolunteerApprovalReminder.outcome_attributes(
       self, outcome: "Event closed by #{closed_by_member.fullname}", closed_at: closed_time
     ).fetch(:approval_notification, {})
-    update!(
+    Service::VolunteerApprovalReminder.transition_with_outcome!(self, {
       status:    'closed',
       closed_by_id: closed_by_member.id,
       closed_at: closed_time
-    )
+    }, notification: notification)
 
     attendee_ids.each do |member_id|
       member = Member.find(member_id) rescue nil
@@ -189,11 +190,14 @@ class VolunteerEvent
       Service::ErrorReporter.notify(e)
     end
 
-    Service::VolunteerApprovalReminder.record_outcome!(self, notification, expected_status: 'closed')
     Service::VolunteerApprovalReminder.sync_closed!(self)
   end
 
   private
+
+  def preserve_scheduled_review_receipts
+    VolunteerApproverNotification.preserve_event_receipts!(self, event_date: event_date_was)
+  end
 
   def prerequisites_belong_to_shop
     ids = Array(prerequisite_tool_ids).map(&:to_s).reject(&:blank?).uniq

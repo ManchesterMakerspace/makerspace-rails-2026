@@ -247,7 +247,13 @@ class VolunteerTask
     notification = Service::VolunteerApprovalReminder.outcome_attributes(
       self, outcome: "Approved by #{verifier.fullname}"
     ).fetch(:approval_notification, {})
-    update!(status: 'completed', verified_by_id: verifier.id)
+    provisional_notification = notification.empty? ? {} : notification.merge(
+      'outcome' => "Credit award not confirmed during approval by #{verifier.fullname}; " \
+        'verify whether a credit was saved and correct the award manually'
+    )
+    Service::VolunteerApprovalReminder.transition_with_outcome!(
+      self, { status: 'completed', verified_by_id: verifier.id }, notification: provisional_notification
+    )
 
     approval_error = nil
     credit_created = false
@@ -320,17 +326,18 @@ class VolunteerTask
     ).fetch(:approval_notification, {})
 
     if child_task?
-      update!(status: 'denied', rejection_reason: reason)
+      Service::VolunteerApprovalReminder.transition_with_outcome!(
+        self, { status: 'denied', rejection_reason: reason }, notification: notification
+      )
     else
-      update!(
+      Service::VolunteerApprovalReminder.transition_with_outcome!(self, {
         status:           'available',
         claimed_by_id:    nil,
         claimed_at:       nil,
         completed_at:     nil,
         rejection_reason: reason
-      )
+      }, notification: notification)
     end
-    Service::VolunteerApprovalReminder.record_outcome!(self, notification, expected_status: status)
 
     if notify
       notify_member_task_rejected(former_claimant_id, reason)
@@ -342,8 +349,16 @@ class VolunteerTask
   def cancel!
     reload
     notification = pending_review_outcome_for_status('cancelled')
-    update!(status: 'cancelled')
+    Service::VolunteerApprovalReminder.transition_with_outcome!(
+      self, { status: 'cancelled' }, notification: notification
+    )
     close_pending_review_notification!(notification)
+  end
+
+  def update_with_review_outcome!(attributes, actor: nil)
+    notification = pending_review_outcome_for_status(attributes[:status] || attributes['status'], actor: actor)
+    Service::VolunteerApprovalReminder.transition_with_outcome!(self, attributes, notification: notification)
+    notification
   end
 
   # Generic status edits do not issue credits or run the verification flow.
@@ -373,7 +388,6 @@ class VolunteerTask
   def close_pending_review_notification!(notification)
     return if notification.empty?
 
-    Service::VolunteerApprovalReminder.record_outcome!(self, notification, expected_status: status)
     Service::VolunteerApprovalReminder.sync_closed!(self)
   end
 

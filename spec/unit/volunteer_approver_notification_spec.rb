@@ -56,11 +56,17 @@ RSpec.describe VolunteerApproverNotification do
       allow(collection).to receive(:find) do |selector|
         @selectors << selector
         query = double('Atomic query')
+        allow(query).to receive(:first) { model.records.find { |candidate| matches?(candidate.document, selector) }&.document }
         allow(query).to receive(:find_one_and_update) do |update, **_options|
           record = model.records.find { |candidate| matches?(candidate.document, selector) } unless
             @fail_receipt_writes && selector.keys.any? { |key| key.end_with?('.token') }
           if record
-            update.fetch('$set').each { |path, value| set_path!(record, path, value) }
+            update.fetch('$set', {}).each { |path, value| set_path!(record, path, value) }
+            update.fetch('$rename', {}).each do |source, destination|
+              value = value_at(record.document, source)
+              set_path!(record, destination, value)
+              record.approver_notifications.delete(source.delete_prefix('approver_notifications.'))
+            end
             record.document
           end
         end
@@ -130,6 +136,10 @@ RSpec.describe VolunteerApproverNotification do
     described_class.notify!(record, now: at)
   end
 
+  def event_key(date = event.event_date)
+    date ? "event_#{date.strftime('%Y%m%d')}" : 'event_undated'
+  end
+
   it 'DMs each assigned manager once with a link to the exact task claim' do
     notify
     notify(at: now + 1.day)
@@ -159,6 +169,110 @@ RSpec.describe VolunteerApproverNotification do
     expect(Service::SlackConnector).to have_received(:send_slack_message).exactly(2).times
   end
 
+  it 'sends one fresh review per manager after a successfully notified event is rescheduled' do
+    original_date = event.event_date
+    notify(event)
+    original_receipts = event.approver_notifications.fetch(event_key(original_date)).deep_dup
+
+    event.event_date = now.in_time_zone.to_date + 3
+    [now + 1.day, now + 3.days].each { |time| notify(event, at: time) }
+    expect(Service::SlackConnector).to have_received(:send_slack_message).exactly(2).times
+
+    2.times { notify(event, at: now + 4.days) }
+
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-wood').twice
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').twice
+    expect(event.approver_notifications.fetch(event_key(original_date))).to eq(original_receipts)
+    expect(event.approver_notifications.fetch(event_key)).to have_attributes(size: 2)
+    expect(event.approver_notifications.fetch(event_key).values).to all(include('state' => 'sent'))
+    expect(Service::ErrorReporter).not_to have_received(:notify)
+  end
+
+  it 'preserves sent legacy event receipts without reposting on an unchanged schedule' do
+    event.approver_notifications['event'] = {
+      manager.id => { 'state' => 'sent', 'ts' => 'legacy.ts', 'channel' => 'DLEGACY' }
+    }
+
+    2.times { notify(event) }
+
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'U-rm-wood')
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+    expect(event.approver_notifications).not_to have_key('event')
+    expect(event.approver_notifications.fetch(event_key).fetch(manager.id)).to include(
+      'state' => 'sent', 'ts' => 'legacy.ts', 'channel' => 'DLEGACY'
+    )
+  end
+
+  it 'preserves a fresh legacy sending lease and retries it only after the lease expires' do
+    event.approver_notifications['event'] = {
+      manager.id => { 'state' => 'sending', 'token' => 'legacy-token', 'attempted_at' => now }
+    }
+
+    notify(event)
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(anything, 'U-rm-wood')
+    expect(event.approver_notifications.fetch(event_key).fetch(manager.id)).to include('token' => 'legacy-token')
+
+    2.times { notify(event, at: now + 6.minutes) }
+
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-wood').once
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+    expect(event.approver_notifications.fetch(event_key).values).to all(include('state' => 'sent'))
+  end
+
+  it 'retries a failed legacy delivery after adopting the current schedule' do
+    event.approver_notifications['event'] = { manager.id => { 'state' => 'failed' } }
+
+    2.times { notify(event) }
+
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-wood').once
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+    expect(event.approver_notifications.fetch(event_key).values).to all(include('state' => 'sent'))
+  end
+
+  it 'preserves both buckets and reports a conflict instead of overwriting date-versioned receipts' do
+    event.approver_notifications['event'] = { manager.id => { 'state' => 'sent', 'ts' => 'legacy.ts' } }
+    event.approver_notifications[event_key] = { second_manager.id => { 'state' => 'sent', 'ts' => 'current.ts' } }
+    existing = event.approver_notifications.deep_dup
+
+    notify(event)
+
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+    expect(event.approver_notifications).to eq(existing)
+    expect(Service::ErrorReporter).to have_received(:notify).with(
+      an_object_having_attributes(message: 'Legacy event approver receipts could not be bound to the existing schedule')
+    ).once
+  end
+
+  it 'binds legacy receipts to the previous schedule before a supported reschedule' do
+    original_date = event.event_date
+    legacy_receipt = { 'state' => 'sent', 'ts' => 'legacy.ts', 'channel' => 'DLEGACY' }
+    event.approver_notifications['event'] = { manager.id => legacy_receipt }
+
+    described_class.preserve_event_receipts!(event, event_date: original_date)
+    event.event_date = now.in_time_zone.to_date + 3
+    notify(event, at: now + 3.days)
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+
+    2.times { notify(event, at: now + 4.days) }
+
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-wood').once
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+    expect(event.approver_notifications.fetch(event_key(original_date)).fetch(manager.id)).to eq(legacy_receipt)
+  end
+
+  it 'does not bind legacy receipts to a schedule that changed before adoption' do
+    original_date = event.event_date
+    event.approver_notifications['event'] = { manager.id => { 'state' => 'sent' } }
+    event.event_date = original_date + 3
+
+    expect { described_class.preserve_event_receipts!(event, event_date: original_date) }.to raise_error(
+      'Legacy event approver receipts could not be bound to the existing schedule'
+    )
+
+    expect(event.approver_notifications).to have_key('event')
+    expect(event.approver_notifications).not_to have_key(event_key(original_date))
+  end
+
   it 'does not notify for unassigned shops, unfinished task claims, or already reviewed records' do
     task.shop_id = nil
     notify
@@ -182,6 +296,7 @@ RSpec.describe VolunteerApproverNotification do
 
   %i[future undated].each do |schedule|
     it "retries an event review after its date becomes #{schedule} during lease acquisition" do
+      original_date = event.event_date
       rescheduled_date = now.in_time_zone.to_date + 3
       reloaded = 0
       allow(event).to receive(:reload) do
@@ -193,7 +308,7 @@ RSpec.describe VolunteerApproverNotification do
       notify(event)
 
       expect(Service::SlackConnector).not_to have_received(:send_slack_message)
-      expect(event.approver_notifications.fetch('event').values).to all(include('state' => 'failed'))
+      expect(event.approver_notifications.fetch(event_key(original_date)).values).to all(include('state' => 'failed'))
       expect(Service::ErrorReporter).not_to have_received(:notify)
 
       event.event_date = rescheduled_date
@@ -205,9 +320,28 @@ RSpec.describe VolunteerApproverNotification do
 
       expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-wood').once
       expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
-      expect(event.approver_notifications.keys).to eq(['event'])
-      expect(event.approver_notifications.fetch('event').values).to all(include('state' => 'sent'))
+      expect(event.approver_notifications.keys).to contain_exactly(event_key(original_date), event_key(rescheduled_date))
+      expect(event.approver_notifications.fetch(event_key(rescheduled_date)).values).to all(include('state' => 'sent'))
     end
+  end
+
+  it 'retries the original event date after a temporary undated reschedule is reversed' do
+    original_date = event.event_date
+    reloaded = 0
+    allow(event).to receive(:reload) do
+      reloaded += 1
+      event.event_date = nil if reloaded == 2
+      event
+    end
+    notify(event)
+    expect(event.approver_notifications.fetch(event_key(original_date)).fetch(manager.id)['state']).to eq('failed')
+
+    event.event_date = original_date
+    2.times { notify(event) }
+
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-wood').once
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, 'U-rm-second').once
+    expect(event.approver_notifications.fetch(event_key).values).to all(include('state' => 'sent'))
   end
 
   it 'keeps a closed event receipt obsolete when closure races with lease acquisition' do
@@ -222,7 +356,7 @@ RSpec.describe VolunteerApproverNotification do
     notify(event, at: now + 4.days)
 
     expect(Service::SlackConnector).not_to have_received(:send_slack_message)
-    expect(event.approver_notifications.fetch('event').values).to all(include('state' => 'obsolete'))
+    expect(event.approver_notifications.fetch(event_key).values).to all(include('state' => 'obsolete'))
     expect(Service::ErrorReporter).not_to have_received(:notify)
   end
 

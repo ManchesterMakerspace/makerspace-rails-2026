@@ -107,9 +107,23 @@ RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
     expect { task.complete!(admin) }.to raise_error(StandardError, 'Notification metadata storage unavailable')
 
     expect(task.reload.status).to eq('completed')
+    expect(task.approval_notification).to include('closed_at' => now, 'finalized' => false)
+    expect(task.approval_notification['outcome']).to include('Credit award not confirmed', 'correct the award manually')
+    expect(VolunteerEventReminderJob.new.send(:retry_notifications, VolunteerTask).where(id: task.id)).to exist
     expect(VolunteerCredit.where(task_id: task.id, member_id: member.id, status: 'approved').count).to eq(1)
     expect(Service::ErrorReporter).to have_received(:notify).with(an_instance_of(StandardError))
     expect { task.complete!(admin) }.to raise_error(Error::Forbidden)
+    expect(VolunteerCredit.where(task_id: task.id).count).to eq(1)
+
+    allow(Service::VolunteerApprovalReminder).to receive(:write_notification).and_call_original
+    Service::VolunteerApprovalReminder.sync_closed!(task)
+
+    expect(task.reload.approval_notification['finalized']).to be(true)
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      receipt.fetch('channel'), receipt.fetch('ts'),
+      a_string_including('Credit award not confirmed', 'correct the award manually', 'Review closed after 6 days.'),
+      resolved_channel: true
+    ).once
     expect(VolunteerCredit.where(task_id: task.id).count).to eq(1)
   end
 
@@ -192,7 +206,9 @@ RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
 
       expect(task.reload.status).to eq('completed')
       expect(VolunteerCredit.where(task_id: task.id).count).to eq(0)
-      expect(task.approval_notification['outcome']).to be_nil
+      expect(task.approval_notification).to include('closed_at' => now, 'finalized' => false)
+      expect(task.approval_notification['outcome']).to include('Credit award not confirmed', 'correct the award manually')
+      expect(VolunteerEventReminderJob.new.send(:retry_notifications, VolunteerTask).where(id: task.id)).to exist
       expect(Service::SlackConnector).not_to have_received(:update_slack_message)
       expect(Service::ErrorReporter).to have_received(:notify).with(metadata_error)
       expect { task.complete!(admin) }.to raise_error(Error::Forbidden)
@@ -342,7 +358,7 @@ RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
     expect(Service::ErrorReporter).to have_received(:notify).with(an_instance_of(StandardError))
   end
 
-  it 'issues event attendance credits before a notification metadata write failure and refuses duplicate closure' do
+  it 'keeps event closure and attendance credits durable when saving final delivery fails' do
     event = VolunteerEvent.create!(
       title: 'Cleanup', created_by_id: admin.id, event_date: Date.current - 6,
       attendee_ids: [member.id, admin.id], approval_notification: receipt.merge('subject' => 'Event E3: Cleanup')
@@ -350,13 +366,27 @@ RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
     allow(Service::VolunteerApprovalReminder).to receive(:write_notification)
       .and_raise(StandardError, 'Notification metadata storage unavailable')
 
-    expect { event.close!(admin) }.to raise_error(StandardError, 'Notification metadata storage unavailable')
+    expect { event.close!(admin) }.not_to raise_error
 
     expect(event.reload.status).to eq('closed')
+    expect(event.approval_notification).to include(
+      'outcome' => "Event closed by #{admin.fullname}", 'closed_at' => event.closed_at, 'finalized' => false
+    )
+    expect(VolunteerEventReminderJob.new.send(:retry_notifications, VolunteerEvent).where(id: event.id)).to exist
     credits = VolunteerCredit.where(description: "Attended event: Cleanup (#{event.display_number})", status: 'approved')
     expect(credits.pluck(:member_id)).to contain_exactly(member.id, admin.id)
     expect(Service::ErrorReporter).to have_received(:notify).with(an_instance_of(StandardError))
     expect { event.close!(admin) }.to raise_error(Error::Forbidden)
+    expect(credits.count).to eq(2)
+
+    allow(Service::VolunteerApprovalReminder).to receive(:write_notification).and_call_original
+    Service::VolunteerApprovalReminder.sync_closed!(event)
+
+    expect(event.reload.approval_notification['finalized']).to be(true)
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      receipt.fetch('channel'), receipt.fetch('ts'),
+      a_string_including("Event closed by #{admin.fullname}", 'Review closed after 6 days.'), resolved_channel: true
+    ).twice
     expect(credits.count).to eq(2)
   end
 end

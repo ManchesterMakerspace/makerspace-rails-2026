@@ -398,7 +398,7 @@ synchronous diagnostic invocation where one is useful.
 | `Service::GoogleDrive.upload_backup` | Do not call alone; use `RAILS_ENV=production bundle exec rake backup`. | Uploads the archive created by the backup task to Google Drive. Calling it directly requires an existing archive filename and does not create a database dump. |
 | `Service::MembershipExpirationNotice.run!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::MembershipExpirationNotice.run!'` | Performs the daily membership-expiration-notice scan and email sends described above. Outside production, it logs each candidate date window and the comma-delimited names (or `nil`) in the expiring-soon and expired lists. Prefer the job if admin-visible status is required. |
 | `Service::VolunteerApprovalReminder` | Use `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Owns pending-approval Slack message content, saved delivery receipts, in-place age updates, final-outcome updates, and recovery of failed final updates. Task/event lifecycle methods invoke it after approval, rejection, or event closure; use the job for recurring scans and status tracking. |
-| `VolunteerApproverNotification` | Use the task completion flow or `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Delivers one review DM per shop resource manager per task completion submission, or per dated event ready for closure. Stores per-recipient delivery state and retries failed/stale attempts. Direct links select the task claim or event on the authenticated React Volunteer page. |
+| `VolunteerApproverNotification` | Use the task completion flow or `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Delivers one review DM per shop resource manager per task completion submission, or per scheduled event date ready for closure. Stores per-recipient delivery state and retries failed/stale attempts. Direct links select the task claim or event on the authenticated React Volunteer page. |
 
 ### Volunteer approval reminders
 
@@ -438,7 +438,7 @@ eligibility filter. Managers whose direct notifications are suppressed
 when eligibility is rechecked before sending.
 
 Each recipient is tracked in the task/event's private `approver_notifications`
-hash, keyed by task submission time or event and manager ID. A successful Slack
+hash, keyed by task submission time or scheduled event date and manager ID. A successful Slack
 post stores its `ts`, returned channel, destination mode, and sent time. A
 five-minute tokenized sending lease prevents concurrent attempts from sending
 the same manager again; failed attempts and expired sending leases are retried
@@ -455,8 +455,22 @@ same receipt can be retried without repeating successful recipients. If an open
 event is rescheduled to today or a future date, or loses its date after leasing, delivery
 sends no DM and leaves the receipt `failed` for retry. Later scans wait until
 the scheduled date is before today; a restored date uses the same rule. A closed
-event remains obsolete, and a successful `sent` receipt is not repeated when
-the event is rescheduled. Delivery also queries the manager's active `SlackUser`
+event remains obsolete. Event buckets use `event_YYYYMMDD` keys: a successful
+`sent` receipt suppresses repeats only for that scheduled date. Rescheduling
+through the normal event update creates a separate review cycle; after the new
+date passes, eligible managers receive a fresh DM. Old date buckets remain for
+audit, and restoring a previously notified date reuses its successful receipts.
+Pre-versioning `event` buckets are atomically renamed to the existing date on
+the first scan or before a model update changes the date, preserving successful
+notices and active delivery leases. Missing old dates use `event_undated`.
+The rename checks the stored date and refuses to overwrite an existing date
+bucket; a conflict is reported and blocks that date update rather than losing
+either set of receipts. Before deploying date-versioned notifications, drain
+or stop workers running the preceding implementation. An old worker still
+sending through the legacy `event` path cannot save its acknowledgment after
+that bucket is renamed, and lease recovery could then repeat the DM. Workers
+using date keys can finish their original schedule's delivery normally.
+Delivery also queries the manager's active `SlackUser`
 again after acquiring the lease and verifies its ownership, active state, and
 nonblank Slack ID. A replacement identity found then receives the DM. If the
 link has disappeared, been invalidated or reassigned, or lost its Slack ID,
@@ -498,9 +512,17 @@ the running Slack environment; a mismatch is reported and retained for retry
 in the original environment. This prevents changing destinations when a saved
 message is processed under a different production/test mode.
 
-Task approval or denial and event closure save the final outcome and closure
-time, then update a recorded reminder in place with the outcome and total wait.
-Task approval records an approved outcome only after credit creation returns
+Task approval or denial and event closure save closure metadata in the same
+MongoDB update as the lifecycle transition. Cancellation and generic task
+status edits use the same mechanism. Genuine dotted receipt fields preserve
+concurrently registered Slack timestamps, channels and destination modes;
+normal Mongoid validation and callbacks still run. The transition saves
+`finalized: false`, so the existing final-delivery scan can recover even if a
+later metadata write or Slack update fails. Sync finalizes a closed snapshot
+without a timestamp without posting; late receipt registration reopens delivery.
+Recorded reminders are then updated in place with the outcome and total wait.
+Task approval first saves a `Credit award not confirmed` outcome with the
+completed status, and changes it to approved only after credit creation returns
 successfully. If creation raises, it instead saves a `Credit award failed`
 outcome and updates the existing message with a warning to verify the saved
 credit and correct the award manually. The task remains completed and cannot
@@ -509,10 +531,12 @@ the task before correcting it: a write can have succeeded before the exception,
 so blindly awarding another credit can duplicate it. A later notification or
 billing failure after successful creation retains the approved outcome.
 Failed delivery of the warning uses the normal final-message retry scan; the
-job retries message delivery, not credit creation. If saving outcome metadata
+job retries message delivery, not credit creation. If the later outcome write
 also fails, error reporting records that failure and the original creation
-error is preserved for the caller; a durable warning cannot be guaranteed
-while the database is unavailable.
+error is preserved for the caller. The initial unconfirmed warning remains
+durable whenever the completed-status write succeeded, including when credit
+creation actually succeeded but recording its confirmation failed. Verify the
+saved credit before manual correction; the job cannot infer the award outcome.
 Event closure reports closure without claiming every attendee credit succeeded:
 the existing per-attendee award failures remain possible. No final message is
 created if that activity never had an overdue reminder. An outcome snapshot can
