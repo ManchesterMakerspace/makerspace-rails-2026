@@ -166,17 +166,28 @@ class VolunteerEvent
     notification = Service::VolunteerApprovalReminder.outcome_attributes(
       self, outcome: "Event closed by #{closed_by_member.fullname}", closed_at: closed_time
     ).fetch(:approval_notification, {})
+    provisional_notification = notification.empty? ? {} : notification.merge(
+      'outcome' => "Credit award not confirmed during event closure by #{closed_by_member.fullname}; " \
+        'verify attendee credits and follow-up processing manually'
+    )
     Service::VolunteerApprovalReminder.transition_with_outcome!(self, {
       status:    'closed',
       closed_by_id: closed_by_member.id,
       closed_at: closed_time
-    }, notification: notification)
+    }, notification: provisional_notification)
 
+    failures = []
     attendee_ids.each do |member_id|
-      member = Member.find(member_id) rescue nil
+      stage = 'member lookup'
+      member = begin
+        Member.find(member_id)
+      rescue Mongoid::Errors::DocumentNotFound
+        nil
+      end
       next if member.nil?
       next unless member.active_membership_status?
 
+      stage = 'credit creation'
       credit = VolunteerCredit.create!(
         member_id:    member_id,
         issued_by_id: closed_by_member.id,
@@ -184,13 +195,34 @@ class VolunteerEvent
         credit_value: credit_value,
         status:       'approved'
       )
-      credit.send(:notify_member_credit_awarded)
-      credit.send(:check_discount_threshold!)
+      stage = 'award notification'
+      begin
+        credit.send(:notify_member_credit_awarded, raise_errors: true)
+      rescue => e
+        failures << { member_id: member_id, stage: stage }
+        Service::ErrorReporter.notify(e)
+      end
+      stage = 'membership discount processing'
+      credit.send(:check_discount_threshold!, raise_errors: true)
     rescue => e
+      failures << { member_id: member_id, stage: stage }
       Service::ErrorReporter.notify(e)
+      credit.send(:notify_discount_error, member, e) if stage == 'membership discount processing'
     end
 
-    Service::VolunteerApprovalReminder.sync_closed!(self)
+    if failures.any? && notification.present?
+      affected_count = failures.map { |failure| failure.fetch(:member_id) }.uniq.length
+      details = failures.map { |failure| "#{failure.fetch(:member_id)} (#{failure.fetch(:stage)})" }.join(', ')
+      notification['outcome'] = "Credit award failed or follow-up processing failed for #{affected_count} " \
+        "attendee#{'s' unless affected_count == 1} during event closure by #{closed_by_member.fullname}; " \
+        "affected member IDs: #{details}. Verify saved credits and follow-up processing " \
+        'before correcting awards manually; do not blindly award duplicate credits'
+    end
+    begin
+      Service::VolunteerApprovalReminder.record_outcome!(self, notification, expected_status: 'closed')
+    ensure
+      Service::VolunteerApprovalReminder.sync_closed!(self)
+    end
   end
 
   private

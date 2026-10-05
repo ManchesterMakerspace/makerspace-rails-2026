@@ -142,6 +142,37 @@ RSpec.describe 'Generic volunteer task responses', type: :request do
         let(:ticket_id) { nil }
         run_test! { expect(VolunteerTask.where(id: id)).not_to exist }
       end
+      response '503', 'Slack reminder finalization unavailable; cancelled task retained for retry' do
+        schema type: :object, required: %w[status error message], properties: {
+          status: { type: :integer, enum: [503] },
+          error: { type: :string, enum: ['service_unavailable'] },
+          message: { type: :string }
+        }
+        let(:ticket_id) { nil }
+        before do
+          completed_at = 6.days.ago
+          task.set(status: 'pending', claimed_by_id: claimant.id, completed_at: completed_at,
+            approval_notification: {
+              'ts' => '123.456', 'channel' => 'CREVIEW', 'destination_mode' => 'production',
+              'started_at' => completed_at.to_time.getutc, 'subject' => 'Task pending review', 'finalized' => true
+            })
+          allow(Service::SlackConnector).to receive(:message_destination_mode).and_return('production')
+          allow(Service::SlackConnector).to receive(:update_slack_message).and_raise('Slack unavailable')
+          allow(Service::ErrorReporter).to receive(:notify)
+        end
+        run_test! do |response|
+          expect(JSON.parse(response.body)).to include('status' => 503, 'error' => 'service_unavailable',
+            'message' => 'Cannot delete task until its Slack reminders have been finalized; retry deletion after delivery recovers')
+          expect(task.reload.status).to eq('cancelled')
+          expect(task.approval_notification).to include('ts' => '123.456', 'finalized' => false)
+          expect(VolunteerEventReminderJob.new.send(:retry_notifications, VolunteerTask).where(id: task.id)).to exist
+
+          allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
+          delete "/api/admin/volunteer_tasks/#{id}"
+          expect(self.response).to have_http_status(:no_content)
+          expect(VolunteerTask.where(id: id)).not_to exist
+        end
+      end
     end
   end
 

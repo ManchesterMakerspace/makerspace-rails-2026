@@ -5,6 +5,7 @@ require 'active_support/testing/time_helpers'
 require 'mongoid'
 require_relative '../spec_helper'
 require_relative '../../app/services/service/volunteer_approval_reminder'
+require_relative '../../lib/error/service_unavailable'
 
 RSpec.describe 'Volunteer lifecycle and status notification integration' do
   include ActiveSupport::Testing::TimeHelpers
@@ -150,6 +151,10 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
       view = double('MongoDB event collection view')
       allow(view).to receive(:read).and_return(view)
       allow(view).to receive(:first) { matches?(@persisted, selector) ? @persisted.deep_dup : nil }
+      allow(view).to receive(:delete_one) do |**_options|
+        @deletion_snapshot = @persisted.deep_dup
+        double(deleted_count: 1)
+      end
       allow(view).to receive(:update_one) do |update, **_options|
         expect(matches?(@persisted, selector)).to be(true)
         apply_update!(@persisted, update)
@@ -544,13 +549,12 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
 
     before do
       allow(Member).to receive(:find).with(attendee_id).and_return(double(active_membership_status?: true))
-      allow(Service::VolunteerApprovalReminder).to receive(:record_outcome!).and_raise('Later metadata write unavailable')
     end
 
     it 'persists the event outcome before issuing attendance credits and can retry the final Slack message' do
       credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil)
       allow(VolunteerCredit).to receive(:create!) do
-        expect_durable_closure('closed', outcome: 'Event closed by Sam Reviewer')
+        expect(expect_durable_closure('closed')['outcome']).to start_with('Credit award not confirmed')
         credit
       end
       allow(Service::SlackConnector).to receive(:update_slack_message).and_raise('Slack unavailable')
@@ -560,8 +564,8 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
       expect(task.reload.status).to eq('closed')
       expect(task.closed_at).to eq(now)
       expect(task.approval_notification).to include('closed_at' => now, 'finalized' => false)
-      expect_durable_closure('closed', outcome: 'Event closed by Sam Reviewer')
-      expect(Service::VolunteerApprovalReminder).not_to have_received(:record_outcome!)
+      expect(expect_durable_closure('closed')['outcome']).to start_with('Credit award not confirmed')
+      expect(task.approval_notification['outcome']).to eq('Event closed by Sam Reviewer')
       expect(VolunteerCredit).to have_received(:create!).once
 
       allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
@@ -571,6 +575,154 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
         'CORIGINAL', '123.456', a_string_including('Event closed by Sam Reviewer', '6 days'), resolved_channel: true
       ).twice
       expect(VolunteerCredit).to have_received(:create!).once
+    end
+
+    it 'reports a partial creation failure while still awarding other attendees and retries the warning' do
+      other_id = BSON::ObjectId.new
+      task.attendee_ids << other_id
+      @persisted['attendee_ids'] = task.attendee_ids.deep_dup
+      allow(Member).to receive(:find).with(other_id).and_return(double(active_membership_status?: true))
+      credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil)
+      allow(VolunteerCredit).to receive(:create!) do |**attributes|
+        raise 'Credit storage unavailable' if attributes[:member_id] == attendee_id
+        credit
+      end
+      allow(Service::SlackConnector).to receive(:update_slack_message).and_raise('Slack unavailable')
+
+      task.close!(verifier)
+
+      expect(task.reload.status).to eq('closed')
+      expect(task.approval_notification).to include('finalized' => false, 'closed_at' => now)
+      expect(task.approval_notification['outcome']).to include('failed for 1 attendee', attendee_id.to_s, 'credit creation')
+      expect(VolunteerCredit).to have_received(:create!).with(hash_including(member_id: other_id)).once
+      expect(Service::ErrorReporter).to have_received(:notify).with(have_attributes(message: 'Credit storage unavailable')).once
+      allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
+      Service::VolunteerApprovalReminder.sync_closed!(task)
+      expect(task.reload.approval_notification['finalized']).to be(true)
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        'CORIGINAL', '123.456', a_string_including('⚠️', attendee_id.to_s, '6 days', 'duplicate credits'), resolved_channel: true
+      ).twice
+      expect(VolunteerCredit).to have_received(:create!).twice
+    end
+
+    { notify_member_credit_awarded: 'award notification', check_discount_threshold!: 'membership discount processing' }.each do |method, stage|
+      it "records a warning when #{stage} fails after the credit was created" do
+        credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil, notify_discount_error: nil)
+        allow(credit).to receive(method).and_raise('Follow-up unavailable')
+        allow(VolunteerCredit).to receive(:create!).and_return(credit)
+
+        task.close!(verifier)
+
+        expect(task.reload.approval_notification['outcome']).to include('Credit award failed or follow-up processing failed',
+          attendee_id.to_s, stage)
+        expect(task.approval_notification['finalized']).to be(true)
+        expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+          'CORIGINAL', '123.456', a_string_including('⚠️', stage, '6 days'), resolved_channel: true
+        )
+        expect(VolunteerCredit).to have_received(:create!).once
+        expect(credit).to have_received(:check_discount_threshold!).with(raise_errors: true).once
+        expect(Service::ErrorReporter).to have_received(:notify).with(have_attributes(message: 'Follow-up unavailable')).once
+        if method == :check_discount_threshold!
+          expect(credit).to have_received(:notify_discount_error).with(anything, have_attributes(message: 'Follow-up unavailable')).once
+        else
+          expect(credit).not_to have_received(:notify_discount_error)
+        end
+      end
+    end
+
+    it 'records both follow-up failures for one attendee without duplicating their credit' do
+      award_error = RuntimeError.new('Award DM unavailable')
+      discount_error = RuntimeError.new('Billing unavailable')
+      credit = double(notify_member_credit_awarded: nil, check_discount_threshold!: nil, notify_discount_error: nil)
+      allow(credit).to receive(:notify_member_credit_awarded).and_raise(award_error)
+      allow(credit).to receive(:check_discount_threshold!).and_raise(discount_error)
+      allow(VolunteerCredit).to receive(:create!).and_return(credit)
+
+      task.close!(verifier)
+
+      expect(task.reload.status).to eq('closed')
+      expect(task.approval_notification).to include('finalized' => true)
+      expect(task.approval_notification['outcome']).to include('failed for 1 attendee', attendee_id.to_s,
+        'award notification', 'membership discount processing')
+      expect(VolunteerCredit).to have_received(:create!).once
+      expect(credit).to have_received(:check_discount_threshold!).with(raise_errors: true).once
+      expect(credit).to have_received(:notify_discount_error).with(anything, discount_error).once
+      expect(Service::ErrorReporter).to have_received(:notify).with(award_error).once
+      expect(Service::ErrorReporter).to have_received(:notify).with(discount_error).once
+    end
+
+    it 'retains the durable unconfirmed warning when recording the award outcome fails' do
+      allow(VolunteerCredit).to receive(:create!).and_return(double(notify_member_credit_awarded: nil, check_discount_threshold!: nil))
+      allow(Service::VolunteerApprovalReminder).to receive(:record_outcome!).and_raise('Later metadata write unavailable')
+
+      expect { task.close!(verifier) }.to raise_error('Later metadata write unavailable')
+
+      expect(task.reload.status).to eq('closed')
+      expect(task.approval_notification['outcome']).to start_with('Credit award not confirmed')
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        'CORIGINAL', '123.456', a_string_including('⚠️', 'not confirmed'), resolved_channel: true
+      )
+    end
+  end
+
+  context 'when destroying an unlinked task' do
+    [false, true].each do |posted|
+      it "deletes a pending task with a deleted claimant and #{posted ? 'a posted reminder missing its subject' : 'no reminder'}" do
+        @persisted['claimed_by_id'] = BSON::ObjectId.new
+        @persisted['approval_notification'] = posted ? receipt.except('subject') : {}
+        loaded = persisted_model_with_real_callbacks
+        missing_member = Mongoid::Errors::DocumentNotFound.new(Member, { id: loaded.claimed_by_id })
+        allow(Member).to receive(:find).with(loaded.claimed_by_id).and_raise(missing_member)
+
+        expect { loaded.destroy }.not_to raise_error
+
+        expect(loaded).to be_destroyed
+        expect(@deletion_snapshot['status']).to eq('cancelled')
+        expect(@deletion_snapshot['approval_notification']).to include('finalized' => true,
+          'subject' => a_string_including('Unknown member'),
+          'outcome' => 'Task deletion requested; pending review withdrawn')
+        if posted
+          expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+            'CORIGINAL', '123.456', a_string_including('Unknown member', 'deletion requested'), resolved_channel: true
+          ).once
+        else
+          expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+        end
+      end
+    end
+
+    it 'finalizes a pending reminder through the real destroy callback before removing the record' do
+      loaded = persisted_model_with_real_callbacks
+
+      loaded.destroy
+
+      expect(loaded).to be_destroyed
+      expect(@deletion_snapshot['status']).to eq('cancelled')
+      expect(@deletion_snapshot['approval_notification']).to include('finalized' => true,
+        'outcome' => 'Task deletion requested; pending review withdrawn', 'closed_at' => now)
+      expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+        'CORIGINAL', '123.456', a_string_including('deletion requested', '6 days'), resolved_channel: true
+      ).once
+    end
+
+    it 'keeps the cancelled record and receipt for retry when final delivery fails' do
+      loaded = persisted_model_with_real_callbacks
+      allow(Service::SlackConnector).to receive(:update_slack_message).and_raise('Slack unavailable')
+
+      expect { loaded.destroy }.to raise_error(Error::ServiceUnavailable) do |error|
+        expect(error.error).to eq(503)
+        expect(error.status).to eq(:service_unavailable)
+        expect(error.message).to include('Cannot delete task until its Slack reminders')
+      end
+
+      expect(@deletion_snapshot).to be_nil
+      expect(@persisted['status']).to eq('cancelled')
+      expect(@persisted['approval_notification']['finalized']).to be(false)
+      expect(loaded).not_to be_destroyed
+      allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
+      loaded.destroy
+      expect(@deletion_snapshot['approval_notification']['finalized']).to be(true)
+      expect(loaded).to be_destroyed
     end
   end
 

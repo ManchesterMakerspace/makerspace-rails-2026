@@ -339,7 +339,7 @@ RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
     expect(task.status).to eq('pending')
   end
 
-  it 'updates an event receipt after closure even when an attendee award fails' do
+  it 'updates an event receipt with an actionable warning when an attendee award fails' do
     event = VolunteerEvent.create!(
       title: 'Cleanup', created_by_id: admin.id, event_date: Date.current - 6,
       attendee_ids: [member.id], approval_notification: receipt.merge('subject' => 'Event E3: Cleanup')
@@ -350,7 +350,7 @@ RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
 
     expect(Service::SlackConnector).to have_received(:update_slack_message).with(
       receipt.fetch('channel'), receipt.fetch('ts'),
-      a_string_including("Event closed by #{admin.fullname}", '6 days'), resolved_channel: true
+      a_string_including('⚠️', 'Credit award failed', member.id.to_s, 'credit creation', '6 days'), resolved_channel: true
     )
     expect(event.reload.status).to eq('closed')
     expect(event.approval_notification['closed_at']).to eq(event.closed_at)
@@ -366,16 +366,17 @@ RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
     allow(Service::VolunteerApprovalReminder).to receive(:write_notification)
       .and_raise(StandardError, 'Notification metadata storage unavailable')
 
-    expect { event.close!(admin) }.not_to raise_error
+    expect { event.close!(admin) }.to raise_error(StandardError, 'Notification metadata storage unavailable')
 
     expect(event.reload.status).to eq('closed')
     expect(event.approval_notification).to include(
-      'outcome' => "Event closed by #{admin.fullname}", 'closed_at' => event.closed_at, 'finalized' => false
+      'closed_at' => event.closed_at, 'finalized' => false
     )
+    expect(event.approval_notification['outcome']).to start_with('Credit award not confirmed')
     expect(VolunteerEventReminderJob.new.send(:retry_notifications, VolunteerEvent).where(id: event.id)).to exist
     credits = VolunteerCredit.where(description: "Attended event: Cleanup (#{event.display_number})", status: 'approved')
     expect(credits.pluck(:member_id)).to contain_exactly(member.id, admin.id)
-    expect(Service::ErrorReporter).to have_received(:notify).with(an_instance_of(StandardError))
+    expect(Service::ErrorReporter).to have_received(:notify).with(an_instance_of(StandardError)).at_least(:once)
     expect { event.close!(admin) }.to raise_error(Error::Forbidden)
     expect(credits.count).to eq(2)
 
@@ -385,9 +386,37 @@ RSpec.describe 'Volunteer approval reminder lifecycle', type: :model do
     expect(event.reload.approval_notification['finalized']).to be(true)
     expect(Service::SlackConnector).to have_received(:update_slack_message).with(
       receipt.fetch('channel'), receipt.fetch('ts'),
-      a_string_including("Event closed by #{admin.fullname}", 'Review closed after 6 days.'), resolved_channel: true
+      a_string_including('⚠️', 'Credit award not confirmed', 'Review closed after 6 days.'), resolved_channel: true
     ).twice
     expect(credits.count).to eq(2)
+  end
+
+  it 'finalizes a pending task reminder before destroying the task' do
+    pending_task = task
+    task_id = pending_task.id
+
+    pending_task.destroy
+
+    expect(VolunteerTask.where(id: task_id)).not_to exist
+    expect(Service::SlackConnector).to have_received(:update_slack_message).with(
+      receipt.fetch('channel'), receipt.fetch('ts'),
+      a_string_including('Task deletion requested', '6 days'), resolved_channel: true
+    )
+  end
+
+  it 'preserves the task and retries its final reminder when deletion cannot finish delivery' do
+    pending_task = task
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_raise('Slack unavailable')
+
+    expect { pending_task.destroy }.to raise_error(/Cannot delete task until its Slack reminders/)
+
+    expect(VolunteerTask.where(id: pending_task.id)).to exist
+    expect(pending_task.reload.status).to eq('cancelled')
+    expect(pending_task.approval_notification['finalized']).to be(false)
+    expect(VolunteerEventReminderJob.new.send(:retry_notifications, VolunteerTask).where(id: pending_task.id)).to exist
+    allow(Service::SlackConnector).to receive(:update_slack_message).and_return('ok' => true)
+    pending_task.destroy
+    expect(VolunteerTask.where(id: pending_task.id)).not_to exist
   end
 
   context 'when rescheduling an open event with a channel reminder' do

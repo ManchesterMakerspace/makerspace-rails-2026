@@ -15242,6 +15242,38 @@
           },
           "204": {
             "description": "Unlinked task deleted"
+          },
+          "503": {
+            "description": "Slack reminder finalization unavailable; cancelled task retained for retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "error",
+                    "message"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "enum": [
+                        503
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "service_unavailable"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

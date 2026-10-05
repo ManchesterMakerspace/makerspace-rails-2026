@@ -172,6 +172,35 @@ warning delivery uses the same retry fields; the reminder job does not retry
 creating credits. A successful lifecycle write always includes its initial
 closure metadata; confirmation of the credit outcome can still fail separately.
 
+Event closure uses the same provisional unconfirmed warning before processing
+attendee awards. The final outcome reports any member lookup, credit creation,
+award notification, or discount-processing failures with the affected member IDs
+and processing stages, counting each affected attendee once. Award notification
+failures do not skip discount processing for the saved credit. Deleted or inactive members are skipped. Other attendees
+still receive their awards. Event closure requests error propagation from the
+credit notification and discount helpers; other callers retain their existing
+rescued-error behavior. In propagation mode, event closure owns the single
+error report and discount error notice rather than repeating them at each helper
+layer. The job retries warning delivery rather than creating
+credits again. Failed outcome persistence leaves the unconfirmed warning in place.
+
+Unlinked task destruction runs a model callback before removing its receipts.
+It withdraws pending review with cancelled status and a deletion-requested
+outcome in one write, closes open historical reminders, and requires successful
+final delivery for every known posted message before destruction proceeds.
+Slack failures retain the cancelled task and retryable receipt for the daily job;
+the authenticated task DELETE endpoint returns structured HTTP 503
+(`error: service_unavailable`) rather than an unhandled exception. Successful
+deletion still returns 204; deleting a linked bounty remains forbidden with 422.
+retry deletion after delivery recovers. Already closed review outcomes remain
+unchanged. A reminder worker whose post or update outlives task deletion removes
+that message best effort only after confirming the task/event document is absent
+on the MongoDB primary. Missing claimant records use `Unknown member` during
+subject generation, allowing reminder updates and task deletion even without a
+saved subject. Failed existence checks retain the message and report the error.
+Cleanup failures are reported. Low-level `delete` and
+`delete_all` bypass callbacks; event deletion remains outside this cleanup.
+
 The compound `{ status: 1, completed_at: 1 }` task index supports the
 pending-completion scan; `{ status: 1, event_date: 1 }` supports the dated open
 event scan. These indexed age scans run separately from final-delivery retries,
