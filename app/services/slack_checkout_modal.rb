@@ -10,6 +10,8 @@ class SlackCheckoutModal
   EDIT = "checkout_edit_note".freeze
   CANCEL = "checkout_cancel_request".freeze
   APPROVE = "checkout_approve_request".freeze
+  DECLINE = "checkout_decline_request".freeze
+  REASON = "checkout_reason".freeze
   VOLUNTEER = "checkout_volunteer".freeze
   APPROVE_VOLUNTEER = "checkout_approve_volunteer".freeze
   DECLINE_VOLUNTEER = "checkout_decline_volunteer".freeze
@@ -100,12 +102,19 @@ class SlackCheckoutModal
       request_details
       buttons = []
       buttons += [["Edit note", EDIT], ["Cancel request", CANCEL]] if @request.member_id == @member.id
-      buttons << ["Approve", APPROVE] if @can_approve && @request.member_id != @member.id
+      if @can_approve && @request.member_id != @member.id
+        buttons << ["Approve", APPROVE]
+        buttons << ["Decline", DECLINE]
+      end
       actions(buttons) if buttons.any?
     when "request_edit"
       request_details
       note_input(@request.note)
       @submit = "Save note"
+    when "request_decline"
+      request_details
+      reason_input
+      @submit = "Decline request"
     when "request_cancel", "request_approve"
       request_details
       @submit = @metadata["step"] == "request_cancel" ? "Cancel request" : "Approve"
@@ -166,6 +175,12 @@ class SlackCheckoutModal
     element = { type: "plain_text_input", action_id: NOTE, max_length: 128 }
     element[:initial_value] = value if value.present?
     @blocks << { type: "input", block_id: NOTE, optional: true, label: plain("Note"), element: element }
+  end
+
+  # A decline needs a reason, which the requester is shown, so the input is required.
+  def reason_input
+    @blocks << { type: "input", block_id: REASON, optional: false, label: plain("Reason (shown to the requester)"),
+      element: { type: "plain_text_input", action_id: REASON, max_length: CheckoutRequestDecision::REASON_MAX } }
   end
 
   def request_details

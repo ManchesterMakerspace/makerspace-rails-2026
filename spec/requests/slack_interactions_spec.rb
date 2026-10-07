@@ -164,11 +164,12 @@ RSpec.describe "Slack interactions", type: :request do
       modal_metadata.fetch("step")
     end
 
-    def interact(action: nil, value: nil, block: nil, note: nil, user_id: "UMODAL", display: "FORGED DISPLAY", view_hash: "view-hash")
+    def interact(action: nil, value: nil, block: nil, note: nil, reason: nil, user_id: "UMODAL", display: "FORGED DISPLAY", view_hash: "view-hash")
       @updated = nil
       payload = { type: action ? "block_actions" : "view_submission", user: { id: user_id }, trigger_id: "TRIGGER",
         view: @view.merge("id" => "VMODAL", "hash" => view_hash,
-          "state" => { "values" => { "checkout_note" => { "checkout_note" => { "value" => note } } } }) }
+          "state" => { "values" => { "checkout_note" => { "checkout_note" => { "value" => note } },
+            "checkout_reason" => { "checkout_reason" => { "value" => reason } } } }) }
       if action
         block ||= action.end_with?("_select") ? action.delete_suffix("_select") :
           (action == "checkout_back" ? "checkout_navigation" : "checkout_actions")
@@ -620,6 +621,31 @@ RSpec.describe "Slack interactions", type: :request do
       expect(Service::ErrorReporter).to have_received(:notify).with("Slack checkout outcome enqueue failed", context: hash_including(error_class: "StandardError"))
     end
 
+    it "declines an authorized request with a required reason and queues the requester notification" do
+      member.update!(role: "resource_manager", resource_manager_shop_ids: [shop.id.to_s])
+      row = ToolCheckoutRequest.create!(member: create(:member, :current), tool: tool)
+      start_modal
+      choose_request(row)
+      interact(action: "checkout_decline_request")
+      expect(modal_step).to eq("request_decline")
+      reason_block = @view["blocks"].find { |block| block["block_id"] == "checkout_reason" }
+      expect(reason_block).to include("optional" => false)
+      interact(action: "checkout_back")
+      expect(modal_step).to eq("request_detail")
+      interact(action: "checkout_decline_request")
+
+      expect(interact(reason: "  ").to_h).to include("response_action" => "errors")
+      expect(row.reload).to be_open
+      expect(interact(reason: "x" * 256).to_h).to include("response_action" => "errors")
+      expect(row.reload).to be_open
+
+      expect(interact(reason: "Needs the safety class first")["response_action"]).to eq("clear")
+      expect(row.reload).to have_attributes(status: "declined", decided_by_id: member.id,
+                                            decision_reason: "Needs the safety class first")
+      expect(CheckoutNotificationJob).to have_been_enqueued.with("decline", row.id.to_s)
+      expect(ToolCheckout.where(member_id: row.member_id, tool_id: tool.id).count).to eq(0)
+    end
+
     it "keeps owner and non-owner request actions separate and shows persisted dates" do
       member.update!(role: "admin")
       own = ToolCheckoutRequest.create!(member: member, tool: tool, note: "Owner note")
@@ -632,7 +658,7 @@ RSpec.describe "Slack interactions", type: :request do
       start_modal
       choose_request(other)
       ids = @view["blocks"].flat_map { |block| Array(block["elements"]).map { |element| element["action_id"] } }
-      expect(ids).to contain_exactly("checkout_approve_request", "checkout_back")
+      expect(ids).to contain_exactly("checkout_approve_request", "checkout_decline_request", "checkout_back")
       expect(@view.to_json).to include(other.request_date.iso8601, other.member.fullname, shop.name, tool.name, "Other note")
     end
 

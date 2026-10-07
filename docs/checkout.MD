@@ -183,9 +183,10 @@ handles `block_actions` and `view_submission`. The legacy
 
 Stable selector block IDs are `checkout_menu`, `checkout_shop`, `checkout_tool`,
 `checkout_request`, and `checkout_checkout`; their action IDs append `_select`.
-The note input uses `checkout_note` for both IDs. The `checkout_actions` block
-contains `checkout_edit_note`, `checkout_cancel_request`, and
-`checkout_approve_request` buttons when authorized, plus
+The note input uses `checkout_note` for both IDs. Declining uses a required
+input whose block and action ID are both `checkout_reason`. The `checkout_actions` block
+contains `checkout_edit_note`, `checkout_cancel_request`,
+`checkout_approve_request`, and `checkout_decline_request` buttons when authorized, plus
 `checkout_approve_volunteer` for an RM reviewing a volunteer. `checkout_navigation`
 contains `checkout_back`.
 
@@ -214,7 +215,7 @@ Lists are oldest first, with `_id` breaking equal request dates.
 Only the owner may edit or cancel a request. Owner details show tool, requested
 date and note with Edit note, Cancel request and Go back. Notes are limited to
 128 characters. Other members' details
-include requester and shop and offer only Approve and Go back. Approval and
+include requester and shop and offer only Approve, Decline and Go back. Approval and
 cancellation buttons open confirmation views; writes happen on submission.
 Request creation, note editing, cancellation and approval share the existing
 per-member/tool Redis request lock and revalidate inside it. Successful approval
@@ -247,12 +248,59 @@ A tool can be newly requested only when all of the following are true:
   record; and
 - there is no open checkout request for that member and tool.
 
+A declined request is no longer open, so it does not block a new request for the same
+tool; the member may ask again.
+
 The portal, named Slack request job, Slack modal, and Slack modal submission
 all use `ToolCheckoutRequestEligibility`. Eligible tools are displayed in
 case-insensitive alphabetical order. Submission checks again so changes made
 after the modal opened cannot create an invalid request. Slack displays at
 most 100 selectable static options; when more than 100 tools are eligible it
 directs the member to the portal instead of silently omitting tools.
+
+## Request notifications, decline, and reminders
+
+**Approvers are told, in a roll-up.** A new request is announced in the tool's announce
+channel immediately (when `announce` is enabled, unchanged). Approvers are not DMed per
+request. Instead, the daily 10:30 run sends each resource manager (for the request's shop)
+and each approver assigned to the tool, its shop, or the requested group one Slack DM that
+rolls up *every* open request they can act on, grouped by requester (oldest first) with each
+tool, its shop, and the calendar days the request has waited. To avoid flooding people, a
+person is messaged at most once a day, and only when there is a new request since their last
+digest, or when some open request they can act on is exactly 5, 10, 15, ... days old. Older
+requests never trigger a message between those milestones:
+
+```
+Open checkout requests (5)
+
+Pat Member
+  • Laguna Bandsaw (Woodworking) – 12 days old
+  • CNC Plasma Cutter (Metalworking) – 3 days old
+Lee Davis
+  • Lathe (Metalworking) – 1 day old
+
+use /checkout → View open requests, or use the Member Portal
+```
+
+Someone with nothing new and no 5-day milestone receives nothing. Admin and board members are not included unless they
+also hold one of those roles, a requester is never sent their own request, and members without
+a linked Slack account or with suppressed direct notifications are skipped. A per-recipient,
+per-day Redis key prevents a rerun from sending a second digest. There is no email fallback.
+
+**Declining.** Anyone who can approve a request (admin or board member, the shop's resource
+manager, or an assigned approver) can decline it from the portal
+(`POST /api/admin/tool_checkout_requests/:id/decline` with a required `reason` of at most 255
+characters) or from the Slack open-requests modal (**Decline**, with a required reason). The
+request becomes `declined`, recording who decided, when, and why. A decline runs under the same
+locks as approval and cancellation, so only one can apply. The requester alone receives a Slack
+DM with the reason; an existing channel announcement is edited to say the request was declined.
+The member may request the same tool again, because only an open request blocks a new one.
+
+**Reminders.** A request that is still open after 5 days, and every 5 days after that, is
+posted in the Resource Managers channel (`slack_channel_rm`): "MEMBER requested checkout on TOOL
+(SHOP) on DATE and is still waiting." When the request is approved, declined or cancelled, each
+posted reminder is edited to say so. See the checkout request notifications section of
+`jobs-tasks-services.MD`.
 
 ## Checkout approvers
 
@@ -288,12 +336,28 @@ Shop-wide assignments are not altered; an otherwise-empty approver record is rem
 - Creating a request posts a channel message only when the tool has `announce`
   enabled. It goes to the tool's `announce_channel` when configured, otherwise
   to the shop's `slack_channel`. The message identifies the member, tool, shop,
-  and optional request note.
+  and optional request note. This post is immediate.
+- The requester receives a DM that the request was created, including the shop's
+  "annotation for requestors" when one is set. It is skipped for members without a
+  linked Slack account or with suppressed direct notifications.
+- Approvers (resource managers for the shop, and approvers assigned to the tool, its
+  shop, or the group) are not DMed per request. They receive a roll-up DM of all their
+  open requests, sent at most once a day and only when a request is new since their last
+  digest or an open request is exactly 5, 10, 15, ... days old. See "Request
+  notifications, decline, and reminders" above for the format and rules.
+- A request still open after 5 calendar days, and every 5 days after, is posted in the
+  Resource Managers channel (`slack_channel_rm`): "MEMBER requested checkout on TOOL
+  (SHOP) on DATE and is still waiting." The posts are edited when the request is approved,
+  declined, or cancelled.
+- Declining a request DMs only the requester, with the approver's required reason.
+  The decline is also recorded in the audit log (`tool_checkout_request_declined`) and
+  posted to the logs channel. The digest and reminder messages are not audit-logged.
 - A successful legacy `checkout_request_submit` submission queues a confirmation
   explaining that unpaid volunteers process checkouts and identifying tagged
   resource managers they can contact about becoming an assistant checkout
   approver. It replaces the ephemeral acknowledgement first, with DM fallback;
   delivery failure does not undo the saved request.
+- Declining an announced request updates that same channel message to say it was declined.
 - Cancelling an announced request updates that same channel message; it does
   not post a second announcement. If approval or cancellation races an in-flight
   request announcement, both senders atomically retain the first recorded Slack

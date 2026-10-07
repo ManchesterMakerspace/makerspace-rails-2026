@@ -17,6 +17,15 @@ class Admin::ToolCheckoutRequestsController < ApplicationController
       adapter: :attributes
   end
 
+  # POST /api/admin/tool_checkout_requests/:id/decline  { reason: "..." }
+  def decline
+    request = ToolCheckoutRequest.find(params[:id])
+    raise ::Error::NotFound.new unless request
+
+    CheckoutRequestDecision.decline!(request: request, actor: current_member, reason: params[:reason])
+    render json: request, serializer: ToolCheckoutRequestSerializer, adapter: :attributes
+  end
+
   private
 
   def authorize_view

@@ -140,6 +140,51 @@ end
 
 
 describe "Checkout approval queue API", type: :request do
+  path "/admin/tool_checkout_requests/{id}/decline" do
+    parameter name: :id, in: :path, type: :string
+
+    post "Declines an open checkout request" do
+      tags "ToolCheckoutRequests"
+      operationId "declineToolCheckoutRequest"
+      description "Admin or board member, the shop's resource manager, or an approver assigned to the tool, its shop or the group may decline an open request. A reason of at most 255 characters is required and is sent to the requester by Slack DM. The decision runs under the same locks as approval and cancellation, so only one can apply. A declined request is no longer open, so the member may request again. Returns 422 for a missing or overlong reason or a request that is no longer open, and 403 for a caller who may not approve it."
+      consumes "application/json"
+      produces "application/json"
+      parameter name: :body, in: :body, schema: { type: :object, required: ["reason"], properties: { reason: { type: :string, maxLength: 255 } } }
+
+      let(:shop) { create(:shop) }
+      let(:tool) { create(:tool, shop: shop) }
+      let(:requester) { create(:member, :current) }
+      let!(:checkout_request) { ToolCheckoutRequest.create!(member: requester, tool: tool) }
+      let(:id) { checkout_request.id.to_s }
+      let(:body) { { reason: "Needs the safety class first" } }
+
+      response "200", "declined request" do
+        let(:manager) { create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s]) }
+        before { sign_in manager }
+        schema "$ref" => "#/components/schemas/ToolCheckoutRequest"
+        run_test! do |response|
+          json = JSON.parse(response.body)
+          expect(json).to include("status" => "declined", "decisionReason" => "Needs the safety class first",
+                                  "decidedByName" => manager.fullname)
+          expect(checkout_request.reload).to be_declined
+        end
+      end
+
+      response "422", "reason missing" do
+        let(:manager) { create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s]) }
+        let(:body) { { reason: " " } }
+        before { sign_in manager }
+        run_test! { expect(checkout_request.reload).to be_open }
+      end
+
+      response "403", "caller cannot approve this request" do
+        let(:outsider) { create(:member, :resource_manager, :current, resource_manager_shop_ids: [create(:shop).id.to_s]) }
+        before { sign_in outsider }
+        run_test! { expect(checkout_request.reload).to be_open }
+      end
+    end
+  end
+
   path "/admin/tool_checkout_requests" do
     get "Lists authorized eligible open checkout requests" do
       parameter name: :include_groups, in: :query, required: false, schema: { type: :boolean }, description: 'Include group requests for which the viewer has group approval authority.'

@@ -215,7 +215,11 @@ Rails.application.routes.draw do
         end
         resources :locations, only: [:index, :create, :update, :destroy]
         resources :tool_checkouts, only: [:index, :create, :destroy]
-        resources :tool_checkout_requests, only: [:index]
+        resources :tool_checkout_requests, only: [:index] do
+          member do
+            post :decline
+          end
+        end
         resources :checkout_approvers, only: [:index, :create, :update, :destroy]
         resources :reservations, only: [:index, :create, :update, :destroy] do
           collection do

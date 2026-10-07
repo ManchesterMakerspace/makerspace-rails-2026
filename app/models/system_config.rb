@@ -33,7 +33,9 @@ class SystemConfig
     "reservation_canvas_rebuild" => "reservations:rebuild_slack_canvases",
     "member_provisioning_reconciliation" => "member_provisioning_reconciliation",
     "volunteer_event_reminder" => "volunteer_event_reminder",
-    "membership_expiration_notice" => "membership_expiration_notice"
+    "membership_expiration_notice" => "membership_expiration_notice",
+    "checkout_request_reminder" => "checkout_request_reminder",
+    "checkout_request_digest" => "checkout_request_digest"
   }.freeze
 
   def self.get(key)

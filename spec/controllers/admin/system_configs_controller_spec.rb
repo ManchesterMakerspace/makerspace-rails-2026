@@ -236,6 +236,28 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
       expect(CardExpirationCheckJob).to have_received(:perform_later)
     end
 
+    it "enqueues the checkout request digest job" do
+      allow(CheckoutRequestDigestJob).to receive(:perform_later)
+
+      post :run_job,
+           params: { key: "checkout_request_digest" },
+           format: :json
+
+      expect(response).to have_http_status(200)
+      expect(CheckoutRequestDigestJob).to have_received(:perform_later)
+    end
+
+    it "enqueues the checkout request reminder job" do
+      allow(CheckoutRequestReminderJob).to receive(:perform_later)
+
+      post :run_job,
+           params: { key: "checkout_request_reminder" },
+           format: :json
+
+      expect(response).to have_http_status(200)
+      expect(CheckoutRequestReminderJob).to have_received(:perform_later)
+    end
+
     it "enqueues the membership expiration notice job" do
       allow(MembershipExpirationNoticeJob).to receive(:perform_later)
 

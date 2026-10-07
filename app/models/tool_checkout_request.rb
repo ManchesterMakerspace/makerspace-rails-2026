@@ -7,6 +7,16 @@ class ToolCheckoutRequest
   field :request_date, type: Time, default: -> { Time.now }
   field :status, type: String, default: "open"
   field :message_id, type: String
+  # Set when an approver declines: who, when, and the reason shown to the requester.
+  field :decided_by_id, type: BSON::ObjectId
+  field :decided_at, type: Time
+  field :decision_reason, type: String
+  # One entry per "still waiting" post in the Resource Managers channel, keyed
+  # by reminder number ("1" at 5 days, "2" at 10 days, ...). reminder_open stays
+  # true while a posted reminder still needs its resolution update. See
+  # CheckoutRequestReminder.
+  field :reminders, type: Hash, default: {}
+  field :reminder_open, type: Boolean, default: false
 
   belongs_to :member
   belongs_to :tool, optional: true
@@ -27,8 +37,10 @@ class ToolCheckoutRequest
   def exactly_one_target
     errors.add(:base, 'Choose exactly one tool or group') unless [tool_id, tool_group_id].count(&:present?) == 1 && target
   end
-  validates :status, inclusion: { in: %w[open closed deleted] }
+  validates :status, inclusion: { in: %w[open closed deleted declined] }
   validates :note, length: { maximum: 128 }, allow_blank: true
+  validates :decision_reason, length: { maximum: 255 }, allow_blank: true
+  validates :decision_reason, presence: true, if: :declined?
 
   validate :tool_requires_checkout, on: :create
 
@@ -38,6 +50,14 @@ class ToolCheckoutRequest
 
   def open?
     status == "open"
+  end
+
+  def declined?
+    status == "declined"
+  end
+
+  def decided_by
+    Member.find_by(id: decided_by_id) if decided_by_id
   end
 
   def self.table_query(criteria, params)
@@ -96,6 +116,8 @@ class ToolCheckoutRequest
       if status == "deleted"
         ::Service::SlackConnector.update_slack_message(channel, message_id,
           "*#{member.fullname}* cancelled their checkout request for *#{target.name}*.")
+      elsif status == "declined"
+        ::Service::SlackConnector.update_slack_message(channel, message_id, declined_announcement_message)
       elsif status == "closed" && checked_out
         ::Service::SlackConnector.update_slack_message(channel, message_id, checkout_success_message)
       end
@@ -151,6 +173,41 @@ class ToolCheckoutRequest
       message_id,
       "*#{member.fullname}* cancelled their checkout request for *#{target_name}*."
     )
+  rescue => e
+    Service::ErrorReporter.notify(e)
+  end
+
+  def declined_announcement_message
+    "The checkout request from *#{CheckoutDisplay.escape(member.fullname)}* for "       "*#{CheckoutDisplay.escape(target.name)}* was declined."
+  end
+
+  # Keep the original channel announcement in step with a decline, as
+  # remove_announcement does for a cancellation.
+  def refresh_declined_announcement
+    return unless declined? && message_id.present? && target
+
+    channel = target.announce_channel.presence || target.shop&.slack_channel
+    return if channel.blank?
+
+    ::Service::SlackConnector.update_slack_message(channel, message_id, declined_announcement_message)
+  rescue => e
+    Service::ErrorReporter.notify(e)
+  end
+
+  # DM the requester with the decision and the reason. Direct messages are
+  # skipped for members whose notification policy disables them or who have no
+  # linked Slack account.
+  def notify_declined
+    return unless declined?
+    return if member.direct_notifications_suppressed?
+
+    slack_id = member.slack_user&.slack_id
+    return if slack_id.blank?
+
+    message = "Your checkout request for *#{CheckoutDisplay.escape(target.name)}* in "       "*#{CheckoutDisplay.escape(target.shop&.name)}* was declined."
+    message += "
+Reason: #{CheckoutDisplay.escape(decision_reason)}" if decision_reason.present?
+    Service::SlackConnector.send_slack_message(message, slack_id)
   rescue => e
     Service::ErrorReporter.notify(e)
   end

@@ -1,0 +1,148 @@
+# A Slack DM roll-up for each approver listing every open checkout request they
+# can act on, oldest requester first: who asked, for which tool, and how many days
+# it has waited. To keep the volume low, a recipient is messaged at most once a
+# day, and only when
+#
+#   * there is a request they can act on that is new since their last digest, or
+#   * some open request they can act on is exactly 5, 10, 15, ... days old.
+#
+# The digest always lists all of their open requests, not just the new or old
+# ones. Days are calendar days in the application time zone.
+#
+# Recipients are the resource managers for the request's shop and the approvers
+# assigned to the tool, its shop, or the requested group. Admin and board members
+# are not included unless they also hold one of those roles, and the requester is
+# never a recipient of their own request. Someone with no open requests gets no
+# message. Recipients without a linked Slack account, or whose direct
+# notifications are suppressed (`revoked` or `suspended`), are skipped.
+#
+# A per-recipient, per-day Redis key stops a rerun of the job from sending the
+# same digest twice; a failed send releases the key so the next run retries it.
+module CheckoutRequestDigest
+  MAX_REQUESTERS = 30
+  MILESTONE_DAYS = 5
+  KEY_TTL = 36.hours
+  LAST_TTL = 90.days
+
+  class << self
+    def deliver_all!(now: Time.current)
+      recipients_with_requests.each do |member, requests|
+        next unless due?(member, requests, now)
+
+        deliver(member, requests, now: now)
+      rescue => error
+        Service::ErrorReporter.notify(error, context: { phase: 'checkout request digest',
+                                                        member_id: member.id.to_s })
+      end
+    end
+
+    # { Member => [ToolCheckoutRequest, ...] } for every eligible recipient.
+    def recipients_with_requests
+      result = Hash.new { |hash, member| hash[member] = [] }
+      ToolCheckoutRequest.where(status: 'open').each do |request|
+        next unless request.target && request.member
+
+        recipients(request).each { |member| result[member] << request }
+      end
+      result
+    end
+
+    def recipients(request)
+      target = request.target
+      return [] unless target&.shop_id
+
+      shop_id = target.shop_id
+      managers = Member.where(role: 'resource_manager',
+                              :resource_manager_shop_ids.in => [shop_id, shop_id.to_s]).to_a
+      (managers + assigned_approvers(request, target, shop_id)).uniq(&:id)
+                                                               .reject { |member| member.id == request.member_id }
+                                                               .select { |member| eligible?(member) }
+    end
+
+    def message(requests, now: Time.current)
+      groups = requests.group_by(&:member_id).values.sort_by { |rows| rows.map(&:request_date).min }
+      lines = ["Open checkout requests (#{requests.size})", '']
+      groups.first(MAX_REQUESTERS).each do |rows|
+        lines << CheckoutDisplay.escape(rows.first.member.fullname)
+        rows.sort_by(&:request_date).each do |request|
+          lines << "  • #{CheckoutDisplay.escape(request.target.name)} " \
+                   "(#{CheckoutDisplay.escape(request.target.shop&.name)}) – #{age(request, now)}"
+        end
+      end
+      lines << "and #{groups.size - MAX_REQUESTERS} more members, see the Member Portal." if groups.size > MAX_REQUESTERS
+      lines << ''
+      lines << 'use /checkout → View open requests, or use the Member Portal'
+      lines.join("\n")
+    end
+
+    # A digest is due for new requests since the last one, or on a 5-day milestone.
+    def due?(member, requests, now)
+      since = last_digest_at(member, now)
+      requests.any? { |request| request.request_date > since } ||
+        requests.any? { |request| milestone?(age_days(request, now)) }
+    end
+
+    def milestone?(days)
+      days >= MILESTONE_DAYS && (days % MILESTONE_DAYS).zero?
+    end
+
+    def age_days(request, now)
+      (now.in_time_zone.to_date - request.request_date.in_time_zone.to_date).to_i
+    end
+
+    def age(request, now)
+      days = age_days(request, now)
+      return 'less than a day old' if days < 1
+
+      "#{days} #{'day'.pluralize(days)} old"
+    end
+
+    private
+
+    def assigned_approvers(request, target, shop_id)
+      match = [{ :shop_ids.in => [shop_id, shop_id.to_s] }]
+      if request.tool_group_id
+        match << { :tool_group_ids.in => [request.tool_group_id, request.tool_group_id.to_s] }
+      else
+        match << { :tool_ids.in => [request.tool_id, request.tool_id.to_s] }
+      end
+      CheckoutApprover.any_of(*match).to_a.select do |approver|
+        request.tool_group_id ? approver.can_approve_group?(target) : approver.can_approve_tool?(target)
+      end.map(&:member).compact.select(&:valid_for_checkout_request?)
+    end
+
+    def eligible?(member)
+      !member.direct_notifications_suppressed? && slack_id_for(member).present?
+    end
+
+    def last_key(member)
+      "checkout_request_digest_last:#{member.id}"
+    end
+
+    # When this member was last sent a digest; a day ago if they never were.
+    def last_digest_at(member, now)
+      value = REDIS.get(last_key(member))
+      value.present? ? Time.zone.at(value.to_i) : now - 1.day
+    end
+
+    def slack_id_for(member)
+      SlackUser.find_by(member_id: member.id)&.slack_id
+    end
+
+    def deliver(member, requests, now:)
+      key = "checkout_request_digest:#{member.id}:#{now.to_date.iso8601}"
+      return unless REDIS.set(key, '1', nx: true, ex: KEY_TTL.to_i)
+
+      begin
+        slack_id = slack_id_for(member)
+        if slack_id.present?
+          Service::SlackConnector.send_slack_message(message(requests, now: now), slack_id)
+          REDIS.set(last_key(member), now.to_i, ex: LAST_TTL.to_i)
+        end
+      rescue => error
+        REDIS.del(key)
+        raise error
+      end
+    end
+  end
+end

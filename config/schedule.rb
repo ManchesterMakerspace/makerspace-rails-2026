@@ -51,6 +51,14 @@ every :day, at: '9am' do
   runner "MembershipExpirationNoticeJob.perform_later"
 end
 
+every :day, at: '8:15am' do
+  runner "CheckoutRequestReminderJob.perform_later"
+end
+
+every :day, at: '10:30am' do
+  runner "CheckoutRequestDigestJob.perform_later"
+end
+
 every :day, at: '9:15am' do
   runner "FixTicketAssigneeExpirationJob.perform_later"
 end
