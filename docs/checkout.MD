@@ -264,7 +264,7 @@ directs the member to the portal instead of silently omitting tools.
 channel immediately (when `announce` is enabled, unchanged). Approvers are not DMed per
 request. Instead, the daily 10:30 run sends each resource manager (for the request's shop)
 and each approver assigned to the tool, its shop, or the requested group one Slack DM that
-rolls up *every* open request they can act on, grouped by requester (oldest first) with each
+rolls up *every* open request they can act on (the same requests "View open requests" shows: a request from an expired, inactive, revoked or suspended member, or one with unmet prerequisites, is left out), grouped by requester (oldest first) with each
 tool, its shop, and the calendar days the request has waited. To avoid flooding people, a
 person is messaged at most once a day, and only when there is a new request since their last
 digest, or when some open request they can act on is exactly 5, 10, 15, ... days old. Older

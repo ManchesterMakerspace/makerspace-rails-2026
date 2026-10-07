@@ -154,6 +154,20 @@ RSpec.describe CheckoutRequestDigest do
       expect(Service::SlackConnector).to have_received(:send_slack_message).twice
     end
 
+    it "leaves out requests an approver could not act on, such as one from an expired member" do
+      woodworking_manager
+      expired = create(:member, :expired)
+      request_for(expired, bandsaw, 0, hours_ago: 1)
+      described_class.deliver_all!(now: now)
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+
+      request_for(pat, drill, 0, hours_ago: 1)
+      described_class.deliver_all!(now: now)
+
+      expect(Service::SlackConnector).to have_received(:send_slack_message)
+        .with(a_string_including("(1)", "Drill Press").and(satisfy { |text| !text.include?("Laguna") }), "UWOOD").once
+    end
+
     it "sends nothing to someone with no open requests, to the requester, or to plain admin and board members" do
       link_slack(create(:member, :resource_manager, :current, resource_manager_shop_ids: [metal.id.to_s]), "UMETAL")
       link_slack(create(:member, :admin, :current), "UADMIN")

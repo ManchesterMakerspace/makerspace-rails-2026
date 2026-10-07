@@ -411,7 +411,7 @@ synchronous diagnostic invocation where one is useful.
 
 Approvers are told about open checkout requests by a roll-up DM, not per request.
 `CheckoutRequestDigestJob` runs daily at 10:30 and as the `checkout_request_digest` admin job.
-`CheckoutRequestDigest` rolls up, for each resource manager assigned to a request's shop and
+`CheckoutRequestDigest` rolls up (leaving out requests the approver could not act on, such as one from an expired member or with unmet prerequisites), for each resource manager assigned to a request's shop and
 each approver assigned to the tool, its shop, or the requested group (not every admin or board
 member, and never the requester), every open request they can act on, grouped by requester with
 the tool, shop and age in calendar days. It sends only when a request is new since that

@@ -1,5 +1,6 @@
 # A Slack DM roll-up for each approver listing every open checkout request they
-# can act on, oldest requester first: who asked, for which tool, and how many days
+# can act on (requests they could not approve, such as one from an expired member,
+# are left out), oldest requester first: who asked, for which tool, and how many days
 # it has waited. To keep the volume low, a recipient is messaged at most once a
 # day, and only when
 #
@@ -40,11 +41,27 @@ module CheckoutRequestDigest
     def recipients_with_requests
       result = Hash.new { |hash, member| hash[member] = [] }
       ToolCheckoutRequest.where(status: 'open').each do |request|
-        next unless request.target && request.member
+        next unless request.target && request.member && actionable?(request)
 
         recipients(request).each { |member| result[member] << request }
       end
       result
+    end
+
+    # Only requests an approver could actually act on: the same test the Slack
+    # "View open requests" list applies. A request from an expired, inactive,
+    # revoked or suspended member, one with unmet prerequisites, or one for a
+    # disabled tool or group is left out, as is a group whose tools are all held.
+    def actionable?(request)
+      if request.tool_group_id
+        ToolGroupCheckout.validate_review!(ToolGroupCheckout.review(member: request.member, group: request.target))
+        true
+      else
+        ToolCheckoutRequestEligibility.new(member: request.member, tool: request.target,
+                                           open_request_tool_ids: []).error.nil?
+      end
+    rescue Error::CustomError
+      false
     end
 
     def recipients(request)
