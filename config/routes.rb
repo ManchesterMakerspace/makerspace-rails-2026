@@ -214,7 +214,9 @@ Rails.application.routes.draw do
           end
         end
         resources :locations, only: [:index, :create, :update, :destroy]
-        resources :tool_checkouts, only: [:index, :create, :destroy]
+        resources :tool_checkouts, only: [:index, :create, :destroy] do
+          post :lookup_card, on: :collection
+        end
         resources :tool_checkout_requests, only: [:index] do
           member do
             post :decline

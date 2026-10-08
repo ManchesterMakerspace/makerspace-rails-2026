@@ -6,7 +6,7 @@ class ToolCheckout
   field :checked_out_at, type: Time, default: -> { Time.now }
   field :revoked_at, type: Time
   field :revocation_reason, type: String  # internal only — not shown to member
-  field :signed_off_via, type: String, default: "portal"  # "portal" or "slack"
+  field :signed_off_via, type: String, default: "portal"  # "portal", "slack" or "fob"
   field :volunteer_credit_id, type: BSON::ObjectId
   field :group_id, type: BSON::ObjectId
   field :group_revision, type: Integer

@@ -313,6 +313,30 @@ counts reminders actually posted, so a request that is already old when this shi
 three first. When a request is approved, declined, timed out or cancelled, each posted reminder
 is edited to say so. See the checkout request notifications section of `jobs-tasks-services.MD`.
 
+## Checking a member out by fob tap
+
+An approver on a tool's page can check a member out by tapping the member's fob with their
+phone. `POST /api/admin/tool_checkouts/lookup_card` (`tool_id`, `uid`) turns the tapped fob into
+the member it is assigned to; nothing is created. It is allowed for anyone who can approve
+checkouts for that tool (admin or board member, the shop's resource manager, or an approver
+assigned to the tool or its shop); everyone else gets 403 and no member data. The existing
+`GET /api/admin/cards/lookup`, which returns card-management data, stays admin/board only. A POST
+keeps the UID out of request URLs and logs, and the response is `Cache-Control: private, no-store`.
+
+The response is limited to what is needed to confirm the person: member id, name, status,
+expiration, whether they can be checked out on this tool (`eligible`) with the reason when not,
+and the names of unmet prerequisites. An existing open request does not make a member ineligible.
+Rules: the UID must be uppercase hexadecimal byte pairs (422); an unknown fob, tool, or a card with
+no member is 404; duplicate UID records are 409; a fob reported lost or stolen is refused (422)
+without naming the member; and an approver cannot check themselves out by fob (`eligible: false`
+in the preview, 422 on the checkout).
+
+The approver then presses an explicit confirm button, which posts the checkout through
+`POST /api/admin/tool_checkouts` with `source: "fob"` (anything else is recorded as `portal`);
+`signed_off_via` shows how the sign-off happened. All the usual checkout rules, locks, Slack
+messages, audit entry and volunteer credit apply, and the member's open request for that tool, or
+for a group whose tools are now all held, is closed by the checkout itself.
+
 ## Checkout approvers
 
 Board members and admins can approve every tool. RMs can approve every tool in
