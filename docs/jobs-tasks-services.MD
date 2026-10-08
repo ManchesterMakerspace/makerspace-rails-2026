@@ -344,8 +344,8 @@ values and would use the chosen scheduler's timezone.
 | At 08:00 on the first of each month | `CardExpirationCheckJob.perform_later` | `RAILS_ENV=production bundle exec rake card_on_file_expiration_check` | Runs the monthly card-expiration workflow described above. The Rake command performs the service but does not update the admin job status. |
 | Daily at 08:00 | `VolunteerEventReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'` | Sends/retries assigned shop RM review DMs for submitted tasks and dated open events ready for closure, then posts or updates Members Relations Channel reminders after more than five days and retries saved final-outcome updates. The job records success after the scan completes even if individual Slack deliveries fail; inspect error reporting to confirm delivery. Also exposed as `volunteer_event_reminder` in the admin jobs list. |
 | Daily at 09:00 | `MembershipExpirationNoticeJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'MembershipExpirationNoticeJob.perform_now'` | Runs the membership-expiration-notice workflow described above. |
-| Daily at 08:15 | `CheckoutRequestReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'` | Runs the checkout-request reminder scan described above. Also exposed as `checkout_request_reminder` in the admin jobs list. |
-| Daily at 10:30 | `CheckoutRequestDigestJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Sends the checkout-request approver digests described above. Also exposed as `checkout_request_digest` in the admin jobs list. |
+| Daily at 12:30 UTC | `CheckoutRequestReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'` | Runs the checkout-request reminder scan described above. Also exposed as `checkout_request_reminder` in the admin jobs list. |
+| Daily at 14:30 UTC | `CheckoutRequestDigestJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Sends the checkout-request approver digests described above. Also exposed as `checkout_request_digest` in the admin jobs list. |
 
 ## Recurring production Rake tasks not installed by Whenever
 
@@ -410,7 +410,7 @@ synchronous diagnostic invocation where one is useful.
 ### Checkout request notifications
 
 Approvers are told about open checkout requests by a roll-up DM, not per request.
-`CheckoutRequestDigestJob` runs daily at 10:30 and as the `checkout_request_digest` admin job.
+`CheckoutRequestDigestJob` runs daily at 14:30 UTC (about 10:30 am Eastern) and as the `checkout_request_digest` admin job.
 `CheckoutRequestDigest` rolls up (leaving out requests the approver could not act on, such as one from an expired member or with unmet prerequisites), for each resource manager assigned to a request's shop and
 each approver assigned to the tool, its shop, or the requested group (not every admin or board
 member, and never the requester), every open request they can act on, grouped by requester with
@@ -421,9 +421,9 @@ most once a day. Recipients with no linked Slack account or suppressed direct no
 (36-hour expiry) and the time of the last digest (90-day expiry). There is no email fallback.
 The tool's announce-channel post for a new request is unchanged and immediate.
 
-`CheckoutRequestReminderJob` runs daily at 08:15 and as the `checkout_request_reminder` admin
+`CheckoutRequestReminderJob` runs daily at 12:30 UTC (about 8:30 am Eastern) and as the `checkout_request_reminder` admin
 job. A request open for 5 calendar days gets a message in the Resource Managers channel
-(`slack_channel_rm`): "MEMBER requested checkout on TOOL (SHOP) on DATE and is still waiting."
+(`slack_channel_rm`): "MEMBER requested checkout on TOOL (SHOP) on DATE and is still waiting. If this was already done in person, please record the checkout so this stops."
 The same request is reminded again every 5 days (10, 15, ...) until it is resolved. Receipts are
 kept in the request's `reminders` hash keyed by reminder number; `reminder_open` marks a request
 whose posted reminders still need their resolution edit. When the request is approved, declined

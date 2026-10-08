@@ -262,7 +262,7 @@ directs the member to the portal instead of silently omitting tools.
 
 **Approvers are told, in a roll-up.** A new request is announced in the tool's announce
 channel immediately (when `announce` is enabled, unchanged). Approvers are not DMed per
-request. Instead, the daily 10:30 run sends each resource manager (for the request's shop)
+request. Instead, the daily digest run (14:30 UTC, about 10:30 am Eastern) sends each resource manager (for the request's shop)
 and each approver assigned to the tool, its shop, or the requested group one Slack DM that
 rolls up *every* open request they can act on (the same requests "View open requests" shows: a request from an expired, inactive, revoked or suspended member, or one with unmet prerequisites, is left out), grouped by requester (oldest first) with each
 tool, its shop, and the calendar days the request has waited. To avoid flooding people, a
@@ -280,6 +280,7 @@ Lee Davis
   • Lathe (Metalworking) – 1 day old
 
 use /checkout → View open requests, or use the Member Portal
+Already did one in person? Record it (Approve in Slack, or Check Out Member in the portal) so it stops showing up.
 ```
 
 Someone with nothing new and no 5-day milestone receives nothing. Admin and board members are not included unless they
@@ -298,7 +299,7 @@ The member may request the same tool again, because only an open request blocks 
 
 **Reminders.** A request that is still open after 5 days, and every 5 days after that, is
 posted in the Resource Managers channel (`slack_channel_rm`): "MEMBER requested checkout on TOOL
-(SHOP) on DATE and is still waiting." When the request is approved, declined or cancelled, each
+(SHOP) on DATE and is still waiting. If this was already done in person, please record the checkout so this stops." When the request is approved, declined or cancelled, each
 posted reminder is edited to say so. See the checkout request notifications section of
 `jobs-tasks-services.MD`.
 
@@ -347,7 +348,7 @@ Shop-wide assignments are not altered; an otherwise-empty approver record is rem
   notifications, decline, and reminders" above for the format and rules.
 - A request still open after 5 calendar days, and every 5 days after, is posted in the
   Resource Managers channel (`slack_channel_rm`): "MEMBER requested checkout on TOOL
-  (SHOP) on DATE and is still waiting." The posts are edited when the request is approved,
+  (SHOP) on DATE and is still waiting. If this was already done in person, please record the checkout so this stops." The posts are edited when the request is approved,
   declined, or cancelled.
 - Declining a request DMs only the requester, with the approver's required reason.
   The decline is also recorded in the audit log (`tool_checkout_request_declined`) and

@@ -31,6 +31,8 @@ module CheckoutRequestDigest
   KEY_TTL = 36.hours
   LAST_TTL = 90.days
   MESSAGE_TTL = 30.days
+  # An approver who did the checkout in person but never recorded it keeps seeing the request.
+  DONE_IN_PERSON = "Already did one in person? Record it (Approve in Slack, or Check Out Member in the portal) so it stops showing up.".freeze
   REPLACED_TEXT = 'Replaced by a newer digest below.'.freeze
 
   class << self
@@ -97,6 +99,7 @@ module CheckoutRequestDigest
       lines << "and #{groups.size - MAX_REQUESTERS} more members, see the Member Portal." if groups.size > MAX_REQUESTERS
       lines << ''
       lines << 'use /checkout → View open requests, or use the Member Portal'
+      lines << DONE_IN_PERSON
       lines.join("\n")
     end
 

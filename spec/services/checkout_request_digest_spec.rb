@@ -52,6 +52,7 @@ RSpec.describe CheckoutRequestDigest do
           • Lathe (Metalworking) – 1 day old
 
         use /checkout → View open requests, or use the Member Portal
+        #{described_class::DONE_IN_PERSON}
       TEXT
     end
 

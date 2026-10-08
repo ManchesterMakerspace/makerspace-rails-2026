@@ -24,7 +24,7 @@ RSpec.describe CheckoutRequestReminder do
     described_class.remind!(request, now: requested_at + 5.days)
 
     expect(Service::SlackConnector).to have_received(:send_slack_message)
-      .with("*Pat Member* requested checkout on *Laguna Bandsaw* (#{shop.name}) on 2026-10-01 and is still waiting.",
+      .with("*Pat Member* requested checkout on *Laguna Bandsaw* (#{shop.name}) on 2026-10-01 and is still waiting. "             "If this was already done in person, please record the checkout so this stops.",
             "resource_managers")
     expect(request.reload.reminders.fetch("1")).to include("status" => "sent", "ts" => "111.222", "channel" => "CRM")
     expect(request.reminder_open).to be(true)
