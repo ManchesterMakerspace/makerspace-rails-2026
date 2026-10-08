@@ -19,7 +19,7 @@ RSpec.describe ToolCheckoutRequest do
     it "DMs the requester the decision and reason, and skips members who cannot receive DMs" do
       SlackUser.create!(member: member, slack_id: "UREQ", slack_email: member.email)
       request = ToolCheckoutRequest.create!(member: member, tool: tool)
-      request.update!(status: "declined", decision_reason: "Needs the class first")
+      request.update!(status: "declined", decided_by_id: create(:member).id, decision_reason: "Needs the class first")
       allow(Service::SlackConnector).to receive(:send_slack_message)
 
       request.notify_declined
