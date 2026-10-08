@@ -168,6 +168,56 @@ RSpec.describe CheckoutRequestDigest do
         .with(a_string_including("(1)", "Drill Press").and(satisfy { |text| !text.include?("Laguna") }), "UWOOD").once
     end
 
+    describe "replacing the previous digest" do
+      let(:first_post) { double(ts: "111.1", channel: "DAPPROVER") }
+      let(:second_post) { double(ts: "222.2", channel: "DAPPROVER") }
+
+      before do
+        allow(Service::SlackConnector).to receive(:update_slack_message)
+        @manager = woodworking_manager
+      end
+
+      it "edits the previous digest into a stub when a newer one is sent, and always posts the new one fresh" do
+        allow(Service::SlackConnector).to receive(:send_slack_message).and_return(first_post, second_post)
+        request_for(pat, bandsaw, 0, hours_ago: 1)
+        described_class.deliver_all!(now: now)
+        expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+
+        ToolCheckoutRequest.create!(member: lee, tool: drill, request_date: now + 1.day - 1.hour)
+        described_class.deliver_all!(now: now + 1.day)
+
+        expect(Service::SlackConnector).to have_received(:send_slack_message).twice
+        expect(Service::SlackConnector).to have_received(:update_slack_message)
+          .with("DAPPROVER", "111.1", described_class::REPLACED_TEXT, resolved_channel: true).once
+        expect(JSON.parse(redis_keys.fetch("checkout_request_digest_message:#{@manager.id}")))
+          .to eq("channel" => "DAPPROVER", "ts" => "222.2")
+      end
+
+      it "still sends the new digest and remembers it when editing the old one fails" do
+        allow(Service::SlackConnector).to receive(:send_slack_message).and_return(first_post, second_post)
+        allow(Service::SlackConnector).to receive(:update_slack_message).and_raise("message_not_found")
+        request_for(pat, bandsaw, 0, hours_ago: 1)
+        described_class.deliver_all!(now: now)
+        ToolCheckoutRequest.create!(member: lee, tool: drill, request_date: now + 1.day - 1.hour)
+
+        described_class.deliver_all!(now: now + 1.day)
+
+        expect(Service::SlackConnector).to have_received(:send_slack_message).twice
+        expect(Service::ErrorReporter).to have_received(:notify).once
+        expect(redis_keys.values.grep(/222\.2/)).not_to be_empty
+      end
+
+      it "does not touch the previous message when Slack returns no timestamp" do
+        request_for(pat, bandsaw, 0, hours_ago: 1)
+        described_class.deliver_all!(now: now)
+        ToolCheckoutRequest.create!(member: lee, tool: drill, request_date: now + 1.day - 1.hour)
+
+        described_class.deliver_all!(now: now + 1.day)
+
+        expect(Service::SlackConnector).not_to have_received(:update_slack_message)
+      end
+    end
+
     it "sends nothing to someone with no open requests, to the requester, or to plain admin and board members" do
       link_slack(create(:member, :resource_manager, :current, resource_manager_shop_ids: [metal.id.to_s]), "UMETAL")
       link_slack(create(:member, :admin, :current), "UADMIN")

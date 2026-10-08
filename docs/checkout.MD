@@ -285,7 +285,7 @@ use /checkout → View open requests, or use the Member Portal
 Someone with nothing new and no 5-day milestone receives nothing. Admin and board members are not included unless they
 also hold one of those roles, a requester is never sent their own request, and members without
 a linked Slack account or with suppressed direct notifications are skipped. A per-recipient,
-per-day Redis key prevents a rerun from sending a second digest. There is no email fallback.
+per-day Redis key prevents a rerun from sending a second digest. Each new digest is a fresh message (so it notifies), and the recipient's previous digest is edited into a short "Replaced by a newer digest below." stub. There is no email fallback.
 
 **Declining.** Anyone who can approve a request (admin or board member, the shop's resource
 manager, or an assigned approver) can decline it from the portal

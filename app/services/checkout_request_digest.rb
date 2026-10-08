@@ -17,6 +17,12 @@
 # message. Recipients without a linked Slack account, or whose direct
 # notifications are suppressed (`revoked` or `suspended`), are skipped.
 #
+# When a new digest is sent, the recipient's previous digest is edited into a short
+# "replaced" stub (chat.update), so their history keeps one live list instead of a
+# pile of out-of-date ones. The new message is always a fresh post so that it
+# notifies; Slack does not alert on edits. A failed edit never blocks or repeats
+# the new digest.
+#
 # A per-recipient, per-day Redis key stops a rerun of the job from sending the
 # same digest twice; a failed send releases the key so the next run retries it.
 module CheckoutRequestDigest
@@ -24,6 +30,8 @@ module CheckoutRequestDigest
   MILESTONE_DAYS = 5
   KEY_TTL = 36.hours
   LAST_TTL = 90.days
+  MESSAGE_TTL = 30.days
+  REPLACED_TEXT = 'Replaced by a newer digest below.'.freeze
 
   class << self
     def deliver_all!(now: Time.current)
@@ -132,6 +140,35 @@ module CheckoutRequestDigest
       !member.direct_notifications_suppressed? && slack_id_for(member).present?
     end
 
+    def message_key(member)
+      "checkout_request_digest_message:#{member.id}"
+    end
+
+    # Edit the previous digest into a stub and remember the one just sent. Best
+    # effort: nothing here may raise, since the new digest has already been sent.
+    def replace_previous(member, response, slack_id)
+      previous = REDIS.get(message_key(member))
+      if previous.present?
+        ref = JSON.parse(previous)
+        Service::SlackConnector.update_slack_message(ref['channel'], ref['ts'], REPLACED_TEXT, resolved_channel: true)
+      end
+    rescue => error
+      Service::ErrorReporter.notify(error, context: { phase: 'checkout request digest replace previous',
+                                                      member_id: member.id.to_s })
+    ensure
+      remember(member, response, slack_id)
+    end
+
+    def remember(member, response, slack_id)
+      return unless response.respond_to?(:ts) && response.ts.present?
+
+      channel = (response.channel if response.respond_to?(:channel)) || slack_id
+      REDIS.set(message_key(member), { channel: channel, ts: response.ts }.to_json, ex: MESSAGE_TTL.to_i)
+    rescue => error
+      Service::ErrorReporter.notify(error, context: { phase: 'checkout request digest remember message',
+                                                      member_id: member.id.to_s })
+    end
+
     def last_key(member)
       "checkout_request_digest_last:#{member.id}"
     end
@@ -153,8 +190,9 @@ module CheckoutRequestDigest
       begin
         slack_id = slack_id_for(member)
         if slack_id.present?
-          Service::SlackConnector.send_slack_message(message(requests, now: now), slack_id)
+          response = Service::SlackConnector.send_slack_message(message(requests, now: now), slack_id)
           REDIS.set(last_key(member), now.to_i, ex: LAST_TTL.to_i)
+          replace_previous(member, response, slack_id)
         end
       rescue => error
         REDIS.del(key)
