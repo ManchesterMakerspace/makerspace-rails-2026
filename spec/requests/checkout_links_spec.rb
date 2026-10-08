@@ -13,6 +13,24 @@ RSpec.describe "Checkout links", type: :request do
     expect(ToolCheckoutRequest.count).to eq(0)
   end
 
+  it "sends an anonymous visitor to sign in and back to the check-out-member link, without creating anything" do
+    get "/tools/#{tool.id}/check-out-member"
+
+    expect(response).to redirect_to("/login?return_to=%2Ftools%2F#{tool.id}%2Fcheck-out-member")
+    expect(response.headers["Cache-Control"]).to eq("private, no-store")
+    expect(ToolCheckout.count).to eq(0)
+  end
+
+  it "serves the app shell for a signed-in member and hides unavailable tools" do
+    sign_in member
+    get "/tools/#{tool.id}/check-out-member"
+    expect(response).to have_http_status(:ok)
+
+    tool.update!(disabled: true)
+    get "/tools/#{tool.id}/check-out-member"
+    expect(response).to have_http_status(:not_found)
+  end
+
   it "allows administrative editing of checkout exemption" do
     admin = create(:member, role: "admin")
     sign_in admin

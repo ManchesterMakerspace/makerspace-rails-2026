@@ -52,6 +52,8 @@ retaining existing reservations.
 
 `/fix-tickets`, `/fix-tickets/:id`, and `/volunteer/tasks/:id` are authenticated portal routes. Public (read-only) tickets require an active unexpired member, not an anonymous browser. Existing shortcode mappings may target the authenticated bounty detail route; resolving a shortcode does not bypass target authorization. Unauthenticated bounty feeds do not include source-ticket content.
 
+`/tools/:id/request-checkout` and `/tools/:id/check-out-member` are authenticated app-shell routes linked from the public tool page. A signed-out visitor is redirected to `/login?return_to=` the same path, and nothing is created by visiting either. `check-out-member` is for approvers: after sign-in the app opens that tool's Workshops entry with the Check Out Member dialog. The public tool page shows its link only for tools that require a checkout.
+
 The proposed volunteer review notification rollout uses authenticated React
 links `/volunteer?task=:id` and `/volunteer?event=:id`. They select the exact task
 claim (including a child claim) or event for staff review; login and existing

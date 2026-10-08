@@ -42,6 +42,11 @@ rake db:mongoid:create_indexes`). The tool list index orders by shop and name,
 with ID as a stable tie breaker and disabled available for filtering. No record
 backfill is needed: absent and null `open` values read as false.
 
+The public tool page also links approvers to `/tools/:id/check-out-member` (not shown for tools
+that need no checkout). It uses the same authentication, visibility and login-return handling as
+`/tools/:id/request-checkout`, serves the app shell, and creates nothing; the app then opens that
+tool's Workshops entry with the Check Out Member dialog for viewers who may approve it.
+
 `/tools/:id/request-checkout` authenticates before checking visibility and
 serving the SPA shell. Its React form fetches only `/api/tools/:id/coreq.html`
 (JSON context despite the historical-style suffix) and submits through the
