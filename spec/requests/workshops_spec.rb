@@ -267,4 +267,46 @@ RSpec.describe "Workshops", type: :request do
       "missingPrerequisiteToolNames" => [visible_tool.name]
     )
   end
+  describe "canCheckoutMember" do
+    def flag_for(viewer, tool)
+      sign_in viewer
+      get "/api/workshops"
+      row = JSON.parse(response.body).fetch("workshops").find { |workshop| workshop["id"] == shop.id.to_s }
+      row.fetch("tools").find { |entry| entry["id"] == tool.id.to_s }&.fetch("canCheckoutMember")
+    end
+
+    def approver_for(**assignment)
+      approver = create(:member, :current, member_contract_signed_date: Date.current)
+      CheckoutApprover.create!({ member: approver }.merge(assignment))
+      approver
+    end
+
+    it "is true for admin, board, the shop's resource manager, and approvers assigned to the tool or its shop" do
+      allowed = [create(:member, :admin, :current), create(:member, :board_member, :current),
+                 create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s]),
+                 approver_for(tool_ids: [visible_tool.id.to_s]), approver_for(shop_ids: [shop.id.to_s])]
+
+      expect(allowed.map { |viewer| flag_for(viewer, visible_tool) }).to all(be(true))
+    end
+
+    it "is false for everyone else, and for tools that need no checkout" do
+      others = [member, create(:member, :resource_manager, :current, resource_manager_shop_ids: [create(:shop).id.to_s]),
+                approver_for(tool_ids: [create(:tool).id.to_s]), create(:member, :expired)]
+      expect(others.map { |viewer| flag_for(viewer, visible_tool) }).to all(be(false))
+
+      visible_tool.update!(open: true)
+      expect(flag_for(create(:member, :admin, :current), visible_tool)).to be(false)
+    end
+
+    it "agrees with the rule the checkout endpoint enforces" do
+      viewers = [member, create(:member, :admin, :current), create(:member, :board_member, :current),
+                 create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s]),
+                 approver_for(tool_ids: [visible_tool.id.to_s]), approver_for(shop_ids: [create(:shop).id.to_s]),
+                 create(:member, :current, status: "pending")]
+
+      viewers.each do |viewer|
+        expect(flag_for(viewer, visible_tool)).to eq(!!CheckoutCreation.authorized?(viewer, visible_tool))
+      end
+    end
+  end
 end

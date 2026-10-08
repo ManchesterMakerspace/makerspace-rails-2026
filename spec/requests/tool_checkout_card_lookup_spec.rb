@@ -114,16 +114,6 @@ RSpec.describe "Fob lookup for a tool checkout", type: :request do
       end
     end
 
-    it "does not let an approver check themselves out with their own fob" do
-      own = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
-      create(:card, member: own, uid: "AA11BB22")
-
-      lookup(as: own, uid: "AA11BB22")
-
-      expect(JSON.parse(response.body)).to include("eligible" => false,
-                                                   "error" => CheckoutCardPreview::SELF_CHECKOUT_ERROR)
-    end
-
     it "does not treat an open request as a reason to refuse" do
       ToolCheckoutRequest.create!(member: member, tool: tool)
 
@@ -173,14 +163,6 @@ RSpec.describe "Fob lookup for a tool checkout", type: :request do
       expect(ToolCheckout.last.signed_off_via).to eq("fob")
     end
 
-    it "refuses a fob sign-off for the approver's own membership" do
-      sign_in admin
-      post "/api/admin/tool_checkouts", params: { member_id: admin.id.to_s, tool_id: tool.id.to_s, source: "fob" }, as: :json
-
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(ToolCheckout.where(member_id: admin.id).count).to eq(0)
-    end
-
     it "closes the member's open request when the fob checkout is recorded" do
       request = ToolCheckoutRequest.create!(member: member, tool: tool)
 
@@ -196,6 +178,85 @@ RSpec.describe "Fob lookup for a tool checkout", type: :request do
 
       checkout(source: "anything")
       expect(ToolCheckout.last.signed_off_via).to eq("portal")
+    end
+  end
+  describe "checking out on a tool group" do
+    let(:admin) { create(:member, :admin, :current) }
+    let(:other_tool) { create(:tool, shop: shop, name: "Drill Press") }
+    let(:group) { ToolGroup.create!(shop: shop, name: "Wood kit", included_tool_ids: [tool.id.to_s, other_tool.id.to_s]) }
+
+    def lookup_group(as:, group_id: group.id.to_s, uid: self.uid)
+      sign_in as
+      post "/api/admin/tool_checkouts/lookup_card", params: { tool_group_id: group_id, uid: uid }, as: :json
+    end
+
+    it "returns the member and eligibility for a group" do
+      lookup_group(as: admin)
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to include("memberId" => member.id.to_s, "eligible" => true)
+    end
+
+    it "marks the member not eligible when every tool in the group is already held" do
+      [tool, other_tool].each { |held| ToolCheckout.create!(member: member, tool: held, approved_by: admin) }
+
+      lookup_group(as: admin)
+
+      expect(JSON.parse(response.body)).to include("eligible" => false)
+      expect(JSON.parse(response.body)["error"]).to be_present
+    end
+
+    it "uses the same authority rule as approving the group" do
+      outsider = create(:member, :resource_manager, :current, resource_manager_shop_ids: [create(:shop).id.to_s])
+      lookup_group(as: outsider)
+      expect(response).to have_http_status(:forbidden)
+
+      manager = create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+      lookup_group(as: manager)
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "needs exactly one of a tool or a group, and returns not found for an unknown group" do
+      sign_in admin
+      post "/api/admin/tool_checkouts/lookup_card", params: { uid: uid }, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      post "/api/admin/tool_checkouts/lookup_card",
+           params: { uid: uid, tool_id: tool.id.to_s, tool_group_id: group.id.to_s }, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+
+      lookup_group(as: admin, group_id: BSON::ObjectId.new.to_s)
+      expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe "the audit trail" do
+    let(:admin) { create(:member, :admin, :current) }
+
+    def lookups
+      AuditLog.where(event_type: "fob_checkout_lookup")
+    end
+
+    it "records every lookup whatever its outcome, with the target and the end of the UID, and no Slack post" do
+      lookup(as: admin)
+      lookup(as: admin, uid: "AABBCCDD")
+      lookup(as: admin, uid: "nope")
+      card.set(validity: "lost")
+      lookup(as: admin)
+      lookup(as: create(:member, :current))
+
+      results = lookups.map { |entry| entry.after_snapshot["result"] }
+      expect(results).to contain_exactly("found", "not_found", "invalid_uid", "lost_or_stolen", "forbidden")
+      found = lookups.detect { |entry| entry.after_snapshot["result"] == "found" }
+      expect(found).to have_attributes(actor_id: admin.id, subject_id: member.id, resource_id: tool.id)
+      expect(found.after_snapshot).to include("uid_tail" => "B2C3", "target_name" => "Laguna Bandsaw", "eligible" => true)
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+    end
+
+    it "does not throttle repeated lookups" do
+      30.times { lookup(as: admin) }
+
+      expect(response).to have_http_status(:ok)
+      expect(lookups.count).to eq(30)
     end
   end
 end

@@ -47,6 +47,7 @@ class WorkshopSerializer < ActiveModel::Serializer
         checkoutRequestable: checkout.nil? && request.nil? &&
           checkout_requestable?(tool) && !tool.disabled? && !tool.open,
         reservationAvailable: tool_reservation_available?(tool),
+        canCheckoutMember: can_checkout_member?(tool),
         usersChannel: checkout&.active? ? tool.users_channel : nil,
         usersChannelDetails: checkout&.active? ?
           channel_details(tool.users_channel) : nil
@@ -211,6 +212,25 @@ class WorkshopSerializer < ActiveModel::Serializer
       member_id: viewer.id,
       revoked_at: nil
     ).pluck(:tool_id).map(&:to_s)
+  end
+
+  # Whether the viewer may check a member out on this tool: the same rule as
+  # CheckoutCreation.authorized?, without a query per tool. The server still
+  # enforces it when the checkout is created; this only decides whether the
+  # page offers the Check Out Member button.
+  def can_checkout_member?(tool)
+    return false if tool.open || tool.disabled?
+    return false unless SlackCheckoutModal.membership_error(viewer).nil?
+    return false if viewer.status == "pending" && !tool.allow_pending
+
+    global_privilege? || viewer.manages_shop?(object) ||
+      (viewer.valid_for_checkout_request? && !!checkout_approver&.can_approve_tool?(tool))
+  end
+
+  def checkout_approver
+    return @checkout_approver if defined?(@checkout_approver)
+
+    @checkout_approver = CheckoutApprover.find_by(member_id: viewer.id)
   end
 
   def checkout_for(tool)

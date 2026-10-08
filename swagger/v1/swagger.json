@@ -14508,7 +14508,7 @@
           "AdminToolCheckouts"
         ],
         "operationId": "lookupAdminToolCheckoutCard",
-        "description": "Turns a fob UID (uppercase hexadecimal byte pairs, as read by the NFC scanner) into the member it is assigned to and whether that member can be checked out on the tool. Nothing is created; the approver confirms and then posts the checkout. Allowed for anyone who can approve checkouts for this tool: admin or board member, the shop's resource manager, or an approver assigned to the tool or its shop. Others get 403 and no member data. The response is limited to what is needed to confirm the person (member id, name, status, expiration, eligibility, the reason when ineligible, unmet prerequisite names) and is not cacheable. An open request for the tool does not make the member ineligible. A POST keeps the UID out of URLs and logs. 404 means the fob, tool, or the card's member was not found; 409 means duplicate UID records need administrator repair.",
+        "description": "Turns a fob UID (uppercase hexadecimal byte pairs, as read by the NFC scanner) into the member it is assigned to and whether that member can be checked out on the tool, or on the tool group when tool_group_id is given instead (exactly one of the two, otherwise 422). A fob reported lost or stolen is refused with 422 and does not identify the member. Every lookup is recorded in the audit log whatever its outcome, with the target and the end of the UID; lookups are not throttled. Nothing is created; the approver confirms and then posts the checkout. Allowed for anyone who can approve checkouts for this tool: admin or board member, the shop's resource manager, or an approver assigned to the tool or its shop. Others get 403 and no member data. The response is limited to what is needed to confirm the person (member id, name, status, expiration, eligibility, the reason when ineligible, unmet prerequisite names) and is not cacheable. An open request for the tool does not make the member ineligible. A POST keeps the UID out of URLs and logs. 404 means the fob, tool, or the card's member was not found; 409 means duplicate UID records need administrator repair.",
         "parameters": [],
         "responses": {
           "200": {
@@ -14595,12 +14595,15 @@
                   "tool_id": {
                     "type": "string"
                   },
+                  "tool_group_id": {
+                    "type": "string",
+                    "description": "Instead of tool_id, to check a member out on a tool group."
+                  },
                   "uid": {
                     "type": "string"
                   }
                 },
                 "required": [
-                  "tool_id",
                   "uid"
                 ]
               }
