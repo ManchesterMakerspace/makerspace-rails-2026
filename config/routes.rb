@@ -13,6 +13,8 @@ Rails.application.routes.draw do
   get "/shops/:id/public", to: "public_catalog#shop", defaults: { format: :json }
   get "/tools/:id/public", to: "public_catalog#tool", defaults: { format: :json }
   get "/tools/:id/request-checkout", to: "checkout_links#show"
+  # Where an approver lands from the public tool page: sign in, then check a member out on this tool.
+  get "/tools/:id/check-out-member", to: "checkout_links#show"
   get "/api/tools/:id/coreq", to: "checkout_links#context"
 
   root to: "application#application"
@@ -214,7 +216,9 @@ Rails.application.routes.draw do
           end
         end
         resources :locations, only: [:index, :create, :update, :destroy]
-        resources :tool_checkouts, only: [:index, :create, :destroy]
+        resources :tool_checkouts, only: [:index, :create, :destroy] do
+          post :lookup_card, on: :collection
+        end
         resources :tool_checkout_requests, only: [:index] do
           member do
             post :decline

@@ -34,11 +34,20 @@ class Admin::ToolCheckoutsController < ApplicationController
       checkout_context: CheckoutReadContext.for_checkouts(checkouts, current_member)
   end
 
+  # POST /api/admin/tool_checkouts/lookup_card  { tool_id | tool_group_id, uid }
+  #
+  # See CheckoutFobLookup. A POST keeps the UID out of request URLs and logs.
+  def lookup_card
+    response.set_header("Cache-Control", "private, no-store")
+    render json: CheckoutFobLookup.call(actor: current_member, uid: params[:uid],
+                                        tool_id: params[:tool_id], tool_group_id: params[:tool_group_id])
+  end
+
   def create
     tool = Tool.find(checkout_params[:tool_id])
     raise Error::UnprocessableEntity.new("Tool unavailable") unless tool
     checkout = CheckoutCreation.create!(actor_id: current_member.id,
-      member_id: checkout_params[:member_id], tool_id: tool.id, shop_id: tool.shop_id, source: "portal")
+      member_id: checkout_params[:member_id], tool_id: tool.id, shop_id: tool.shop_id, source: sign_off_source)
     # checkout.as_json(serializer:, adapter:, scope:) silently ignores those
     # options -- as_json doesn't understand the ActiveModelSerializers render
     # API, so this was dumping raw snake_case Mongoid attributes instead of
@@ -86,7 +95,12 @@ class Admin::ToolCheckoutsController < ApplicationController
 
   def checkout_params
     params.require([:member_id, :tool_id])
-    params.permit(:member_id, :tool_id)
+    params.permit(:member_id, :tool_id, :source)
+  end
+
+  # How the approver identified the member: by fob tap ("fob"), or the default.
+  def sign_off_source
+    checkout_params[:source] == "fob" ? "fob" : "portal"
   end
 
   def update_params

@@ -7,6 +7,7 @@
   <p class="status">No checkout required</p>
 <% else %>
   <%= link_to "Request checkout", "/tools/#{page[:id]}/request-checkout", class: "button" %>
+  <p class="approver-link"><%= link_to "Approver? Sign in to check out a member", "/tools/#{page[:id]}/check-out-member" %></p>
 <% end %>
 <% if (map = page[:map]) %>
   <% shape_points = ->(points) { points.map { |x, y| "#{x},#{y}" }.join(" ") } %>

@@ -191,6 +191,53 @@ end
 
 
 describe "Shared checkout creation API", type: :request do
+  path "/admin/tool_checkouts/lookup_card" do
+    post "Looks up the member behind a tapped fob for a checkout on a tool" do
+      tags "AdminToolCheckouts"
+      operationId "lookupAdminToolCheckoutCard"
+      description "Turns a fob UID (uppercase hexadecimal byte pairs, as read by the NFC scanner) into the member it is assigned to and whether that member can be checked out on the tool, or on the tool group when tool_group_id is given instead (exactly one of the two, otherwise 422). A fob reported lost or stolen is refused with 422 and does not identify the member. Every lookup is recorded in the audit log whatever its outcome, with the target and the end of the UID; lookups are not throttled. Nothing is created; the approver confirms and then posts the checkout. Allowed for anyone who can approve checkouts for this tool: admin or board member, the shop's resource manager, or an approver assigned to the tool or its shop. Others get 403 and no member data. The response is limited to what is needed to confirm the person (member id, name, status, expiration, eligibility, the reason when ineligible, unmet prerequisite names) and is not cacheable. An open request for the tool does not make the member ineligible. A POST keeps the UID out of URLs and logs. 404 means the fob, tool, or the card's member was not found; 409 means duplicate UID records need administrator repair."
+      consumes "application/json"
+      produces "application/json"
+      parameter name: :lookup, in: :body, schema: {
+        type: :object, properties: { tool_id: { type: :string }, tool_group_id: { type: :string, description: "Instead of tool_id, to check a member out on a tool group." }, uid: { type: :string } }, required: %w[uid]
+      }
+      let(:actor) { create(:member, :current, :admin) }
+      let(:target) { create(:member, :current) }
+      let(:tool) { create(:tool) }
+      let!(:card) { create(:card, member: target, uid: "04A1B2C3") }
+      let(:lookup) { { tool_id: tool.id.to_s, uid: "04A1B2C3" } }
+      before { sign_in actor }
+
+      response "200", "member behind the fob" do
+        schema type: :object, required: %w[memberId name status eligible],
+          properties: {
+            memberId: { type: :string }, name: { type: :string }, status: { type: :string },
+            expirationTime: { type: :integer, nullable: true }, eligible: { type: :boolean },
+            error: { type: :string, nullable: true },
+            unmetPrerequisites: { type: :array, items: { type: :string } }
+          }
+        run_test! do |response|
+          expect(JSON.parse(response.body)).to include("memberId" => target.id.to_s, "eligible" => true)
+        end
+      end
+      response "403", "current actor cannot approve this tool" do
+        let(:actor) { create(:member, :current) }
+        schema "$ref" => "#/components/schemas/error"
+        run_test!
+      end
+      response "404", "unknown fob, tool or card without a member" do
+        let(:lookup) { { tool_id: tool.id.to_s, uid: "AABBCCDD" } }
+        schema "$ref" => "#/components/schemas/error"
+        run_test!
+      end
+      response "422", "UID is not uppercase hexadecimal byte pairs" do
+        let(:lookup) { { tool_id: tool.id.to_s, uid: "not-a-uid" } }
+        schema "$ref" => "#/components/schemas/error"
+        run_test!
+      end
+    end
+  end
+
   path "/admin/tool_checkouts" do
     post "Approves a safety checkout under the member/tool lock" do
       tags "AdminToolCheckouts"
@@ -199,7 +246,9 @@ describe "Shared checkout creation API", type: :request do
       consumes "application/json"
       produces "application/json"
       parameter name: :checkout_details, in: :body, schema: {
-        type: :object, properties: { member_id: { type: :string }, tool_id: { type: :string } }, required: %w[member_id tool_id]
+        type: :object, properties: { member_id: { type: :string }, tool_id: { type: :string },
+          source: { type: :string, enum: %w[portal fob], description: "How the approver identified the member: fob when they tapped the member's fob; anything else is recorded as portal." } },
+        required: %w[member_id tool_id]
       }
       let(:actor) { create(:member, :current, :admin) }
       let(:target) { create(:member, :current) }
