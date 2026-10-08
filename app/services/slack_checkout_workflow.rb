@@ -15,13 +15,13 @@ class SlackCheckoutWorkflow
     "shop_active" => "menu", "shop_requests" => "menu", "shop_request_tools" => "menu", "shop_volunteer" => "menu",
     "request_new" => "request_tools", "request_detail" => "requests",
     "request_edit" => "request_detail", "request_cancel" => "request_detail",
-    "request_approve" => "request_detail", "checkout_detail" => "active",
+    "request_approve" => "request_detail", "request_decline" => "request_detail", "checkout_detail" => "active",
     "volunteer_confirm" => "volunteer", "volunteer_detail" => "requests",
     "volunteer_approve" => "volunteer_detail", "volunteer_decline" => "volunteer_detail",
     "done" => "menu", "alert" => "menu"
   }.freeze
-  REQUEST_STEPS = %w[request_detail request_edit request_cancel request_approve].freeze
-  SUBMIT_STEPS = %w[request_new request_edit request_cancel request_approve volunteer_confirm volunteer_approve volunteer_decline].freeze
+  REQUEST_STEPS = %w[request_detail request_edit request_cancel request_approve request_decline].freeze
+  SUBMIT_STEPS = %w[request_new request_edit request_cancel request_approve request_decline volunteer_confirm volunteer_approve volunteer_decline].freeze
 
   def initialize(payload)
     @payload = payload
@@ -93,6 +93,8 @@ class SlackCheckoutWorkflow
         reject!("Only the requester can edit or cancel this request.") unless @request.member_id == @member.id
       elsif step == "request_approve"
         reject!("You can no longer approve this tool.") unless @request.member_id != @member.id && can_approve?(@tool)
+      elsif step == "request_decline"
+        reject!("You can no longer decline this request.") unless @request.member_id != @member.id && can_approve?(@tool)
       end
     when "checkout_detail"
       @checkout = find_record(ToolCheckout, @metadata["record_id"])
@@ -198,7 +200,7 @@ class SlackCheckoutWorkflow
       @metadata.merge!("step" => "checkout_detail", "record_id" => value)
     elsif step == "request_detail" && action["block_id"] == "checkout_actions"
       target = { SlackCheckoutModal::EDIT => "request_edit", SlackCheckoutModal::CANCEL => "request_cancel",
-                 SlackCheckoutModal::APPROVE => "request_approve" }[id]
+                 SlackCheckoutModal::APPROVE => "request_approve", SlackCheckoutModal::DECLINE => "request_decline" }[id]
       reject! unless target
       @metadata["step"] = target
     elsif step == "volunteer_detail" && action["block_id"] == "checkout_actions"
@@ -237,6 +239,14 @@ class SlackCheckoutWorkflow
         tool_id: @tool.id, shop_id: @shop.id, source: "slack", request_id: @request.id, defer_notifications: true) { load_context! }
       end
       message = "The checkout request for #{CheckoutDisplay.escape(@tool.name.to_s.first(200))} has been approved."
+    when "request_decline"
+      reason = @payload.dig("view", "state", "values", SlackCheckoutModal::REASON, SlackCheckoutModal::REASON, "value").to_s.strip
+      raise FieldError.new(SlackCheckoutModal::REASON, "Enter a reason for declining.") if reason.blank?
+      if reason.length > CheckoutRequestDecision::REASON_MAX
+        raise FieldError.new(SlackCheckoutModal::REASON, "Reason must be at most #{CheckoutRequestDecision::REASON_MAX} characters.")
+      end
+      CheckoutRequestDecision.decline!(request: @request, actor: @member, reason: reason)
+      message = "The checkout request from #{CheckoutDisplay.escape(@request.member.fullname)} for #{CheckoutDisplay.escape(@tool.name.to_s.first(200))} was declined."
     when "volunteer_confirm"
       CheckoutApproverVolunteering.create!(member: @member, tool: @tool, note: note)
       message = "Your request to become a checkout approver for #{CheckoutDisplay.escape(@tool.name.to_s.first(200))} has been sent to the shop's resource managers."

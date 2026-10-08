@@ -6,6 +6,8 @@ class ToolCheckoutRequestSerializer < ActiveModel::Serializer
   attributes :id, :member_id, :member_name, :member_email, :member_status, :tool_id, :tool_name,
              :shop_id, :shop_name, :note, :request_date, :status, :message_id,
              :checked_out_id, :member_slack_url
+  attributes :decided_at, :decision_reason
+  attribute(:decided_by_name) { object.decided_by&.fullname }
   attribute(:tool_group_id) { object.tool_group_id }
   attribute(:target_type) { object.tool_group_id ? 'group' : 'tool' }
   attribute(:target_name) { object.target&.name }

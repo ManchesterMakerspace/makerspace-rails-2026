@@ -217,6 +217,10 @@ class Admin::SystemConfigsController < AdminController
       VolunteerEventReminderJob.perform_later
     when 'membership_expiration_notice'
       MembershipExpirationNoticeJob.perform_later
+    when 'checkout_request_reminder'
+      CheckoutRequestReminderJob.perform_later
+    when 'checkout_request_digest'
+      CheckoutRequestDigestJob.perform_later
     end
 
     render json: { message: "#{job_key} enqueued successfully" }, status: :ok

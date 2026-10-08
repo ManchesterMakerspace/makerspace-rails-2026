@@ -16,7 +16,7 @@ class CheckoutNotificationJob < ApplicationJob
         checkout = ToolCheckout.find_by(id: record_id)
         return unless checkout && checkout.member && checkout.tool
         CheckoutCreation.deliver_notifications(checkout, invite: true)
-      when "request", "cancellation"
+      when "request", "cancellation", "decline"
         request = ToolCheckoutRequest.find_by(id: record_id)
         return unless request && request.member && request.target
         if action == "request"
@@ -24,6 +24,11 @@ class CheckoutNotificationJob < ApplicationJob
           request.notify_requestor
         elsif action == "cancellation" && request.status == "deleted"
           request.remove_announcement
+          CheckoutRequestReminder.finalize!(request)
+        elsif action == "decline" && request.declined?
+          request.notify_declined
+          request.refresh_declined_announcement
+          CheckoutRequestReminder.finalize!(request)
         end
       when "approver_volunteer", "approver_volunteer_decision"
         request = CheckoutApproverRequest.find_by(id: record_id)

@@ -31,6 +31,25 @@ RSpec.describe CheckoutNotificationJob do
     described_class.perform_now("cancellation", row.id.to_s)
   end
 
+  it "tells the requester about a decline and updates the channel announcement" do
+    manager = create(:member, :resource_manager, :current, resource_manager_shop_ids: [tool.shop_id.to_s])
+    row = ToolCheckoutRequest.create!(member: member, tool: tool)
+    row.update!(status: "declined", decided_by_id: manager.id, decided_at: Time.current, decision_reason: "Not yet")
+    allow(ToolCheckoutRequest).to receive(:find_by).and_return(row)
+    expect(row).to receive(:notify_declined).ordered
+    expect(row).to receive(:refresh_declined_announcement).ordered
+
+    described_class.perform_now("decline", row.id.to_s)
+  end
+
+  it "ignores a queued decline for a request that is not declined" do
+    row = ToolCheckoutRequest.create!(member: member, tool: tool)
+    allow(ToolCheckoutRequest).to receive(:find_by).and_return(row)
+    expect(row).not_to receive(:notify_declined)
+
+    described_class.perform_now("decline", row.id.to_s)
+  end
+
   it "reconciles cancellation that finishes while the request announcement is in flight" do
     tool.update!(announce: true, announce_channel: "requests")
     row = ToolCheckoutRequest.create!(member: member, tool: tool)

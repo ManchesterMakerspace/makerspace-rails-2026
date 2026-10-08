@@ -68,6 +68,11 @@ class CheckoutCreation
       notify { checkout.announce_checkout_success }
     end
     notify do
+      ToolCheckoutRequest.where(checked_out_id: checkout.id, reminder_open: true).each do |request|
+        CheckoutRequestReminder.finalize!(request)
+      end
+    end
+    notify do
       Service::AuditLogger.log(log_type: "member", event_type: "tool_checkout_created",
         resource_type: "ToolCheckout", resource_id: checkout.id, actor: checkout.approved_by, subject: checkout.member,
         after_snapshot: { member_id: checkout.member_id.to_s, tool_id: checkout.tool_id.to_s,
