@@ -56,6 +56,17 @@ class ToolCheckoutRequest
     status == "declined"
   end
 
+  # Declined by the system after the last reminder (no deciding member).
+  def timed_out?
+    declined? && decided_by_id.nil?
+  end
+
+  def days_open_at_decision
+    return unless decided_at && request_date
+
+    (decided_at.in_time_zone.to_date - request_date.in_time_zone.to_date).to_i
+  end
+
   def decided_by
     Member.find_by(id: decided_by_id) if decided_by_id
   end
@@ -178,7 +189,14 @@ class ToolCheckoutRequest
   end
 
   def declined_announcement_message
-    "The checkout request from *#{CheckoutDisplay.escape(member.fullname)}* for "       "*#{CheckoutDisplay.escape(target.name)}* was declined."
+    who = "*#{CheckoutDisplay.escape(member.fullname)}*"
+    tool_name = "*#{CheckoutDisplay.escape(target.name)}*"
+    if timed_out?
+      return "The checkout request from #{who} for #{tool_name} timed out after #{days_open_at_decision} days " \
+             'and was automatically declined.'
+    end
+
+    "The checkout request from #{who} for #{tool_name} was declined."
   end
 
   # Keep the original channel announcement in step with a decline, as
@@ -204,9 +222,17 @@ class ToolCheckoutRequest
     slack_id = member.slack_user&.slack_id
     return if slack_id.blank?
 
-    message = "Your checkout request for *#{CheckoutDisplay.escape(target.name)}* in "       "*#{CheckoutDisplay.escape(target.shop&.name)}* was declined."
-    message += "
-Reason: #{CheckoutDisplay.escape(decision_reason)}" if decision_reason.present?
+    request_text = "Your checkout request for *#{CheckoutDisplay.escape(target.name)}* in " \
+                   "*#{CheckoutDisplay.escape(target.shop&.name)}*"
+    message = if timed_out?
+      "#{request_text} was automatically declined because it timed out: no checkout was recorded within " \
+        "#{days_open_at_decision} days. If you still need this checkout, please contact the board on Slack or " \
+        'visit an open house to see a board member in person. You can also submit a new request.'
+    else
+      text = "#{request_text} was declined."
+      text += "\nReason: #{CheckoutDisplay.escape(decision_reason)}" if decision_reason.present?
+      text
+    end
     Service::SlackConnector.send_slack_message(message, slack_id)
   rescue => e
     Service::ErrorReporter.notify(e)

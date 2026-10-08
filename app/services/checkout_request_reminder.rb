@@ -1,8 +1,11 @@
 # "Still waiting" reminders for open checkout requests. A request that has been
 # open for 5 days gets a post in the configured Resource Managers channel
-# (`slack_channel_rm`), and another every 5 days after that until it is resolved.
-# When the request is approved, declined or cancelled, each reminder that was
-# posted is edited to say so, so the channel is not left with stale reminders.
+# (`slack_channel_rm`), and another every 5 days after that, up to 3 reminders.
+# The third says it is the last reminder. If no checkout is recorded 5 days after
+# the third reminder the system declines the request (see `time_out_due!`).
+# When the request is approved, declined, timed out or cancelled, each reminder
+# that was posted is edited to say so, so the channel is not left with stale
+# reminders.
 #
 # Each reminder has a receipt on the request (`reminders`, keyed by reminder
 # number). A short lease prevents concurrent workers posting the same reminder
@@ -11,6 +14,9 @@
 # retried by the daily job.
 module CheckoutRequestReminder
   INTERVAL_DAYS = 5
+  # Reminders actually posted, not elapsed intervals, so a request that is already
+  # old when this ships still gets all of them before it is declined.
+  MAX_REMINDERS = 3
   LEASE = 5.minutes
 
   class << self
@@ -23,7 +29,9 @@ module CheckoutRequestReminder
     end
 
     def remind!(request, now: Time.current)
+      request.reload
       return unless request.open? && request.target
+      return if sent_receipts(request).size >= MAX_REMINDERS
 
       number = due_number(request, now)
       return if number < 1
@@ -39,7 +47,8 @@ module CheckoutRequestReminder
           return
         end
         channel = Service::SlackConnector.resource_managers_channel
-        response = Service::SlackConnector.send_slack_message(waiting_message(request), channel)
+        declines_on = (now.in_time_zone.to_date + INTERVAL_DAYS) if sent_receipts(request).size + 1 >= MAX_REMINDERS
+        response = Service::SlackConnector.send_slack_message(waiting_message(request, declines_on: declines_on), channel)
         finish(request, key, token, 'sent', now,
                'channel' => (response.channel if response.respond_to?(:channel)) || channel,
                'ts' => (response.ts if response.respond_to?(:ts)))
@@ -47,6 +56,25 @@ module CheckoutRequestReminder
         finish(request, key, token, 'failed', now, 'error_class' => error.class.name)
         raise
       end
+    end
+
+    # Decline a request once all reminders have been posted and the last one has had
+    # its full interval with no checkout recorded. Returns true when it declined.
+    def time_out_due!(request, now: Time.current)
+      request.reload
+      return false unless request.open?
+
+      sent = sent_receipts(request)
+      return false if sent.size < MAX_REMINDERS
+
+      last_sent = sent.map { |receipt| receipt['sent_at'] }.compact.max
+      return false unless last_sent && last_sent.in_time_zone.to_date <= now.in_time_zone.to_date - INTERVAL_DAYS
+
+      CheckoutRequestDecision.time_out!(request: request, now: now)
+    end
+
+    def sent_receipts(request)
+      request.reminders.values.select { |receipt| receipt['status'] == 'sent' }
     end
 
     # Edit every posted reminder for a request that is no longer open.
@@ -70,15 +98,21 @@ module CheckoutRequestReminder
       request.set(reminder_open: false) unless unresolved
     end
 
-    def waiting_message(request)
-      "*#{CheckoutDisplay.escape(request.member.fullname)}* requested checkout on " \
-        "*#{CheckoutDisplay.escape(request.target.name)}* (#{CheckoutDisplay.escape(request.target.shop&.name)}) " \
-        "on #{request.request_date.to_date.iso8601} and is still waiting. "         "If this was already done in person, please record the checkout so this stops."
+    def waiting_message(request, declines_on: nil)
+      text = "*#{CheckoutDisplay.escape(request.member.fullname)}* requested checkout on " \
+             "*#{CheckoutDisplay.escape(request.target.name)}* (#{CheckoutDisplay.escape(request.target.shop&.name)}) " \
+             "on #{request.request_date.to_date.iso8601} and is still waiting. "
+      if declines_on
+        text + "This is the last reminder: if no checkout is recorded it will be automatically declined on " \
+               "#{declines_on.iso8601}. If this was already done in person, please record the checkout."
+      else
+        text + "If this was already done in person, please record the checkout so this stops."
+      end
     end
 
     def resolved_message(request)
       outcome = case request.status
-                when 'declined' then 'declined'
+                when 'declined' then request.timed_out? ? 'timed out and was automatically declined' : 'declined'
                 when 'deleted' then 'cancelled by the requester'
                 else 'approved'
                 end
