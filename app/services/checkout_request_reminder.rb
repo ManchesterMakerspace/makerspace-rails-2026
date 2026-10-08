@@ -73,7 +73,7 @@ module CheckoutRequestReminder
     def waiting_message(request)
       "*#{CheckoutDisplay.escape(request.member.fullname)}* requested checkout on " \
         "*#{CheckoutDisplay.escape(request.target.name)}* (#{CheckoutDisplay.escape(request.target.shop&.name)}) " \
-        "on #{request.request_date.to_date.iso8601} and is still waiting."
+        "on #{request.request_date.to_date.iso8601} and is still waiting. "         "If this was already done in person, please record the checkout so this stops."
     end
 
     def resolved_message(request)
