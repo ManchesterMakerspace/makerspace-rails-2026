@@ -77,7 +77,8 @@ RSpec.describe CheckoutRequestReminder do
       "closed" => "approved"
     }.each do |status, outcome|
       it "edits the posted reminder when the request is #{status}" do
-        request.update!(status: status, decision_reason: ("Not now" if status == "declined"))
+        request.update!(status: status, decision_reason: ("Not now" if status == "declined"),
+                        decided_by_id: (create(:member).id if status == "declined"))
 
         described_class.finalize!(request)
 

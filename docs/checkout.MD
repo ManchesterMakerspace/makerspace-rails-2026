@@ -297,11 +297,21 @@ locks as approval and cancellation, so only one can apply. The requester alone r
 DM with the reason; an existing channel announcement is edited to say the request was declined.
 The member may request the same tool again, because only an open request blocks a new one.
 
-**Reminders.** A request that is still open after 5 days, and every 5 days after that, is
-posted in the Resource Managers channel (`slack_channel_rm`): "MEMBER requested checkout on TOOL
-(SHOP) on DATE and is still waiting. If this was already done in person, please record the checkout so this stops." When the request is approved, declined or cancelled, each
-posted reminder is edited to say so. See the checkout request notifications section of
-`jobs-tasks-services.MD`.
+**Reminders and automatic time-out.** A request that is still open after 5 days, then again
+at 10 and 15 days (three reminders in all), is posted in the Resource Managers channel
+(`slack_channel_rm`): "MEMBER requested checkout on TOOL (SHOP) on DATE and is still waiting. If
+this was already done in person, please record the checkout so this stops." The third reminder
+says it is the last one and gives the date the request will be automatically declined. If no
+checkout is recorded 5 days after the third reminder (20 days for a new request), the system
+declines the request as `declined` with no deciding member, a reason of "Automatically declined:
+timed out with no checkout recorded after N days. Contact the board if you still need this
+checkout.", and an audit entry (`tool_checkout_request_timed_out`). The requester, and only the
+requester, is DMed: the request was automatically declined because it timed out, and to contact
+the board on Slack or visit an open house to see a board member in person, or submit a new
+request. The channel announcement and posted reminders are edited to say it timed out. The cap
+counts reminders actually posted, so a request that is already old when this ships still gets all
+three first. When a request is approved, declined, timed out or cancelled, each posted reminder
+is edited to say so. See the checkout request notifications section of `jobs-tasks-services.MD`.
 
 ## Checkout approvers
 
@@ -346,10 +356,12 @@ Shop-wide assignments are not altered; an otherwise-empty approver record is rem
   open requests, sent at most once a day and only when a request is new since their last
   digest or an open request is exactly 5, 10, 15, ... days old. See "Request
   notifications, decline, and reminders" above for the format and rules.
-- A request still open after 5 calendar days, and every 5 days after, is posted in the
-  Resource Managers channel (`slack_channel_rm`): "MEMBER requested checkout on TOOL
-  (SHOP) on DATE and is still waiting. If this was already done in person, please record the checkout so this stops." The posts are edited when the request is approved,
-  declined, or cancelled.
+- A request still open after 5 calendar days, and again at 10 and 15 days, is posted in the
+  Resource Managers channel (`slack_channel_rm`): "MEMBER requested checkout on TOOL (SHOP) on
+  DATE and is still waiting. ..." The third is the last reminder. 5 days later, with nothing
+  recorded, the request is automatically declined and the requester is DMed (see "Reminders and
+  automatic time-out" above). The posts are edited when the request is approved, declined, timed
+  out, or cancelled.
 - Declining a request DMs only the requester, with the approver's required reason.
   The decline is also recorded in the audit log (`tool_checkout_request_declined`) and
   posted to the logs channel. The digest and reminder messages are not audit-logged.
