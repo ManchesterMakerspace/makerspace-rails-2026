@@ -22,6 +22,15 @@ RSpec.describe 'Checkout response contracts', type: :request do
         tags 'Tool checkouts'
         security [sessionAuth: []]
         produces 'application/json'
+        if route == '/admin/tool_checkouts'
+          parameter name: :member_id, in: :query, type: :string, required: false
+          parameter name: :tool_id, in: :query, type: :string, required: false
+          parameter name: :shop_id, in: :query, type: :string, required: false
+          parameter name: :active, in: :query, type: :string, required: false, enum: %w[true false],
+                    description: 'true: only checkouts that are not revoked; false: only revoked ones'
+          parameter name: :active_members_only, in: :query, type: :string, required: false, enum: %w[true],
+                    description: 'true: only checkouts held by members with an active membership status and an unexpired term (Member#active_unexpired?). Omitted: every member.'
+        end
         response '200', 'Authorized records' do
           schema type: :array, items: { '$ref' => "#/components/schemas/#{model}" }
           before { model == 'ToolCheckout' ? checkout : request_record }
