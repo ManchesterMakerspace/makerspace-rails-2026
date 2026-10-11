@@ -14,6 +14,15 @@ class Admin::ToolCheckoutsController < ApplicationController
     checkouts = checkouts.where(revoked_at: nil) if params[:active] == "true"
     checkouts = checkouts.where(:revoked_at.ne => nil) if params[:active] == "false"
 
+    # Optional: only checkouts held by members who are currently active (an active membership status
+    # with an unexpired term, same test as Member#active_unexpired?). Opt-in so existing callers
+    # keep getting every checkout.
+    if params[:active_members_only] == "true"
+      active_member_ids = Member.where(:status.in => Member::ACTIVE_MEMBERSHIP_STATUSES,
+                                       :expirationTime.gt => Time.now.to_i * 1000).pluck(:id)
+      checkouts = checkouts.where(:member_id.in => active_member_ids)
+    end
+
     # Filter by shop — join through tool
     if params[:shop_id].present?
       tool_ids = Tool.where(shop_id: params[:shop_id]).pluck(:id)

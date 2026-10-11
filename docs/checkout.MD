@@ -89,6 +89,8 @@ The roster's “Check Out Member” search sends `fully_active_unexpired=true` t
 strictly later than the current Unix time in milliseconds before search paging.
 This opt-in filter does not change checkout creation or Slack eligibility.
 
+The Tool Checkouts roster hides checkouts held by expired, revoked, inactive or suspended members by default. It sends `active_members_only=true` to `GET /api/admin/tool_checkouts`, which keeps only members whose status is `activeMember` or `pending` and whose expiration is later than the current Unix time in milliseconds (`Member#active_unexpired?`). A checkbox, “Include expired, revoked and inactive members”, omits the parameter. The parameter is opt-in, so other callers still receive every checkout, and a single member's own checkout list (member profile) never sends it.
+
 Shop, tool, approver, and checkout responses use request-scoped batched lookups.
 Shop tool counts and prerequisite labels share a Mongo `$facet` aggregation.
 The page shares lazy catalog reads across tabs and refreshes loaded catalogs on
