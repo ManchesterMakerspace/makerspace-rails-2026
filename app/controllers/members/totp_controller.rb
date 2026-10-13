@@ -36,6 +36,7 @@ class Members::TotpController < AuthenticationController
       otp_enabled_at:         Time.now
     )
     session.delete(:totp_pending_secret)
+    complete_mobile_session_persistence(@member)
 
     ::Service::AuditLogger.log(
       log_type:       'member',

@@ -3,6 +3,7 @@ class ApplicationController < ActionController::Base
   include ::Error::ErrorHandler
   include SlackService
   include SetCurrentRequestDetails
+  include MobileSessionPersistence
   include ActionView::Helpers::SanitizeHelper
 
   protect_from_forgery with: :exception
@@ -169,10 +170,12 @@ class ApplicationController < ActionController::Base
 
     session.delete(:totp_pending_member_id)
     session.delete(:totp_pending_expires_at)
+    session.delete(:mobile_remember_pending)
     sign_out(:member)
   end
 
   def totp_challenge_exempt_request?
+    return true if controller_path == 'sessions' && action_name == 'destroy'
     return true if controller_path == 'members/totp_sessions' && action_name == 'create'
     return true if controller_path == 'client_config' && action_name == 'index'
     # warden.authenticate! establishes the Devise session before this gate

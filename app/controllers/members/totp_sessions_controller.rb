@@ -8,17 +8,22 @@ class Members::TotpSessionsController < ApplicationController
 
     # Validate pending state
     if pending_id.blank?
+      session.delete(:mobile_remember_pending)
       render json: { error: 'Session expired. Please sign in again.' }, status: :unauthorized and return
     end
 
     if Time.now.to_i > expires_at
       session.delete(:totp_pending_member_id)
       session.delete(:totp_pending_expires_at)
+      session.delete(:mobile_remember_pending)
+      sign_out(:member)
       render json: { error: 'Session expired. Please sign in again.' }, status: :unauthorized and return
     end
 
     member = Member.find(pending_id)
-    if member.nil? || !member.otp_required_for_login?
+    if member.nil? || !member.otp_required_for_login? || !member.send(:active_for_authentication?)
+      session.delete(:mobile_remember_pending)
+      sign_out(:member)
       render json: { error: 'Invalid session.' }, status: :unauthorized and return
     end
 
@@ -31,6 +36,7 @@ class Members::TotpSessionsController < ApplicationController
     session.delete(:totp_pending_expires_at)
 
     sign_in(:member, member)
+    complete_mobile_session_persistence(member)
     render json: member, adapter: :attributes and return
   end
 end

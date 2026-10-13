@@ -7,9 +7,19 @@ class SessionsController < Devise::SessionsController
   # directly, so request.ip alone would log Cloudflare's edge IP instead
   # of the real caller on every request.
   include SetCurrentRequestDetails
+  include MobileSessionPersistence
+  prepend_before_action :prepare_mobile_session_persistence, only: :create
+
+  def destroy
+    session.delete(:mobile_remember_pending)
+    session.delete(:totp_pending_member_id)
+    session.delete(:totp_pending_expires_at)
+    super
+  end
 
   # POST /api/members/sign_in
   def create
+    reset_mobile_session_persistence
     restoring_session = member_signed_in? && params[:member].blank? && session[:totp_pending_member_id].blank?
     resource = warden.authenticate!(:scope => resource_name, :recall => "#{controller_path}#new")
 
@@ -50,6 +60,8 @@ class SessionsController < Devise::SessionsController
       render json: { message: message }, status: :unauthorized and return
     end
 
+    stage_mobile_session_persistence(resource)
+
     # Check if TOTP is enrolled — require code entry before issuing full session
     if !restoring_session && resource.otp_required_for_login? && resource.otp_secret_encrypted.present?
       session[:totp_pending_member_id]      = resource.id.to_s
@@ -69,6 +81,7 @@ class SessionsController < Devise::SessionsController
     end
 
     sign_in(resource_name, resource)
+    complete_mobile_session_persistence(resource)
     render json: resource, adapter: :attributes and return
   end
 

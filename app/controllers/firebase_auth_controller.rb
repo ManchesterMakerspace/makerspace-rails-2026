@@ -12,9 +12,11 @@ require 'json'
 #   FIREBASE_PROJECT_ID — your Firebase project ID
 #
 class FirebaseAuthController < ApplicationController
+  prepend_before_action :prepare_mobile_session_persistence, only: :login
   GOOGLE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com'.freeze
 
   def login
+    reset_mobile_session_persistence
     id_token = params[:id_token]
     return render json: { message: 'Missing id_token' }, status: :bad_request if id_token.blank?
 
@@ -62,6 +64,7 @@ class FirebaseAuthController < ApplicationController
     end
 
     sign_in(:member, member)
+    stage_mobile_session_persistence(member)
 
     # Check if TOTP is enrolled — require code entry before granting full
     # app access. A real Devise session already exists at this point (set
@@ -84,6 +87,7 @@ class FirebaseAuthController < ApplicationController
       return render json: member_json.merge(totp_enrollment_required: true)
     end
 
+    complete_mobile_session_persistence(member)
     render json: member, adapter: :attributes
   rescue => e
     Rails.logger.error "[FirebaseAuth] Login error: #{e.message}"

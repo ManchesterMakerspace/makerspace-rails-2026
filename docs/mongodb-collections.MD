@@ -1,5 +1,16 @@
 # MongoDB Collections
 
+## Member remember-cookie lifecycle
+
+The existing top-level `members` collection's `remember_created_at` supports
+Devise's two-week renewable phone remember cookies. No new field or index is
+introduced. Logout clears this timestamp under the existing global invalidation
+policy. Remember credentials also use `authenticatable_salt`, which incorporates
+the encrypted password and existing `session_token`; changing either invalidates
+old credentials. Persistence is requested per login/device, not stored as a
+member-wide preference. Temporary TOTP/persistence state lives in the encrypted
+session cookie. See [authentication](authentication.md).
+
 ## Tool groups
 
 `tool_groups` stores shop-scoped physical-tool sets, disjoint prerequisites,
