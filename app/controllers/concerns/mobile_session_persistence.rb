@@ -20,10 +20,14 @@ module MobileSessionPersistence
     return unless @mobile_login_attempt
 
     session.delete(:mobile_remember_pending)
-    cookies.delete('remember_member_token', forget_cookie_values(Member.new))
   end
 
   def stage_mobile_session_persistence(member)
+    return unless @mobile_login_attempt
+
+    # Both callers have now authenticated an eligible member. Failed login
+    # attempts must preserve the browser's existing persistent credential.
+    cookies.delete('remember_member_token', forget_cookie_values(member))
     return unless @mobile_remember_requested
 
     session[:mobile_remember_pending] = {

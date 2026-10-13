@@ -75,6 +75,78 @@ RSpec.describe 'Mobile session persistence', type: :request do
     expect(response).to have_http_status(:unauthorized)
   end
 
+  [nil, '', 'wrong'].each do |submitted_password|
+    it "requires a fresh password despite an existing ordinary session (#{submitted_password.inspect})" do
+      login(remember: false)
+      credentials = { email: member.email, rememberMe: true }
+      credentials[:password] = submitted_password unless submitted_password.nil?
+      post '/api/members/sign_in', params: { member: credentials }, headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:unauthorized)
+      expect(cookies[remember_key]).to be_blank
+      restore
+      expect(response).to have_http_status(:unauthorized)
+    end
+  end
+
+  it 'rejects a remember-only payload despite an existing session' do
+    login(remember: false)
+    post '/api/members/sign_in', params: { member: { rememberMe: true } }, headers: { 'User-Agent' => phone }, as: :json
+    expect(response).to have_http_status(:unauthorized)
+    expect(cookies[remember_key]).to be_blank
+  end
+
+  it 'allows an ordinary session to opt in after fresh valid credentials' do
+    login(remember: false)
+    login
+    expect(response).to have_http_status(:ok)
+    expect(cookies[remember_key]).to be_present
+    restore
+    expect(response).to have_http_status(:ok)
+  end
+
+  it 'authenticates the submitted account instead of the cached account' do
+    login(remember: false)
+    other = create(:member, password: 'other-password123')
+    post '/api/members/sign_in', params: { member: { email: other.email, password: 'other-password123', rememberMe: true } },
+      headers: { 'User-Agent' => phone }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['email']).to eq(other.email)
+    restore
+    expect(response.parsed_body['email']).to eq(other.email)
+  end
+
+  it 'rejects bad credentials even when a remember cookie has already restored the user' do
+    login
+    cookies.delete(session_key)
+    post '/api/members/sign_in', params: { member: { email: member.email, password: 'wrong', rememberMe: true } },
+      headers: { 'User-Agent' => phone }, as: :json
+    expect(response).to have_http_status(:unauthorized)
+    expect(cookies[remember_key]).to be_present
+    restore
+    expect(response).to have_http_status(:ok)
+  end
+
+  { missing: 400, invalid: 401, unverified: 401, suspended: 401 }.each do |failure, status|
+    it "preserves usable persistence after a #{failure} provider attempt" do
+      login
+      original = cookies[remember_key]
+      payload = { 'sub' => 'replacement', 'email' => member.email, 'email_verified' => failure != :unverified }
+      payload = nil if failure == :invalid
+      if failure == :suspended
+        blocked = create(:member, status: 'suspended')
+        payload['email'] = blocked.email
+      end
+      allow_any_instance_of(FirebaseAuthController).to receive(:verify_firebase_token).and_return(payload)
+      post '/api/auth/firebase_login', params: { id_token: failure == :missing ? nil : 'bad-token', rememberMe: true },
+        headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(status)
+      expect(cookies[remember_key]).to eq(original)
+      restore
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['email']).to eq(member.email)
+    end
+  end
+
   it 'invalidates remembered credentials through the password-change endpoint' do
     login
     put '/api/members/change_password', params: { password: 'changed-password123' },
@@ -204,6 +276,15 @@ RSpec.describe 'Mobile session persistence', type: :request do
 
   [false, true].each do |provider|
     context(provider ? 'provider authentication' : 'password authentication') do
+      it 'clears existing persistence after authenticated opt-out' do
+        login
+        login(provider: provider, remember: false)
+        expect(response).to have_http_status(:ok)
+        expect(cookies[remember_key]).to be_blank
+        restore
+        expect(response).to have_http_status(:unauthorized)
+      end
+
       it 'remembers a fully authenticated phone login' do
         login(provider: provider)
         expect(response).to have_http_status(:ok)

@@ -12,7 +12,7 @@ describe 'Mobile authentication', type: :request do
       operationId 'firebaseLogin'
       consumes 'application/json'
       produces 'application/json'
-      description 'Public login with CSRF protection. rememberMe defaults to false and only enables persistence on phone clients after any required TOTP challenge or enrollment.'
+      description 'Public login with CSRF protection. rememberMe defaults to false and only enables persistence on phone clients after any required TOTP challenge or enrollment. Failed provider authentication preserves an existing remember cookie.'
       parameter name: :'User-Agent', in: :header, required: false, schema: { type: :string }
       parameter name: :credentials, in: :body, required: true, schema: {
         type: :object, required: ['id_token'], properties: {

@@ -20,8 +20,18 @@ class SessionsController < Devise::SessionsController
   # POST /api/members/sign_in
   def create
     reset_mobile_session_persistence
-    restoring_session = member_signed_in? && params[:member].blank? && session[:totp_pending_member_id].blank?
-    resource = warden.authenticate!(:scope => resource_name, :recall => "#{controller_path}#new")
+    restoring_session = params[:member].blank? && member_signed_in? && session[:totp_pending_member_id].blank?
+    authentication_options = { scope: resource_name, recall: "#{controller_path}#new" }
+    if params[:member].present?
+      # Warden otherwise returns its cached session user without checking the
+      # submitted credentials. Mask it for this request without logging out
+      # (which would invalidate existing remembered credentials globally).
+      warden.clear_strategies_cache!(scope: resource_name)
+      warden.set_user(nil, scope: resource_name, store: false, run_callbacks: false)
+      resource = warden.authenticate!(:database_authenticatable, authentication_options)
+    else
+      resource = warden.authenticate!(authentication_options)
+    end
 
     # Explicitly check active_for_authentication? — warden.authenticate! with :recall
     # does not raise on inactive members, it just calls the recall action and continues.

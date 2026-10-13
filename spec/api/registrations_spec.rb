@@ -9,7 +9,7 @@ describe 'Registrations API', type: :request do
       operationId 'signIn'
       consumes 'application/json'
       produces 'application/json'
-      description 'Optional rememberMe enables a two-week renewable remember cookie only on iPhone or Android phone clients, after required TOTP completion. Omission is false. Empty bodies restore existing sessions.'
+      description 'Optional rememberMe enables a two-week renewable remember cookie only on iPhone or Android phone clients, after required TOTP completion. Omission is false. Empty bodies restore existing sessions. Nonempty member payloads require fresh valid credentials, even with an existing session.'
       parameter name: :'User-Agent', in: :header, required: false, schema: { type: :string }
       parameter name: :signInDetails, in: :body, schema: {
         title: :signInDetails,
@@ -50,6 +50,13 @@ describe 'Registrations API', type: :request do
         schema '$ref' => '#/components/schemas/error'
         let(:signInDetails) { { member: { email: auth_member.email, password: 'wrong password' } } }
         run_test!
+
+        context 'with an existing ordinary session requesting persistence' do
+          before { sign_in auth_member }
+          let(:'User-Agent') { 'Mozilla/5.0 (iPhone) Mobile/15E148' }
+          let(:signInDetails) { { member: { email: auth_member.email, password: 'wrong password', rememberMe: true } } }
+          run_test! { expect(cookies['remember_member_token']).to be_blank }
+        end
       end
     end
   end

@@ -43,6 +43,10 @@ Devise restores a session through the remember cookie, not on every request.
 Valid phone remember cookies bypass the ordinary idle timeout; opted-out phones
 and desktops keep `devise_timeout_minutes` semantics. The ordinary session cookie
 is not made persistent. Existing sessions are not automatically upgraded.
+Nonempty password-login payloads require fresh credential authentication even
+when a member session already exists. Failed password/provider attempts preserve
+the browser's existing remember cookie; an authenticated replacement login clears
+it before staging the new choice (including opt-out and pending TOTP).
 
 Remember cookies are signed, HttpOnly, SameSite=Lax, and Secure in production.
 Password changes/resets and existing `session_token` rotations invalidate the
