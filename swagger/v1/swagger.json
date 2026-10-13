@@ -11010,6 +11010,271 @@
         }
       }
     },
+    "/auth/firebase_login": {
+      "post": {
+        "summary": "Sign in with a Firebase provider credential",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "firebaseLogin",
+        "description": "Public login with CSRF protection. rememberMe defaults to false and only enables persistence on phone clients after any required TOTP challenge or enrollment. Failed provider authentication preserves an existing remember cookie and pending persistence choice. Successful provider authentication replaces stale TOTP challenge state with the authenticated account's requirements and applies its own persistence choice.",
+        "parameters": [
+          {
+            "name": "User-Agent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member session established; enrollment may still be required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Member"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "totp_enrollment_required": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "TOTP verification required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "totp_required"
+                  ],
+                  "properties": {
+                    "totp_required": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing provider token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid provider credential or ineligible member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id_token"
+                ],
+                "properties": {
+                  "id_token": {
+                    "type": "string"
+                  },
+                  "rememberMe": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/members/totp_sessions": {
+      "post": {
+        "summary": "Complete a pending login TOTP challenge",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "completeTotpLogin",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "description": "Requires the pending authenticated session and CSRF token. Issues a remember cookie only when phone persistence was requested in the original login.",
+        "parameters": [
+          {
+            "name": "User-Agent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "TOTP verified and login completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired pending session"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/members/totp/verify": {
+      "post": {
+        "summary": "Verify and activate TOTP enrollment",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "verifyTotpEnrollment",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "description": "Requires a signed-in member, CSRF token, and a secret from /members/totp/setup. Completes deferred phone persistence after required enrollment.",
+        "parameters": [
+          {
+            "name": "User-Agent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "TOTP enrollment completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid code or missing setup secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated member"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/shop/{id}/public": {
       "parameters": [
         {
@@ -12019,7 +12284,17 @@
           "Authentication"
         ],
         "operationId": "signIn",
-        "parameters": [],
+        "description": "Optional rememberMe enables a two-week renewable remember cookie only on iPhone or Android phone clients, after required TOTP completion. Omission is false. Empty bodies restore existing sessions. Nonempty member payloads require fresh valid credentials, even with an existing session. Successful fresh authentication replaces any previous TOTP challenge with the authenticated account's requirements. Failed retries preserve the original pending persistence choice and expiry; successful replacement authentication applies its own choice.",
+        "parameters": [
+          {
+            "name": "User-Agent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "User signed in",
@@ -12027,6 +12302,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "TOTP challenge required; no remember cookie issued yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "totp_required"
+                  ],
+                  "properties": {
+                    "totp_required": {
+                      "type": "boolean"
+                    }
+                  }
                 }
               }
             }
@@ -12057,6 +12350,10 @@
                       },
                       "password": {
                         "type": "string"
+                      },
+                      "rememberMe": {
+                        "type": "boolean",
+                        "default": false
                       }
                     }
                   }

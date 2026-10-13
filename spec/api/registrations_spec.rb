@@ -9,6 +9,8 @@ describe 'Registrations API', type: :request do
       operationId 'signIn'
       consumes 'application/json'
       produces 'application/json'
+      description 'Optional rememberMe enables a two-week renewable remember cookie only on iPhone or Android phone clients, after required TOTP completion. Omission is false. Empty bodies restore existing sessions. Nonempty member payloads require fresh valid credentials, even with an existing session. Successful fresh authentication replaces any previous TOTP challenge with the authenticated account\'s requirements. Failed retries preserve the original pending persistence choice and expiry; successful replacement authentication applies its own choice.'
+      parameter name: :'User-Agent', in: :header, required: false, schema: { type: :string }
       parameter name: :signInDetails, in: :body, schema: {
         title: :signInDetails,
         type: :object,
@@ -17,7 +19,8 @@ describe 'Registrations API', type: :request do
             type: :object,
             properties: {
               email: { type: :string },
-              password: { type: :string }
+              password: { type: :string },
+              rememberMe: { type: :boolean, default: false }
             }
           }
         }
@@ -27,12 +30,46 @@ describe 'Registrations API', type: :request do
         schema '$ref' => '#/components/schemas/Member'
         let(:signInDetails) { { member: { email: auth_member.email, password: 'password' } } }
         run_test!
+
+        context 'phone opts in' do
+          let(:'User-Agent') { 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148' }
+          let(:signInDetails) { { member: { email: auth_member.email, password: 'password', rememberMe: true } } }
+          run_test! { expect(cookies['remember_member_token']).to be_present }
+        end
+
+        context 'replacing another account with a pending TOTP challenge' do
+          before do
+            pending_member = create(:member, otp_required_for_login: true,
+              otp_secret_encrypted: TotpService.encrypt(TotpService.generate_secret))
+            post '/api/members/sign_in', params: { member: { email: pending_member.email, password: 'password' } }, as: :json
+            expect(response).to have_http_status(:accepted)
+          end
+          run_test! do
+            expect(request.session[:totp_pending_member_id]).to be_nil
+            expect(request.session[:totp_pending_expires_at]).to be_nil
+          end
+        end
+      end
+
+      response '202', 'TOTP challenge required; no remember cookie issued yet' do
+        schema type: :object, required: ['totp_required'], properties: { totp_required: { type: :boolean } }
+        let(:'User-Agent') { 'Mozilla/5.0 (iPhone) Mobile/15E148' }
+        let(:signInDetails) { { member: { email: auth_member.email, password: 'password', rememberMe: true } } }
+        before { auth_member.update!(otp_required_for_login: true, otp_secret_encrypted: TotpService.encrypt(TotpService.generate_secret)) }
+        run_test! { expect(cookies['remember_member_token']).to be_blank }
       end
 
       response '401', 'User unauthenticated' do
         schema '$ref' => '#/components/schemas/error'
         let(:signInDetails) { { member: { email: auth_member.email, password: 'wrong password' } } }
         run_test!
+
+        context 'with an existing ordinary session requesting persistence' do
+          before { sign_in auth_member }
+          let(:'User-Agent') { 'Mozilla/5.0 (iPhone) Mobile/15E148' }
+          let(:signInDetails) { { member: { email: auth_member.email, password: 'wrong password', rememberMe: true } } }
+          run_test! { expect(cookies['remember_member_token']).to be_blank }
+        end
       end
     end
   end

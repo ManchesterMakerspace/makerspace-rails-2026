@@ -7,11 +7,30 @@ class SessionsController < Devise::SessionsController
   # directly, so request.ip alone would log Cloudflare's edge IP instead
   # of the real caller on every request.
   include SetCurrentRequestDetails
+  include MobileSessionPersistence
+  prepend_before_action :prepare_mobile_session_persistence, only: :create
+
+  def destroy
+    session.delete(:mobile_remember_pending)
+    session.delete(:totp_pending_member_id)
+    session.delete(:totp_pending_expires_at)
+    super
+  end
 
   # POST /api/members/sign_in
   def create
-    restoring_session = member_signed_in? && params[:member].blank? && session[:totp_pending_member_id].blank?
-    resource = warden.authenticate!(:scope => resource_name, :recall => "#{controller_path}#new")
+    restoring_session = params[:member].blank? && member_signed_in? && session[:totp_pending_member_id].blank?
+    authentication_options = { scope: resource_name, recall: "#{controller_path}#new" }
+    if params[:member].present?
+      # Warden otherwise returns its cached session user without checking the
+      # submitted credentials. Mask it for this request without logging out
+      # (which would invalidate existing remembered credentials globally).
+      warden.clear_strategies_cache!(scope: resource_name)
+      warden.set_user(nil, scope: resource_name, store: false, run_callbacks: false)
+      resource = warden.authenticate!(:database_authenticatable, authentication_options)
+    else
+      resource = warden.authenticate!(authentication_options)
+    end
 
     # Explicitly check active_for_authentication? — warden.authenticate! with :recall
     # does not raise on inactive members, it just calls the recall action and continues.
@@ -50,6 +69,15 @@ class SessionsController < Devise::SessionsController
       render json: { message: message }, status: :unauthorized and return
     end
 
+    # A fresh, eligible login replaces any earlier account's challenge. Empty
+    # restoration requests and failed credentials must retain the existing gate.
+    if params[:member].present?
+      session.delete(:totp_pending_member_id)
+      session.delete(:totp_pending_expires_at)
+    end
+
+    stage_mobile_session_persistence(resource)
+
     # Check if TOTP is enrolled — require code entry before issuing full session
     if !restoring_session && resource.otp_required_for_login? && resource.otp_secret_encrypted.present?
       session[:totp_pending_member_id]      = resource.id.to_s
@@ -69,6 +97,7 @@ class SessionsController < Devise::SessionsController
     end
 
     sign_in(resource_name, resource)
+    complete_mobile_session_persistence(resource)
     render json: resource, adapter: :attributes and return
   end
 
