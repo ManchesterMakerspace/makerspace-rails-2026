@@ -406,6 +406,45 @@ synchronous diagnostic invocation where one is useful.
 | `CheckoutRequestDigest` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Builds each approver's daily digest (recipients: the shop's resource managers and approvers assigned to the tool, shop, or group) and sends it with a per-recipient, per-day Redis key. |
 | `CheckoutRequestDecision` | Called by `POST /api/admin/tool_checkout_requests/:id/decline` and the Slack decline action. | Declines an open request under the approval/cancellation locks with a required reason, then queues the requester DM. |
 | `CheckoutRequestReminder` | Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'`. | Owns the five-day reminder message, its per-reminder receipts, and the resolution edit. |
+| `MobileSessionClient` and mobile session persistence support | Invoked synchronously by password/provider login, TOTP completion/enrollment, and Devise/Warden remember-cookie hooks; no manual job or Rake command. | Classifies phone clients and gates persistent authentication. See [Mobile session persistence](#mobile-session-persistence) for lifecycle, side effects, and failure behavior. |
+
+### Mobile session persistence
+
+[`MobileSessionClient.phone?`](../lib/mobile_session_client.rb) is the shared
+server-side phone classifier. It accepts iPhone or Android-with-Mobile user
+agents and rejects iPad/Tablet identifiers, desktops, and missing or unknown
+agents. It reads only the supplied user-agent string and has no storage or
+network side effects. Classification is not hardware attestation.
+
+[`mobile_rememberable.rb`](../config/initializers/mobile_rememberable.rb) installs
+Devise/Warden hooks at boot. During requests they use the classifier to gate
+remember-cookie issuance, authentication through that cookie, and its idle-timeout
+exemption. The logout hook clears pending persistence. Unsupported clients retain
+ordinary session behavior; copying a phone cookie to a desktop does not enable
+remember-cookie restoration or its timeout exemption.
+
+[`MobileSessionPersistence`](../app/controllers/concerns/mobile_session_persistence.rb)
+coordinates password and Firebase login with TOTP challenge/enrollment completion.
+It suppresses Devise's initial remember flag, then, after successful authentication
+and CSRF checks, clears the current browser's old remember cookie and replaces
+the pending choice. Phone opt-in stores the member ID, authentication salt, and
+ten-minute expiry in the encrypted session. Completion consumes that state and
+issues persistence only for the matching, still-eligible member after any required
+TOTP step. Successful opt-out clears an earlier pending opt-in. Failed credential
+retries preserve the original pending choice and expiry and any existing remember
+cookie; invalid TOTP codes do not grant persistence. Missing, expired, mismatched,
+or salt-invalid pending state grants no remember cookie. Logout and expired
+challenges clear pending state through the authentication controllers/hooks.
+
+Devise writes signed, HttpOnly remember cookies and uses the existing member
+`remember_created_at` field. The configured two-week window renews on successful
+remember-cookie restoration. Password changes/resets and `session_token` rotation
+invalidate remembered credentials; logout retains the existing global invalidation
+policy. This support has no scheduled work, admin job status, external integration,
+or background retry. Unexpected errors follow the enclosing authentication
+controller's error handling. No new environment variables, collections, indexes,
+or backfills are required. See [authentication](authentication.md) for endpoint
+contracts and [member field lifecycle](mongodb-collections.MD) for persistence.
 
 ### Checkout request notifications
 

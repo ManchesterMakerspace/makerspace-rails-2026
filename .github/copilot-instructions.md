@@ -29,6 +29,12 @@ Update overlapping instructions here whenever the canonical handbook changes.
   for email, environment variables, collections/indexes, public resources,
   jobs/tasks/services, member statuses/permissions, and API contracts.
   Required docs updates belong in implementation, including already-authorized tasks.
+- Keep [the job/task/service inventory](../docs/jobs-tasks-services.MD) in sync
+  in the same change when adding, changing, renaming, or removing supporting
+  services. Include synchronous request-time modules regardless of directory or
+  namespace (`lib/` helpers, controller concerns, and initializer hooks), not only
+  scheduled jobs or `app/services/`. Document purpose, invocation context, side
+  effects, status tracking, and failure behavior.
 - For endpoint changes, update executable `spec/api` specs, run affected examples,
   run `bundle exec rake rswag:specs:swaggerize`, and include
   `swagger/v1/swagger.json`. TypeScript client publication is a separate release.
