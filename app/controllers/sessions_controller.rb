@@ -19,7 +19,6 @@ class SessionsController < Devise::SessionsController
 
   # POST /api/members/sign_in
   def create
-    reset_mobile_session_persistence
     restoring_session = params[:member].blank? && member_signed_in? && session[:totp_pending_member_id].blank?
     authentication_options = { scope: resource_name, recall: "#{controller_path}#new" }
     if params[:member].present?

@@ -444,6 +444,39 @@ RSpec.describe 'Mobile session persistence', type: :request do
       context 'with TOTP' do
         before { member.update!(otp_required_for_login: true, otp_secret_encrypted: TotpService.encrypt(secret)) }
 
+        [true, false].each do |original_choice|
+          it "preserves pending persistence #{original_choice} after a failed password retry" do
+            login(provider: provider, remember: original_choice)
+            expect(response).to have_http_status(:accepted)
+            pending = request.session[:mobile_remember_pending]&.deep_dup
+            expires_at = request.session[:totp_pending_expires_at]
+            post '/api/members/sign_in', params: { member: { email: member.email, password: 'wrong', rememberMe: !original_choice } },
+              headers: { 'User-Agent' => phone }, as: :json
+            expect(response).to have_http_status(:unauthorized)
+            expect(request.session[:mobile_remember_pending]).to eq(pending)
+            expect(request.session[:totp_pending_expires_at]).to eq(expires_at)
+            expect(cookies[remember_key]).to be_blank
+            post '/api/members/totp_sessions', params: { code: ROTP::TOTP.new(secret).now }, headers: { 'User-Agent' => phone }, as: :json
+            expect(response).to have_http_status(:ok)
+            expect(cookies[remember_key].present?).to eq(original_choice)
+            restore
+            expect(response).to have_http_status(original_choice ? :ok : :unauthorized)
+          end
+        end
+
+        it 'discards the pending opt-in after a successful password retry opts out' do
+          login(provider: provider)
+          expect(request.session[:mobile_remember_pending]).to be_present
+          login(remember: false)
+          expect(response).to have_http_status(:accepted)
+          expect(request.session[:mobile_remember_pending]).to be_nil
+          post '/api/members/totp_sessions', params: { code: ROTP::TOTP.new(secret).now }, headers: { 'User-Agent' => phone }, as: :json
+          expect(response).to have_http_status(:ok)
+          expect(cookies[remember_key]).to be_blank
+          restore
+          expect(response).to have_http_status(:unauthorized)
+        end
+
         it 'only issues persistence after a valid code and restores without a second challenge' do
           login(provider: provider)
           expect(response).to have_http_status(:accepted)

@@ -35,8 +35,10 @@ Devise's initial password hook cannot issue a cookie before TOTP. A phone opt-in
 is held in the encrypted session, bound to the member and authenticatable salt,
 for at most ten minutes; successful TOTP challenge or required enrollment completes
 that pending choice. Failed codes grant no persistent credentials. Cancellation
-uses logout; expired challenges, new credential attempts, and logout clear pending
-choices. Member eligibility is checked again before TOTP completion.
+uses logout; expired challenges, successful replacement authentication, and logout
+clear pending choices. Failed login retries preserve the original choice and its
+expiry. A successful replacement applies its own choice, including opt-out.
+Member eligibility is checked again before TOTP completion.
 
 `remember_for = 2.weeks` and `extend_remember_period = true` renew the window when
 Devise restores a session through the remember cookie, not on every request.

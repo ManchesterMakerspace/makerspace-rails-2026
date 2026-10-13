@@ -14,19 +14,13 @@ module MobileSessionPersistence
     credentials[:remember_me] = false
   end
 
-  # Do not mutate cookies/session from the prepend callback: CSRF verification
-  # must succeed before an attempted login can discard pending credentials.
-  def reset_mobile_session_persistence
-    return unless @mobile_login_attempt
-
-    session.delete(:mobile_remember_pending)
-  end
-
   def stage_mobile_session_persistence(member)
     return unless @mobile_login_attempt
 
-    # Both callers have now authenticated an eligible member. Failed login
-    # attempts must preserve the browser's existing persistent credential.
+    # Both callers have now passed CSRF and authenticated an eligible member.
+    # Failed retries must preserve the original pending choice and credential.
+    # A successful replacement clears the old choice even when opting out.
+    session.delete(:mobile_remember_pending)
     cookies.delete('remember_member_token', forget_cookie_values(member))
     return unless @mobile_remember_requested
 

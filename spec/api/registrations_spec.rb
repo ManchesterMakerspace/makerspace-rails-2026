@@ -9,7 +9,7 @@ describe 'Registrations API', type: :request do
       operationId 'signIn'
       consumes 'application/json'
       produces 'application/json'
-      description 'Optional rememberMe enables a two-week renewable remember cookie only on iPhone or Android phone clients, after required TOTP completion. Omission is false. Empty bodies restore existing sessions. Nonempty member payloads require fresh valid credentials, even with an existing session. Successful fresh authentication replaces any previous TOTP challenge with the authenticated account\'s requirements.'
+      description 'Optional rememberMe enables a two-week renewable remember cookie only on iPhone or Android phone clients, after required TOTP completion. Omission is false. Empty bodies restore existing sessions. Nonempty member payloads require fresh valid credentials, even with an existing session. Successful fresh authentication replaces any previous TOTP challenge with the authenticated account\'s requirements. Failed retries preserve the original pending persistence choice and expiry; successful replacement authentication applies its own choice.'
       parameter name: :'User-Agent', in: :header, required: false, schema: { type: :string }
       parameter name: :signInDetails, in: :body, schema: {
         title: :signInDetails,

@@ -11017,7 +11017,7 @@
           "Authentication"
         ],
         "operationId": "firebaseLogin",
-        "description": "Public login with CSRF protection. rememberMe defaults to false and only enables persistence on phone clients after any required TOTP challenge or enrollment. Failed provider authentication preserves an existing remember cookie. Successful provider authentication replaces stale TOTP challenge state with the authenticated account's requirements.",
+        "description": "Public login with CSRF protection. rememberMe defaults to false and only enables persistence on phone clients after any required TOTP challenge or enrollment. Failed provider authentication preserves an existing remember cookie and pending persistence choice. Successful provider authentication replaces stale TOTP challenge state with the authenticated account's requirements and applies its own persistence choice.",
         "parameters": [
           {
             "name": "User-Agent",
@@ -12284,7 +12284,7 @@
           "Authentication"
         ],
         "operationId": "signIn",
-        "description": "Optional rememberMe enables a two-week renewable remember cookie only on iPhone or Android phone clients, after required TOTP completion. Omission is false. Empty bodies restore existing sessions. Nonempty member payloads require fresh valid credentials, even with an existing session. Successful fresh authentication replaces any previous TOTP challenge with the authenticated account's requirements.",
+        "description": "Optional rememberMe enables a two-week renewable remember cookie only on iPhone or Android phone clients, after required TOTP completion. Omission is false. Empty bodies restore existing sessions. Nonempty member payloads require fresh valid credentials, even with an existing session. Successful fresh authentication replaces any previous TOTP challenge with the authenticated account's requirements. Failed retries preserve the original pending persistence choice and expiry; successful replacement authentication applies its own choice.",
         "parameters": [
           {
             "name": "User-Agent",

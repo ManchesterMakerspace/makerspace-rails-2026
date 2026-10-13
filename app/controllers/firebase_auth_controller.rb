@@ -16,7 +16,6 @@ class FirebaseAuthController < ApplicationController
   GOOGLE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com'.freeze
 
   def login
-    reset_mobile_session_persistence
     id_token = params[:id_token]
     return render json: { message: 'Missing id_token' }, status: :bad_request if id_token.blank?
 
