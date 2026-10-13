@@ -203,6 +203,78 @@ RSpec.describe 'Mobile session persistence', type: :request do
     end
   end
 
+  context 'provider login with a stale challenge from an invalidated session' do
+    let(:other) { create(:member) }
+
+    before do
+      member.update!(otp_required_for_login: true, otp_secret_encrypted: TotpService.encrypt(secret))
+      login
+      expect(response).to have_http_status(:accepted)
+      # Invalidate Warden's serialized member while retaining the browser's
+      # encrypted session, including its pending challenge fields.
+      member.update!(session_token: SecureRandom.hex)
+      allow_any_instance_of(FirebaseAuthController).to receive(:verify_firebase_token).and_return(
+        'sub' => 'replacement-provider', 'email' => other.email, 'email_verified' => true
+      )
+    end
+
+    def provider_switch
+      post '/api/auth/firebase_login', params: { id_token: 'replacement-token', rememberMe: true },
+        headers: { 'User-Agent' => phone }, as: :json
+    end
+
+    it 'clears the old challenge and prevents its code from switching back to the old account' do
+      provider_switch
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['email']).to eq(other.email)
+      expect(request.session[:totp_pending_member_id]).to be_nil
+      expect(request.session[:totp_pending_expires_at]).to be_nil
+      get '/api/home', headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:ok)
+      post '/api/members/totp_sessions', params: { code: ROTP::TOTP.new(secret).now }, headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:unauthorized)
+      restore
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['email']).to eq(other.email)
+    end
+
+    it 'replaces the stale challenge with the provider account challenge before remembering it' do
+      other_secret = TotpService.generate_secret
+      other.update!(otp_required_for_login: true, otp_secret_encrypted: TotpService.encrypt(other_secret))
+      provider_switch
+      expect(response).to have_http_status(:accepted)
+      expect(request.session[:totp_pending_member_id]).to eq(other.id.to_s)
+      expect(cookies[remember_key]).to be_blank
+      post '/api/members/totp_sessions', params: { code: ROTP::TOTP.new(other_secret).now }, headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['email']).to eq(other.email)
+      expect(cookies[remember_key]).to be_present
+    end
+
+    it 'clears the old challenge while preserving the provider account enrollment requirement' do
+      other.update!(role: 'admin')
+      allow(SystemConfig).to receive(:enabled?).and_call_original
+      allow(SystemConfig).to receive(:enabled?).with('require_totp_admin').and_return(true)
+      provider_switch
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['totp_enrollment_required']).to eq(true)
+      expect(request.session[:totp_pending_member_id]).to be_nil
+      expect(request.session[:totp_pending_expires_at]).to be_nil
+      expect(cookies[remember_key]).to be_blank
+      post '/api/members/totp/setup', headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:ok)
+    end
+
+    it 'retains the old challenge when the provider credential is invalid' do
+      allow_any_instance_of(FirebaseAuthController).to receive(:verify_firebase_token).and_return(nil)
+      provider_switch
+      expect(response).to have_http_status(:unauthorized)
+      expect(request.session[:totp_pending_member_id]).to eq(member.id.to_s)
+      expect(request.session[:totp_pending_expires_at]).to be_present
+      expect(cookies[remember_key]).to be_blank
+    end
+  end
+
   { missing: 400, invalid: 401, unverified: 401, suspended: 401 }.each do |failure, status|
     it "preserves usable persistence after a #{failure} provider attempt" do
       login

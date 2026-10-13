@@ -64,6 +64,10 @@ class FirebaseAuthController < ApplicationController
     end
 
     sign_in(:member, member)
+    # Successful provider authentication replaces any prior account's challenge,
+    # including stale state left after that account's session was invalidated.
+    session.delete(:totp_pending_member_id)
+    session.delete(:totp_pending_expires_at)
     stage_mobile_session_persistence(member)
 
     # Check if TOTP is enrolled — require code entry before granting full

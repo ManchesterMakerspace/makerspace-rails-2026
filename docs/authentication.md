@@ -47,9 +47,12 @@ Nonempty password-login payloads require fresh credential authentication even
 when a member session already exists. Failed password/provider attempts preserve
 the browser's existing remember cookie; an authenticated replacement login clears
 it before staging the new choice (including opt-out and pending TOTP).
-Successful fresh password authentication also discards the previous account's
-TOTP challenge and expiry before evaluating the new account's TOTP requirements.
+Successful fresh password or provider authentication also discards the previous
+account's TOTP challenge and expiry before evaluating the new account's TOTP requirements.
 Failed credentials and empty-body restoration do not discard a pending challenge.
+The pending-session gate still blocks provider login while the previous member
+session is valid; successful provider login clears stale challenge fields left
+after that session has been invalidated.
 
 Remember cookies are signed, HttpOnly, SameSite=Lax, and Secure in production.
 Password changes/resets and existing `session_token` rotations invalidate the

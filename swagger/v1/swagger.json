@@ -11017,7 +11017,7 @@
           "Authentication"
         ],
         "operationId": "firebaseLogin",
-        "description": "Public login with CSRF protection. rememberMe defaults to false and only enables persistence on phone clients after any required TOTP challenge or enrollment. Failed provider authentication preserves an existing remember cookie.",
+        "description": "Public login with CSRF protection. rememberMe defaults to false and only enables persistence on phone clients after any required TOTP challenge or enrollment. Failed provider authentication preserves an existing remember cookie. Successful provider authentication replaces stale TOTP challenge state with the authenticated account's requirements.",
         "parameters": [
           {
             "name": "User-Agent",
