@@ -62,6 +62,7 @@ describe 'Mobile authentication', type: :request do
     post 'Complete a pending login TOTP challenge' do
       tags 'Authentication'
       operationId 'completeTotpLogin'
+      security [sessionAuth: []]
       consumes 'application/json'
       produces 'application/json'
       description 'Requires the pending authenticated session and CSRF token. Issues a remember cookie only when phone persistence was requested in the original login.'
@@ -95,6 +96,7 @@ describe 'Mobile authentication', type: :request do
     post 'Verify and activate TOTP enrollment' do
       tags 'Authentication'
       operationId 'verifyTotpEnrollment'
+      security [sessionAuth: []]
       consumes 'application/json'
       produces 'application/json'
       description 'Requires a signed-in member, CSRF token, and a secret from /members/totp/setup. Completes deferred phone persistence after required enrollment.'

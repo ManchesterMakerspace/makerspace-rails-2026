@@ -11131,6 +11131,11 @@
           "Authentication"
         ],
         "operationId": "completeTotpLogin",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "description": "Requires the pending authenticated session and CSRF token. Issues a remember cookie only when phone persistence was requested in the original login.",
         "parameters": [
           {
@@ -11199,6 +11204,11 @@
           "Authentication"
         ],
         "operationId": "verifyTotpEnrollment",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
         "description": "Requires a signed-in member, CSRF token, and a secret from /members/totp/setup. Completes deferred phone persistence after required enrollment.",
         "parameters": [
           {
