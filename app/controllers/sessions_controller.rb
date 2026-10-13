@@ -70,6 +70,13 @@ class SessionsController < Devise::SessionsController
       render json: { message: message }, status: :unauthorized and return
     end
 
+    # A fresh, eligible login replaces any earlier account's challenge. Empty
+    # restoration requests and failed credentials must retain the existing gate.
+    if params[:member].present?
+      session.delete(:totp_pending_member_id)
+      session.delete(:totp_pending_expires_at)
+    end
+
     stage_mobile_session_persistence(resource)
 
     # Check if TOTP is enrolled — require code entry before issuing full session

@@ -9,7 +9,7 @@ describe 'Registrations API', type: :request do
       operationId 'signIn'
       consumes 'application/json'
       produces 'application/json'
-      description 'Optional rememberMe enables a two-week renewable remember cookie only on iPhone or Android phone clients, after required TOTP completion. Omission is false. Empty bodies restore existing sessions. Nonempty member payloads require fresh valid credentials, even with an existing session.'
+      description 'Optional rememberMe enables a two-week renewable remember cookie only on iPhone or Android phone clients, after required TOTP completion. Omission is false. Empty bodies restore existing sessions. Nonempty member payloads require fresh valid credentials, even with an existing session. Successful fresh authentication replaces any previous TOTP challenge with the authenticated account\'s requirements.'
       parameter name: :'User-Agent', in: :header, required: false, schema: { type: :string }
       parameter name: :signInDetails, in: :body, schema: {
         title: :signInDetails,
@@ -35,6 +35,19 @@ describe 'Registrations API', type: :request do
           let(:'User-Agent') { 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148' }
           let(:signInDetails) { { member: { email: auth_member.email, password: 'password', rememberMe: true } } }
           run_test! { expect(cookies['remember_member_token']).to be_present }
+        end
+
+        context 'replacing another account with a pending TOTP challenge' do
+          before do
+            pending_member = create(:member, otp_required_for_login: true,
+              otp_secret_encrypted: TotpService.encrypt(TotpService.generate_secret))
+            post '/api/members/sign_in', params: { member: { email: pending_member.email, password: 'password' } }, as: :json
+            expect(response).to have_http_status(:accepted)
+          end
+          run_test! do
+            expect(request.session[:totp_pending_member_id]).to be_nil
+            expect(request.session[:totp_pending_expires_at]).to be_nil
+          end
         end
       end
 

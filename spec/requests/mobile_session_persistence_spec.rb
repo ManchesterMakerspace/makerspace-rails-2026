@@ -126,6 +126,83 @@ RSpec.describe 'Mobile session persistence', type: :request do
     expect(response).to have_http_status(:ok)
   end
 
+  context 'when switching accounts during a pending TOTP challenge' do
+    let(:other) { create(:member, password: 'other-password123') }
+
+    before do
+      member.update!(otp_required_for_login: true, otp_secret_encrypted: TotpService.encrypt(secret))
+      login
+      expect(response).to have_http_status(:accepted)
+    end
+
+    def switch_account(password: 'other-password123')
+      post '/api/members/sign_in', params: { member: { email: other.email, password: password, rememberMe: true } },
+        headers: { 'User-Agent' => phone }, as: :json
+    end
+
+    it 'clears the old challenge and rejects its code after authenticating a member without TOTP' do
+      switch_account
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['email']).to eq(other.email)
+      expect(request.session[:totp_pending_member_id]).to be_nil
+      expect(request.session[:totp_pending_expires_at]).to be_nil
+      get '/api/home', headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:ok)
+      post '/api/members/totp_sessions', params: { code: ROTP::TOTP.new(secret).now }, headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:unauthorized)
+      post '/api/members/sign_in', params: {}, headers: { 'User-Agent' => phone }, as: :json
+      expect(response.parsed_body['email']).to eq(other.email)
+      restore
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['email']).to eq(other.email)
+    end
+
+    it 'requires the new account challenge before granting persistence' do
+      other_secret = TotpService.generate_secret
+      other.update!(otp_required_for_login: true, otp_secret_encrypted: TotpService.encrypt(other_secret))
+      switch_account
+      expect(response).to have_http_status(:accepted)
+      expect(request.session[:totp_pending_member_id]).to eq(other.id.to_s)
+      expect(cookies[remember_key]).to be_blank
+      get '/api/home', headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:unauthorized)
+      post '/api/members/totp_sessions', params: { code: ROTP::TOTP.new(other_secret).now }, headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['email']).to eq(other.email)
+      expect(cookies[remember_key]).to be_present
+    end
+
+    it 'preserves the original challenge when replacement credentials are invalid' do
+      switch_account(password: 'wrong')
+      expect(response).to have_http_status(:unauthorized)
+      get '/api/home', headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:unauthorized)
+      post '/api/members/totp_sessions', params: { code: ROTP::TOTP.new(secret).now }, headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['email']).to eq(member.email)
+    end
+
+    it 'clears the old challenge while still requiring enrollment for the new account' do
+      other.update!(role: 'admin')
+      allow(SystemConfig).to receive(:enabled?).and_call_original
+      allow(SystemConfig).to receive(:enabled?).with('require_totp_admin').and_return(true)
+      switch_account
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['totp_enrollment_required']).to eq(true)
+      expect(request.session[:totp_pending_member_id]).to be_nil
+      expect(request.session[:totp_pending_expires_at]).to be_nil
+      expect(cookies[remember_key]).to be_blank
+      post '/api/members/totp/setup', headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:ok)
+      enrollment_secret = response.parsed_body.fetch('secret')
+      post '/api/members/totp/verify', params: { code: ROTP::TOTP.new(enrollment_secret).now }, headers: { 'User-Agent' => phone }, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(cookies[remember_key]).to be_present
+      restore
+      expect(response.parsed_body['email']).to eq(other.email)
+    end
+  end
+
   { missing: 400, invalid: 401, unverified: 401, suspended: 401 }.each do |failure, status|
     it "preserves usable persistence after a #{failure} provider attempt" do
       login
