@@ -78,7 +78,9 @@ Public SVGs and shop/tool/rental QR dialogs encode the exact uppercase short URL
 using alphanumeric QR encoding where supported. Existing error-correction
 settings remain. SVGs retain their separate 30-minute render cache and three-day
 HTTP lifetime. Old browser-cached SVGs can retain long links for three days.
-Rental Copy Link uses the same allocation service as its QR dialog. QR allocation failures show a warning and render a usable full-URL QR label,
+Rental Copy Link uses the same allocation service as its QR dialog. The React rental spot **Label** button (printable PNG
+labels) allocates the same `/rentals/spots/<id>` short URL but, unlike the QR dialog, never falls back to the full URL: if
+allocation fails it produces no label. QR allocation failures show a warning and render a usable full-URL QR label,
 including PNG download and image copy. Shop/tool fallback URLs use the configured
 HTTPS application domain, never the browser origin. If configuration is unavailable,
 the dialog reports an error instead of printing an internal hostname. Admin, board,
