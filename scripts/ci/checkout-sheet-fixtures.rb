@@ -6,6 +6,7 @@ FileUtils.mkdir_p(destination)
 samples = {
   'double' => {}, 'single' => { copies: 1 },
   'long' => { name: 'Wide Workshop & Tool <Name> ' * 8 },
+  'long-channel' => { channel: 'shop-woodworking-metalworking-electronics-automotive-lasers-3d-printing-and-fabrication' },
   'unbroken' => { name: 'W' * 160, channel: 'shop-&-<tools>-' * 8 },
   'blank' => { channel: nil }
 }

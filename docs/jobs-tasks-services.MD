@@ -20,9 +20,12 @@ hidden/open resources and shortcode failures produce no attachment. Responses
 are private/no-store. See [contracts and permissions](checkout.MD#printable-checkout-required-sheets).
 
 `bundle exec rails runner scripts/ci/checkout-sheet-fixtures.rb` is a manual
-development/test validation helper. It writes four example SVGs beneath
-`tmp/checkout-sheets/` for the companion browser/QR check, with a fixed example
-short URL and no database changes. It is not recurring production work.
+development/test validation helper. It writes ten example SVGs beneath
+`tmp/checkout-sheets/` for the companion browser/QR check: `double`, `single`,
+`long`, `long-single`, `long-channel`, `long-channel-single`, `unbroken`,
+`unbroken-single`, `blank`, and `blank-single` (each with the `.svg` extension).
+They use a fixed example short URL and make no database changes. This is not
+recurring production work.
 
 ## Tool group services
 
