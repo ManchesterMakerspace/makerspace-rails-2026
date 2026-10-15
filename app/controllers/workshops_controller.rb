@@ -12,7 +12,9 @@ class WorkshopsController < ApplicationController
         workshops,
         each_serializer: WorkshopSerializer,
         adapter: :attributes,
-        scope: current_member
+        scope: current_member,
+        sheet_policy: CheckoutRequiredSheetPolicy.new(current_member,
+          approver: CheckoutApprover.find_by(member_id: current_member.id))
       ).as_json
     }
   end

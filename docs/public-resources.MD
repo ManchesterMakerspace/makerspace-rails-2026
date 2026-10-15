@@ -18,6 +18,15 @@ document that follows the structure below.
 
 ## Repository boundary
 
+Checkout Required sheet generation uses authenticated POST endpoints at
+`/api/shops/:id/checkout_required_sheet` and
+`/api/tools/:id/checkout_required_sheet`, with optional `copies` (1 or 2, default
+2), SVG success and JSON errors. These are not public download URLs. Their
+printed shortcode QRs resolve to the existing public shop/tool HTML pages;
+public visibility and destination authentication remain unchanged. See
+[printable sheets](checkout.MD#printable-checkout-required-sheets) for permissions,
+formats, errors and printing behavior.
+
 Rails API and server-rendered routes are inventoried here. Member Portal routes
 resolved by the catch-all `get '*path'` belong to `makerspace-react-2026` and
 must be inventoried in that repository instead. Once the frontend inventory has

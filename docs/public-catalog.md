@@ -1,5 +1,12 @@
 # Public shop and tool pages
 
+Authenticated [Checkout Required sheets](checkout.MD#printable-checkout-required-sheets)
+encode the same shop/tool public HTML shortcodes as the existing QR labels.
+Their generation endpoints require resource-scoped authorization; the resulting
+printable SVG does not expose private tool notes or membership data. Hidden
+resources and open tools cannot generate these signs. Existing public QR and
+HTML response caching is unchanged.
+
 `/shops/:id/public` and `/tools/:id/public` return public JSON. Append `.html`
 for Rails pages. URLs use MongoDB IDs. Hidden tools and tools with hidden or
 missing shops, malformed IDs, and missing IDs return 404. HTML requests display

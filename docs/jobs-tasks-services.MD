@@ -1,5 +1,24 @@
 # Production jobs, tasks, and services
 
+## Checkout Required sheet services
+
+`CheckoutRequiredSheetsController#create` synchronously authorizes a shop/tool
+sheet with `CheckoutRequiredSheetPolicy`, then allocates/reuses its public HTML
+shortcode and calls `CheckoutRequiredSheet` to produce an SVG attachment.
+The policy is also used by authenticated catalog serializers, with batched shop
+and approver lookups for tool lists. The renderer embeds the repository-owned
+logo and QR vectors and prints one or two signs on Letter landscape paper.
+No Slack API lookup, mail, queue job, persisted sheet, or status mutation occurs.
+Shortcode allocation is the sole database/cache write, using its existing
+permanent mapping and advisory Redis behavior. Missing channels warn; forbidden,
+hidden/open resources and shortcode failures produce no attachment. Responses
+are private/no-store. See [contracts and permissions](checkout.MD#printable-checkout-required-sheets).
+
+`bundle exec rails runner scripts/ci/checkout-sheet-fixtures.rb` is a manual
+development/test validation helper. It writes four example SVGs beneath
+`tmp/checkout-sheets/` for the companion browser/QR check, with a fixed example
+short URL and no database changes. It is not recurring production work.
+
 ## Tool group services
 
 - `CatalogMutationLock` serializes physical-tool and group catalog mutations by

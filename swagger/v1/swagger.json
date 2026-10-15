@@ -1024,6 +1024,10 @@
           {
             "type": "object",
             "properties": {
+              "canGenerateCheckoutRequiredSheet": {
+                "type": "boolean",
+                "readOnly": true
+              },
               "outOfService": {
                 "type": "boolean"
               },
@@ -1233,6 +1237,11 @@
           {
             "type": "object",
             "properties": {
+              "canGenerateCheckoutRequiredSheet": {
+                "type": "boolean",
+                "readOnly": true,
+                "description": "Present in authenticated management tool catalogs; false for unavailable resources or viewers without authority."
+              },
               "id": {
                 "type": "string"
               },
@@ -7913,6 +7922,350 @@
         }
       }
     },
+    "/shops/{id}/checkout_required_sheet": {
+      "post": {
+        "summary": "Generate a printable Letter landscape Checkout Required SVG sheet",
+        "tags": [
+          "Checkout sheets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "description": "Admin/Board can generate sheets for any visible resource; RMs for assigned shops and their tools; eligible checkout approvers for their permitted physical tools. Hidden resources and open tools cannot be printed. Normal session, TOTP, and CSRF checks apply.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Standalone SVG attachment; two signs by default, one centered sign with copies=1",
+            "content": {
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "private, no-store"
+                  ]
+                }
+              },
+              "X-Checkout-Sheet-Warning": {
+                "required": false,
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "missing_shop_channel"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or CSRF required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Resource is outside the viewer’s authority",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Missing or hidden resource (including a hidden parent shop)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid copies, or a tool that does not require checkout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Shortcode origin or storage unavailable; no full-URL fallback",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "copies": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2
+                    ],
+                    "default": 2
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/{id}/checkout_required_sheet": {
+      "post": {
+        "summary": "Generate a printable Letter landscape Checkout Required SVG sheet",
+        "tags": [
+          "Checkout sheets"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "description": "Admin/Board can generate sheets for any visible resource; RMs for assigned shops and their tools; eligible checkout approvers for their permitted physical tools. Hidden resources and open tools cannot be printed. Normal session, TOTP, and CSRF checks apply.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Standalone SVG attachment; two signs by default, one centered sign with copies=1",
+            "content": {
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "private, no-store"
+                  ]
+                }
+              },
+              "X-Checkout-Sheet-Warning": {
+                "required": false,
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "missing_shop_channel"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or CSRF required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Resource is outside the viewer’s authority",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Missing or hidden resource (including a hidden parent shop)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid copies, or a tool that does not require checkout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Shortcode origin or storage unavailable; no full-URL fallback",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "copies": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2
+                    ],
+                    "default": 2
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tool_checkouts": {
       "get": {
         "summary": "List authorized ToolCheckout records with tool availability",
@@ -13962,6 +14315,9 @@
                           "outOfService": {
                             "type": "boolean"
                           },
+                          "canGenerateCheckoutRequiredSheet": {
+                            "type": "boolean"
+                          },
                           "outOfServiceNote": {
                             "type": "string",
                             "nullable": true
@@ -13986,6 +14342,9 @@
                                   "type": "string"
                                 },
                                 "outOfService": {
+                                  "type": "boolean"
+                                },
+                                "canGenerateCheckoutRequiredSheet": {
                                   "type": "boolean"
                                 },
                                 "locationName": {

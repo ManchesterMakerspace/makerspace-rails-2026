@@ -1,4 +1,8 @@
 class ShopSerializer < ActiveModel::Serializer
+  attribute :can_generate_checkout_required_sheet do
+    CheckoutRequiredSheetPolicy.new(instance_options[:sheet_viewer] || scope).allowed?(object)
+  end
+
   attributes :out_of_service, :out_of_service_note
   attribute :resource_managers do
     batched = checkout_context&.resource_managers_for(object)

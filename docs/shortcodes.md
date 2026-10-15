@@ -68,6 +68,14 @@ storage failure without a cache hit returns an uncached 503.
 
 ## Cache and QR behavior
 
+Checkout Required sheets allocate/reuse the existing singular shop/tool public
+HTML target through `ShortUrl` after authorizing the viewer. Both copies on a
+sheet encode the same uppercase short URL; selecting one copy reuses that code.
+Unlike the older QR dialog, this flow never falls back to a long URL. Invalid
+origins, localhost, missing unique indexes, or storage failures prevent sheet
+creation with an uncached 503. SVG sheets are private/no-store and do not use
+the public SVG render cache. See [sheet contracts](checkout.MD#printable-checkout-required-sheets).
+
 `shortcodes:v1:<code>` stores the target in Redis for exactly 86,400 seconds.
 Mongo is authoritative; Redis failure or eviction falls back to an indexed
 lookup. New mappings are persisted before cache publication. Cache hits do not

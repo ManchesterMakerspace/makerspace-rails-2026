@@ -59,6 +59,8 @@ Rails.application.routes.draw do
     # Public shop/tool listing
     resources :shops, only: [:index]
     resources :tools, only: [:index]
+    post '/shops/:id/checkout_required_sheet', to: 'checkout_required_sheets#create', defaults: { kind: 'shop' }
+    post '/tools/:id/checkout_required_sheet', to: 'checkout_required_sheets#create', defaults: { kind: 'tool' }
     resources :locations, only: [:index]
 
     # Public rental spot info — unauthenticated deep-link/QR landing

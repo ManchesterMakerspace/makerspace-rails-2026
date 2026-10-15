@@ -28,9 +28,11 @@ RSpec.describe 'Shop availability', type: :request do
           canAddShop: { type: :boolean }, workshops: { type: :array, items: {
             type: :object, required: %w[id outOfService outOfServiceNote reservationsAvailable tools], properties: {
               id: { type: :string }, outOfService: { type: :boolean },
+              canGenerateCheckoutRequiredSheet: { type: :boolean },
               outOfServiceNote: { type: :string, nullable: true }, reservationsAvailable: { type: :boolean },
               tools: { type: :array, items: { type: :object, required: %w[id name outOfService], properties: {
                 id: { type: :string }, name: { type: :string }, outOfService: { type: :boolean },
+                canGenerateCheckoutRequiredSheet: { type: :boolean },
                 locationName: { type: :string, nullable: true }
               } } }
             }
@@ -45,6 +47,8 @@ RSpec.describe 'Shop availability', type: :request do
           expect(data['tools']).to include(hash_including('id' => unavailable_tool.id.to_s, 'outOfService' => true))
           expect(data['tools']).to include(hash_including('id' => placed_tool.id.to_s, 'locationName' => 'Top Shelf'))
           expect(data).to include('outOfService' => true, 'outOfServiceNote' => 'Leak', 'reservationsAvailable' => false)
+          expect(data['canGenerateCheckoutRequiredSheet']).to be(true)
+          expect(data['tools']).to all(include('canGenerateCheckoutRequiredSheet' => true))
         end
       end
     end
