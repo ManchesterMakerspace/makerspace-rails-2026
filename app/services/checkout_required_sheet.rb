@@ -6,6 +6,10 @@ require 'rqrcode'
 # is added as XML text nodes, never interpolated into markup.
 class CheckoutRequiredSheet
   SVG_NS = 'http://www.w3.org/2000/svg'.freeze
+  MARGIN = 25
+  SIGN_WIDTH = 1050
+  SIGN_HEIGHT = 387.5
+  SIGN_GAP = 25
   attr_reader :channel
 
   def initialize(name:, channel:, short_url:, copies: 2)
@@ -26,37 +30,34 @@ class CheckoutRequiredSheet
     # Build once and duplicate, so both signs have exactly the same content.
     sign = node(document, 'g', 'font-family': 'Arial, Helvetica, sans-serif', fill: '#000')
     name_lines.each_with_index do |line, index|
-      sign.add_child(text(document, line, x: 500, y: 30 + index * 30, size: 26, width: 950))
+      sign.add_child(text(document, line, x: SIGN_WIDTH / 2, y: 26 + index * 30, size: 26, width: 1000, css_class: 'resource-name'))
     end
-    logo = Nokogiri::XML(File.read(Rails.root.join('app/assets/images/FilledLaserableLogo.svg'))) { |config| config.strict.nonet }
-    # This asset consists of vector groups; discard editor metadata and IDs.
-    logo_group = node(document, 'g', transform: 'translate(10 115) scale(0.2083)')
-    logo.root.element_children.select { |child| child.name == 'g' }.each do |child|
-      copy = child.dup
-      copy.traverse { |element| element.remove_attribute('id') if element.element? }
-      logo_group.add_child(copy)
-    end
-    sign.add_child(logo_group)
-    sign.add_child(text(document, 'Safety and Operation', x: 500, y: 124, size: 26, width: 510))
-    sign.add_child(text(document, 'Checkout', x: 500, y: 188, size: 55, width: 510, weight: 'bold', color: '#800000'))
-    sign.add_child(text(document, 'Required', x: 500, y: 250, size: 55, width: 510, weight: 'bold', color: '#800000'))
+    logo = Nokogiri::XML(File.read(Rails.root.join('app/assets/images/CheckoutRoundLogo.svg'))) { |config| config.strict.nonet }.root
+    logo['x'], logo['y'], logo['width'], logo['height'] = '10', '80', '240', '240'
+    logo['class'] = 'makerspace-logo'
+    sign.add_child(logo)
+    sign.add_child(text(document, 'Operation & Safety', x: SIGN_WIDTH / 2, y: 98, size: 36, css_class: 'safety-heading'))
+    sign.add_child(text(document, 'Checkout', x: SIGN_WIDTH / 2, y: 205, size: 100, weight: 'bold', color: '#800000'))
+    sign.add_child(text(document, 'Required', x: SIGN_WIDTH / 2, y: 325, size: 100, weight: 'bold', color: '#800000'))
 
     mode = @short_url.match?(/\A[0-9A-Z $%*+\-.\/:]+\z/) ? :alphanumeric : :byte_8bit
     qr = RQRCode::QRCode.new(@short_url, mode: mode)
     size = qr.modules.length + 8
     qr_svg = Nokogiri::XML(qr.as_svg(color: '000', fill: 'fff', module_size: 1,
       offset: 4, standalone: true, use_path: true, viewbox: true)) { |config| config.strict.nonet }.root
-    qr_svg['x'], qr_svg['y'], qr_svg['width'], qr_svg['height'] = '790', '90', '200', '200'
+    qr_svg['x'], qr_svg['y'], qr_svg['width'], qr_svg['height'] = '810', '80', '230', '230'
     qr_svg['viewBox'] = "0 0 #{size} #{size}"
     qr_svg['class'] = 'shortcode-qr'
     sign.add_child(qr_svg)
+    sign.add_child(text(document, 'Scan QR to', x: 925, y: 330, size: 18))
+    sign.add_child(text(document, 'Request Checkout', x: 925, y: 350, size: 18))
     unless channel.empty?
-      sign.add_child(text(document, "SLACK: ##{channel}", x: 500, y: 337, size: 26, width: 950))
+      sign.add_child(text(document, "SLACK: ##{channel}", x: SIGN_WIDTH / 2, y: 380, size: 26, width: 1000, css_class: 'shop-channel'))
     end
-    (@copies == 1 ? [243.75] : [50, 437.5]).each do |y|
+    (@copies == 1 ? [(850 - SIGN_HEIGHT) / 2] : [MARGIN, MARGIN + SIGN_HEIGHT + SIGN_GAP]).each do |y|
       copy = sign.dup
       copy['class'] = 'checkout-sign'
-      copy['transform'] = "translate(50 #{y})"
+      copy['transform'] = "translate(#{MARGIN} #{y})"
       root.add_child(copy)
     end
     document.to_xml(encoding: 'UTF-8')
@@ -71,11 +72,12 @@ class CheckoutRequiredSheet
     element
   end
 
-  def text(document, value, x:, y:, size:, width:, weight: 'normal', color: '#000')
+  def text(document, value, x:, y:, size:, width: nil, weight: 'normal', color: '#000', css_class: nil)
     attributes = { x: x, y: y, 'font-size': size, 'text-anchor': 'middle', 'font-weight': weight, fill: color }
+    attributes[:class] = css_class if css_class
     # Conservative fit bound for the standard sans-serif stack, including long
     # unbroken channel names. Short labels retain their natural letter spacing.
-    if value.length * size > width
+    if width && value.length * size > width
       attributes[:textLength] = width
       attributes[:lengthAdjust] = 'spacingAndGlyphs'
     end

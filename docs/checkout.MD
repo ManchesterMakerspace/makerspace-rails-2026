@@ -7,9 +7,14 @@ on `/workshops`, and selected shops/tools on `/tool-checkouts`. The preview defa
 to two identical signs stacked on an 11 × 8.5 inch landscape US Letter sheet.
 **Signs per sheet** can select one centered sign of the same size. Download SVG
 saves the exact preview. Print on US Letter, landscape, at 100% / actual size.
-The file embeds the vector logo and QR, with 0.5-inch outer margins and a
-0.25-inch gap between two signs. Each sign contains its shop/tool name, “Safety
-and Operation” above “Checkout Required”, and the parent shop's Slack channel.
+The file uses 0.25-inch outer margins (a 10.5 × 8-inch printable area) and a
+0.25-inch gap between two signs. Each sign embeds the round red-and-white vector
+logo at 2.4 inches and a 2.3-inch QR including its four-module quiet zone, captioned
+“Scan QR to” / “Request Checkout”. The shop/tool name is centered at the top and
+the parent shop's Slack channel at the bottom, both in regular 26-unit type.
+“Operation & Safety” is centered below the name in 36-unit type, above the large
+burgundy “Checkout” / “Required” heading. Long names wrap to two centered lines;
+unusually long names/channels fit horizontally without truncation.
 Missing channels leave the footer blank and produce a warning in the preview.
 Tool users/announcement channels are never substituted.
 

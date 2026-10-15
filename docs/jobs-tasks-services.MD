@@ -7,7 +7,12 @@ sheet with `CheckoutRequiredSheetPolicy`, then allocates/reuses its public HTML
 shortcode and calls `CheckoutRequiredSheet` to produce an SVG attachment.
 The policy is also used by authenticated catalog serializers, with batched shop
 and approver lookups for tool lists. The renderer embeds the repository-owned
-logo and QR vectors and prints one or two signs on Letter landscape paper.
+round red-and-white logo and QR vectors and prints one or two signs on Letter
+landscape paper, inside 0.25-inch margins. The 2.4-inch logo and 2.3-inch QR flank
+the centered burgundy heading; “Operation & Safety” follows the centered resource
+name, with a QR caption and matching-size name/channel labels. The cleaned logo
+asset contains only vector geometry; the renderer always generates the QR from
+the resource shortcode. See [layout and printing](checkout.MD#printable-checkout-required-sheets).
 No Slack API lookup, mail, queue job, persisted sheet, or status mutation occurs.
 Shortcode allocation is the sole database/cache write, using its existing
 permanent mapping and advisory Redis behavior. Missing channels warn; forbidden,
