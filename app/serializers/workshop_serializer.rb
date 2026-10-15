@@ -1,4 +1,8 @@
 class WorkshopSerializer < ActiveModel::Serializer
+  attribute :can_generate_checkout_required_sheet do
+    sheet_policy.allowed?(object)
+  end
+
   attributes :out_of_service, :out_of_service_note
   attributes :id, :name, :wiki_url, :gdrive_id, :slack_channel,
              :slack_channel_details, :disabled, :reservable,
@@ -48,6 +52,7 @@ class WorkshopSerializer < ActiveModel::Serializer
           checkout_requestable?(tool) && !tool.disabled? && !tool.open,
         reservationAvailable: tool_reservation_available?(tool),
         canCheckoutMember: can_checkout_member?(tool),
+        canGenerateCheckoutRequiredSheet: sheet_policy.allowed?(tool, shop: object),
         usersChannel: checkout&.active? ? tool.users_channel : nil,
         usersChannelDetails: checkout&.active? ?
           channel_details(tool.users_channel) : nil
@@ -146,6 +151,11 @@ class WorkshopSerializer < ActiveModel::Serializer
   end
 
   private
+
+  def sheet_policy
+    @sheet_policy ||= instance_options[:sheet_policy] ||
+      CheckoutRequiredSheetPolicy.new(viewer, approver: checkout_approver)
+  end
 
   def viewer
     scope

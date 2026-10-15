@@ -1,5 +1,52 @@
 # Safety checkouts
 
+## Printable Checkout Required sheets
+
+The member portal offers **Checkout Required Sheet** from shop details and tools
+on `/workshops`, and selected shops/tools on `/tool-checkouts`. The preview defaults
+to two identical signs stacked on an 11 × 8.5 inch landscape US Letter sheet.
+**Signs per sheet** can select one centered sign of the same size. Download SVG
+saves the exact preview. Print on US Letter, landscape, at 100% / actual size.
+The file embeds the vector logo and QR, with 0.5-inch outer margins and a
+0.25-inch gap between two signs. Each sign contains its shop/tool name, “Safety
+and Operation” above “Checkout Required”, and the parent shop's Slack channel.
+Missing channels leave the footer blank and produce a warning in the preview.
+Tool users/announcement channels are never substituted.
+
+Authenticated `POST /api/shops/:id/checkout_required_sheet` and
+`POST /api/tools/:id/checkout_required_sheet` accept an optional JSON `copies`
+of 1 or 2 (default 2). Admin/Board may print any eligible resource, RMs only
+assigned shops and their tools, and eligible checkout approvers only their
+permitted physical tools. Effective shop-wide and materialized group tool grants
+apply. Ordinary approvers retain `valid_for_checkout_request?` eligibility.
+Hidden resources, tools in hidden shops, and open/no-checkout-required tools
+cannot be printed; temporary outages do not block printing. Tool-group sheets
+are unsupported. Catalogs expose `canGenerateCheckoutRequiredSheet`; the POST
+independently rechecks authority and availability before allocating a short URL.
+
+Success is `200 image/svg+xml`, with attachment filename
+`checkout-required-{shop|tool}-{id}.svg`, `Cache-Control: private, no-store`, and
+`X-Checkout-Sheet-Warning: missing_shop_channel` when applicable. Normal session,
+TOTP and CSRF checks apply. Errors are JSON: 401 authentication/CSRF, 403 scope,
+404 missing/hidden resource, 422 invalid copies or open tool, and 503 shortcode
+origin/storage failure. After session checks, hidden resources (including tools
+in hidden shops) return the same 404 body as missing resources before checking
+resource-scoped authority, including for ordinary members. There is no full-URL
+fallback. QR destinations reuse
+the permanent shortcodes for `/api/shop/:id/public.html` or
+`/api/tool/:id/public.html`; scanning grants no additional access.
+
+The service stores only ordinary shortcode mappings; sheets are rendered per
+request and are not persisted or publicly cached. No emails, background jobs,
+new collections/indexes, or member status changes are introduced. Deploy Rails
+before React. Local UI wrappers require no API-client package publication.
+
+Validation: run the sheet service/request/API specs and related catalog specs,
+then regenerate Swagger. To produce real renderer fixtures for the companion
+browser check, run `bundle exec rails runner scripts/ci/checkout-sheet-fixtures.rb`
+with a configured test environment. The script only writes ignored
+`tmp/checkout-sheets/` SVG files; it does not allocate shortcodes or change data.
+
 `GET /api/tools` accepts optional `shop_id`. A selected shop narrows the existing
 eligible catalog; hidden shops/tools, open tools, held checkouts and pending-member
 restrictions still apply. Omitted or blank `shop_id` preserves the all-shops

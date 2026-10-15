@@ -145,4 +145,9 @@ class CheckoutReadContext
       @viewer.manages_shop?(tool.shop_id) ||
       (!tool.disabled? && @viewer.valid_for_checkout_request? && @approver&.can_approve_tool?(tool)))
   end
+
+  def can_generate_checkout_required_sheet?(tool)
+    @sheet_policy ||= CheckoutRequiredSheetPolicy.new(@viewer, approver: @approver)
+    @sheet_policy.allowed?(tool, shop: shops[tool.shop_id.to_s])
+  end
 end

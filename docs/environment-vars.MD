@@ -13,6 +13,12 @@ required to use the feature or task named in its purpose.
 
 ## Mandatory variables
 
+Checkout Required sheet generation also consumes the existing `APP_DOMAIN`
+through `ShortUrl.base_url`. The configured origin takes precedence; absent or
+blank configuration uses the validated request authority. Invalid/loopback origins
+prevent sheet generation with 503; the UI never substitutes a long URL. This
+adds no environment variables and changes no requirements, defaults or fallbacks.
+
 | Variable | Secret? | Development | Test | Production | Purpose | Source |
 | --- | --- | --- | --- | --- | --- | --- |
 | `APP_DOMAIN` | No | Optional for application/mail URLs; absent uses `http://localhost:${PORT:-3002}`. Public shortcode resolution can use the validated request host. Volunteer reviewer DMs require a valid configured non-loopback domain because their background link builder has no request-host fallback. | Same application/mail and shortcode behavior; reviewer-link tests must provide a valid non-loopback domain. | **Required** by `ENV.fetch`; no default. The image build argument defaults to `members.manchestermakerspace.org`, but that build-time value is not persisted as a runtime variable. | Canonical application/mail URL and allowed host. Public shortcode resolution can fall back to the validated request host when absent/blank. Proposed shop RM review DMs build absolute `/volunteer?task=:id` or `/volunteer?event=:id` links through `ShortUrl.base_url`; missing/invalid configuration makes these background deliveries fail and remain retryable, with no localhost or request-host fallback. | [production config](../config/environments/production.rb), [shortcode resolver](../app/controllers/shortcode_resolutions_controller.rb), [short URL service](../app/services/short_url.rb), [volunteer reviewer notifications](../app/services/volunteer_approver_notification.rb) |

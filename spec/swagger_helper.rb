@@ -471,6 +471,7 @@ RSpec.configure do |config|
         {
           type: :object,
           properties: {
+            canGenerateCheckoutRequiredSheet: { type: :boolean, readOnly: true },
             outOfService: { type: :boolean },
             outOfServiceNote: { type: :string, nullable: true },
             resourceManagers: { type: :array, items: { '$ref' => '#/components/schemas/FixPerson' } },
@@ -528,6 +529,7 @@ RSpec.configure do |config|
         {
           type: :object,
           properties: {
+            canGenerateCheckoutRequiredSheet: { type: :boolean, readOnly: true, description: 'Present in authenticated management tool catalogs; false for unavailable resources or viewers without authority.' },
             id: { type: :string },
             shopId: { type: :string },
             name: { type: :string },

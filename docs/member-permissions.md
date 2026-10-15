@@ -110,6 +110,15 @@ consume that name.
 
 ## Checkout approver assignments
 
+The same effective physical-tool grants authorize Checkout Required sheet
+generation for ordinary approvers who pass `valid_for_checkout_request?`.
+Approver status never grants a shop sheet. Admin/Board have global sheet
+authority; RMs use `resource_manager_shop_ids` for their shops and tools.
+`CheckoutRequiredSheetPolicy` also excludes hidden resources and open tools,
+and supplies the `canGenerateCheckoutRequiredSheet` catalog capability. The
+POST rechecks current grants; generating a sheet does not mutate assignments,
+checkouts or member status. See [sheet behavior](checkout.MD#printable-checkout-required-sheets).
+
 Safety Checkout signoff also uses member-associated `CheckoutApprover` records
 in `checkout_approvers`. These scopes operate alongside the named `Permission`
 records above. All assignment arrays default to empty. Group signoff still

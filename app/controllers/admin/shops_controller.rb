@@ -16,7 +16,7 @@ class Admin::ShopsController < ApplicationController
       Shop.where(:id.in => managed_shop_ids)
     end
     shops = shops.order_by(name: :asc).to_a
-    render json: shops, each_serializer: ShopSerializer, adapter: :attributes,
+    render json: shops, each_serializer: ShopSerializer, adapter: :attributes, sheet_viewer: current_member,
       checkout_context: CheckoutReadContext.for_shops(shops)
   end
 
@@ -40,7 +40,7 @@ class Admin::ShopsController < ApplicationController
       message_details: "shop: #{shop.name}"
     )
 
-    render json: shop, serializer: ShopSerializer, adapter: :attributes
+    render json: shop, serializer: ShopSerializer, adapter: :attributes, sheet_viewer: current_member
   end
 
   def update
@@ -74,7 +74,7 @@ class Admin::ShopsController < ApplicationController
       message_details: "shop: #{@shop.name}"
     )
 
-    render json: @shop, serializer: ShopSerializer, adapter: :attributes
+    render json: @shop, serializer: ShopSerializer, adapter: :attributes, sheet_viewer: current_member
   end
 
   # Separate from #update: the "Edit annotation" quick-action on the Shops
@@ -90,7 +90,7 @@ class Admin::ShopsController < ApplicationController
       resource_type: 'Shop', resource_id: @shop.id, actor: current_member,
       field_changes: { 'requestor_annotation' => [before, @shop.requestor_annotation] }
     )
-    render json: @shop, serializer: ShopSerializer, adapter: :attributes
+    render json: @shop, serializer: ShopSerializer, adapter: :attributes, sheet_viewer: current_member
   end
 
   def destroy

@@ -1,4 +1,13 @@
 class AdminToolSerializer < ToolSerializer
+  attribute :can_generate_checkout_required_sheet do
+    if checkout_context
+      checkout_context.can_generate_checkout_required_sheet?(object)
+    else
+      CheckoutRequiredSheetPolicy.new(scope,
+        approver: scope && CheckoutApprover.find_by(member_id: scope.id)).allowed?(object)
+    end
+  end
+
   MANAGEMENT_ONLY_FIELDS = %i[
     disabled
     allow_pending
