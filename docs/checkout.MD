@@ -29,7 +29,10 @@ Success is `200 image/svg+xml`, with attachment filename
 `X-Checkout-Sheet-Warning: missing_shop_channel` when applicable. Normal session,
 TOTP and CSRF checks apply. Errors are JSON: 401 authentication/CSRF, 403 scope,
 404 missing/hidden resource, 422 invalid copies or open tool, and 503 shortcode
-origin/storage failure. There is no full-URL fallback. QR destinations reuse
+origin/storage failure. After session checks, hidden resources (including tools
+in hidden shops) return the same 404 body as missing resources before checking
+resource-scoped authority, including for ordinary members. There is no full-URL
+fallback. QR destinations reuse
 the permanent shortcodes for `/api/shop/:id/public.html` or
 `/api/tool/:id/public.html`; scanning grants no additional access.
 

@@ -122,6 +122,32 @@ RSpec.describe 'Checkout Required sheets', type: :request do
     end
   end
 
+  it 'returns the same missing-resource response for hidden resources outside the viewer authority' do
+    sign_in member
+    expect(ShortUrl).not_to receive(:allocate)
+    expect(CheckoutRequiredSheetPolicy).not_to receive(:new)
+    generate("/api/tools/#{BSON::ObjectId.new}/checkout_required_sheet")
+    missing_body = response.body
+    expect(response.status).to eq(404)
+
+    tool.set(disabled: true)
+    generate
+    expect(response.status).to eq(404)
+    expect(response.body).to eq(missing_body)
+
+    tool.set(disabled: false)
+    shop.set(disabled: true)
+    [shop_path, tool_path, '/api/shops/not-an-id/checkout_required_sheet',
+      "/api/shops/#{BSON::ObjectId.new}/checkout_required_sheet"].each do |path|
+      generate(path)
+      expect(response.status).to eq(404)
+      expect(response.body).to eq(missing_body)
+      expect(response.media_type).to eq('application/json')
+      expect(response.headers['Cache-Control']).to eq('private, no-store')
+      expect(response.headers['Content-Disposition']).to be_nil
+    end
+  end
+
   it 'warns when the shop channel is missing, supports one sign, and reuses the permanent code' do
     member.update!(role: 'admin')
     shop.set(slack_channel: nil)

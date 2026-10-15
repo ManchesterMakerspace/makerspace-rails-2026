@@ -9,10 +9,11 @@ class CheckoutRequiredSheetsController < AuthenticationController
     return unavailable unless resource
     shop = kind == 'shop' ? resource : resource.shop
     return unavailable unless shop
+    return unavailable if shop.disabled? || resource.disabled?
+
     policy = CheckoutRequiredSheetPolicy.new(current_member,
       approver: CheckoutApprover.find_by(member_id: current_member.id))
     raise Error::Forbidden.new('You cannot generate a sheet for this resource') unless policy.authorized?(resource, shop: shop)
-    return unavailable if shop.disabled? || resource.disabled?
     if kind == 'tool' && resource.open
       return render json: { error: 'This tool does not require checkout. A Checkout Required sheet cannot be generated.' }, status: :unprocessable_entity
     end

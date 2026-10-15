@@ -48,9 +48,12 @@ RSpec.describe 'Checkout Required sheet API', type: :request do
           before { actor.update!(role: 'member') }
           run_test!
         end
-        response '404', 'Missing or hidden resource (including a hidden parent shop)' do
+        response '404', 'Missing or hidden resource (including a hidden parent shop), checked before resource authority' do
           schema type: :object, required: ['error'], properties: { error: { type: :string } }
-          before { resource.set(disabled: true) }
+          before do
+            actor.update!(role: 'member')
+            resource.set(disabled: true)
+          end
           run_test!
         end
         response '422', 'Invalid copies, or a tool that does not require checkout' do
