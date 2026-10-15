@@ -7,7 +7,12 @@ sheet with `CheckoutRequiredSheetPolicy`, then allocates/reuses its public HTML
 shortcode and calls `CheckoutRequiredSheet` to produce an SVG attachment.
 The policy is also used by authenticated catalog serializers, with batched shop
 and approver lookups for tool lists. The renderer embeds the repository-owned
-logo and QR vectors and prints one or two signs on Letter landscape paper.
+round red-and-white logo and QR vectors and prints one or two signs on Letter
+landscape paper, inside 0.25-inch margins. The 2.4-inch logo and 2.3-inch QR flank
+the centered burgundy heading; “Operation & Safety” follows the centered resource
+name, with a QR caption and matching-size name/channel labels. The cleaned logo
+asset contains only vector geometry; the renderer always generates the QR from
+the resource shortcode. See [layout and printing](checkout.MD#printable-checkout-required-sheets).
 No Slack API lookup, mail, queue job, persisted sheet, or status mutation occurs.
 Shortcode allocation is the sole database/cache write, using its existing
 permanent mapping and advisory Redis behavior. Missing channels warn; forbidden,
@@ -15,9 +20,12 @@ hidden/open resources and shortcode failures produce no attachment. Responses
 are private/no-store. See [contracts and permissions](checkout.MD#printable-checkout-required-sheets).
 
 `bundle exec rails runner scripts/ci/checkout-sheet-fixtures.rb` is a manual
-development/test validation helper. It writes four example SVGs beneath
-`tmp/checkout-sheets/` for the companion browser/QR check, with a fixed example
-short URL and no database changes. It is not recurring production work.
+development/test validation helper. It writes ten example SVGs beneath
+`tmp/checkout-sheets/` for the companion browser/QR check: `double`, `single`,
+`long`, `long-single`, `long-channel`, `long-channel-single`, `unbroken`,
+`unbroken-single`, `blank`, and `blank-single` (each with the `.svg` extension).
+They use a fixed example short URL and make no database changes. This is not
+recurring production work.
 
 ## Tool group services
 
