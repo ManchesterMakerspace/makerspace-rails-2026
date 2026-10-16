@@ -156,6 +156,7 @@ Admin/Board or the shop's assigned resource manager.
 | `ToolGroupVolunteering#create!/decide!` | The member must be current and hold active checkouts for every included tool to volunteer. Approval rechecks eligibility and adds the group ID to the approver record. The decision actor must pass `CheckoutApproverVolunteering.reviewer?`: Admin, Board, or RM role with the group shop in `resource_manager_shop_ids`. |
 | `ToolGroupCatalog.save!` | Group membership edits extend persistent child grants; archival removes explicit group IDs. The actor must be Admin/Board or the group's shop RM. |
 | `ToolCheckout` revocation callbacks | Call `CheckoutApproverVolunteering.revoke_for!` to remove the revoked child and affected group assignments, coordinating through the member's approver lock. |
+| `Admin::ToolCheckoutsController#reinstate` | `POST /api/admin/tool_checkouts/:id/reinstate`: Admin/Board only (not RMs or approvers). Keeps the revoked record, creates a new linked checkout and writes a `tool_checkout_reinstated` audit entry. Does not restore the member's individual approver assignment. See [reinstating a revoked checkout](checkout.MD#reinstating-a-revoked-checkout). |
 
 Current consumers include:
 

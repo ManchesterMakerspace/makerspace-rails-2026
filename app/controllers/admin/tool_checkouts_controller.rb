@@ -2,8 +2,9 @@ class Admin::ToolCheckoutsController < ApplicationController
   include Service::SlackConnector
   before_action :authenticate_member!
   before_action :authorize_index, only: [:index]
-  before_action :find_checkout, only: [:update, :destroy]
+  before_action :find_checkout, only: [:update, :destroy, :reinstate]
   before_action :authorize_approver, only: [:create, :destroy]
+  before_action :authorize_reinstatement, only: [:reinstate]
 
   def index
     checkouts = ToolCheckout.all
@@ -100,7 +101,20 @@ class Admin::ToolCheckoutsController < ApplicationController
     render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
   end
 
+  # POST /api/admin/tool_checkouts/:id/reinstate  { reason }
+  #
+  # Admin/board only. The revoked record is kept; a new checkout is created.
+  def reinstate
+    checkout = ToolCheckoutReinstatement.reinstate!(actor: current_member, revoked_checkout: @checkout,
+      reason: params[:reason])
+    render json: checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
+  end
+
   private
+
+  def authorize_reinstatement
+    raise ::Error::Forbidden.new("Only admins and board members can reinstate a checkout") unless is_admin? || is_board_member?
+  end
 
   def checkout_params
     params.require([:member_id, :tool_id])

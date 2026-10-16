@@ -15208,6 +15208,100 @@
         }
       }
     },
+    "/admin/tool_checkouts/{id}/reinstate": {
+      "post": {
+        "summary": "Reinstates a revoked tool checkout",
+        "tags": [
+          "AdminToolCheckouts"
+        ],
+        "operationId": "reinstateAdminToolCheckout",
+        "description": "Admin or board member only. The revoked record is kept unchanged; a new active checkout is created with reinstatedFromId pointing at it, an audit entry (tool_checkout_reinstated) records the actor and reason, and the member is notified. Members cannot self-request a revoked tool; this is the only path. 422 if the checkout is not revoked, was already reinstated, the member is no longer eligible, or no reason is given.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID of the revoked tool checkout",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a new active checkout linked to the revoked one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "toolId": {
+                      "type": "string"
+                    },
+                    "reinstatedFromId": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "memberId",
+                    "toolId",
+                    "reinstatedFromId",
+                    "active"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "only admins and board members may reinstate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "reason missing or checkout not reinstatable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/tool_checkouts/lookup_card": {
       "post": {
         "summary": "Looks up the member behind a tapped fob for a checkout on a tool",

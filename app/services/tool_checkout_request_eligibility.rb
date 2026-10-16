@@ -5,12 +5,13 @@ class ToolCheckoutRequestEligibility
     CheckoutInteractionQuery.new(member: member, shop: shop).requestable_tools
   end
 
-  def initialize(member:, tool:, checkout_tool_ids: nil, active_checkout_tool_ids: nil, open_request_tool_ids: nil)
+  def initialize(member:, tool:, checkout_tool_ids: nil, active_checkout_tool_ids: nil, open_request_tool_ids: nil, reinstating: false)
     @member = member
     @tool = tool
     @checkout_tool_ids = normalize_ids(checkout_tool_ids)
     @active_checkout_tool_ids = normalize_ids(active_checkout_tool_ids)
     @open_request_tool_ids = normalize_ids(open_request_tool_ids)
+    @reinstating = reinstating
   end
 
   def eligible?
@@ -57,7 +58,11 @@ class ToolCheckoutRequestEligibility
     (required_ids - checkout_ids).empty?
   end
 
+  # A revoked record blocks every ordinary path. Only the deliberate
+  # reinstatement path (ToolCheckoutReinstatement) looks past it, and then an
+  # active record is still a conflict.
   def checkout_exists?
+    return ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists? if @reinstating
     return @checkout_tool_ids.include?(tool.id.to_s) if @checkout_tool_ids
     ToolCheckout.where(member_id: member.id, tool_id: tool.id).exists?
   end

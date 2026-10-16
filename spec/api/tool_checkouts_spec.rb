@@ -187,6 +187,70 @@ RSpec.describe 'Admin tool checkouts API', type: :request do
       end
     end
   end
+
+  path '/admin/tool_checkouts/{id}/reinstate' do
+    post 'Reinstates a revoked tool checkout' do
+      tags 'AdminToolCheckouts'
+      operationId 'reinstateAdminToolCheckout'
+      description 'Admin or board member only. The revoked record is kept unchanged; a new active checkout is created with reinstatedFromId pointing at it, an audit entry (tool_checkout_reinstated) records the actor and reason, and the member is notified. Members cannot self-request a revoked tool; this is the only path. 422 if the checkout is not revoked, was already reinstated, the member is no longer eligible, or no reason is given.'
+      consumes 'application/json'
+      produces 'application/json'
+      parameter name: :id, in: :path, type: :string, required: true,
+        description: 'ID of the revoked tool checkout'
+      parameter name: :reinstatement_details, in: :body, schema: {
+        type: :object,
+        properties: { reason: { type: :string } },
+        required: ['reason']
+      }
+
+      let(:admin) { create(:member, :current, :admin) }
+      let(:revoked) do
+        create(:tool_checkout, approved_by: admin).tap do |checkout|
+          checkout.update!(revoked_at: Time.current, revocation_reason: 'Safety', revoked_by_id: admin.id)
+        end
+      end
+      let(:id) { revoked.id.to_s }
+      let(:reinstatement_details) { { reason: 'Completed retraining' } }
+
+      before do
+        allow_any_instance_of(ToolCheckout).to receive(:invite_member_to_users_channel)
+        allow_any_instance_of(ToolCheckout).to receive(:send_checkout_slack_notification)
+        allow_any_instance_of(ToolCheckout).to receive(:remove_member_from_users_channel)
+        allow_any_instance_of(ToolCheckout).to receive(:send_revocation_slack_notification)
+        allow(Service::ErrorReporter).to receive(:notify)
+      end
+
+      response '200', 'a new active checkout linked to the revoked one' do
+        before { sign_in admin }
+        schema type: :object,
+          properties: {
+            id: { type: :string },
+            memberId: { type: :string },
+            toolId: { type: :string },
+            reinstatedFromId: { type: :string },
+            active: { type: :boolean }
+          },
+          required: %w[id memberId toolId reinstatedFromId active]
+        run_test!(requires_transactions: true) do |response|
+          expect(JSON.parse(response.body)['reinstatedFromId']).to eq(revoked.id.to_s)
+          expect(revoked.reload.revoked_at).to be_present
+        end
+      end
+
+      response '403', 'only admins and board members may reinstate' do
+        before { sign_in create(:member, :resource_manager, :current, resource_manager_shop_ids: [revoked.tool.shop_id.to_s]) }
+        schema '$ref' => '#/components/schemas/error'
+        run_test!
+      end
+
+      response '422', 'reason missing or checkout not reinstatable' do
+        let(:reinstatement_details) { {} }
+        before { sign_in admin }
+        schema '$ref' => '#/components/schemas/error'
+        run_test!
+      end
+    end
+  end
 end
 
 
@@ -276,5 +340,57 @@ describe "Shared checkout creation API", type: :request do
         run_test!
       end
     end
+  end
+end
+
+RSpec.describe 'Admin tool checkout reinstatement API', type: :request do
+  let(:shop) { Shop.create!(name: 'Metalshop') }
+  let(:tool) { Tool.create!(name: 'Lathe', shop: shop) }
+  let(:admin) { create(:member, :current, :admin) }
+  let(:member) { create(:member, :current) }
+  let!(:revoked) do
+    ToolCheckout.create!(member: member, tool: tool, approved_by: admin).tap do |checkout|
+      checkout.update!(revoked_at: Time.current, revocation_reason: 'Safety', revoked_by_id: admin.id)
+    end
+  end
+
+  before do
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
+    allow(Service::SlackConnector).to receive(:send_slack_message)
+    allow_any_instance_of(ToolCheckout).to receive(:invite_member_to_users_channel)
+    allow_any_instance_of(ToolCheckout).to receive(:remove_member_from_users_channel)
+  end
+
+  it 'requires authentication' do
+    post "/api/admin/tool_checkouts/#{revoked.id}/reinstate", params: { reason: 'ok' }
+    expect(response).to have_http_status(:unauthorized)
+  end
+
+  it 'forbids ordinary members, resource managers and out-of-scope approvers' do
+    [member, create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])].each do |actor|
+      sign_in actor
+      post "/api/admin/tool_checkouts/#{revoked.id}/reinstate", params: { reason: 'ok' }
+      expect(response).to have_http_status(:forbidden)
+    end
+    expect(ToolCheckout.where(member_id: member.id, revoked_at: nil)).not_to exist
+  end
+
+  it 'lets a board member reinstate, keeping the revoked record', requires_transactions: true do
+    sign_in create(:member, :current, role: 'board_member')
+    post "/api/admin/tool_checkouts/#{revoked.id}/reinstate", params: { reason: 'Retrained' }
+
+    expect(response).to have_http_status(:ok)
+    body = JSON.parse(response.body)
+    expect(body['reinstatedFromId']).to eq(revoked.id.to_s)
+    expect(body['active']).to eq(true)
+    expect(revoked.reload.revoked_at).to be_present
+    expect(AuditLog.where(event_type: 'tool_checkout_reinstated')).to exist
+  end
+
+  it 'requires a reason' do
+    sign_in admin
+    post "/api/admin/tool_checkouts/#{revoked.id}/reinstate"
+    expect(response).to have_http_status(:unprocessable_content)
   end
 end
