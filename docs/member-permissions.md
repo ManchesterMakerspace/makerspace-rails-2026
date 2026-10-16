@@ -157,6 +157,7 @@ Admin/Board or the shop's assigned resource manager.
 | `ToolGroupCatalog.save!` | Group membership edits extend persistent child grants; archival removes explicit group IDs. The actor must be Admin/Board or the group's shop RM. |
 | `ToolCheckout` revocation callbacks | Call `CheckoutApproverVolunteering.revoke_for!` to remove the revoked child and affected group assignments, coordinating through the member's approver lock. |
 | `Admin::ToolCheckoutsController#reinstate` | `POST /api/admin/tool_checkouts/:id/reinstate`: Admin/Board only (not RMs or approvers). Keeps the revoked record, creates a new linked checkout and writes a `tool_checkout_reinstated` audit entry. Does not restore the member's individual approver assignment. See [reinstating a revoked checkout](checkout.MD#reinstating-a-revoked-checkout). |
+| `ToolCheckoutSerializer` internal notes | `revocationReason`, `requestNote`, revoked/reinstated by and reinstatement reason are returned only to admins, board members, RMs of the tool's shop and approvers who can approve the tool, and never to the checkout's own member or other members. See [roster notes](checkout.MD#roster-notes-and-the-derived-reinstated-status). |
 
 Current consumers include:
 

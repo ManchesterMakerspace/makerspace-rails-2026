@@ -24,6 +24,18 @@ RSpec.describe CheckoutCreation do
     expect(REDIS).to have_received(:set).with("checkout_request_lock/#{member.id}/#{tool.id}", anything, nx: true, ex: 30)
   end
 
+  it "copies the note of the request it closes onto the checkout" do
+    ToolCheckoutRequest.create!(member: member, tool: tool, note: "For the table project")
+
+    checkout = create_checkout
+
+    expect(checkout.reload.request_note).to eq("For the table project")
+  end
+
+  it "leaves the request note blank when there was no request or note" do
+    expect(create_checkout.reload.request_note).to be_nil
+  end
+
   it "awards a silent quarter credit when an additional approver completes a checkout" do
     actor.update!(role: "member")
     CheckoutApprover.create!(member: actor, tool_ids: [tool.id.to_s])

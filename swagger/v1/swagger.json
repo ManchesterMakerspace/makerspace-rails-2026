@@ -3637,10 +3637,6 @@
             "format": "date-time",
             "nullable": true
           },
-          "revocationReason": {
-            "type": "string",
-            "nullable": true
-          },
           "signedOffVia": {
             "type": "string",
             "nullable": true
@@ -3648,6 +3644,60 @@
           "approvedById": {
             "type": "string",
             "nullable": true
+          },
+          "reinstatedFromId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reinstated": {
+            "type": "boolean",
+            "description": "Derived: this revoked checkout has been superseded by an active reinstated checkout."
+          },
+          "reinstatedByCheckoutId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Derived: ID of the active checkout that superseded this revoked one."
+          },
+          "revocationReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Internal note. Present only for approvers of the tool, RMs of its shop, board members and admins, never for the member the checkout belongs to."
+          },
+          "requestNote": {
+            "type": "string",
+            "nullable": true,
+            "description": "Internal note copied from the request this checkout fulfilled. Same visibility as revocationReason."
+          },
+          "revokedById": {
+            "type": "string",
+            "nullable": true,
+            "description": "Same visibility as revocationReason."
+          },
+          "revokedByName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Same visibility as revocationReason."
+          },
+          "reinstatementReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Same visibility as revocationReason."
+          },
+          "reinstatedById": {
+            "type": "string",
+            "nullable": true,
+            "description": "Same visibility as revocationReason."
+          },
+          "reinstatedByName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Same visibility as revocationReason."
+          },
+          "reinstatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Same visibility as revocationReason."
           },
           "toolName": {
             "type": "string",
@@ -8339,6 +8389,19 @@
               "false"
             ],
             "description": "true: only checkouts that are not revoked; false: only revoked ones:\n * `true` \n * `false` \n ",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reinstated",
+            "in": "query",
+            "required": false,
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "true: only reinstated pairs (the superseded revoked checkout and the active checkout that replaced it); false: leave out revoked checkouts that an active checkout has superseded",
             "schema": {
               "type": "string"
             }

@@ -1,12 +1,13 @@
 # One response/job's lookup data. Never cache this across requests: assignments,
 # checkouts and tool notes can change independently of the catalog.
 class CheckoutReadContext
-  attr_reader :tools, :shops, :members, :checked_out_tool_ids, :tool_groups
+  attr_reader :tools, :shops, :members, :checked_out_tool_ids, :tool_groups, :reinstated_by
 
   def initialize(viewer = nil)
     @viewer = viewer
     @tools, @shops, @members, @names, @counts, @resource_managers = {}, {}, {}, {}, {}, {}
     @tool_groups = {}
+    @reinstated_by = {}
     @checked_out_tool_ids = Set.new
     if viewer
       @approver = CheckoutApprover.find_by(member_id: viewer.id)
@@ -29,7 +30,10 @@ class CheckoutReadContext
 
   def self.for_checkouts(checkouts, viewer)
     context = for_tools(Tool.where(:id.in => checkouts.map(&:tool_id).uniq).to_a, viewer)
-    context.load_members(checkouts.flat_map { |row| [row.member_id, row.approved_by_id] })
+    context.load_members(checkouts.flat_map do |row|
+      [row.member_id, row.approved_by_id, row.revoked_by_id, row.reinstated_by_id]
+    end)
+    context.load_reinstatements(checkouts)
     context
   end
 
@@ -56,6 +60,12 @@ class CheckoutReadContext
   def load_members(ids)
     @members = Member.where(:id.in => ids.compact.uniq).only(:firstname, :lastname, :email)
       .index_by { |member| member.id.to_s }
+  end
+
+  # One query for every revoked row's superseding (reinstated) checkout.
+  def load_reinstatements(checkouts)
+    revoked_ids = checkouts.select(&:revoked_at).map(&:id)
+    @reinstated_by = revoked_ids.empty? ? {} : ToolCheckout.reinstated_checkout_ids(revoked_ids)
   end
 
   def load_names(ids)
@@ -137,6 +147,14 @@ class CheckoutReadContext
     @viewer.present? && (@viewer.role.in?(%w[admin board_member]) ||
       @viewer.manages_shop?(tool.shop_id) || @approver&.can_approve_tool?(tool) ||
       checked_out_tool_ids.include?(tool.id.to_s))
+  end
+
+  # Who may see a checkout's internal notes (revocation/reinstatement reasons,
+  # request note, revoked/reinstated by): approvers of the tool, RMs of its
+  # shop, board members and admins.
+  def internal_notes_visible?(tool)
+    @viewer.present? && (@viewer.role.in?(%w[admin board_member]) ||
+      @viewer.manages_shop?(tool.shop_id) || !!@approver&.can_approve_tool?(tool))
   end
 
   # Match the Slack command's stricter approval eligibility, distinct from notes.

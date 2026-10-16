@@ -15,6 +15,21 @@ class Admin::ToolCheckoutsController < ApplicationController
     checkouts = checkouts.where(revoked_at: nil) if params[:active] == "true"
     checkouts = checkouts.where(:revoked_at.ne => nil) if params[:active] == "false"
 
+    # reinstated=true: only reinstated pairs (the superseded revoked row and its
+    # replacement); reinstated=false: leave out the superseded revoked rows.
+    # Computed from the active rows' reinstated_from_id, so the revoked row is
+    # never edited.
+    if params[:reinstated].in?(%w[true false])
+      pairs = ToolCheckout.reinstated_checkout_ids
+      superseded_ids = pairs.keys.map { |id| BSON::ObjectId.from_string(id) }
+      if params[:reinstated] == "true"
+        replacement_ids = pairs.values.map { |id| BSON::ObjectId.from_string(id) }
+        checkouts = checkouts.where(:id.in => superseded_ids + replacement_ids)
+      else
+        checkouts = checkouts.where(:id.nin => superseded_ids)
+      end
+    end
+
     # Optional: only checkouts held by members who are currently active (an active membership status
     # with an unexpired term, same test as Member#active_unexpired?). Opt-in so existing callers
     # keep getting every checkout.

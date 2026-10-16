@@ -29,6 +29,11 @@ Update overlapping instructions here whenever the canonical handbook changes.
   for email, environment variables, collections/indexes, public resources,
   jobs/tasks/services, member statuses/permissions, and API contracts.
   Required docs updates belong in implementation, including already-authorized tasks.
+- When a change alters a member-, approver-, RM-, board-, or admin-facing flow or
+  operation, update the matching page in the public wiki repository
+  [WikiPages](https://github.com/ManchesterMakerspace/WikiPages) in the same work (see
+  [Wiki updates](../AGENTS.md#wiki-updates)): use test data only, fetch first, do not
+  describe unreleased behavior as live, and ask before pushing to `master`.
 - Keep [the job/task/service inventory](../docs/jobs-tasks-services.MD) in sync
   in the same change when adding, changing, renaming, or removing supporting
   services. Include synchronous request-time modules regardless of directory or
