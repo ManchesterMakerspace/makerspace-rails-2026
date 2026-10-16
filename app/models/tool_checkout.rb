@@ -18,6 +18,11 @@ class ToolCheckout
   field :revocation_cleanup_pending, type: Boolean, default: false
   field :revoked_by_id, type: BSON::ObjectId
   field :reinstated_from_id, type: BSON::ObjectId  # the revoked record this checkout reinstates
+  # Internal notes: visible only to approvers of the tool, RMs, board and admins (see ToolCheckoutSerializer).
+  field :reinstatement_reason, type: String
+  field :reinstated_by_id, type: BSON::ObjectId
+  field :reinstated_at, type: Time
+  field :request_note, type: String  # note copied from the ToolCheckoutRequest this checkout fulfilled
   field :revocation_cleanup_completed_steps, type: Array, default: []
 
   belongs_to :member
@@ -47,6 +52,15 @@ class ToolCheckout
     rows = where(member_id: member_id).pluck(:tool_id, :revoked_at)
     active = rows.filter_map { |tool_id, revoked| tool_id.to_s if revoked.nil? }.to_set
     rows.filter_map { |tool_id, revoked| tool_id.to_s if revoked }.uniq - active.to_a
+  end
+
+  # Revoked records that an active checkout supersedes (a reinstatement), as
+  # { revoked_checkout_id_string => active_checkout_id_string }. Pass ids to
+  # limit the lookup to the rows being serialized.
+  def self.reinstated_checkout_ids(revoked_ids = nil)
+    scope = where(:reinstated_from_id.ne => nil, revoked_at: nil)
+    scope = scope.where(:reinstated_from_id.in => revoked_ids) if revoked_ids
+    scope.pluck(:reinstated_from_id, :id).to_h { |from_id, id| [from_id.to_s, id.to_s] }
   end
 
   def newly_revoked?
@@ -294,6 +308,7 @@ class ToolCheckout
     requests = requests.where(id: checkout_request_id) if checkout_request_id
     request = requests.order_by(request_date: :asc, id: :asc).first
     request.update_attributes!(status: "closed", checked_out_id: id) if request
+    set(request_note: request.note) if request && request.note.present? && request_note.blank?
     ToolGroupCheckout.reconcile!(member_id)
   end
 

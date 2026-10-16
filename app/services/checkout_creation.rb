@@ -46,10 +46,14 @@ class CheckoutCreation
       end
       error = ToolCheckoutRequestEligibility.new(member: member, tool: tool, open_request_tool_ids: []).error
       raise Error::UnprocessableEntity.new(error) if error
+      # Same request the checkout will close (the named one, else the oldest open one).
+      note_request = request || ToolCheckoutRequest.where(member_id: member.id, tool_id: tool.id, status: "open")
+        .order_by(request_date: :asc, id: :asc).first
       ToolCheckout.with_session do |session|
         session.with_transaction do
           checkout = ToolCheckout.create!(member: member, tool: tool, approved_by: actor,
             signed_off_via: source, checked_out_at: Time.current, checkout_request_id: request&.id,
+            request_note: note_request&.note.presence,
             defer_users_channel_invitation: true, defer_group_callbacks: true)
           notify { CheckoutApproverCredit.award!(checkout) }
           checkout.reconciled_requests = ToolGroupCheckout.reconcile!(member.id)

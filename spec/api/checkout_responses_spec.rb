@@ -28,6 +28,8 @@ RSpec.describe 'Checkout response contracts', type: :request do
           parameter name: :shop_id, in: :query, type: :string, required: false
           parameter name: :active, in: :query, type: :string, required: false, enum: %w[true false],
                     description: 'true: only checkouts that are not revoked; false: only revoked ones'
+          parameter name: :reinstated, in: :query, type: :string, required: false, enum: %w[true false],
+                    description: 'true: only reinstated pairs (the superseded revoked checkout and the active checkout that replaced it); false: leave out revoked checkouts that an active checkout has superseded'
           parameter name: :active_members_only, in: :query, type: :string, required: false, enum: %w[true],
                     description: 'true: only checkouts held by members with an active membership status and an unexpired term (Member#active_unexpired?). Omitted: every member.'
         end

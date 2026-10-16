@@ -95,10 +95,13 @@ class ToolGroupCheckout
               # no additional checkout or credit is created.
               existing = ToolCheckout.where(member_id: member.id, :tool_id.in => review[:held_tool_ids], revoked_at: nil).to_a
               batch_id = SecureRandom.uuid
+              note_request = request || ToolCheckoutRequest.where(member_id: member.id, tool_group_id: group.id,
+                status: 'open').order_by(request_date: :asc, id: :asc).first
               created = review[:create_tool_ids].map do |tool_id|
                 ToolCheckout.create!(member: member, tool_id: tool_id, approved_by: actor,
                   signed_off_via: source, group_id: group.id, group_revision: group.revision,
                   group_name: group.name, approval_batch_id: batch_id,
+                  request_note: note_request&.note.presence,
                   defer_users_channel_invitation: true, defer_group_callbacks: true)
               end
               if created.any?

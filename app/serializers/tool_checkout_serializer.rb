@@ -4,7 +4,32 @@ class ToolCheckoutSerializer < ActiveModel::Serializer
     !!object.tool&.out_of_service
   end
   attributes :id, :member_id, :tool_id, :checked_out_at, :revoked_at,
-             :revocation_reason, :signed_off_via, :approved_by_id
+             :signed_off_via, :approved_by_id
+
+  # Derived, never stored on the revoked row: a revoked checkout that an
+  # active checkout supersedes (a reinstatement) and the superseding record.
+  attribute :reinstated do
+    reinstated_by_checkout_id.present?
+  end
+
+  attribute :reinstated_by_checkout_id do
+    reinstated_by_checkout_id
+  end
+
+  # Internal notes and who/when. Present only for approvers of the tool, RMs
+  # of its shop, board members and admins, and never for the checkout's own
+  # member (so a member never sees why they were revoked, even when they are
+  # also an approver) or for other members.
+  with_options(if: :internal_notes_visible?) do
+    attribute(:revocation_reason) { object.revocation_reason }
+    attribute(:request_note) { object.request_note }
+    attribute(:revoked_by_id) { object.revoked_by_id }
+    attribute(:revoked_by_name) { checkout_member_name(object.revoked_by_id) }
+    attribute(:reinstatement_reason) { object.reinstatement_reason }
+    attribute(:reinstated_by_id) { object.reinstated_by_id }
+    attribute(:reinstated_by_name) { checkout_member_name(object.reinstated_by_id) }
+    attribute(:reinstated_at) { object.reinstated_at }
+  end
 
   attribute :tool_name do
     checkout_tool.try(:name)
@@ -48,6 +73,34 @@ class ToolCheckoutSerializer < ActiveModel::Serializer
 
   def tool_notes_visible?
     checkout_tool.present? && (checkout_context ? checkout_context.notes_visible?(checkout_tool) : checkout_tool.notes_visible_to?(scope))
+  end
+
+  def internal_notes_visible?
+    return false if scope.nil? || object.member_id == scope.id || checkout_tool.blank?
+
+    if checkout_context
+      checkout_context.internal_notes_visible?(checkout_tool)
+    else
+      scope.role.in?(%w[admin board_member]) || scope.manages_shop?(checkout_tool.shop_id) ||
+        !!CheckoutApprover.find_by(member_id: scope.id)&.can_approve_tool?(checkout_tool)
+    end
+  end
+
+  def reinstated_by_checkout_id
+    return nil if object.revoked_at.nil?
+    return @reinstated_by_checkout_id if defined?(@reinstated_by_checkout_id)
+
+    @reinstated_by_checkout_id = if checkout_context
+      checkout_context.reinstated_by[object.id.to_s]
+    else
+      ToolCheckout.reinstated_checkout_ids([object.id])[object.id.to_s]
+    end
+  end
+
+  def checkout_member_name(id)
+    return nil if id.blank?
+
+    (checkout_context ? checkout_context.members[id.to_s] : Member.find_by(id: id)).try(:fullname)
   end
 
   def checkout_context

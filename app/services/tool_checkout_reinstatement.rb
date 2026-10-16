@@ -39,6 +39,7 @@ class ToolCheckoutReinstatement
       session.with_transaction do
         checkout = ToolCheckout.create!(member: member, tool: tool, approved_by: actor,
           signed_off_via: "portal", checked_out_at: Time.current, reinstated_from_id: revoked.id,
+          reinstatement_reason: reason, reinstated_by_id: actor.id, reinstated_at: Time.current,
           defer_users_channel_invitation: true, defer_group_callbacks: true)
         CheckoutCreation.notify { CheckoutApproverCredit.award!(checkout) }
         checkout.reconciled_requests = ToolGroupCheckout.reconcile!(member.id)

@@ -473,6 +473,50 @@ deliberate, audited way past that.
 The Tool Checkouts roster shows a Reinstate button on revoked rows to Admin/Board
 members.
 
+### Roster notes and the derived Reinstated status
+
+The reinstatement stores `reinstatement_reason`, `reinstated_by_id` and
+`reinstated_at` on the **new** checkout (set in the same transaction); the
+revoked row is still never edited. The roster has a Notes column showing, per
+row, the internal notes the system already holds:
+
+| Row | Notes shown |
+| --- | --- |
+| Revoked | `revocation_reason`, who revoked it (`revoked_by_id`) and when (`revoked_at`) |
+| Reinstated (new active row) | `reinstatement_reason`, who reinstated it and when |
+| Ordinary | `request_note`, the note on the open `ToolCheckoutRequest` the checkout fulfilled |
+
+`request_note` is copied at creation from the request the checkout closes (the
+named request, else the oldest open one for the member and tool) by every
+creation path: portal, Slack and fob sign-offs (`CheckoutCreation`), group
+approvals (`ToolGroupCheckout.approve!`, the group request's note, copied onto
+each created checkout) and the non-deferred `after_create` request close. It is a
+snapshot; later edits to the request do not change it.
+
+**Privacy.** `revocationReason`, `requestNote`, `revokedById/Name`,
+`reinstatementReason`, `reinstatedById/Name` and `reinstatedAt` are serialized
+only by `ToolCheckoutSerializer` when the viewer is an admin, a board member, a
+Resource Manager of the tool's shop, or a checkout approver who can approve that
+tool (`CheckoutReadContext#internal_notes_visible?`). They are omitted for the
+member the checkout belongs to (My Checkouts, `/api/tool_checkouts`, even when that
+member is also an approver) and for every other member. The serializer is the
+single gate for all of its endpoints (`/api/tool_checkouts`,
+`/api/admin/tool_checkouts` index/create/update/delete/reinstate and group
+approval responses).
+
+**Derived `Reinstated` status.** A revoked row whose id is the `reinstated_from_id`
+of an *active* checkout is serialized with `reinstated: true` and
+`reinstatedByCheckoutId` (the active checkout's id); both are computed, not stored,
+and looked up with one query per response (`CheckoutReadContext#load_reinstatements`).
+If the replacement is later revoked, the original is no longer reinstated. The
+roster shows such a row as a grey **Reinstated** (instead of red Revoked) pointing
+at the current checkout, and shows a **Reinstated** badge next to **Active** on
+the replacement. `GET /api/admin/tool_checkouts` accepts `reinstated=true` (the
+superseded revoked rows and their replacements) and `reinstated=false` (everything
+except superseded revoked rows), combinable with `active`; the roster's Status
+filter (Active only / Revoked only / Reinstated / All) uses these. When sorted by
+member or tool the roster keeps a pair adjacent, replacement first.
+
 ## Slack notifications and announcements
 
 ### Requests

@@ -65,6 +65,14 @@ RSpec.describe ToolGroupCheckout do
     expect(VolunteerCredit.where(member_id: actor.id, status: 'reversal').count).to eq(1)
   end
 
+  it 'copies the group request note onto each created checkout' do
+    request = ToolCheckoutRequest.create!(member: member, tool_group: group, note: 'Class project')
+    approve_with_request = described_class.approve!(actor: actor, member: member, group: group,
+      revision: group.revision, request_id: request.id)
+    expect(approve_with_request[:checkouts]).not_to be_empty
+    expect(approve_with_request[:checkouts].map { |row| row.reload.request_note }.uniq).to eq(['Class project'])
+  end
+
   it 'rejects a cancelled request after its review' do
     request = ToolCheckoutRequest.create!(member: member, tool_group: group, status: 'deleted')
     expect {

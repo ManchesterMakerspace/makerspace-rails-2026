@@ -36,6 +36,15 @@ RSpec.describe ToolCheckoutReinstatement, requires_transactions: true do
     expect(ToolCheckout.where(member_id: member.id, tool_id: tool.id).count).to eq(2)
   end
 
+  it "records the reason, actor and time on the new checkout only" do
+    checkout = reinstate(reason: "Completed retraining")
+
+    expect(checkout.reload).to have_attributes(reinstatement_reason: "Completed retraining",
+      reinstated_by_id: admin.id)
+    expect(checkout.reinstated_at).to be_within(1.minute).of(Time.current)
+    expect(revoked.reload).to have_attributes(reinstatement_reason: nil, reinstated_by_id: nil, reinstated_at: nil)
+  end
+
   it "writes an audit entry with the actor and reason" do
     checkout = reinstate(reason: "Completed retraining")
 
