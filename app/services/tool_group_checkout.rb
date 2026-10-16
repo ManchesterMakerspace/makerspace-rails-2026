@@ -10,9 +10,8 @@ class ToolGroupCheckout
     raise Error::UnprocessableEntity.new('Group unavailable') if group.disabled?
     raise Error::UnprocessableEntity.new('This group does not accept requests') if requesting && !group.requestable?
     tools = group.included_tools
-    records = ToolCheckout.where(member_id: member.id).to_a
-    active = records.select(&:active?).map { |row| row.tool_id.to_s }
-    revoked = records.reject(&:active?).map { |row| row.tool_id.to_s }
+    active = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
+    revoked = ToolCheckout.blocking_revoked_tool_ids(member.id)
     raise Error::UnprocessableEntity.new('A checkout in this group has been revoked') if (revoked & group.included_tool_ids).any?
     tools.each do |tool|
       raise Error::UnprocessableEntity.new('An included tool is unavailable') if tool.disabled?

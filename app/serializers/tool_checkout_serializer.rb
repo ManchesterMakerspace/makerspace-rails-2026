@@ -1,5 +1,5 @@
 class ToolCheckoutSerializer < ActiveModel::Serializer
-  attributes :group_id, :group_revision, :group_name, :approval_batch_id
+  attributes :group_id, :group_revision, :group_name, :approval_batch_id, :reinstated_from_id
   attribute :out_of_service do
     !!object.tool&.out_of_service
   end

@@ -89,7 +89,8 @@ held/new checkout IDs and external prerequisites. POST `:id/approve` accepts
 `approvalBatchId`. Individual approvals retain their existing response shape.
 Internal prerequisites can be granted together; external prerequisites need
 active checkouts. Open tools may receive a group grant. Revoked child records
-block the whole group, and fully held groups create neither records nor credit.
+block the whole group until the member is reinstated on that tool (see
+[Reinstating a revoked checkout](#reinstating-a-revoked-checkout)), and fully held groups create neither records nor credit.
 When an open request is supplied, the portal offers Resolve request and submits
 its ID to reconcile the request even when no new checkouts are needed.
 
@@ -299,7 +300,8 @@ A tool can be newly requested only when all of the following are true:
 - every tool ID in `Tool#prerequisite_ids` has a non-revoked checkout for the
   member;
 - the member has no checkout record for the target tool, including a revoked
-  record; and
+  record (only the admin/board reinstatement path looks past a revoked record;
+  see [Reinstating a revoked checkout](#reinstating-a-revoked-checkout)); and
 - there is no open checkout request for that member and tool.
 
 A declined request is no longer open, so it does not block a new request for the same
@@ -429,6 +431,47 @@ tools omit `Reservable: No`; reservable tools still show `Reservable: Yes`.
 Revoking a checkout also removes that member's individual approver assignment
 for the tool and marks open volunteer requests for that member/tool as revoked.
 Shop-wide assignments are not altered; an otherwise-empty approver record is removed.
+
+## Reinstating a revoked checkout
+
+A revoked `ToolCheckout` blocks the member from every ordinary path: a member
+request, an approver signoff, a fob tap and a Slack command are all rejected
+with "A checkout record already exists for this tool". Reinstatement is the one
+deliberate, audited way past that.
+
+`POST /api/admin/tool_checkouts/:id/reinstate` with a required `reason`
+(`ToolCheckoutReinstatement`):
+
+- **Authority**: Admin or Board only, enforced in the controller and again in the
+  service. Shop RMs and ordinary approvers receive 403.
+- **The revoked record is never changed or deleted.** A new `ToolCheckout` is
+  created with `reinstated_from_id` pointing at it, `approved_by` set to the
+  reinstating admin/board member, and `signed_off_via` `portal`. Both rows then
+  appear in the roster, so revocation history remains visible.
+- **Rechecks, under the shared per-member/tool lock and in a transaction**: the
+  target must be revoked, its revocation cleanup must have finished, it must not
+  already have been reinstated, and `ToolCheckoutRequestEligibility` (with
+  `reinstating: true`, which ignores revoked records but still rejects an active
+  one) must pass, so the member must still be a current member and the tool
+  available with prerequisites met. Failures are 422.
+- **Audit**: a `tool_checkout_reinstated` entry records the actor, subject, the
+  reinstatement reason, the revoked record's ID and revocation time, and is posted
+  to the logs channel. The reason is internal, like the revocation reason.
+- **Notifications**: only the member is told, with the normal checkout DM and
+  users-channel invitation. No success announcement is posted and the original
+  approver is not notified.
+- **Approver credit**: the new checkout is a fresh checkout. The standard
+  `CheckoutApproverCredit.award!` runs for the reinstating actor, which grants
+  nothing to an admin/board/RM (they are not additional approvers). The credit
+  reversed at revocation stays reversed. The member's individual approver
+  assignment removed at revocation is not restored.
+- **Tool groups**: a revoked record superseded by an active one no longer blocks
+  group approval, volunteering or approver group assignment
+  (`ToolCheckout.blocking_revoked_tool_ids`). Group membership checks reconcile
+  against the new active record.
+
+The Tool Checkouts roster shows a Reinstate button on revoked rows to Admin/Board
+members.
 
 ## Slack notifications and announcements
 

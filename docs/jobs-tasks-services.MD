@@ -192,6 +192,12 @@ state are rechecked under the shared per-member/tool lock. `ToolCheckout` closes
 the selected request in its callback and retains users-channel invitations;
 notifications and audit logging are best effort after creation.
 
+`ToolCheckoutReinstatement` is a synchronous request-time service (no job or task) behind
+`POST /api/admin/tool_checkouts/:id/reinstate`. Under the same per-member/tool lock it creates a new
+checkout in a transaction, leaving the revoked record unchanged; the member DM, users-channel
+invitation, canvas-sync enqueue and `tool_checkout_reinstated` audit entry are best effort afterwards.
+See [checkout.MD](checkout.MD#reinstating-a-revoked-checkout).
+
 `SlackCheckoutActiveJob` serves `/checkout active [all]` and its `/checkout list
 [all]` alias. In a configured shop channel, the command without `all` lists
 that shop and omits the redundant shop-name line. With `all`, or when Slack's

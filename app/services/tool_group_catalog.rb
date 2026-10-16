@@ -29,7 +29,7 @@ class ToolGroupCatalog
             group.revision += 1 if group.persisted?
             group.save!
             CheckoutApprover.where(tool_group_ids: group.id.to_s).each do |approver|
-              if ToolCheckout.where(member_id: approver.member_id, :tool_id.in => group.included_tool_ids, :revoked_at.ne => nil).exists?
+              if (ToolCheckout.blocking_revoked_tool_ids(approver.member_id) & group.included_tool_ids.map(&:to_s)).any?
                 approver.pull(tool_group_ids: group.id.to_s)
                 next
               end

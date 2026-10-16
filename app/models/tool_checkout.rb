@@ -17,6 +17,7 @@ class ToolCheckout
   index({ approval_batch_id: 1 })
   field :revocation_cleanup_pending, type: Boolean, default: false
   field :revoked_by_id, type: BSON::ObjectId
+  field :reinstated_from_id, type: BSON::ObjectId  # the revoked record this checkout reinstates
   field :revocation_cleanup_completed_steps, type: Array, default: []
 
   belongs_to :member
@@ -38,6 +39,14 @@ class ToolCheckout
 
   def active?
     revoked_at.nil?
+  end
+
+  # Tools a member was revoked from and has not been reinstated on. A revoked
+  # record superseded by an active one (a reinstatement) no longer blocks.
+  def self.blocking_revoked_tool_ids(member_id)
+    rows = where(member_id: member_id).pluck(:tool_id, :revoked_at)
+    active = rows.filter_map { |tool_id, revoked| tool_id.to_s if revoked.nil? }.to_set
+    rows.filter_map { |tool_id, revoked| tool_id.to_s if revoked }.uniq - active.to_a
   end
 
   def newly_revoked?
