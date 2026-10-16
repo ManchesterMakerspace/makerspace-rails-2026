@@ -144,6 +144,31 @@ This consolidates the obligations formerly repeated in the documentation agent;
 | Jobs, tasks, or supporting services | Keep [jobs-tasks-services.MD](docs/jobs-tasks-services.MD) in sync in the same change for additions, removals, renames, rescheduling, and other job/task/service changes: admin job inventory, recurring production work, invocation, purpose, side effects, status tracking, and failure behavior. Include synchronous request-time services and supporting modules regardless of directory or namespace, including `lib/` helpers and associated controller concerns/initializer hooks; this obligation is not limited to scheduled work or `app/services/`. Cover every job returned by `GET /api/admin/system_configs` or accepted by `POST /api/admin/system_configs/run_job`, all `config/schedule.rb` work, other tasks identified in source as recurring in production, and manual production commands. |
 | Member statuses or permissions | Update [member-statuses.md](docs/member-statuses.md) and/or [member-permissions.md](docs/member-permissions.md) for additions/removals/renames, semantics, and consumers. Maintain the status mutation-path appendix for endpoints, webhooks, callbacks, jobs, tasks, and every path that starts/stops changing an existing member's status. |
 | API contracts | Update executable [spec/api](spec/api) specifications for endpoint additions/changes/removals, including routes, authentication/authorization, parameters, request/response bodies, and status codes. Run affected examples, regenerate with `bundle exec rake rswag:specs:swaggerize`, and include [swagger/v1/swagger.json](swagger/v1/swagger.json) in the change. |
+| Operator and user instructions (wiki) | When a change adds, removes, or alters a member-, approver-, Resource Manager-, board-, or admin-facing flow or operation (screens, buttons, messages, Slack commands, statuses, permissions, eligibility, notifications, troubleshooting steps), update the matching page in the wiki repository [WikiPages](https://github.com/ManchesterMakerspace/WikiPages) so the flow and operation stay understood. See "Wiki updates" below. |
+
+### Wiki updates
+
+The [WikiPages](https://github.com/ManchesterMakerspace/WikiPages) repository holds
+the content of wiki.manchestermakerspace.org (Wiki.js Git storage, bi-directional,
+branch `master`). Pages live at their wiki path (for example
+`digital-makerspace/approvers/check-out-a-member.md`) with a Wiki.js front matter
+header; screenshots are in the repository root as `checkout-<name>.png` and are
+linked as `/checkout-<name>.png{width=...}`.
+
+- Treat wiki updates as part of the change. Find the affected pages (search the
+  repository for the screen, button, or message names), update them in the same
+  piece of work, and add a page when a new flow has none. Describe what the portal
+  actually does, using its on-screen labels, and add the member-facing fix to the
+  troubleshooting page when a new error or eligibility message is introduced.
+- The repository is **public**, and a push to `master` publishes at once. Never put
+  real member names, emails, IDs, or credentials in pages or screenshots; use test
+  data. Keep drafts and unresolved notes out of `master`.
+- `git fetch` first and merge or rebase if the wiki changed, because wiki edits are
+  pushed to the repository. Open a pull request, or ask the maintainer before
+  pushing to `master`.
+- Pages must not describe unreleased behavior as live. If the feature is not yet
+  deployed, hold the page or section until it is, and say so in the completion note.
+- In completion/PR notes, list the wiki pages changed, or explain why none applied.
 
 Read feature references by task, not as a mandatory full-document sweep:
 
