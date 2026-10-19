@@ -7,7 +7,10 @@ RSpec.describe CheckoutExpirationManagement, requires_transactions: true do
   let(:tool) { create(:tool, checkout_expiration_years: 1) }
   let(:checkout) { create(:tool_checkout, member: member, tool: tool, approved_by: actor) }
   before do
-    allow(REDIS).to receive(:set).and_return(true)
+    @lock_tokens = {}
+    allow(REDIS).to receive(:set) { |key, token, **_options| @lock_tokens[key] = token; true }
+    allow(REDIS).to receive(:get).and_call_original
+    allow(REDIS).to receive(:get).with(%r{^checkout_request_lock/}) { |key| @lock_tokens[key] }
     allow(REDIS).to receive(:eval).and_return(1)
     allow(Service::SlackConnector).to receive(:send_slack_message)
   end
@@ -47,14 +50,30 @@ RSpec.describe CheckoutExpirationManagement, requires_transactions: true do
     historical = create(:tool_checkout, tool: tool, superseded_by_id: current.id)
     old_dates = [revoked.expires_on, historical.expires_on]
     date = (Date.current + 60).iso8601
+    expect(CheckoutMutationLock).to receive(:with).once.with(member_id: 'catalog', tool_id: tool.shop_id, persistent: true).and_call_original
     expect(described_class.bulk_update!(actor: actor, tool: tool, expires_on: date)).to eq(2)
+    expect(REDIS).to have_received(:set).with("checkout_request_lock/catalog/#{tool.shop_id}", anything, nx: true)
     expect([current.reload.expires_on.iso8601, expired.reload.expires_on.iso8601]).to eq([date, date])
     expect([revoked.reload.expires_on, historical.reload.expires_on]).to eq(old_dates)
+  end
+
+  it 'rolls back the bulk transaction if persistent ownership is lost before commit' do
+    original = checkout.expires_on
+    allow(REDIS).to receive(:get).with("checkout_request_lock/catalog/#{tool.shop_id}") do |key|
+      @ownership_checks = @ownership_checks.to_i + 1
+      @ownership_checks == 1 ? @lock_tokens[key] : nil
+    end
+    expect { described_class.bulk_update!(actor: actor, tool: tool, expires_on: (Date.current + 60).iso8601) }
+      .to raise_error(Error::Conflict, /ownership was lost/)
+    expect(checkout.reload.expires_on).to eq(original)
+    expect(AuditLog.where(event_type: 'tool_checkout_expiration_changed', resource_id: checkout.id)).not_to exist
   end
 
   it 'renews an expired checkout transactionally without losing its history' do
     old = checkout
     old.set(expires_on: Date.current - 2)
+    expect(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later).with(tool.shop_id.to_s).once
+    expect(ToolCheckoutSlackCanvasSyncJob).not_to receive(:perform_later).with(tool.shop_id.to_s, anything, 'add')
     renewed = CheckoutCreation.create!(actor_id: actor.id, member_id: member.id, tool_id: tool.id,
       shop_id: tool.shop_id, source: 'portal')
     expect(renewed.renewed_from_id).to eq(old.id)

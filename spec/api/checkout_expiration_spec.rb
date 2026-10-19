@@ -6,7 +6,10 @@ RSpec.describe 'Checkout expiration API', type: :request do
   let(:checkout) { create(:tool_checkout, tool: tool) }
   before do
     sign_in actor
-    allow(REDIS).to receive(:set).and_return(true)
+    lock_tokens = {}
+    allow(REDIS).to receive(:set) { |key, token, **_options| lock_tokens[key] = token; true }
+    allow(REDIS).to receive(:get).and_call_original
+    allow(REDIS).to receive(:get).with(%r{^checkout_request_lock/}) { |key| lock_tokens[key] }
     allow(REDIS).to receive(:eval).and_return(1)
     allow(Service::SlackConnector).to receive(:send_slack_message)
   end

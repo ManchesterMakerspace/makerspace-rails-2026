@@ -760,3 +760,9 @@ Wiki changes are prepared in [the release patch](wiki-checkout-expiration.patch)
 Apply/review against current WikiPages master and publish only after deployment.
 The environment-variable inventory is unchanged: no new variables or external
 email template dependencies are introduced.
+
+Renewal approval rebuilds the shop checkout canvas to replace a predecessor that
+may still be published after expiration. Bulk expiration changes hold one
+persistent catalog lock for the transaction; see [lock recovery](jobs-tasks-services.MD#bulk-expiration-locking-and-recovery).
+The Reinstated roster filter is offered only on the authorized management roster;
+the member endpoint does not support that filter.

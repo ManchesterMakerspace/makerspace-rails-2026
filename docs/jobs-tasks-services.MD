@@ -839,7 +839,7 @@ Retry resumes unrecorded channels. Provider acceptance followed by acknowledgmen
 failure can cause duplicates; delivery is not exactly-once.
 
 **CheckoutExpirationManagement** is the synchronous, scoped date-management
-service: strict ISO dates, future-only bulk dates, catalog then member/tool locks,
+service: strict ISO dates, future-only bulk dates, catalog then member/tool locks for individual edits,
 MongoDB transactions, revision conflicts, audit persistence, and canvas refresh
 after commit. It never grants checkout credit. **CheckoutExpiration** centralizes
 current/valid scopes, Eastern date boundaries, initial policy dates, renewal
@@ -851,3 +851,29 @@ use the shared valid scopes. CheckoutMailer uses local HTML/plain templates.
 `bundle exec rake data:ensure_checkout_expiration_indexes` is a manual repeatable
 deployment operation creating the expiry query index only. It neither sends
 messages nor backfills dates. See [collection inventory](mongodb-collections.MD).
+
+### Bulk expiration locking and recovery
+
+Bulk date updates use CatalogMutationLock.with_persistent on the existing
+checkout_request_lock/catalog/<shop-id> Redis key. CheckoutMutationLock acquires
+it with SET NX and no expiry, releases it only when its ownership token matches,
+and supplies an ownership check used before writes and before transaction commit.
+Only one lock is held regardless of roster size. Renewals, approvals, catalog
+edits, and individual date edits already contend on this same catalog key.
+The bulk transaction streams the current records without a recursive member-lock
+chain. Concurrent revocations cause MongoDB write conflicts; each transaction
+retry requeries the current records. A failed/too-long transaction rolls back
+its dates and audits, rather than allowing a lease to expire during writes.
+
+An exception releases the key normally. A killed worker or failed Redis release
+can leave an orphan key: stop/confirm termination of the owning request/worker
+and confirm no transaction can still commit before recovering it. Read the
+exact key's token and remove it with the same compare-token-and-delete Lua used
+by CheckoutMutationLock; never clear a live lock or delete unrelated keys.
+Do not add a TTL to an in-progress persistent lock to work around contention.
+No new environment variables, schedules, or collections are introduced.
+
+CheckoutCreation queues a full shop checkout canvas rebuild for renewals
+(renewed_from_id present). The rebuild renders current valid members once,
+replacing stale expired predecessor lines. Initial checkouts retain incremental
+adds. Neither path sends notices inside its approval transaction.

@@ -42,33 +42,27 @@ class CheckoutExpirationManagement
       date && date > Time.current.in_time_zone(CheckoutExpiration::ZONE).to_date
     authorize!(actor, tool)
     count = 0
-    CatalogMutationLock.with([tool.shop_id]) do
+    CatalogMutationLock.with_persistent(tool.shop_id) do |assert_owned|
       authorize!(actor.reload, tool.reload)
-      rows = ToolCheckout.current_checkouts.where(tool_id: tool.id).order_by(member_id: :asc, id: :asc).to_a
-      with_locks(rows.uniq(&:member_id)) do
-        ToolCheckout.with_session do |session|
-          session.with_transaction do
-            count = 0
-            rows.each do |row|
-              row.reload
-              next unless row.current_checkout?
-              change!(actor, row, date)
-              count += 1
-            end
+      ToolCheckout.with_session do |session|
+        session.with_transaction do
+          assert_owned.call
+          count = 0
+          # Query inside every transaction attempt: concurrent revocations cause
+          # a write conflict and a retry sees the new current set. Catalog writers
+          # (approvals, renewals and date edits) share the persistent catalog key.
+          ToolCheckout.current_checkouts.where(tool_id: tool.id).each do |row|
+            change!(actor, row, date)
+            count += 1
           end
-        ensure
-          session.end_session
+          assert_owned.call
         end
+      ensure
+        session.end_session
       end
     end
     refresh(tool)
     count
-  end
-
-  def self.with_locks(rows, &block)
-    return yield if rows.empty?
-    row = rows.first
-    CheckoutMutationLock.with(member_id: row.member_id, tool_id: row.tool_id) { with_locks(rows.drop(1), &block) }
   end
 
   def self.change!(actor, checkout, date)
@@ -85,5 +79,5 @@ class CheckoutExpirationManagement
   def self.refresh(tool)
     CheckoutCreation.notify { ToolCheckoutSlackCanvasSyncJob.perform_later(tool.shop_id.to_s) }
   end
-  private_class_method :change!, :with_locks, :refresh
+  private_class_method :change!, :refresh
 end

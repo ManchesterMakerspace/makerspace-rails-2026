@@ -57,10 +57,10 @@ index 8f2a6fa..ba47940 100644
 +reinstatement flow for unresolved revocations. Approver privileges alone do not
 +allow editing a checkout’s expiration date.
 diff --git a/digital-makerspace/members/request-a-checkout.md b/digital-makerspace/members/request-a-checkout.md
-index f4d969a..e331f63 100644
+index f4d969a..1aa0c33 100644
 --- a/digital-makerspace/members/request-a-checkout.md
 +++ b/digital-makerspace/members/request-a-checkout.md
-@@ -75,3 +75,16 @@ Open **Tool Checkouts** > **My Checkouts**. It is titled **My Active Tool Checko
+@@ -75,3 +75,20 @@ Open **Tool Checkouts** > **My Checkouts**. It is titled **My Active Tool Checko
  ## Need help?
  
  See [Troubleshooting: checkouts](/digital-makerspace/troubleshooting/checkouts).
@@ -77,6 +77,10 @@ index f4d969a..e331f63 100644
 +checkout list, choose **Expired** and select **Request renewal** when available.
 +An approver must approve the renewal. Your previous checkout remains in History.
 +A revoked checkout requires admin or board reinstatement instead.
++
++The Reinstated filter is available in the authorized checkout management roster,
++not My Tool Checkouts. Use your Expired, Renewal history, Revoked, or All views
++to inspect your own checkout records.
 diff --git a/digital-makerspace/resource-managers/tool-groups-and-approvers.md b/digital-makerspace/resource-managers/tool-groups-and-approvers.md
 index b8fc0c7..c1f9f63 100644
 --- a/digital-makerspace/resource-managers/tool-groups-and-approvers.md
@@ -139,10 +143,10 @@ index 28422ce..1112239 100644
 +does not expose private tool notes through the old checkout. Use the Member
 +Portal’s Expired filter and **Request renewal** to request another approval.
 diff --git a/digital-makerspace/troubleshooting/checkouts.md b/digital-makerspace/troubleshooting/checkouts.md
-index 213b5b8..b428665 100644
+index 213b5b8..f8e149c 100644
 --- a/digital-makerspace/troubleshooting/checkouts.md
 +++ b/digital-makerspace/troubleshooting/checkouts.md
-@@ -152,3 +152,16 @@ The sign's QR code is a permanent short link. Short links cannot be created if t
+@@ -152,3 +152,24 @@ The sign's QR code is a permanent short link. Short links cannot be created if t
  ### Approvers cannot see or approve requests
  
  Open **Tool Checkouts** > **Approvers** and tick their row and use the edit button to check their scope. Approval for a group needs a shop assignment or a group assignment, not just individual tools in the group.
@@ -159,3 +163,11 @@ index 213b5b8..b428665 100644
 +end time. An end exactly at midnight after the expiration date is permitted.
 +Existing bookings are not automatically canceled after expiration edits, but
 +editing a booking rechecks its prerequisites. Cancellation remains available.
++
++## Checkout operations remain busy after a bulk expiration update
++
++A bulk update keeps the shop locked until its transaction finishes. If its
++worker crashes, ask an administrator to confirm the worker has stopped and
++recover the orphan catalog lock using the Rails jobs/services runbook. Do not
++clear a lock while an update may still be running. Failed transactions do not
++leave partially updated expiration dates or audits.

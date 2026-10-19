@@ -17,6 +17,11 @@ RSpec.describe CheckoutCreation do
       shop_id: tool.shop_id, source: "slack", **options, &block)
   end
 
+  it "retains incremental canvas adds for an initial checkout", requires_transactions: true do
+    expect(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later).with(tool.shop_id.to_s, anything, 'add').once
+    create_checkout
+  end
+
   it "rechecks authority inside the shared member/tool lock" do
     actor
     expect { create_checkout { actor.update!(role: "member") } }.to raise_error(Error::Forbidden)
