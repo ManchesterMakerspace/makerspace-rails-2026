@@ -25,7 +25,8 @@ RSpec.describe SlackReservationModal do
     allow(relation).to receive(:order_by).with(name: :asc).and_return(relation)
     allow(relation).to receive(:to_a).and_return(tools)
     allow(prerequisite_relation).to receive(:only).with(:name).and_return(prerequisite_relation)
-    allow(ToolCheckout).to receive(:where).and_return(checkout_relation)
+    allow(ToolCheckout).to receive(:valid_at).and_return(checkout_relation)
+    allow(checkout_relation).to receive(:where).with(member_id: member.id, revoked_at: nil).and_return(checkout_relation)
   end
 
   def resource_double(klass, overrides = {})
@@ -335,6 +336,22 @@ RSpec.describe SlackReservationModal do
 end
 
 RSpec.describe 'Slack reservation picker availability' do
+  it 'hides tools after their checkout expires, but keeps them available through the expiration date' do
+    shop = create(:shop, reservable: true)
+    member = create(:member, :current)
+    tool = create(:tool, shop: shop, reservable: true, open: false)
+    checkout = ToolCheckout.create!(member: member, tool: tool, defer_users_channel_invitation: true)
+    today = Time.current.in_time_zone(CheckoutExpiration::ZONE).to_date
+    checkout.set(expires_on: today)
+
+    view = SlackReservationModal.build(shop, member)
+    options = view[:blocks].find { |block| block[:block_id] == 'tools' }[:element][:options]
+    expect(options.pluck(:value)).to include(tool.id.to_s)
+
+    checkout.set(expires_on: today - 1)
+    expect(SlackReservationModal.build(shop, member)[:blocks].pluck(:block_id)).not_to include('tools')
+  end
+
   it 'excludes hidden and unavailable tools, including when all tools are unavailable' do
     shop = create(:shop, reservable: false)
     member = build(:member, :current)

@@ -27,7 +27,10 @@ RSpec.describe CheckoutInteractionQuery do
     create(:tool_checkout, member: member, tool: revoked, revoked_at: Time.current)
     requested = create(:tool, shop: shop)
     ToolCheckoutRequest.create!(member: member, tool: requested)
-    expect(ToolCheckout).to receive(:where).once.and_call_original
+    # Valid prerequisites and unresolved revocations are separate bulk lookups.
+    expect(ToolCheckout).to receive(:valid_at).once.and_call_original
+    expect(ToolCheckout).to receive(:blocking_revoked_tool_ids).with(member.id).once.and_call_original
+    expect(ToolCheckout).to receive(:where).twice.and_call_original
     expect(ToolCheckoutRequest).to receive(:where).once.and_call_original
     expect(query.requestable_tools.map(&:id)).to eq([eligible.id])
   end
