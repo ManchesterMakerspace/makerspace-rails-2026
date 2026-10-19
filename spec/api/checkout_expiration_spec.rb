@@ -32,23 +32,33 @@ RSpec.describe 'Checkout expiration API', type: :request do
       let(:body) { { expires_on: (Date.current + 30).iso8601, expiration_revision: 0 } }
       response '200', 'Updated checkout' do
         schema '$ref' => '#/components/schemas/ToolCheckout'
-        run_test!(requires_transactions: true) { expect(checkout.reload.expiration_revision).to eq(1) }
+        # Each leaf context submits once; a parent run_test! adds an inherited
+        # submission hook and would make child PATCH requests stale.
+        context 'admin manager' do
+          run_test!(requires_transactions: true) { expect(checkout.reload.expiration_revision).to eq(1) }
+        end
         context 'board manager' do
           let(:actor) { create(:member, :board_member, :current) }
-          run_test!(requires_transactions: true)
+          run_test!(requires_transactions: true) { expect(checkout.reload.expiration_revision).to eq(1) }
         end
         context 'owning shop Resource Manager' do
           let(:actor) { create(:member, :resource_manager, :current, resource_manager_shop_ids: [tool.shop_id.to_s]) }
-          run_test!(requires_transactions: true)
+          run_test!(requires_transactions: true) { expect(checkout.reload.expiration_revision).to eq(1) }
         end
         context 'clear expiration' do
+          let(:checkout) { create(:tool_checkout, tool: tool, expires_on: Date.current + 10) }
           let(:body) { { expires_on: nil, expiration_revision: 0 } }
-          run_test!(requires_transactions: true) { expect(checkout.reload.expires_on).to be_nil }
+          run_test!(requires_transactions: true) do
+            expect(checkout.reload.expires_on).to be_nil
+            expect(checkout.expiration_revision).to eq(1)
+          end
         end
       end
       response '403', 'Not a manager of this tool' do
         let(:actor) { create(:member, :current) }
-        run_test!
+        context 'ordinary member' do
+          run_test!
+        end
         context 'ordinary checkout approver' do
           before { create(:checkout_approver, member: actor, tool_ids: [tool.id.to_s]) }
           run_test!

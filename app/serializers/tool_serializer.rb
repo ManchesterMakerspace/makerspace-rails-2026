@@ -1,6 +1,6 @@
 class ToolSerializer < ActiveModel::Serializer
   attributes :checkout_training_plan_url, :checkout_expiration_years
-  attribute(:can_manage_checkout_expiration) { ToolGroup.manageable_by?(scope, object.shop_id) }
+  attribute(:can_manage_checkout_expiration) { !!ToolGroup.manageable_by?(scope, object.shop_id) }
   attribute :requestor_annotation
   attributes :open, :id, :name, :wiki_url, :gdrive_id, :description, :disabled, :out_of_service,
              :allow_pending, :announce,
