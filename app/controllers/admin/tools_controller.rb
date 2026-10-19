@@ -1,7 +1,7 @@
 class Admin::ToolsController < ApplicationController
   before_action :authenticate_member!
   before_action :authorize_index, only: [:index]
-  before_action :find_tool, only: [:update, :destroy, :notes, :requestor_annotation]
+  before_action :find_tool, only: [:update, :destroy, :notes, :requestor_annotation, :checkout_expirations]
   before_action :authorize_create, only: [:create]
   before_action :authorize_manage, only: [:update, :destroy]
   before_action :authorize_notes, only: [:notes]
@@ -132,6 +132,11 @@ class Admin::ToolsController < ApplicationController
     render json: {}, status: 204
   end
 
+  def checkout_expirations
+    count = CheckoutExpirationManagement.bulk_update!(actor: current_member, tool: @tool, expires_on: params.require(:expires_on))
+    render json: { affectedCount: count }
+  end
+
   private
 
   def lock_catalog_mutation(&block)
@@ -155,7 +160,7 @@ class Admin::ToolsController < ApplicationController
   end
 
   def tool_params
-    params.permit(:open, :name, :requestor_annotation, :wiki_url, :gdrive_id, :description, :notes, :shop_id, :disabled, :announce,
+    params.permit(:checkout_training_plan_url, :checkout_expiration_years, :open, :name, :requestor_annotation, :wiki_url, :gdrive_id, :description, :notes, :shop_id, :disabled, :announce,
       :announce_channel, :users_channel, :reservable, :allow_pending, :location_id,
       :max_concurrent_reservations, :reservation_horizon_days,
       :minimum_advance_notice_hours, :prohibit_same_day_reservations, :reservation_full_day, :max_reservation_duration_hours, :reservation_requires_approval,

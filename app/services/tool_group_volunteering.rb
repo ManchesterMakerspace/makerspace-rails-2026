@@ -3,7 +3,7 @@ class ToolGroupVolunteering
     raise Error::UnprocessableEntity.new('Group unavailable') if group.disabled?
     raise Error::UnprocessableEntity.new('An included tool is unavailable') if group.included_tools.any?(&:disabled?)
     raise Error::UnprocessableEntity.new('Membership must be active and current') unless member.valid_for_checkout_request?
-    active = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
+    active = ToolCheckout.valid_at.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
     revoked = ToolCheckout.blocking_revoked_tool_ids(member.id)
     unless (group.included_tool_ids - active).empty? && (group.included_tool_ids & revoked).empty?
       raise Error::UnprocessableEntity.new('You must have active checkouts for every included tool')

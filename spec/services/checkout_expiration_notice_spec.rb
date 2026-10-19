@@ -1,0 +1,100 @@
+require 'rails_helper'
+
+RSpec.describe CheckoutExpirationNotice do
+  include ActiveSupport::Testing::TimeHelpers
+  let(:member) { create(:member, :current) }
+  let(:today) { Date.new(2026, 10, 19) }
+  let(:delivery) { double(deliver_now: true) }
+  around { |example| travel_to(Time.utc(2026, 10, 19, 16)) { example.run } }
+  before do
+    allow(REDIS).to receive(:set).and_return(true)
+    allow(REDIS).to receive(:eval).and_return(1)
+    allow(Service::ErrorReporter).to receive(:notify)
+    allow(Service::SlackConnector).to receive(:send_slack_message)
+    allow(CheckoutMailer).to receive(:expiration_notice).and_return(delivery)
+    allow(described_class).to receive(:portal_url).and_return('https://example.com/tool-checkouts?mode=self-service')
+    SlackUser.create!(member: member, slack_id: 'UCHECKOUT', slack_email: member.email)
+  end
+
+  def checkout(days, **attributes)
+    create(:tool_checkout, member: member, expires_on: today + days, **attributes)
+  end
+
+  it 'groups warning stages together and newly expired checkouts separately, once per channel' do
+    [14, 3, -1, -4].each { |days| checkout(days) }
+    described_class.run!
+    expect(CheckoutMailer).to have_received(:expiration_notice).with(member.id.to_s, an_instance_of(Array), 'upcoming').once
+    expect(CheckoutMailer).to have_received(:expiration_notice).with(member.id.to_s, an_instance_of(Array), 'expired').once
+    expect(Service::SlackConnector).to have_received(:send_slack_message).twice
+    described_class.run!
+    expect(Service::SlackConnector).to have_received(:send_slack_message).twice
+    expect(CheckoutMailer).to have_received(:expiration_notice).twice
+  end
+
+  it 'sends only the most urgent stage after a late run' do
+    row = checkout(2)
+    described_class.run!
+    expect(row.reload.expiration_notice_state).to eq('email' => 2, 'slack' => 2)
+    row.set(expires_on: today - 1)
+    described_class.run!
+    expect(row.reload.expiration_notice_state).to eq('email' => 3, 'slack' => 3)
+  end
+
+  it 'retries only failed channels and reports partial failure' do
+    row = checkout(3)
+    allow(Service::SlackConnector).to receive(:send_slack_message).and_raise('Slack unavailable')
+    expect { described_class.run! }.to raise_error(/failed/)
+    expect(row.reload.expiration_notice_state).to eq('email' => 2)
+    allow(Service::SlackConnector).to receive(:send_slack_message).and_return(true)
+    described_class.run!
+    expect(CheckoutMailer).to have_received(:expiration_notice).once
+    expect(row.reload.expiration_notice_state).to eq('email' => 2, 'slack' => 2)
+  end
+
+  it 'skips inactive members, revoked and superseded checkouts, and non-expiring checkouts' do
+    checkout(3, revoked_at: Time.current)
+    checkout(3, superseded_by_id: BSON::ObjectId.new)
+    create(:tool_checkout, member: member)
+    checkout(3)
+    member.update!(status: 'inactive')
+    described_class.run!
+    expect(CheckoutMailer).not_to have_received(:expiration_notice)
+  end
+
+  it 'does not let missing Slack linkage block email' do
+    member.slack_user.destroy!
+    checkout(14)
+    described_class.run!
+    expect(CheckoutMailer).to have_received(:expiration_notice).once
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+  end
+
+  it 'notifies eligible pending members but suppresses suspended and revoked members' do
+    tool = create(:tool, allow_pending: true)
+    row = checkout(3, tool: tool)
+    member.update!(status: 'pending')
+    described_class.run!
+    expect(CheckoutMailer).to have_received(:expiration_notice).once
+    %w[revoked suspended].each do |status|
+      member.set(status: status)
+      row.set(expiration_notice_state: {}, expiration_revision: row.expiration_revision + 1)
+      described_class.run!
+    end
+    expect(CheckoutMailer).to have_received(:expiration_notice).once
+  end
+
+  it 'rechecks dates after email before sending Slack' do
+    row = checkout(3)
+    allow(delivery).to receive(:deliver_now) { row.set(expires_on: today + 60, expiration_revision: 1, expiration_notice_state: {}) }
+    described_class.run!
+    expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+    expect(row.reload.expiration_notice_state).to eq({})
+  end
+
+  it 'refuses concurrent deliveries for a member' do
+    checkout(3)
+    allow(REDIS).to receive(:set).and_return(false)
+    expect { described_class.run! }.to raise_error(/failed/)
+    expect(CheckoutMailer).not_to have_received(:expiration_notice)
+  end
+end

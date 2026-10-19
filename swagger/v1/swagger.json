@@ -1226,6 +1226,23 @@
                 }
               }
             }
+          },
+          "checkout_training_plan_url": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2048
+          },
+          "checkout_expiration_years": {
+            "type": "integer",
+            "nullable": true,
+            "enum": [
+              null,
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
           }
         }
       },
@@ -1354,6 +1371,25 @@
               "requestable": {
                 "type": "boolean",
                 "description": "Present when availability is evaluated for a signed-in member."
+              },
+              "checkoutTrainingPlanUrl": {
+                "type": "string",
+                "nullable": true
+              },
+              "checkoutExpirationYears": {
+                "type": "integer",
+                "nullable": true,
+                "enum": [
+                  null,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ]
+              },
+              "canManageCheckoutExpiration": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -3457,9 +3493,14 @@
           },
           "canRequest": {
             "type": "boolean"
+          },
+          "checkoutTrainingPlanUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
+          "checkoutTrainingPlanUrl",
           "id",
           "shopId",
           "name",
@@ -3733,6 +3774,41 @@
           "toolNotes": {
             "type": "string",
             "nullable": true
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expirationRevision": {
+            "type": "integer"
+          },
+          "expirationStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "expired",
+              "revoked",
+              "history"
+            ]
+          },
+          "checkoutTrainingPlanUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "renewedFromId": {
+            "type": "string",
+            "nullable": true
+          },
+          "supersededById": {
+            "type": "string",
+            "nullable": true
+          },
+          "canManageExpiration": {
+            "type": "boolean"
+          },
+          "canRenew": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -3841,6 +3917,10 @@
             "nullable": true
           },
           "decidedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "checkoutTrainingPlanUrl": {
             "type": "string",
             "nullable": true
           }
@@ -8341,7 +8421,24 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "expired",
+                "revoked",
+                "history"
+              ]
+            },
+            "description": "Explicit expiration/history filter; active=false remains revoked-only."
+          }
+        ]
       }
     },
     "/admin/tool_checkouts": {
@@ -8388,7 +8485,7 @@
               "true",
               "false"
             ],
-            "description": "true: only checkouts that are not revoked; false: only revoked ones:\n * `true` \n * `false` \n ",
+            "description": "true: valid current checkouts; false: revoked checkouts only",
             "schema": {
               "type": "string"
             }
@@ -8417,6 +8514,21 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "expired",
+                "revoked",
+                "history"
+              ]
+            },
+            "description": "Explicit expiration/history filter; active=false remains revoked-only."
           }
         ],
         "responses": {
@@ -15073,6 +15185,19 @@
                           "type": "string"
                         }
                       }
+                    },
+                    "checkout": {
+                      "type": "object",
+                      "properties": {
+                        "checkout_expiration_notice_days": {
+                          "type": "integer",
+                          "minimum": 4,
+                          "default": 14
+                        },
+                        "can_manage": {
+                          "type": "boolean"
+                        }
+                      }
                     }
                   }
                 }
@@ -15084,7 +15209,7 @@
     },
     "/admin/system_configs/update_setting": {
       "put": {
-        "summary": "Update a string setting; ticket_open_limit requires an admin and a positive integer",
+        "summary": "Update a string setting; ticket_open_limit and checkout_expiration_notice_days require an admin",
         "tags": [
           "System configuration"
         ],
@@ -15137,6 +15262,7 @@
                   "key": {
                     "type": "string",
                     "enum": [
+                      "checkout_expiration_notice_days",
                       "ticket_open_limit",
                       "slack_channel_treasurer",
                       "slack_channel_rm",
@@ -15162,7 +15288,7 @@
                   },
                   "value": {
                     "type": "string",
-                    "description": "String setting value. slack_channel_rm controls Resource Managers; slack_channel_admin controls Members Relations. Blank staff channel values use their defaults. For ticket_open_limit, use a positive integer such as \"10\"; zero, negatives, and fractions are rejected."
+                    "description": "String setting value. checkout_expiration_notice_days requires an integer >=4 (default 14). slack_channel_rm controls Resource Managers; slack_channel_admin controls Members Relations. Blank staff channel values use their defaults. For ticket_open_limit, use a positive integer such as \"10\"; zero, negatives, and fractions are rejected."
                   }
                 },
                 "oneOf": [
@@ -15183,6 +15309,7 @@
                     "properties": {
                       "key": {
                         "enum": [
+                          "checkout_expiration_notice_days",
                           "slack_channel_treasurer",
                           "slack_channel_rm",
                           "slack_channel_admin",
@@ -15586,6 +15713,11 @@
                   },
                   "announce_channel": {
                     "type": "string"
+                  },
+                  "checkout_training_plan_url": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 2048
                   }
                 }
               }
@@ -15696,6 +15828,11 @@
                   },
                   "announce_channel": {
                     "type": "string"
+                  },
+                  "checkout_training_plan_url": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 2048
                   }
                 }
               }
@@ -16647,6 +16784,218 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/admin/tool_checkouts/{id}/expiration": {
+      "patch": {
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "summary": "Change a current checkout expiration (admin, board or owning-shop RM)",
+        "operationId": "updateCheckoutExpiration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expires_on",
+                  "expiration_revision"
+                ],
+                "properties": {
+                  "expires_on": {
+                    "type": "string",
+                    "format": "date",
+                    "nullable": true,
+                    "description": "Valid through this Eastern calendar date; null means Never."
+                  },
+                  "expiration_revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated checkout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCheckout"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not a manager of this tool"
+          },
+          "404": {
+            "description": "Checkout not found"
+          },
+          "409": {
+            "description": "Stale revision or historical checkout"
+          },
+          "422": {
+            "description": "Invalid expiration"
+          }
+        }
+      }
+    },
+    "/admin/tools/{id}/checkout_expirations": {
+      "post": {
+        "tags": [
+          "Tool checkouts"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "summary": "Set a future expiration on every current non-revoked checkout for a tool",
+        "operationId": "bulkUpdateCheckoutExpirations",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expires_on"
+                ],
+                "properties": {
+                  "expires_on": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Strictly later than today in America/New_York."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated count, excluding revoked and superseded history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "affectedCount"
+                  ],
+                  "properties": {
+                    "affectedCount": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not a manager of this tool"
+          },
+          "404": {
+            "description": "Tool not found"
+          },
+          "422": {
+            "description": "A future date is required"
+          }
+        }
+      }
+    },
+    "/admin/system_configs/run_job": {
+      "post": {
+        "tags": [
+          "System configuration"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "summary": "Run a registered portal job; checkout expiration notices require an admin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "key"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "enum": [
+                      "checkout_expiration_notice",
+                      "slack_sync",
+                      "slack_profile_sync",
+                      "slack_channel_cache",
+                      "member_review",
+                      "invoice_review",
+                      "garbage_collect",
+                      "db_backup",
+                      "card_expiration_check",
+                      "reservation_canvas_rebuild",
+                      "member_provisioning_reconciliation",
+                      "volunteer_event_reminder",
+                      "membership_expiration_notice",
+                      "checkout_request_reminder",
+                      "checkout_request_digest"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Job queued"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Checkout expiration notices are admin-only"
+          },
+          "422": {
+            "description": "Unknown job"
           }
         }
       }

@@ -817,3 +817,37 @@ member after committing deletion and its audit. Release also clears the matching
 rejection-card holder so the UID can be imported again. The member write within
 the transaction detects concurrent renewals/revocations; a stale version returns
 409. Card operations create no recurring job.
+
+## Checkout expiration
+
+**CheckoutExpirationNoticeJob** is registered as checkout_expiration_notice
+(**Checkout Expiration Notices**) in the portal job inventory.
+`bundle exec rake checkout_expiration_notice` performs the same job synchronously;
+admin Run Now queues it. This new job and its advance-days setting are admin-only
+(the existing board access to other jobs is unchanged). It records success/failure
+through SystemConfig.record_run. No recurring schedule was added. Run against
+the intended application environment; it sends real email and Slack DMs.
+
+**CheckoutExpirationNotice** scans dated current non-revoked checkouts, serializes
+delivery per member using a Redis ownership-token lock, rechecks current dates
+and member eligibility before each channel/group, and sends the highest due
+stage. Upcoming and newly expired records are separate groups. State is stored
+per channel on the checkout and guarded by date/revision when marking success.
+Missing Slack identity skips Slack only. Failures are reported while other
+channels/members continue; partial failure raises and marks the job failed.
+Retry resumes unrecorded channels. Provider acceptance followed by acknowledgment
+failure can cause duplicates; delivery is not exactly-once.
+
+**CheckoutExpirationManagement** is the synchronous, scoped date-management
+service: strict ISO dates, future-only bulk dates, catalog then member/tool locks,
+MongoDB transactions, revision conflicts, audit persistence, and canvas refresh
+after commit. It never grants checkout credit. **CheckoutExpiration** centralizes
+current/valid scopes, Eastern date boundaries, initial policy dates, renewal
+linkage, and effective training links. **CheckoutTrainingPlan** normalizes and
+validates tool/group URLs. ReservationReadContext/ReservationService now apply
+valid-through-end checks in previews and mutations; checkout eligibility readers
+use the shared valid scopes. CheckoutMailer uses local HTML/plain templates.
+
+`bundle exec rake data:ensure_checkout_expiration_indexes` is a manual repeatable
+deployment operation creating the expiry query index only. It neither sends
+messages nor backfills dates. See [collection inventory](mongodb-collections.MD).

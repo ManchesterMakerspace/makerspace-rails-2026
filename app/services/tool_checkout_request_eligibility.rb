@@ -50,7 +50,7 @@ class ToolCheckoutRequestEligibility
     return true if required_ids.empty?
     return required_ids.all? { |id| @active_checkout_tool_ids.include?(id) } if @active_checkout_tool_ids
 
-    checkout_ids = ToolCheckout.where(
+    checkout_ids = ToolCheckout.valid_at.where(
       member_id: member.id,
       :tool_id.in => required_ids,
       revoked_at: nil
@@ -62,9 +62,10 @@ class ToolCheckoutRequestEligibility
   # reinstatement path (ToolCheckoutReinstatement) looks past it, and then an
   # active record is still a conflict.
   def checkout_exists?
-    return ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists? if @reinstating
+    return ToolCheckout.valid_at.where(member_id: member.id, tool_id: tool.id).exists? if @reinstating
     return @checkout_tool_ids.include?(tool.id.to_s) if @checkout_tool_ids
-    ToolCheckout.where(member_id: member.id, tool_id: tool.id).exists?
+    ToolCheckout.valid_at.where(member_id: member.id, tool_id: tool.id).exists? ||
+      ToolCheckout.blocking_revoked_tool_ids(member.id).include?(tool.id.to_s)
   end
 
   def open_request_exists?

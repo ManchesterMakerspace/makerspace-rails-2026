@@ -223,7 +223,7 @@ module Service
       end
 
       def active_checkout_members(tool)
-        member_ids = ToolCheckout.where(tool_id: tool.id, revoked_at: nil).pluck(:member_id)
+        member_ids = ToolCheckout.valid_at.where(tool_id: tool.id, revoked_at: nil).pluck(:member_id)
         Member.where(:id.in => member_ids).to_a.select(&:active_unexpired?)
           .sort_by { |member| [member.lastname.to_s.downcase, member.firstname.to_s.downcase] }
       end

@@ -21,7 +21,7 @@ class ToolCheckoutReinstatement
   end
 
   def self.create_under_lock(actor, revoked, reason)
-    raise Error::UnprocessableEntity.new("This checkout has not been revoked") if revoked.active?
+    raise Error::UnprocessableEntity.new("This checkout has not been revoked") if revoked.revoked_at.nil?
     if revoked.revocation_cleanup_pending?
       raise Error::UnprocessableEntity.new("The revocation is still being finalized. Please try again shortly.")
     end
@@ -41,6 +41,7 @@ class ToolCheckoutReinstatement
           signed_off_via: "portal", checked_out_at: Time.current, reinstated_from_id: revoked.id,
           reinstatement_reason: reason, reinstated_by_id: actor.id, reinstated_at: Time.current,
           defer_users_channel_invitation: true, defer_group_callbacks: true)
+        ToolCheckout.supersede_expired!(checkout)
         CheckoutCreation.notify { CheckoutApproverCredit.award!(checkout) }
         checkout.reconciled_requests = ToolGroupCheckout.reconcile!(member.id)
         checkout

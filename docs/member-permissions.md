@@ -209,3 +209,20 @@ Permission.distinct(:name)
 # Equivalent application helper:
 Permission.list_permissions
 ```
+
+## Checkout expiration permissions
+
+Admins and board members can set training URLs, tool expiration policies, and
+individual/bulk checkout dates. Resource Managers can do so only for tools/groups
+in their assigned shops. Ordinary checkout approvers cannot edit these settings
+or dates. Individual edits require a current non-revoked checkout and matching
+expiration revision; bulk edits require a future Eastern date. Capability flags
+control portal affordances and each server mutation independently authorizes
+the actor and resource under its locks. Only admins may change the advance
+notice setting or run the Checkout Expiration Notices portal job.
+
+Expired checkouts lose checkout-derived prerequisite, volunteer, private-note,
+and active-canvas eligibility. Expiration does not remove independent approver
+assignments or manager permissions, revoke records, or change member status.
+An eligible owner may request renewal; unresolved revoked checkouts still need
+admin/board reinstatement. Superseded history grants no checkout-derived rights.

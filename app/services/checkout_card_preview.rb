@@ -27,7 +27,7 @@ module CheckoutCardPreview
   end
 
   def self.missing_names(member, prerequisite_ids)
-    held = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
+    held = ToolCheckout.valid_at.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
     Tool.where(:id.in => prerequisite_ids.map(&:to_s) - held).pluck(:name)
   end
 

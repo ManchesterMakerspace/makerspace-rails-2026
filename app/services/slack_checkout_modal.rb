@@ -71,6 +71,7 @@ class SlackCheckoutModal
       selector(TOOL, "Tool", @tools.map { |tool| tool_option(tool) })
     when "request_new"
       section("Request a checkout on #{@tool.name}")
+      training_plan(@tool.checkout_training_plan_url)
       note_input
       @submit = "Request"
     when "volunteer"
@@ -120,8 +121,9 @@ class SlackCheckoutModal
       @submit = @metadata["step"] == "request_cancel" ? "Cancel request" : "Approve"
       section("Select #{@submit} to confirm.")
     when "active"
-      selector(CHECKOUT, "Your active checkout", @checkouts.map { |row| [row.tool.name, row.id.to_s] })
+      selector(CHECKOUT, "Your checkout", @checkouts.map { |row| ["#{row.tool.name}#{row.expired? ? ' (expired)' : ''}", row.id.to_s] })
     when "checkout_detail"
+      training_plan(@checkout.checkout_training_plan_url)
       CheckoutDisplay.details(@checkout).each do |line|
         if line.start_with?("Wiki: ")
           url = line.delete_prefix("Wiki: ")
@@ -183,7 +185,13 @@ class SlackCheckoutModal
       element: { type: "plain_text_input", action_id: REASON, max_length: CheckoutRequestDecision::REASON_MAX } }
   end
 
+  def training_plan(url)
+    return if url.blank? || !PublicCatalog.safe_url(url)
+    @blocks << { type: "section", text: { type: "mrkdwn", text: "<#{CheckoutExpirationNotice.slack_url(url)}|Checkout training plan>", verbatim: true } }
+  end
+
   def request_details
+    training_plan(@request.target&.checkout_training_plan_url)
     section("#{@request.tool_group_id ? ':linked_paperclips: Group' : 'Tool'}: #{@request.target.name}")
     if @request.tool_group
       review = ToolGroupCheckout.review(member: @request.member, group: @request.tool_group)

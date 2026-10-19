@@ -929,3 +929,17 @@ resource prerequisites. Missing checkouts display an error and Review selection;
 prerequisite tools are not added to reserved resources or their duration/fee rules.
 Board-member overrides match server validation. Switching to whole-shop scope
 uses the shop's prerequisites instead of stale group selections.
+
+## Checkout expiration at reservation end
+
+Preview, creation, and editing require each applicable tool, shop prerequisite,
+and group prerequisite checkout to remain valid through the reservation end.
+An undated current checkout has no time limit. A dated checkout is valid through
+its America/New_York calendar date: an end exactly at the following local
+midnight is allowed; a later end is rejected. Daylight saving transitions use
+local midnight, not a fixed 24-hour offset. Duration previews use the same
+limit. Errors identify the affected tools and their expiration dates so the
+member can request renewal or choose an earlier end. The existing board-member
+prerequisite exemption is retained. Expiration/date edits do not automatically
+cancel bookings; existing bookings are revalidated when edited, and cancellation
+remains available.

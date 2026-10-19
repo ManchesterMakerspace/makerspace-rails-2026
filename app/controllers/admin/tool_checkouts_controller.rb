@@ -2,7 +2,7 @@ class Admin::ToolCheckoutsController < ApplicationController
   include Service::SlackConnector
   before_action :authenticate_member!
   before_action :authorize_index, only: [:index]
-  before_action :find_checkout, only: [:update, :destroy, :reinstate]
+  before_action :find_checkout, only: [:update, :destroy, :reinstate, :expiration]
   before_action :authorize_approver, only: [:create, :destroy]
   before_action :authorize_reinstatement, only: [:reinstate]
 
@@ -12,8 +12,10 @@ class Admin::ToolCheckoutsController < ApplicationController
     # Filter by member, tool, shop, active status
     checkouts = checkouts.where(member_id: params[:member_id]) if params[:member_id].present?
     checkouts = checkouts.where(tool_id: params[:tool_id]) if params[:tool_id].present?
-    checkouts = checkouts.where(revoked_at: nil) if params[:active] == "true"
+    checkouts = checkouts.valid_at if params[:active] == "true"
     checkouts = checkouts.where(:revoked_at.ne => nil) if params[:active] == "false"
+
+    checkouts = checkouts.filtered_status(params[:status]) if params[:status].present?
 
     # reinstated=true: only reinstated pairs (the superseded revoked row and its
     # replacement); reinstated=false: leave out the superseded revoked rows.
@@ -108,6 +110,7 @@ class Admin::ToolCheckoutsController < ApplicationController
     CheckoutApproverMutationLock.with(member_id: @checkout.member_id) do
       CheckoutMutationLock.with(member_id: @checkout.member_id, tool_id: @checkout.tool_id) do
         @checkout.reload
+        raise Error::Conflict.new('This checkout has been superseded') if @checkout.superseded_by_id
         @checkout.approver_mutation_lock_held = true
         @checkout.update_attributes!(revoked_at: Time.now, revocation_reason: reason, revoked_by_id: current_member.id)
       end
@@ -122,6 +125,13 @@ class Admin::ToolCheckoutsController < ApplicationController
   def reinstate
     checkout = ToolCheckoutReinstatement.reinstate!(actor: current_member, revoked_checkout: @checkout,
       reason: params[:reason])
+    render json: checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
+  end
+
+  def expiration
+    raise Error::UnprocessableEntity.new('expires_on is required; use null for Never') unless params.key?(:expires_on)
+    checkout = CheckoutExpirationManagement.update!(actor: current_member, checkout: @checkout,
+      expires_on: params[:expires_on], revision: params.require(:expiration_revision))
     render json: checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
   end
 

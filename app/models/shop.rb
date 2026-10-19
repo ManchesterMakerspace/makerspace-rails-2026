@@ -109,7 +109,7 @@ class Shop
 
   def active_tool_checkouts?
     tool_ids = tools.pluck(:id)
-    tool_ids.present? && ToolCheckout.where(
+    tool_ids.present? && ToolCheckout.valid_at.where(
       :tool_id.in => tool_ids,
       revoked_at: nil
     ).exists?

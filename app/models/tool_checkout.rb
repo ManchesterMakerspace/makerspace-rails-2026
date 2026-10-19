@@ -2,6 +2,7 @@ class ToolCheckout
   include Mongoid::Document
   include ActiveModel::Serializers::JSON
   include Service::SlackConnector
+  include CheckoutExpiration
 
   field :checked_out_at, type: Time, default: -> { Time.now }
   field :revoked_at, type: Time
@@ -43,13 +44,13 @@ class ToolCheckout
   after_update :enqueue_checkout_canvas_sync_after_revocation
 
   def active?
-    revoked_at.nil?
+    current_checkout? && !expired?
   end
 
   # Tools a member was revoked from and has not been reinstated on. A revoked
   # record superseded by an active one (a reinstatement) no longer blocks.
   def self.blocking_revoked_tool_ids(member_id)
-    rows = where(member_id: member_id).pluck(:tool_id, :revoked_at)
+    rows = where(member_id: member_id, superseded_by_id: nil).pluck(:tool_id, :revoked_at)
     active = rows.filter_map { |tool_id, revoked| tool_id.to_s if revoked.nil? }.to_set
     rows.filter_map { |tool_id, revoked| tool_id.to_s if revoked }.uniq - active.to_a
   end

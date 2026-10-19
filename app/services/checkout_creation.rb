@@ -55,6 +55,7 @@ class CheckoutCreation
             signed_off_via: source, checked_out_at: Time.current, checkout_request_id: request&.id,
             request_note: note_request&.note.presence,
             defer_users_channel_invitation: true, defer_group_callbacks: true)
+          ToolCheckout.supersede_expired!(checkout)
           notify { CheckoutApproverCredit.award!(checkout) }
           checkout.reconciled_requests = ToolGroupCheckout.reconcile!(member.id)
           checkout

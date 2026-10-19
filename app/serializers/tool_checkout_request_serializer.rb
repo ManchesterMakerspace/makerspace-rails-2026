@@ -1,4 +1,5 @@
 class ToolCheckoutRequestSerializer < ActiveModel::Serializer
+  attribute(:checkout_training_plan_url) { object.target&.checkout_training_plan_url }
   attribute(:out_of_service) { !!object.tool&.out_of_service }
   attribute :requestor_annotation do
     object.target&.effective_requestor_annotation

@@ -13,6 +13,7 @@ class Admin::SystemConfigsController < AdminController
 
   # Keys that can be updated as plain string values
   SETTING_KEYS = [
+    'checkout_expiration_notice_days',
     'ticket_open_limit',
     # Slack channels
     'slack_channel_treasurer',
@@ -109,6 +110,7 @@ class Admin::SystemConfigsController < AdminController
     }
 
     render json: {
+      checkout: { checkout_expiration_notice_days: CheckoutExpirationNotice.advance_days, can_manage: is_admin? },
       flags:     flags,
       jobs:      jobs,
       slack:     slack,
@@ -200,7 +202,9 @@ class Admin::SystemConfigsController < AdminController
       render json: { error: "Unknown job: #{job_key}" }, status: :unprocessable_content and return
     end
 
+    raise Error::Forbidden.new('Only admins may run checkout expiration notices') if job_key == 'checkout_expiration_notice' && !is_admin?
     case job_key
+    when 'checkout_expiration_notice' then CheckoutExpirationNoticeJob.perform_later
     when 'slack_sync'      then SlackSyncJob.perform_later
     when 'slack_profile_sync' then SlackProfileSyncJob.perform_later
     when 'slack_channel_cache' then SlackChannelCacheRefreshJob.perform_later
@@ -254,6 +258,12 @@ class Admin::SystemConfigsController < AdminController
   end
 
   def valid_setting_value?(key, value)
+    if key == 'checkout_expiration_notice_days'
+      raise Error::Forbidden.new('Only admins may change checkout expiration notices') unless is_admin?
+      return true if value.match?(/\A\d+\z/) && value.to_i >= 4
+      render json: { error: 'Advance notice must be a whole number of at least 4 days' }, status: :unprocessable_entity
+      return false
+    end
     if key == 'ticket_bounty_max_credit'
       amount = Float(value, exception: false)
       return true if amount && amount.finite? && amount >= 0.5

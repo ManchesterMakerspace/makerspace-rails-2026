@@ -98,7 +98,7 @@ class SlackCheckoutWorkflow
       end
     when "checkout_detail"
       @checkout = find_record(ToolCheckout, @metadata["record_id"])
-      reject! unless @checkout && @checkout.member_id == @member.id && @checkout.active?
+      reject! unless @checkout && @checkout.member_id == @member.id && @checkout.current_checkout?
       @tool = available_tool!(@checkout.tool_id)
     when "volunteer_confirm"
       @tool = volunteer_tool!(@metadata["record_id"])
@@ -136,7 +136,7 @@ class SlackCheckoutWorkflow
       return tool
     end
     reject!("You must have an active checkout for this tool.") unless
-      ToolCheckout.where(member_id: @member.id, tool_id: tool.id, revoked_at: nil).exists?
+      ToolCheckout.valid_at.where(member_id: @member.id, tool_id: tool.id).exists?
     reject!("You are already an approver for this tool.") if CheckoutApprover.find_by(member_id: @member.id)&.can_approve_tool?(tool)
     reject!("You already have an open volunteer request for this tool.") if
       CheckoutApproverRequest.where(member_id: @member.id, tool_id: tool.id, status: "open").exists?
@@ -298,7 +298,7 @@ class SlackCheckoutWorkflow
     when "volunteer"
       options[:tools] = query.volunteerable_tools + query.volunteerable_groups
     when "active"
-      options[:checkouts] = query.listed_active_checkouts
+      options[:checkouts] = query.listed_active_checkouts(include_expired: true)
     when "request_detail"
       options[:can_approve] = can_approve?(@tool)
     end

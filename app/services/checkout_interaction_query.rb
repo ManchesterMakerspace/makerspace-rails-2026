@@ -61,9 +61,8 @@ class CheckoutInteractionQuery
   def requestable_tools
     candidates = tools.where(:disabled.ne => true, :open.ne => true)
       .collation(COLLATION).order_by(name: :asc, id: :asc).includes(:shop).to_a
-    checkouts = ToolCheckout.where(member_id: @member.id).pluck(:tool_id, :revoked_at)
-    existing_ids = checkouts.map { |id, _| id.to_s }.to_set
-    active_ids = checkouts.filter_map { |id, revoked| id.to_s if revoked.nil? }.to_set
+    active_ids = ToolCheckout.valid_at.where(member_id: @member.id).pluck(:tool_id).map(&:to_s).to_set
+    existing_ids = active_ids | ToolCheckout.blocking_revoked_tool_ids(@member.id).to_set
     request_ids = ToolCheckoutRequest.where(member_id: @member.id, status: "open").pluck(:tool_id).map(&:to_s).to_set
     candidates.select do |tool|
       ToolCheckoutRequestEligibility.new(member: @member, tool: tool,
@@ -73,14 +72,14 @@ class CheckoutInteractionQuery
   end
 
   def active_checkouts
-    ToolCheckout.where(member_id: @member.id, revoked_at: nil, :tool_id.in => tools.pluck(:id))
+    ToolCheckout.valid_at.where(member_id: @member.id, revoked_at: nil, :tool_id.in => tools.pluck(:id))
   end
 
-  def listed_active_checkouts
+  def listed_active_checkouts(include_expired: false)
     return [] if SlackCheckoutModal.membership_error(@member)
     ordered_tools = listing_tools.collation(COLLATION).order_by(name: :asc, id: :asc).includes(:shop).to_a
       .reject { |tool| tool.shop.nil? || tool.shop.disabled? }
-    rows = ToolCheckout.where(member_id: @member.id, revoked_at: nil, :tool_id.in => ordered_tools.map(&:id)).to_a
+    rows = (include_expired ? ToolCheckout.current_checkouts : ToolCheckout.valid_at).where(member_id: @member.id, :tool_id.in => ordered_tools.map(&:id)).to_a
       .group_by(&:tool_id)
     ordered_tools.flat_map do |tool|
       Array(rows[tool.id]).sort_by { |row| row.id.to_s }.each { |row| row.tool = tool }
@@ -92,13 +91,15 @@ class CheckoutInteractionQuery
     rows = ToolCheckoutRequest.where(status: "open", :id.in => ids, :tool_id.in => listing_tools.pluck(:id))
       .order_by(request_date: :asc, id: :asc).includes(:member, tool: :shop).to_a
     checkouts = ToolCheckout.where(:member_id.in => rows.map(&:member_id).uniq)
-      .pluck(:member_id, :tool_id, :revoked_at).group_by(&:first)
+      .to_a.group_by(&:member_id)
     rows.select do |row|
       next false unless row.member && row.tool
       records = checkouts.fetch(row.member_id, [])
       ToolCheckoutRequestEligibility.new(member: row.member, tool: row.tool,
-        checkout_tool_ids: records.map { |_, tool_id, _| tool_id },
-        active_checkout_tool_ids: records.filter_map { |_, tool_id, revoked| tool_id if revoked.nil? },
+        checkout_tool_ids: records.select(&:active?).map(&:tool_id) +
+          (records.select { |c| c.revoked_at && c.superseded_by_id.nil? }.map(&:tool_id) -
+           records.select(&:current_checkout?).map(&:tool_id)),
+        active_checkout_tool_ids: records.select(&:active?).map(&:tool_id),
         open_request_tool_ids: []).eligible?
     end
   end

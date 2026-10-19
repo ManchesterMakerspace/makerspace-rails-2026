@@ -213,6 +213,7 @@ Rails.application.routes.draw do
         get 'google_calendar/colors', to: 'google_calendar#colors'
         resources :tools, only: [:index, :create, :update, :destroy] do
           member do
+            post :checkout_expirations
             patch :notes
             patch :requestor_annotation
           end
@@ -220,6 +221,7 @@ Rails.application.routes.draw do
         resources :locations, only: [:index, :create, :update, :destroy]
         resources :tool_checkouts, only: [:index, :create, :destroy] do
           post :lookup_card, on: :collection
+          patch :expiration, on: :member
           post :reinstate, on: :member
         end
         resources :tool_checkout_requests, only: [:index] do

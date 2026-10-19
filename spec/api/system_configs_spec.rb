@@ -19,6 +19,7 @@ RSpec.describe 'System configuration', type: :request do
       produces 'application/json'
       response '200', 'Configuration including the effective open-ticket limit' do
         schema type: :object, required: %w[flags jobs slack volunteer totp security reservation job_schedule], properties: {
+          checkout: { type: :object, properties: { checkout_expiration_notice_days: { type: :integer, minimum: 4, default: 14 }, can_manage: { type: :boolean } } },
           flags: { type: :object }, jobs: { type: :array, items: { type: :object } },
           slack: { type: :object, required: %w[slack_channel_rm slack_channel_admin slack_channel_tickets], properties: {
             slack_channel_rm: { type: :string, default: 'resource_managers', description: 'Resource Managers channel. Unset or blank values use resource_managers. Membership and billing notices use slack_channel_admin instead.' },
@@ -80,7 +81,7 @@ RSpec.describe 'System configuration', type: :request do
   end
 
   path '/admin/system_configs/update_setting' do
-    put 'Update a string setting; ticket_open_limit requires an admin and a positive integer' do
+    put 'Update a string setting; ticket_open_limit and checkout_expiration_notice_days require an admin' do
       tags 'System configuration'
       security [sessionAuth: []]
       consumes 'application/json'
@@ -88,7 +89,7 @@ RSpec.describe 'System configuration', type: :request do
       parameter name: :setting, in: :body, schema: {
         type: :object, required: %w[key value], properties: {
           key: { type: :string, enum: Admin::SystemConfigsController::SETTING_KEYS },
-          value: { type: :string, description: 'String setting value. slack_channel_rm controls Resource Managers; slack_channel_admin controls Members Relations. Blank staff channel values use their defaults. For ticket_open_limit, use a positive integer such as "10"; zero, negatives, and fractions are rejected.' }
+          value: { type: :string, description: 'String setting value. checkout_expiration_notice_days requires an integer >=4 (default 14). slack_channel_rm controls Resource Managers; slack_channel_admin controls Members Relations. Blank staff channel values use their defaults. For ticket_open_limit, use a positive integer such as "10"; zero, negatives, and fractions are rejected.' }
         },
         oneOf: [
           { properties: { key: { enum: ['ticket_open_limit'] }, value: { type: :string, pattern: '^[1-9][0-9]*$' } } },
