@@ -129,8 +129,8 @@ GEM
     factory_bot_rails (6.5.1)
       factory_bot (~> 6.5)
       railties (>= 6.1.0)
-    faraday (2.14.4)
-      faraday-net_http (>= 2.0, < 3.5)
+    faraday (2.15.0)
+      faraday-net_http (>= 2.0, < 3.6)
       json
       logger
     faraday-follow_redirects (0.5.0)
@@ -140,7 +140,7 @@ GEM
       hashie
     faraday-multipart (1.2.0)
       multipart-post (~> 2.0)
-    faraday-net_http (3.4.4)
+    faraday-net_http (3.5.0)
       net-http (~> 0.5)
     fast-stemmer (1.0.2)
     ffi (1.17.4-aarch64-linux-gnu)
@@ -163,7 +163,7 @@ GEM
       activesupport (>= 6.1)
     google-apis-admin_directory_v1 (0.82.0)
       google-apis-core (>= 0.15.0, < 2.a)
-    google-apis-calendar_v3 (0.57.0)
+    google-apis-calendar_v3 (0.58.0)
       google-apis-core (>= 0.15.0, < 2.a)
     google-apis-core (1.3.1)
       addressable (~> 2.9)
@@ -181,8 +181,8 @@ GEM
     google-cloud-env (2.4.1)
       base64 (~> 0.2)
       faraday (>= 1.0, < 3.a)
-    google-logging-utils (0.2.0)
-    googleauth (1.17.4)
+    google-logging-utils (0.2.1)
+    googleauth (1.17.5)
       faraday (>= 1.0, < 3.a)
       google-cloud-env (~> 2.2)
       google-logging-utils (~> 0.1)
@@ -246,10 +246,10 @@ GEM
       concurrent-ruby (>= 1.0.5, < 2.0)
       mongo (>= 2.18.0, < 3.0.0)
       ruby2_keywords (~> 0.0.5)
-    mongoid-compatibility (1.0.0)
+    mongoid-compatibility (1.1.0)
       activesupport
       mongoid (>= 2.0)
-    mongoid-rspec (4.2.0)
+    mongoid-rspec (4.4.0)
       mongoid (>= 3.0, < 10.0)
       mongoid-compatibility (>= 0.5.1)
     mongoid_search (0.5.0)
@@ -428,7 +428,7 @@ GEM
       railties (>= 5.2, < 8.2)
     ruby2_keywords (0.0.5)
     securerandom (0.4.1)
-    signet (0.22.0)
+    signet (0.22.1)
       addressable (~> 2.8)
       faraday (>= 0.17.5, < 3.a)
       jwt (>= 1.5, < 4.0)
@@ -502,7 +502,7 @@ DEPENDENCIES
   devise (~> 5.0)
   dotenv-rails
   factory_bot_rails (~> 6.0)
-  faraday (~> 2.14)
+  faraday (~> 2.15)
   git (~> 5.6)
   google-apis-admin_directory_v1
   google-apis-calendar_v3
@@ -515,7 +515,7 @@ DEPENDENCIES
   mini_magick (~> 5.4)
   minitest (~> 6)
   mongoid (~> 8.1)
-  mongoid-rspec (~> 4.1)
+  mongoid-rspec (~> 4.4)
   mongoid_search (~> 0.4)
   multi_json (~> 1.21)
   nokogiri (~> 1.19.4)
@@ -584,11 +584,11 @@ CHECKSUMS
   erubi (1.13.1) sha256=a082103b0885dbc5ecf1172fede897f9ebdb745a4b97a5e8dc63953db1ee4ad9
   factory_bot (6.6.0) sha256=1fc1b3b5620ec980a6a27aec1b6ec8c250ca82962e970e8a40f93e8d388d4b89
   factory_bot_rails (6.5.1) sha256=d3cc4851eae4dea8a665ec4a4516895045e710554d2b5ac9e68b94d351bc6d68
-  faraday (2.14.4) sha256=9bb4408c44621b0dbaaaa39e5dbfc4dbe58cc6751b6eb94d16ae9e1f2f2fab6e
+  faraday (2.15.0) sha256=3be0eff0187ed913a1b4f679e9fcfe845b542cdd4f75b76cd6181a4ae1335fff
   faraday-follow_redirects (0.5.0) sha256=5cde93c894b30943a5d2b93c2fe9284216a6b756f7af406a1e55f211d97d10ad
   faraday-mashify (1.0.2) sha256=ebdc93b3f807af9a4b18c3d967fc7bcda01e297aed9cc2015ffe8db6e7add2e9
   faraday-multipart (1.2.0) sha256=7d89a949693714176f612323ca13746a2ded204031a6ba528adee788694ef757
-  faraday-net_http (3.4.4) sha256=0e78af151747ed1b00f33e25973b4bc220d7f16c00c39676817c8b12331eb588
+  faraday-net_http (3.5.0) sha256=2e7094c34e38754ee048cc3df47376f8657005d9375f8473bce1c3b526a22e36
   fast-stemmer (1.0.2) sha256=d0aa9fd9cfbca836a09d8abb122552ac8234130271a3b0da1cb077323d650819
   ffi (1.17.4-aarch64-linux-gnu) sha256=b208f06f91ffd8f5e1193da3cae3d2ccfc27fc36fba577baf698d26d91c080df
   ffi (1.17.4-aarch64-linux-musl) sha256=9286b7a615f2676245283aef0a0a3b475ae3aae2bb5448baace630bb77b91f39
@@ -603,13 +603,13 @@ CHECKSUMS
   gli (2.22.2) sha256=580e8d6c88b0f0f0cb8e8b2ca18c3485ed0f742cece855de46bf8e36202f5db0
   globalid (1.4.0) sha256=037f12fbf1d9d7a014d501c2d5c77356fd4ddd96d7a7991d6700bba96706f427
   google-apis-admin_directory_v1 (0.82.0) sha256=33991a75dd42c49d10a668637446443659d9124d83b58552d8e5aea17fa056c8
-  google-apis-calendar_v3 (0.57.0) sha256=85a1836d1b5e3745720c28f219d8f599564b9cdd4a72f97b8a4e61ce67498cb7
+  google-apis-calendar_v3 (0.58.0) sha256=227ef78164a0efc53ddcba4a09b690013893a16e6cbe560753d78396cc58a735
   google-apis-core (1.3.1) sha256=20ce9ee1fde0be87fe30a135dfdbd4b9ee33ba32172794c1f2770e7a45361b2f
   google-apis-drive_v3 (0.88.0) sha256=2e71bf7ce6c2e370206aeb29f0582259beba84865cf519a27a4848cc2e26b0f9
   google-apis-sheets_v4 (0.49.0) sha256=34d36b854b43c14c2fe4fffad2c99aaa8dc998615dd22c685984e691cdae6ce4
   google-cloud-env (2.4.1) sha256=987cc58afc50ce2903128ab4dcd442159be4457246b8137e41d49d5c3fc590dd
-  google-logging-utils (0.2.0) sha256=675462b4ea5affa825a3442694ca2d75d0069455a1d0956127207498fca3df7b
-  googleauth (1.17.4) sha256=acc2cac2a6011048f149c922cbc6c9675719e165aa5000c7fa3876c480fe9ae3
+  google-logging-utils (0.2.1) sha256=73945c3ac6800eba802c26b1744765d5057cc4d89182c7255ee1347b0ca96dc7
+  googleauth (1.17.5) sha256=92498efc6883630a7e011ce4e667f887e314e588d584410ba18df49f1303f3d7
   hashie (5.1.0) sha256=c266471896f323c446ea8207f8ffac985d2718df0a0ba98651a3057096ca3870
   honeybadger (6.9.3) sha256=2a58808bb80f2c3bebaf084f215a4dcf803dda4236762719e2ae74cf9528253f
   http-accept (1.7.0) sha256=c626860682bfbb3b46462f8c39cd470fd7b0584f61b3cc9df5b2e9eb9972a126
@@ -633,8 +633,8 @@ CHECKSUMS
   minitest (6.0.6) sha256=153ea36d1d987a62942382b61075745042a2b3123b1cd48f4c3675af9cc7d6f1
   mongo (2.26.0) sha256=e93190d0c184b5c14858e4239a61fe255b2eae86e04bf9590afb962b85a5fa5d
   mongoid (8.1.13) sha256=f806b7328a251883e746a68999dcabf58c80ca8ad9a3e356d0c6d64985ee6fe0
-  mongoid-compatibility (1.0.0) sha256=08e5770d102258a3b8f39443057de42cde61d465980f182954b1b70d965465e8
-  mongoid-rspec (4.2.0) sha256=0811fccdc6dcca21987486208a0f614cc395620ccb7ce884b9bce0b5a677ecc8
+  mongoid-compatibility (1.1.0) sha256=c62b337fd198940c4996100c2c9978fbff097336f3ae2ff5bc98946137ee6949
+  mongoid-rspec (4.4.0) sha256=501a7135462df24ee3c62cd75166e95d1780d80c534ac19e719b35ba195ea6d6
   mongoid_search (0.5.0) sha256=ee6c461a90e19fc3cd95ff22c8e50aac003e25c5c11c8fe81191c42f0557b591
   multi_json (1.21.2) sha256=245531eaf54bdba57aba515ff08b4503505c5e09911daa89c5a561e2f85bea8e
   multipart-post (2.4.1) sha256=9872d03a8e552020ca096adadbf5e3cb1cd1cdd6acd3c161136b8a5737cdb4a8
@@ -707,7 +707,7 @@ CHECKSUMS
   rswag-ui (2.17.0) sha256=5f707b9b5e8171ddf9f519f6e401e79e419bd1d07387508603e76124f2443212
   ruby2_keywords (0.0.5) sha256=ffd13740c573b7301cf7a2e61fc857b2a8e3d3aff32545d6f8300d8bae10e3ef
   securerandom (0.4.1) sha256=cc5193d414a4341b6e225f0cb4446aceca8e50d5e1888743fac16987638ea0b1
-  signet (0.22.0) sha256=b76d495ccb07ad35dbc89f3e920665a9d8ed717141955034005d7843dcfe4780
+  signet (0.22.1) sha256=6e73e9f2bdc2f038a5fdc8a89d248792b1b55e9ca50ee1ba458d8f1d9f0a2151
   simplecov (1.3.2) sha256=2a22ec1759f1b8db60881a2e038758956fc69ef93ed669be0bde0678de6d0e85
   slack-ruby-client (2.7.0) sha256=0a230686a9afc0cacea20f68d14762eb18cb7a425676c6cfa89715481ad49bd3
   sprockets (4.2.2) sha256=761e5a49f1c288704763f73139763564c845a8f856d52fba013458f8af1b59b1
