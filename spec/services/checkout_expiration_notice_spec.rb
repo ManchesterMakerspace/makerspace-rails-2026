@@ -12,12 +12,13 @@ RSpec.describe CheckoutExpirationNotice do
     allow(Service::ErrorReporter).to receive(:notify)
     allow(Service::SlackConnector).to receive(:send_slack_message)
     allow(CheckoutMailer).to receive(:expiration_notice).and_return(delivery)
+    allow(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later).and_return(true)
     allow(described_class).to receive(:portal_url).and_return('https://example.com/tool-checkouts?mode=self-service')
     SlackUser.create!(member: member, slack_id: 'UCHECKOUT', slack_email: member.email)
   end
 
   def checkout(days, **attributes)
-    create(:tool_checkout, member: member, expires_on: today + days, **attributes)
+    create(:tool_checkout, member: member, expires_on: today + days, defer_group_callbacks: true, **attributes)
   end
 
   it 'groups warning stages together and newly expired checkouts separately, once per channel' do
@@ -37,7 +38,70 @@ RSpec.describe CheckoutExpirationNotice do
     expect(row.reload.expiration_notice_state).to eq('email' => 2, 'slack' => 2)
     row.set(expires_on: today - 1)
     described_class.run!
-    expect(row.reload.expiration_notice_state).to eq('email' => 3, 'slack' => 3)
+    expect(row.reload.expiration_notice_state).to eq('email' => 3, 'slack' => 3, 'canvas' => 3)
+  end
+
+  it 'rebuilds each affected shop once after delivery and does not repeat recorded rebuilds' do
+    shop = create(:shop)
+    other_shop = create(:shop)
+    checkout(-1, tool: create(:tool, shop: shop))
+    checkout(-4, tool: create(:tool, shop: shop))
+    checkout(-2, tool: create(:tool, shop: other_shop))
+    allow(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later) do
+      expect(CheckoutMailer).to have_received(:expiration_notice)
+      true
+    end
+
+    2.times { described_class.run! }
+
+    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).with(shop.id.to_s).once
+    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).with(other_shop.id.to_s).once
+    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).twice
+  end
+
+  it 'does not rebuild for warnings, expiration today, undated, revoked or superseded checkouts' do
+    [14, 3, 0].each { |days| checkout(days) }
+    create(:tool_checkout, member: member, defer_group_callbacks: true)
+    checkout(-1, revoked_at: Time.current)
+    checkout(-1, superseded_by_id: BSON::ObjectId.new)
+
+    described_class.run!
+
+    expect(ToolCheckoutSlackCanvasSyncJob).not_to have_received(:perform_later)
+  end
+
+  it 'rebuilds for expired checkouts even when member notices are suppressed' do
+    row = checkout(-1)
+    member.update!(status: 'inactive')
+
+    described_class.run!
+
+    expect(CheckoutMailer).not_to have_received(:expiration_notice)
+    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).with(row.tool.shop_id.to_s).once
+  end
+
+  it 'does not mark a new expiration revision when the date changes during enqueue' do
+    row = checkout(-1)
+    allow(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later) do
+      row.set(expires_on: today + 1, expiration_revision: 1, expiration_notice_state: {})
+      true
+    end
+
+    described_class.run!
+
+    expect(row.reload.expiration_notice_state).to eq({})
+  end
+
+  it 'still rebuilds when a delivery fails and retries a failed enqueue' do
+    row = checkout(-1)
+    allow(delivery).to receive(:deliver_now).and_raise('Email unavailable')
+    allow(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later).and_return(false)
+    expect { described_class.run! }.to raise_error(/failed/)
+    expect(row.reload.expiration_notice_state).not_to have_key('canvas')
+
+    allow(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later).and_return(true)
+    expect { described_class.run! }.to raise_error(/failed/)
+    expect(row.reload.expiration_notice_state['canvas']).to eq(3)
   end
 
   it 'retries only failed channels and reports partial failure' do

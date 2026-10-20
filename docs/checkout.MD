@@ -763,6 +763,10 @@ Jobs → **Checkout Expiration Notices** → **Run Now**. There is no new schedu
 The first warning uses the admin setting (default 14 days, minimum 4); another
 is due at 3 days and a final notice after expiration. See [email](email.MD) and
 [job operations](jobs-tasks-services.MD).
+After scanning notices, the job queues a full checkout roster canvas rebuild for
+each shop with newly expired checkouts, including when member notices cannot be
+sent. Recorded rebuild enqueues are skipped on later runs; failed enqueues can
+be retried by running the job again. Canvas updates run asynchronously.
 
 Wiki changes are prepared in [the release patch](wiki-checkout-expiration.patch).
 Apply/review against current WikiPages master and publish only after deployment.

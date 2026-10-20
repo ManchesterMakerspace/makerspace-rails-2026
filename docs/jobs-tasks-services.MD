@@ -839,6 +839,17 @@ channels/members continue; partial failure raises and marks the job failed.
 Retry resumes unrecorded channels. Provider acceptance followed by acknowledgment
 failure can cause duplicates; delivery is not exactly-once.
 
+After the delivery scan, the service queues one full
+`ToolCheckoutSlackCanvasSyncJob` rebuild per shop with newly expired current
+checkouts. This runs even after partial delivery failures and is independent of
+member eligibility, email availability, and Slack linkage. The checkout's
+`expiration_notice_state.canvas` is set to 3 after successful enqueue, guarded by
+date/revision; subsequent runs skip recorded rebuilds. Failed enqueues remain
+retryable and fail the notice job while other shops continue. Date changes clear
+this marker with the other notice state. Existing expired records without the
+marker are included on the first run. Enqueue/acknowledgment races can cause
+duplicate rebuilds; the canvas job handles execution retries separately.
+
 **CheckoutExpirationManagement** is the synchronous, scoped date-management
 service: strict ISO dates, future-only bulk dates, catalog then member/tool locks for individual edits,
 MongoDB transactions, revision conflicts, audit persistence, and canvas refresh

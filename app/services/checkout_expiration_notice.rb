@@ -16,7 +16,30 @@ class CheckoutExpirationNotice
         Service::ErrorReporter.notify(error, context: { phase: 'checkout expiration notice', member_id: id.to_s })
       end
     end
-    raise "Checkout expiration notices failed for #{failures.size} deliveries; retry to resume" if failures.any?
+    rebuild_expired_rosters!(at, failures)
+    raise "Checkout expiration notices failed for #{failures.size} operations; retry to resume" if failures.any?
+  end
+
+  def self.rebuild_expired_rosters!(at, failures)
+    # Canvas state is independent of member notification eligibility and channels.
+    rows = ToolCheckout.expired_at(at).where(:expires_on.ne => nil, 'expiration_notice_state.canvas' => { '$ne' => 3 })
+      .includes(:tool).to_a
+    rows.group_by { |checkout| checkout.tool&.shop_id }.each do |shop_id, checkouts|
+      next unless shop_id
+      begin
+        job = ToolCheckoutSlackCanvasSyncJob.perform_later(shop_id.to_s)
+        raise 'Could not enqueue checkout roster rebuild' unless job
+
+        checkouts.each do |checkout|
+          ToolCheckout.current_checkouts.where(id: checkout.id, expires_on: checkout.expires_on,
+            expiration_revision: checkout.expiration_revision)
+            .update_all('expiration_notice_state.canvas' => 3)
+        end
+      rescue => error
+        failures << error
+        Service::ErrorReporter.notify(error, context: { phase: 'checkout expiration roster', shop_id: shop_id.to_s })
+      end
+    end
   end
 
   def self.stage(checkout, at)
@@ -107,5 +130,5 @@ class CheckoutExpirationNotice
         keys: [key], argv: [token])
     end
   end
-  private_class_method :deliver_member!, :with_member_lock
+  private_class_method :deliver_member!, :with_member_lock, :rebuild_expired_rosters!
 end
