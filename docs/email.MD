@@ -97,7 +97,7 @@ Missing Slack linkage does not block email.
 Subjects are “Manchester Makerspace — Your tool checkouts expire soon” and
 “Manchester Makerspace — Your tool checkouts have expired”. Local templates
 app/views/checkout_mailer/expiration_notice.html.erb and .text.erb list tool,
-shop, Eastern expiration date, optional current training URL, and the Member
+shop, Eastern expiration date, the current training URL (if defined), and the Member
 Portal renewal link. Existing application mail transport/from configuration
 and APP_DOMAIN are reused; no external template or new variable is required.
 
