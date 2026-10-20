@@ -36,11 +36,6 @@ class SlackReservationModal
       group_prerequisite_ids = selected_groups.flat_map(&:prerequisite_ids).uniq
       required_ids = ReservationPolicy.prerequisite_ids(shop: shop, reservation_scope: reservation_scope,
         tools: selected_tools, member: member, additional_prerequisite_ids: group_prerequisite_ids)
-      missing_ids = member.role == 'board_member' ? [] : required_ids.reject { |id| read_context.checked_out_tool_ids.include?(id) }
-      missing_names = read_context.tool_names(missing_ids)
-      prerequisite_warning = if missing_ids.any?
-        "Missing required checkout(s): #{missing_ids.map { |id| missing_names[id] || id }.join(', ')}"
-      end
       metrics[:resource_count] = resources.length
       policy = ReservationPolicy.aggregate(resources)
       scheduling_window = ReservationPolicy.scheduling_window(resources, policy: policy)
@@ -61,6 +56,39 @@ class SlackReservationModal
       selected_date = valid_date(date) || default_start.to_date.iso8601
       selected_time = valid_time(start_time) || default_start.strftime("%H:%M")
       timing = reservation_timing(selected_date, selected_time, selected_duration)
+      if member.role != 'board_member' && required_ids.any?
+        durations = durations.select do |choice|
+          ending = reservation_timing(selected_date, selected_time, choice)&.fetch(:end_at)
+          valid_ids = read_context.valid_through_tool_ids(ending)
+          required_ids.all? { |id| valid_ids.include?(id) }
+        end
+        # Preserve the attempted end for the warning when no duration works.
+        selected_duration = retained_duration(durations, duration)
+        timing = reservation_timing(selected_date, selected_time, selected_duration) || timing
+      end
+      valid_ids = read_context.checked_out_tool_ids(through: timing&.fetch(:end_at)) unless member.role == 'board_member'
+      missing_ids = member.role == 'board_member' ? [] : required_ids.reject { |id| valid_ids.include?(id) }
+      missing_names = read_context.tool_names(missing_ids)
+      prerequisite_warning = if missing_ids.any?
+        "Missing required checkout(s): #{missing_ids.map { |id| missing_names[id] || id }.join(', ')}. Checkouts must remain valid through reservation end."
+      end
+
+      if timing
+        eligible_ids = read_context.eligible_tools(through: timing[:end_at]).map { |tool| tool.id.to_s }
+        eligible_groups = groups.select do |group|
+          ids = ReservationPolicy.prerequisite_ids(shop: shop, reservation_scope: 'tools',
+            tools: group.included_tools, member: member, additional_prerequisite_ids: group.prerequisite_ids)
+          member.role == 'board_member' || ids.all? { |id| valid_ids.include?(id.to_s) }
+        end.map { |group| "group:#{group.id}" }
+        selected_ids = selected_tools.map { |tool| tool.id.to_s } + selected_groups.map { |group| "group:#{group.id}" }
+        choices = choices.filter_map do |choice|
+          next choice if (eligible_ids + eligible_groups).include?(choice[:value])
+          # Keep an invalid selection visible for correction instead of silently
+          # changing the resources being reserved when a date changes.
+          option("#{choice[:text][:text]} (checkout required)", choice[:value]) if selected_ids.include?(choice[:value])
+        end
+        scope_options.reject! { |choice| choice[:value] == 'tools' } if choices.empty? && reservation_scope == 'shop'
+      end
       fee = fee_preview(resources, timing, read_context: read_context)
 
       blocks = [
@@ -86,13 +114,13 @@ class SlackReservationModal
       blocks << input("date", "date", "Date", {
           type: "datepicker",
           initial_date: selected_date
-        })
+        }, dispatch_action: true)
       unless policy[:full_day]
         blocks << input("start_time", "start_time", "Start time", {
           type: "timepicker",
           initial_time: selected_time,
           timezone: "America/New_York"
-        })
+        }, dispatch_action: true)
       end
       if durations.present?
         blocks << input("duration", "duration", "Duration", {
@@ -100,7 +128,7 @@ class SlackReservationModal
           placeholder: plain("Select duration"),
           options: durations,
           initial_option: selected_duration
-        })
+        }, dispatch_action: true)
       end
       blocks.concat(policy_blocks(
         shop, reservation_scope, selected_tools, member, policy, scheduling_window,

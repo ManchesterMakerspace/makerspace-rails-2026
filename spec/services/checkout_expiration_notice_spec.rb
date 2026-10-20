@@ -38,10 +38,10 @@ RSpec.describe CheckoutExpirationNotice do
     expect(row.reload.expiration_notice_state).to eq('email' => 2, 'slack' => 2)
     row.set(expires_on: today - 1)
     described_class.run!
-    expect(row.reload.expiration_notice_state).to eq('email' => 3, 'slack' => 3, 'canvas' => 3)
+    expect(row.reload.expiration_notice_state).to eq('email' => 3, 'slack' => 3)
   end
 
-  it 'rebuilds each affected shop once after delivery and does not repeat recorded rebuilds' do
+  it 'queues each affected shop once per scan until a rebuild completes' do
     shop = create(:shop)
     other_shop = create(:shop)
     checkout(-1, tool: create(:tool, shop: shop))
@@ -54,9 +54,19 @@ RSpec.describe CheckoutExpirationNotice do
 
     2.times { described_class.run! }
 
-    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).with(shop.id.to_s).once
-    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).with(other_shop.id.to_s).once
-    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).twice
+    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).with(shop.id.to_s).twice
+    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).with(other_shop.id.to_s).twice
+    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).exactly(4).times
+  end
+
+  it 'skips completed rebuilds but retries legacy enqueue-only markers' do
+    checkout(-1, expiration_notice_state: { 'canvas_completed' => 3 })
+    pending = checkout(-1, expiration_notice_state: { 'canvas' => 3 })
+
+    described_class.run!
+
+    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).with(pending.tool.shop_id.to_s).once
+    expect(ToolCheckoutSlackCanvasSyncJob).to have_received(:perform_later).once
   end
 
   it 'does not rebuild for warnings, expiration today, undated, revoked or superseded checkouts' do
@@ -99,11 +109,11 @@ RSpec.describe CheckoutExpirationNotice do
     allow(delivery).to receive(:deliver_now).and_raise('Email unavailable')
     allow(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later).and_return(false)
     expect { described_class.run! }.to raise_error(/failed/)
-    expect(row.reload.expiration_notice_state).not_to have_key('canvas')
+    expect(row.reload.expiration_notice_state).not_to have_key('canvas_completed')
 
     allow(ToolCheckoutSlackCanvasSyncJob).to receive(:perform_later).and_return(true)
     expect { described_class.run! }.to raise_error(/failed/)
-    expect(row.reload.expiration_notice_state['canvas']).to eq(3)
+    expect(row.reload.expiration_notice_state).not_to have_key('canvas_completed')
   end
 
   it 'retries only failed channels and reports partial failure' do

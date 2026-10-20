@@ -17,15 +17,21 @@ class ReservationReadContext
       .order_by(name: :asc).to_a.tap { |tools| remember_tools(tools) }
   end
 
-  def eligible_tools
+  def eligible_tools(through: nil)
+    if through
+      return ReservationPolicy.eligible_tools(
+        shop: shop, member: member, tools: candidate_tools, read_context: self, through: through
+      )
+    end
     @eligible_tools ||= ReservationPolicy.eligible_tools(
       shop: shop, member: member, tools: candidate_tools, read_context: self
     )
   end
 
-  def checked_out_tool_ids
-    @checked_out_tool_ids ||= ToolCheckout.valid_at.where(member_id: member.id, revoked_at: nil)
-      .pluck(:tool_id).map(&:to_s).to_set
+  def checked_out_tool_ids(through: nil)
+    return valid_through_tool_ids(through) if through
+
+    @checked_out_tool_ids ||= valid_through_tool_ids(nil)
   end
 
   def checkouts

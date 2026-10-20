@@ -231,7 +231,8 @@ class Slack::InteractionsController < ApplicationController
     payload.fetch("actions", []).any? do |action|
       action["action_id"].in?([
         SlackReservationModal::SCOPE_ACTION_ID,
-        SlackReservationModal::TOOLS_ACTION_ID
+        SlackReservationModal::TOOLS_ACTION_ID,
+        'date', 'start_time', 'duration'
       ])
     end
   end

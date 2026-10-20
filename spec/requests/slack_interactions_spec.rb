@@ -810,37 +810,39 @@ RSpec.describe "Slack interactions", type: :request do
       )
     end
 
-    it "rebuilds the modal policy and preserves state after resource block actions" do
-      shop = instance_double(Shop)
-      rebuilt_view = { type: "modal", blocks: [] }
-      allow(Shop).to receive(:find).with(metadata[:shop_id]).and_return(shop)
-      allow(Member).to receive(:find).with(member.id.to_s).and_return(member)
-      expect(SlackReservationModal).to receive(:update).with(
-        shop: shop,
-        member: member,
-        read_context: instance_of(ReservationReadContext),
-        response_url: response_url,
-        slack_user_id: "UINITIATOR",
-        reservation_scope: "shop",
-        tool_ids: [],
-        title: "Lathe time",
-        date: "2027-01-02",
-        start_time: "10:00",
-        duration: "hours:1.0"
-      ).and_return(rebuilt_view)
-      expect(Service::SlackConnector).to receive(:update_modal)
-        .with("V123", rebuilt_view, hash: "view-hash")
-      payload = reservation_payload(type: "block_actions")
-      payload[:view][:id] = "V123"
-      payload[:view][:hash] = "view-hash"
-      payload[:actions] = [{
-        action_id: SlackReservationModal::SCOPE_ACTION_ID,
-        selected_option: { value: "shop" }
-      }]
+    [SlackReservationModal::SCOPE_ACTION_ID, 'date', 'start_time', 'duration'].each do |action_id|
+      it "rebuilds the modal policy and preserves state after #{action_id} block actions" do
+        shop = instance_double(Shop)
+        rebuilt_view = { type: "modal", blocks: [] }
+        allow(Shop).to receive(:find).with(metadata[:shop_id]).and_return(shop)
+        allow(Member).to receive(:find).with(member.id.to_s).and_return(member)
+        expect(SlackReservationModal).to receive(:update).with(
+          shop: shop,
+          member: member,
+          read_context: instance_of(ReservationReadContext),
+          response_url: response_url,
+          slack_user_id: "UINITIATOR",
+          reservation_scope: "shop",
+          tool_ids: [],
+          title: "Lathe time",
+          date: "2027-01-02",
+          start_time: "10:00",
+          duration: "hours:1.0"
+        ).and_return(rebuilt_view)
+        expect(Service::SlackConnector).to receive(:update_modal)
+          .with("V123", rebuilt_view, hash: "view-hash")
+        payload = reservation_payload(type: "block_actions")
+        payload[:view][:id] = "V123"
+        payload[:view][:hash] = "view-hash"
+        payload[:actions] = [{
+          action_id: action_id,
+          selected_option: { value: "shop" }
+        }]
 
-      post "/slack/interactions", params: { payload: payload.to_json }
+        post "/slack/interactions", params: { payload: payload.to_json }
 
-      expect(response.parsed_body).to eq({})
+        expect(response.parsed_body).to eq({})
+      end
     end
 
     it "re-resolves added tools and applies their strictest rules" do

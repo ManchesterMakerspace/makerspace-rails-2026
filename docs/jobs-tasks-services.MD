@@ -819,7 +819,25 @@ rejection-card holder so the UID can be imported again. The member write within
 the transaction detects concurrent renewals/revocations; a stale version returns
 409. Card operations create no recurring job.
 
+Recipient repair-ticket DMs use a linked **Ticket #N** portal label and an
+**Open ticket in Slack** button (`fix_view`). The existing interaction handler
+rechecks workspace identity and ticket permission before opening the private
+detail modal. Only the first message chunk contains the button; delivery receipts,
+reconciliation, and central/shop message formatting remain unchanged. Wiki changes
+for this and roster recovery are held in `docs/wiki-ticket-notifications.patch`,
+prepared against WikiPages master `7c1a7f1316bd12d30da43ce9af09b40e92602ff3`.
+Publish after the Rails deployment; refresh the patch against current wiki first.
+
 ## Checkout expiration
+
+`SlackReservationModal` uses `ReservationReadContext.valid_through_tool_ids` for
+each duration and the final computed end. `ReservationPolicy.eligible_tools`
+accepts an optional `through` time for end-aware choices; existing today-only
+callers retain their behavior. All checks share cached current checkout records
+within a single operation. Slack date/time/duration block actions refresh the
+preview, with no writes or notifications. No valid duration yields **Review
+selection** and a prerequisite warning. Final submission still revalidates with
+fresh data under the reservation locks. No environment variables changed.
 
 **CheckoutExpirationNoticeJob** is registered as checkout_expiration_notice
 (**Checkout Expiration Notices**) in the portal job inventory.
@@ -843,12 +861,16 @@ After the delivery scan, the service queues one full
 `ToolCheckoutSlackCanvasSyncJob` rebuild per shop with newly expired current
 checkouts. This runs even after partial delivery failures and is independent of
 member eligibility, email availability, and Slack linkage. The checkout's
-`expiration_notice_state.canvas` is set to 3 after successful enqueue, guarded by
-date/revision; subsequent runs skip recorded rebuilds. Failed enqueues remain
-retryable and fail the notice job while other shops continue. Date changes clear
-this marker with the other notice state. Existing expired records without the
-marker are included on the first run. Enqueue/acknowledgment races can cause
-duplicate rebuilds; the canvas job handles execution retries separately.
+`expiration_notice_state.canvas_completed` is set to 3 only by a successful full
+publish in `Service::ToolCheckoutSlackCanvas.sync!`, including calls from the
+canvas job. The service snapshots expired checkout dates/revisions before
+rendering, then marks only unchanged current rows after Slack accepts the publish.
+Skipped or failed publishes leave rows eligible for later notice scans, even
+after the canvas job exhausts its five retries. Enqueue failures fail the notice
+job while other shops continue. Date changes clear completion with notice state.
+Legacy `canvas` enqueue markers are ignored, so the next scan repairs those
+rosters without a backfill. Repeated scans before completion can enqueue duplicate
+rebuilds; completion-write failures also retry safely through a full rebuild.
 
 **CheckoutExpirationManagement** is the synchronous, scoped date-management
 service: strict ISO dates, future-only bulk dates, catalog then member/tool locks for individual edits,

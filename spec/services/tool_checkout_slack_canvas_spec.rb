@@ -3,6 +3,51 @@ require "rails_helper"
 RSpec.describe Service::ToolCheckoutSlackCanvas do
   let(:shop) { create(:shop, name: "Wood Shop", slack_channel: "woodshop") }
 
+  describe 'expiration rebuild completion' do
+    let(:checkout) do
+      create(:tool_checkout, tool: create(:tool, shop: shop),
+        expires_on: Time.current.in_time_zone(CheckoutExpiration::ZONE).to_date - 1,
+        expiration_notice_state: { 'email' => 3, 'canvas' => 3 }, defer_group_callbacks: true)
+    end
+
+    it 'records completion only after publishing the full roster' do
+      checkout
+      allow(Service::SlackConnector).to receive(:replace_canvas) do
+        expect(checkout.reload.expiration_notice_state).not_to have_key('canvas_completed')
+      end
+      described_class.sync!(shop)
+      expect(checkout.reload.expiration_notice_state).to include('email' => 3, 'canvas_completed' => 3)
+    end
+
+    it 'leaves failed publishes eligible for later notice scans even after five failures' do
+      checkout
+      allow(Service::SlackConnector).to receive(:replace_canvas).and_raise('Slack unavailable')
+      5.times do
+        expect { described_class.sync!(shop) }.to raise_error('Slack unavailable')
+        expect(checkout.reload.expiration_notice_state).not_to have_key('canvas_completed')
+      end
+      allow(Service::SlackConnector).to receive(:replace_canvas).and_return(true)
+      described_class.sync!(shop)
+      expect(checkout.reload.expiration_notice_state['canvas_completed']).to eq(3)
+    end
+
+    it 'does not complete skipped canvases' do
+      checkout
+      shop.set(slack_channel: nil)
+      described_class.sync!(shop)
+      expect(checkout.reload.expiration_notice_state).not_to have_key('canvas_completed')
+    end
+
+    it 'does not acknowledge a date revision changed during publication' do
+      checkout
+      allow(Service::SlackConnector).to receive(:replace_canvas) do
+        checkout.set(expiration_revision: 1, expiration_notice_state: {})
+      end
+      described_class.sync!(shop)
+      expect(checkout.reload.expiration_notice_state).to eq({})
+    end
+  end
+
   it 'refreshes availability warnings independently of Hidden' do
     shop.set(checkout_canvas_id: 'FCHECKOUTS')
     tool = create(:tool, shop: shop)

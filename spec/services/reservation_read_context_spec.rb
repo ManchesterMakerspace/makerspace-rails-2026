@@ -43,6 +43,21 @@ RSpec.describe ReservationReadContext do
     end[:commands]).to be_empty
   end
 
+  it 'shares one checkout read while evaluating different reservation ends' do
+    tool = insert_tools(1).first
+    checkout = ToolCheckout.new(member: member, tool: tool, expires_on: Date.current + 1)
+    ToolCheckout.collection.insert_one(checkout.attributes)
+    boundary = (checkout.expires_on + 1.day).in_time_zone(CheckoutExpiration::ZONE)
+    context = described_class.new(shop: shop, member: member)
+    measurement = measure_reservation_reads do
+      expect(context.eligible_tools.map(&:id)).to eq([tool.id])
+      expect(context.eligible_tools(through: boundary).map(&:id)).to eq([tool.id])
+      expect(context.eligible_tools(through: boundary + 1.second)).to be_empty
+      expect(context.eligible_tools(through: boundary).map(&:id)).to eq([tool.id])
+    end
+    expect(measurement[:commands].count { |command| command == ['find', 'tool_checkouts'] }).to eq(1)
+  end
+
   it "does not retain a revoked checkout across contexts" do
     tool = insert_tools(1).first
     checkout = ToolCheckout.new(member: member, tool: tool)

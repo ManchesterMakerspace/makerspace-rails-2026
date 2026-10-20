@@ -36,6 +36,22 @@ RSpec.describe FixSlack do
     allow(ENV).to receive(:[]).with('SLACK_TEAM_ID').and_return('T_EXPECTED')
     expect { described_class.member!({ 'team_id' => 'T_OTHER', 'user_id' => 'U_OTHER' }) }.to raise_error(Error::Forbidden)
   end
+  it 'opens the authorized ticket detail from a DM button without an existing modal' do
+    ticket = create(:fix_ticket, reporter_id: member.id)
+    allow(described_class).to receive(:member!).and_return(member)
+    expected_view = described_class.detail(member, ticket.id, {})
+    expect(Service::SlackConnector).to receive(:open_modal).with('DM_TRIGGER', expected_view)
+    described_class.interaction('type' => 'block_actions', 'trigger_id' => 'DM_TRIGGER',
+      'actions' => [{ 'action_id' => 'fix_view', 'value' => { id: ticket.id }.to_json }])
+  end
+
+  it 'rechecks ticket permission when a DM button is clicked' do
+    ticket = create(:fix_ticket, reporter_id: create(:member, :current).id)
+    allow(described_class).to receive(:member!).and_return(member)
+    expect(Service::SlackConnector).to receive(:open_modal).with('DM_TRIGGER', hash_including(callback_id: 'fix_error'))
+    described_class.interaction('type' => 'block_actions', 'trigger_id' => 'DM_TRIGGER',
+      'actions' => [{ 'action_id' => 'fix_view', 'value' => { id: ticket.id }.to_json }])
+  end
   it 'prefills the channel shop and keeps it as the list and new-report filter' do
     shop = create(:shop, slack_channel: 'woodshop')
     expect(described_class.channel_shop(member, { 'channel_id' => 'C123', 'channel_name' => 'woodshop' })).to eq(shop)

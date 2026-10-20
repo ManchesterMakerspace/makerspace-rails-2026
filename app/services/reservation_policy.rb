@@ -77,7 +77,7 @@ class ReservationPolicy
       ids.map { |id| names_by_id[id] || "Unknown tool" }
     end
 
-    def eligible_tools(shop:, member:, tools:, read_context: nil)
+    def eligible_tools(shop:, member:, tools:, read_context: nil, through: nil)
       candidates = Array(tools).select do |tool|
         tool.shop_id.to_s == shop.id.to_s && tool.reservable && !tool.disabled?
       end
@@ -86,7 +86,7 @@ class ReservationPolicy
       return [] unless member.status == "pending" || member.active_unexpired?
 
       read_context ||= ReservationReadContext.new(shop: shop, member: member, resources: candidates)
-      checked_out_ids = read_context.checked_out_tool_ids
+      checked_out_ids = read_context.checked_out_tool_ids(through: through)
       candidates.select do |tool|
         next false if member.status == "pending" && !tool.allow_pending
 

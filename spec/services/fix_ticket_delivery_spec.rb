@@ -118,14 +118,26 @@ RSpec.describe FixTicketDelivery do
     expect(ticket.reload.slack_ticket_ts).to eq('100.001')
     expect(event.reload.completed_at).to be_present
   end
-  it 'includes the ticket number in recipient DMs' do
-    allow(Service::MemberProvisioning).to receive(:invite_slack)
-    reporter.save!
-    SlackUser.create!(member_id: reporter.id, slack_id: 'U123')
-    event.set(recipients: [reporter.id], central_enabled: false)
-    allow(Service::SlackConnector).to receive(:safe_channel).with('U123').and_return('U123')
-    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'U123', text: include("Ticket ##{ticket.id}:"))).and_return({ 'ts' => '100.001', 'channel' => 'D123' })
-    described_class.call(ticket, event)
+  %w[created note assigned updated bounty].each do |kind|
+    it "links the ticket and opens its Slack view in #{kind} recipient DMs" do
+      allow(Service::MemberProvisioning).to receive(:invite_slack)
+      reporter.save!
+      SlackUser.create!(member_id: reporter.id, slack_id: 'U123')
+      event.set(kind: kind, recipients: [reporter.id], central_enabled: false)
+      allow(ShortUrl).to receive(:allocate).and_return(short_url: 'https://portal.example.com/bounty')
+      allow(Service::SlackConnector).to receive(:safe_channel).with('U123').and_return('U123')
+      expect(client).to receive(:chat_postMessage) do |message|
+        expect(message[:channel]).to eq('U123')
+        expect(message[:text]).to include("<https://portal.example.com/fix-tickets/#{ticket.id}|Ticket ##{ticket.id}>:")
+        expect(message[:text]).not_to include("\nhttps://portal.example.com/fix-tickets/")
+        expect(message[:blocks].first[:text][:text]).to eq(message[:text])
+        button = message[:blocks].last[:elements].first
+        expect(button[:action_id]).to eq('fix_view')
+        expect(JSON.parse(button[:value])).to eq('id' => ticket.id)
+        { 'ts' => '100.001', 'channel' => 'D123' }
+      end
+      described_class.call(ticket, event)
+    end
   end
   %w[revoked suspended].each do |status|
     it "completes delivery without contacting a #{status} participant" do

@@ -16,6 +16,10 @@ module Service
 
         with_canvas_lock(shop.id) do
           shop.reload
+          # Snapshot before rendering; only acknowledge the dates/revisions that
+          # this full rebuild actually removed from the published roster.
+          expired = ToolCheckout.expired_at.where(:expires_on.ne => nil, :tool_id.in => Tool.where(shop_id: shop.id).pluck(:id))
+            .pluck(:id, :expires_on, :expiration_revision)
           canvas_id = shop.checkout_canvas_id.presence
           reused_canvas = canvas_id.present?
           canvas_id ||= create_and_cache_canvas!(shop, channel_id)
@@ -29,6 +33,10 @@ module Service
             shop.set(checkout_canvas_id: nil)
             canvas_id = create_and_cache_canvas!(shop, channel_id)
             publish!(canvas_id, shop, channel_id)
+          end
+          expired.each do |id, expires_on, revision|
+            ToolCheckout.current_checkouts.where(id: id, expires_on: expires_on, expiration_revision: revision)
+              .update_all('expiration_notice_state.canvas_completed' => 3)
           end
         end
       end

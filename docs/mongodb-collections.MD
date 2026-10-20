@@ -288,12 +288,14 @@ Existing top-level tools and tool_groups documents gain optional
 checkout_training_plan_url strings. Tools also gain checkout_expiration_years
 (nullable integer, 1–5). Existing tool_checkouts documents gain expires_on
 (nullable Date), expiration_revision (integer default 0), expiration_notice_state
-(embedded hash of highest delivered stage per email/slack channel, plus `canvas: 3`
-after an expired checkout's shop roster rebuild is enqueued), renewed_from_id,
+(embedded hash of highest delivered stage per email/slack channel, plus `canvas_completed: 3`
+after an expired checkout's shop roster is successfully published), renewed_from_id,
 and superseded_by_id (nullable ObjectIds referencing tool_checkouts). These are
 fields, not new collections. Missing dates stay non-expiring; no backfill occurs.
 Date changes increment the revision and clear delivery state in the same
 transaction. Renewal links and predecessor supersession are transactional.
+Legacy `canvas: 3` values recorded enqueue acceptance only and are ignored by the
+expiration scan. No backfill is needed: rows without `canvas_completed` are retried.
 
 The compound tool_checkouts index is
 { revoked_at: 1, superseded_by_id: 1, expires_on: 1, member_id: 1 } for current

@@ -41,8 +41,8 @@ index 0000000..d89bb0a
 +
 +After scanning notices, the job queues a checkout roster canvas rebuild for
 +each shop with newly expired checkouts, even if member notices cannot be sent.
-+Canvas updates run asynchronously. Rerun a failed job to retry failed rebuild
-+enqueues; successfully queued rebuilds are not queued again on later runs.
++Canvas updates run asynchronously. Rerun the notice job to retry unfinished
++rebuilds; only successfully published rosters are skipped on later runs.
 +The first run also refreshes shops with previously expired checkouts.
 diff --git a/digital-makerspace/approvers/check-out-a-member.md b/digital-makerspace/approvers/check-out-a-member.md
 index 8f2a6fa..ba47940 100644
