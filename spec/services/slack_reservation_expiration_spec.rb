@@ -51,18 +51,25 @@ RSpec.describe 'Slack reservation checkout expiration' do
 
   %w[shop group].each do |scope|
     it "checks #{scope} prerequisites through the end" do
+      checkout.set(expires_on: nil)
+      prerequisite = create(:tool, shop: shop, name: 'Safety orientation')
+      prerequisite_checkout = create(:tool_checkout, member: member, tool: prerequisite,
+        expires_on: Date.new(2026, 10, 20))
       options = if scope == 'shop'
-        shop.set(reservation_prerequisite_tool_ids: [tool.id.to_s])
+        shop.set(reservation_prerequisite_tool_ids: [prerequisite.id.to_s])
         { reservation_scope: 'shop', tool_ids: [] }
       else
         group = ToolGroup.create!(shop: shop, name: 'Kit', included_tool_ids: [tool.id.to_s],
-          prerequisite_ids: [tool.id.to_s], reservable: true)
+          prerequisite_ids: [prerequisite.id.to_s], reservable: true)
         { tool_ids: ["group:#{group.id}"] }
       end
       view = build(**options, date: '2026-10-21', start_time: '10:00')
       expect(view[:submit][:text]).to eq('Review selection')
       expect(block(view, 'duration')).to be_nil
-      expect(block(view, 'reservation_policy')[:text][:text]).to include(tool.name)
+      expect(block(view, 'reservation_policy')[:text][:text]).to include(prerequisite.name)
+
+      prerequisite_checkout.set(expires_on: nil)
+      expect(build(**options, date: '2026-10-21', start_time: '10:00')[:submit][:text]).to eq('Reserve')
     end
   end
 
