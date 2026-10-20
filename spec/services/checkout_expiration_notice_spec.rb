@@ -71,8 +71,10 @@ RSpec.describe CheckoutExpirationNotice do
   end
 
   it 'rebuilds for expired checkouts even when member notices are suppressed' do
-    row = checkout(-1)
+    # Establish eligibility before creating the checkout: changing a member's
+    # status also enqueues roster updates for their existing checkouts.
     member.update!(status: 'inactive')
+    row = checkout(-1)
 
     described_class.run!
 
