@@ -60,7 +60,7 @@ diff --git a/digital-makerspace/members/request-a-checkout.md b/digital-makerspa
 index f4d969a..1aa0c33 100644
 --- a/digital-makerspace/members/request-a-checkout.md
 +++ b/digital-makerspace/members/request-a-checkout.md
-@@ -75,3 +75,20 @@ Open **Tool Checkouts** > **My Checkouts**. It is titled **My Active Tool Checko
+@@ -75,3 +75,25 @@ Open **Tool Checkouts** > **My Checkouts**. It is titled **My Active Tool Checko
  ## Need help?
  
  See [Troubleshooting: checkouts](/digital-makerspace/troubleshooting/checkouts).
@@ -71,6 +71,11 @@ index f4d969a..1aa0c33 100644
 +submitting your request. The link also appears on your pending request and
 +existing checkout and opens separately from the portal. Slack request and
 +checkout details show the same link.
++
++After submitting a new request through the portal or Slack, members with a
++linked Slack account receive a confirmation DM. When the requested tool or
++group has a training plan, the DM directs you to review the material next;
++select **Checkout training plan** in the message to open it.
 +
 +Your checkout shows **Never expires**, **Expires [date]**, or **Expired [date]**.
 +Dates are Eastern time and checkouts remain valid through that date. In your

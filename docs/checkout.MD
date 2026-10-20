@@ -614,6 +614,14 @@ disabled. See `docs/jobs-tasks-services.MD` for timeouts and delivery details.
 
 ## Annotation for requestors
 
+When the requested tool or tool group has a **Checkout training plan** URL,
+the confirmation DM for a new portal or Slack request also tells the member:
+"Next step: review the material available in the Checkout training plan."
+**Checkout training plan** is a clickable Slack link to that target's URL.
+This uses the existing confirmation, independently of channel announcements;
+members without a linked Slack identity or with suppressed direct notifications
+do not receive a DM. A group uses its own URL, not a constituent tool's URL.
+
 Shops and tools have an optional `requestor_annotation` text field. Blank or
 whitespace-only values normalize to nil. Shop managers (plus admins and board
 members) edit the shop default. Owning-shop managers and eligible additional

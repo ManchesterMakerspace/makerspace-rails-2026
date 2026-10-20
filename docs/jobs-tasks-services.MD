@@ -216,7 +216,8 @@ actions deliver shop-reviewer DMs and requester decision DMs after Slack has
 acknowledged the interaction.
 The modal saves the mutation under the existing lock, closes the selected request
 for approvals, and enqueues side effects before clearing. Request confirmation DMs
-(including the tool requestor annotation or shop fallback), request announcements,
+(including the tool requestor annotation or shop fallback, plus a linked
+**Checkout training plan** next step when the requested tool/group has a URL), request announcements,
 cancellation announcement updates, users-channel invitations, checkout DMs,
 success announcements and creation audit logging do not call Slack in the
 interaction acknowledgement path. Legacy request-modal submissions also defer
