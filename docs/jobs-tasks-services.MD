@@ -216,7 +216,8 @@ actions deliver shop-reviewer DMs and requester decision DMs after Slack has
 acknowledged the interaction.
 The modal saves the mutation under the existing lock, closes the selected request
 for approvals, and enqueues side effects before clearing. Request confirmation DMs
-(including the tool requestor annotation or shop fallback), request announcements,
+(including the tool requestor annotation or shop fallback, plus a linked
+**Checkout training plan** next step when the requested tool/group has a URL), request announcements,
 cancellation announcement updates, users-channel invitations, checkout DMs,
 success announcements and creation audit logging do not call Slack in the
 interaction acknowledgement path. Legacy request-modal submissions also defer
@@ -817,3 +818,96 @@ member after committing deletion and its audit. Release also clears the matching
 rejection-card holder so the UID can be imported again. The member write within
 the transaction detects concurrent renewals/revocations; a stale version returns
 409. Card operations create no recurring job.
+
+Recipient repair-ticket DMs use a linked **Ticket #N** portal label and an
+**Open ticket in Slack** button (`fix_view`). The existing interaction handler
+rechecks workspace identity and ticket permission before opening the private
+detail modal. Only the first message chunk contains the button; delivery receipts,
+reconciliation, and central/shop message formatting remain unchanged. Wiki changes
+for this and roster recovery are held in `docs/wiki-ticket-notifications.patch`,
+prepared against WikiPages master `7c1a7f1316bd12d30da43ce9af09b40e92602ff3`.
+Publish after the Rails deployment; refresh the patch against current wiki first.
+
+## Checkout expiration
+
+`SlackReservationModal` uses `ReservationReadContext.valid_through_tool_ids` for
+each duration and the final computed end. `ReservationPolicy.eligible_tools`
+accepts an optional `through` time for end-aware choices; existing today-only
+callers retain their behavior. All checks share cached current checkout records
+within a single operation. Slack date/time/duration block actions refresh the
+preview, with no writes or notifications. No valid duration yields **Review
+selection** and a prerequisite warning. Final submission still revalidates with
+fresh data under the reservation locks. No environment variables changed.
+
+**CheckoutExpirationNoticeJob** is registered as checkout_expiration_notice
+(**Checkout Expiration Notices**) in the portal job inventory.
+`bundle exec rake checkout_expiration_notice` performs the same job synchronously;
+admin Run Now queues it. This new job and its advance-days setting are admin-only
+(the existing board access to other jobs is unchanged). It records success/failure
+through SystemConfig.record_run. No recurring schedule was added. Run against
+the intended application environment; it sends real email and Slack DMs.
+
+**CheckoutExpirationNotice** scans dated current non-revoked checkouts, serializes
+delivery per member using a Redis ownership-token lock, rechecks current dates
+and member eligibility before each channel/group, and sends the highest due
+stage. Upcoming and newly expired records are separate groups. State is stored
+per channel on the checkout and guarded by date/revision when marking success.
+Missing Slack identity skips Slack only. Failures are reported while other
+channels/members continue; partial failure raises and marks the job failed.
+Retry resumes unrecorded channels. Provider acceptance followed by acknowledgment
+failure can cause duplicates; delivery is not exactly-once.
+
+After the delivery scan, the service queues one full
+`ToolCheckoutSlackCanvasSyncJob` rebuild per shop with newly expired current
+checkouts. This runs even after partial delivery failures and is independent of
+member eligibility, email availability, and Slack linkage. The checkout's
+`expiration_notice_state.canvas_completed` is set to 3 only by a successful full
+publish in `Service::ToolCheckoutSlackCanvas.sync!`, including calls from the
+canvas job. The service snapshots expired checkout dates/revisions before
+rendering, then marks only unchanged current rows after Slack accepts the publish.
+Skipped or failed publishes leave rows eligible for later notice scans, even
+after the canvas job exhausts its five retries. Enqueue failures fail the notice
+job while other shops continue. Date changes clear completion with notice state.
+Legacy `canvas` enqueue markers are ignored, so the next scan repairs those
+rosters without a backfill. Repeated scans before completion can enqueue duplicate
+rebuilds; completion-write failures also retry safely through a full rebuild.
+
+**CheckoutExpirationManagement** is the synchronous, scoped date-management
+service: strict ISO dates, future-only bulk dates, catalog then member/tool locks for individual edits,
+MongoDB transactions, revision conflicts, audit persistence, and canvas refresh
+after commit. It never grants checkout credit. **CheckoutExpiration** centralizes
+current/valid scopes, Eastern date boundaries, initial policy dates, renewal
+linkage, and effective training links. **CheckoutTrainingPlan** normalizes and
+validates tool/group URLs. ReservationReadContext/ReservationService now apply
+valid-through-end checks in previews and mutations; checkout eligibility readers
+use the shared valid scopes. CheckoutMailer uses local HTML/plain templates.
+
+`bundle exec rake data:ensure_checkout_expiration_indexes` is a manual repeatable
+deployment operation creating the expiry query index only. It neither sends
+messages nor backfills dates. See [collection inventory](mongodb-collections.MD).
+
+### Bulk expiration locking and recovery
+
+Bulk date updates use CatalogMutationLock.with_persistent on the existing
+checkout_request_lock/catalog/<shop-id> Redis key. CheckoutMutationLock acquires
+it with SET NX and no expiry, releases it only when its ownership token matches,
+and supplies an ownership check used before writes and before transaction commit.
+Only one lock is held regardless of roster size. Renewals, approvals, catalog
+edits, and individual date edits already contend on this same catalog key.
+The bulk transaction streams the current records without a recursive member-lock
+chain. Concurrent revocations cause MongoDB write conflicts; each transaction
+retry requeries the current records. A failed/too-long transaction rolls back
+its dates and audits, rather than allowing a lease to expire during writes.
+
+An exception releases the key normally. A killed worker or failed Redis release
+can leave an orphan key: stop/confirm termination of the owning request/worker
+and confirm no transaction can still commit before recovering it. Read the
+exact key's token and remove it with the same compare-token-and-delete Lua used
+by CheckoutMutationLock; never clear a live lock or delete unrelated keys.
+Do not add a TTL to an in-progress persistent lock to work around contention.
+No new environment variables, schedules, or collections are introduced.
+
+CheckoutCreation queues a full shop checkout canvas rebuild for renewals
+(renewed_from_id present). The rebuild renders current valid members once,
+replacing stale expired predecessor lines. Initial checkouts retain incremental
+adds. Neither path sends notices inside its approval transaction.

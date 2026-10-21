@@ -83,3 +83,30 @@ Several editable text templates registered beside the email templates—reservat
 ## Repair tickets
 
 Tickets add no email notifications or email fallback. Ticket notifications are Slack DMs/channel messages. Reporter point nominations remain pending until independent approval; approval invokes existing volunteer-credit notification/accounting behavior with generic “Helpful tool report” text and no source-ticket identity mapping in shared messages.
+
+## Checkout expiration notices
+
+CheckoutExpirationNoticeJob (manual CLI or admin Run Now) calls
+CheckoutExpirationNotice and CheckoutMailer.expiration_notice. The dedicated
+mailer sends to the affected member's own email, including secondary household
+members; it does not use MemberMailer's household forwarding/suppression logic.
+Revoked/suspended members are suppressed. Other recipients must be active with
+an unexpired membership, or pending with the tool's allow_pending enabled.
+Missing Slack linkage does not block email.
+
+Subjects are “Manchester Makerspace — Your tool checkouts expire soon” and
+“Manchester Makerspace — Your tool checkouts have expired”. Local templates
+app/views/checkout_mailer/expiration_notice.html.erb and .text.erb list tool,
+shop, Eastern expiration date, the current training URL (if defined), and the Member
+Portal renewal link. Existing application mail transport/from configuration
+and APP_DOMAIN are reused; no external template or new variable is required.
+
+The first warning is due at the configured days before expiration (default 14,
+minimum 4), the second at 3 days, and the final after the expiration date. A
+late run sends only the most urgent applicable stage. Upcoming notices are
+grouped into one email/Slack DM per member; newly expired notices form a separate
+email/DM. Successful channels are recorded independently against the checkout's
+expiration revision. Changed dates clear state; unchanged dates preserve it.
+Retry failures without repeating recorded successes. A provider accepting a
+message followed by a lost acknowledgment can still cause a duplicate on retry;
+exactly-once external delivery cannot be guaranteed.

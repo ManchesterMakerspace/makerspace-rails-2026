@@ -11,7 +11,7 @@ class CheckoutReadContext
     @checked_out_tool_ids = Set.new
     if viewer
       @approver = CheckoutApprover.find_by(member_id: viewer.id)
-      @checked_out_tool_ids = ToolCheckout.where(member_id: viewer.id, revoked_at: nil)
+      @checked_out_tool_ids = ToolCheckout.valid_at.where(member_id: viewer.id, revoked_at: nil)
         .pluck(:tool_id).map(&:to_s).to_set
     end
   end
@@ -33,6 +33,7 @@ class CheckoutReadContext
     context.load_members(checkouts.flat_map do |row|
       [row.member_id, row.approved_by_id, row.revoked_by_id, row.reinstated_by_id]
     end)
+    context.load_group_details(checkouts.map(&:group_id).compact.uniq)
     context.load_reinstatements(checkouts)
     context
   end
@@ -82,7 +83,7 @@ class CheckoutReadContext
 
   def load_group_details(ids)
     return if ids.empty?
-    @tool_groups = ToolGroup.where(:id.in => ids).only(:name, :shop_id).index_by { |group| group.id.to_s }
+    @tool_groups = ToolGroup.where(:id.in => ids).only(:name, :shop_id, :checkout_training_plan_url).index_by { |group| group.id.to_s }
   end
 
   def groups_for(ids)

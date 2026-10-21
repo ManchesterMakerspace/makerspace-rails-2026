@@ -6,8 +6,10 @@ class ToolCheckoutsController < ApplicationController
     checkouts = ToolCheckout.where(member_id: current_member.id)
 
     # Optional active/revoked filter (mirrors admin controller behaviour)
-    checkouts = checkouts.where(revoked_at: nil)       if params[:active] == "true"
+    checkouts = checkouts.valid_at       if params[:active] == "true"
     checkouts = checkouts.where(:revoked_at.ne => nil) if params[:active] == "false"
+
+    checkouts = checkouts.filtered_status(params[:status]) if params[:status].present?
 
     # Optional shop filter — join through tool
     if params[:shop_id].present?

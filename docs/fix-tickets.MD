@@ -45,6 +45,13 @@ The portal entry is `/fix-tickets`. `/fix new`, `mine`, `assigned`, `queue`, `pu
 
 ## Data and privacy
 
+Ticket-specific Slack DMs link the **Ticket #2** label to the portal detail page
+instead of appending a bare ticket URL. **Open ticket in Slack** opens the private
+ticket modal, like `/fix 2`, with permissions rechecked at click time. Event text,
+recipient rules, and delivery receipts are unchanged. Already delivered messages
+are not rewritten. The wiki addition is held in
+[wiki-ticket-notifications.patch](wiki-ticket-notifications.patch) until deployment.
+
 The Bounty Tasks section of `/admin/system-settings` includes `ticket_bounty_max_credit` (default 2), separate from the ordinary task-creation maximum. It limits ticket-to-bounty conversions and is returned as `bountyMaxCredit` in the ticket catalog. Setting edits use the portal audit log. Admin/board edits of existing bounty tasks may set any positive finite credit value without an upper cap; credit changes record actor, task ID/title, and before/after credits in the portal audit log. Existing awarded volunteer credits are not rewritten.
 
 Acknowledged admin reporter reveals also create a general audit record containing the ticket ObjectID, title, and acting admin. No reporter identity, subject, or ticket snapshot containing reporter data is included. The separate restricted reveal record is retained; the reveal response is withheld if the general audit record cannot be saved.

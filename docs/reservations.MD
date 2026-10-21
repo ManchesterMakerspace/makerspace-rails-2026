@@ -19,6 +19,20 @@ adds `toolGroups` only for `include_groups=true`, preserving older native client
 
 ## Overview
 
+Slack reservation previews require prerequisite checkouts to remain valid through
+the calculated end, using the same rule as submission. Date, start-time, and
+duration changes refresh the modal. Duration choices stop at the earliest
+required checkout expiration, including the exclusive Eastern midnight boundary;
+full-day choices use calendar days across daylight-saving changes. An oversized
+duration is reduced to the greatest valid choice. If none works, the modal shows
+the missing-checkout warning and **Review selection** instead of **Reserve**.
+Unselected ineligible tools/groups are hidden; already-selected resources remain
+visible with **(checkout required)** so the member can correct the selection.
+Shop, tool, and group prerequisites, pending-member rules, and the board exemption
+remain shared with submission. No checkout expiration changes an existing booking.
+The wiki page is held in [wiki-slack-reservation-expiration.patch](wiki-slack-reservation-expiration.patch)
+until the Rails change is deployed; no React or client-package release is required.
+
 The reservation feature allows eligible members to reserve an entire shop or one
 or more reservable tools in that shop. Reservations can be created in the Member
 Portal or with `/reserve` in the Slack channel assigned to a shop.
@@ -929,3 +943,17 @@ resource prerequisites. Missing checkouts display an error and Review selection;
 prerequisite tools are not added to reserved resources or their duration/fee rules.
 Board-member overrides match server validation. Switching to whole-shop scope
 uses the shop's prerequisites instead of stale group selections.
+
+## Checkout expiration at reservation end
+
+Preview, creation, and editing require each applicable tool, shop prerequisite,
+and group prerequisite checkout to remain valid through the reservation end.
+An undated current checkout has no time limit. A dated checkout is valid through
+its America/New_York calendar date: an end exactly at the following local
+midnight is allowed; a later end is rejected. Daylight saving transitions use
+local midnight, not a fixed 24-hour offset. Duration previews use the same
+limit. Errors identify the affected tools and their expiration dates so the
+member can request renewal or choose an earlier end. The existing board-member
+prerequisite exemption is retained. Expiration/date edits do not automatically
+cancel bookings; existing bookings are revalidated when edited, and cancellation
+remains available.

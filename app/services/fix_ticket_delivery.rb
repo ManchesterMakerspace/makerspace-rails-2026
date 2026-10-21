@@ -49,7 +49,10 @@ class FixTicketDelivery
         next unless member && !member.direct_notifications_suppressed? && FixTicketPolicy.new(member, ticket).read?
         slack = SlackUser.where(member_id: id).first
         next unless slack
-        publish(event, "dm-#{id}", Service::SlackConnector.safe_channel(slack.slack_id), text)
+        dm_text = text.sub("Ticket ##{ticket.id}:", "<#{escape(url(ticket))}|Ticket ##{ticket.id}>:")
+          .delete_suffix("\n#{url(ticket)}")
+        publish(event, "dm-#{id}", Service::SlackConnector.safe_channel(slack.slack_id), dm_text,
+          actions: [FixSlack.button('Open ticket in Slack', 'view', { id: ticket.id })])
       end
       event.set(completed_at: Time.current, delivery_error: nil)
     rescue StandardError => error
@@ -75,7 +78,7 @@ class FixTicketDelivery
       ticket.set(slack_ticket_ts: response.fetch('ts'), slack_ticket_channel_id: response.fetch('channel'), slack_ticket_team_id: team)
       ticket.slack_ticket_ts
     end
-    def publish(event, key, channel, text, thread_ts: nil, broadcast: false, namespace: nil)
+    def publish(event, key, channel, text, thread_ts: nil, broadcast: false, namespace: nil, actions: nil)
       text.chars.each_slice(2900).map(&:join).each_with_index do |part, index|
         receipt_key = "#{key}-#{index}"
         if key == 'central'
@@ -87,7 +90,10 @@ class FixTicketDelivery
             receipt_key = "central-#{destination}-#{index}"
           end
         end
-        post(event, receipt_key, channel, part, thread_ts: thread_ts, broadcast: broadcast && index.zero?)
+        blocks = if actions && index.zero?
+          [{ type: 'section', text: { type: 'mrkdwn', text: part } }, { type: 'actions', elements: actions }]
+        end
+        post(event, receipt_key, channel, part, thread_ts: thread_ts, broadcast: broadcast && index.zero?, blocks: blocks)
       end
     end
     def reconcile(attempt, uuid)
@@ -106,7 +112,7 @@ class FixTicketDelivery
       end
       nil
     end
-    def post(event, key, channel, text, thread_ts: nil, broadcast: false)
+    def post(event, key, channel, text, thread_ts: nil, broadcast: false, blocks: nil)
       return event.delivered[key] if event.delivered[key].is_a?(Hash)
       # Stable client_msg_id makes retrying a timed-out request refer to the same
       # logical Slack message rather than inventing a fresh delivery identity.
@@ -130,7 +136,8 @@ class FixTicketDelivery
       attempt = { 'channel' => channel, 'thread_ts' => thread_ts, 'oldest' => (Time.current.to_f - 5).to_s }
       event.set(delivery_attempts: event.delivery_attempts.merge(key => attempt))
       response = client.chat_postMessage(channel: channel, text: text, thread_ts: thread_ts,
-        reply_broadcast: broadcast, client_msg_id: uuid, parse: 'none', link_names: false, unfurl_links: false, unfurl_media: false)
+        reply_broadcast: broadcast, client_msg_id: uuid, parse: 'none', link_names: false, unfurl_links: false, unfurl_media: false,
+        **(blocks ? { blocks: blocks } : {}))
       Thread.current[:fix_delivery_lease]&.call
       receipt = { 'ts' => response['ts'], 'channel' => response['channel'] }
       event.set(delivered: event.delivered.merge(key => receipt))

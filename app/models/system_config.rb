@@ -22,6 +22,7 @@ class SystemConfig
   GARBAGE_COLLECT_DAY = "garbage_collect_day"
 
   JOB_KEYS = {
+    "checkout_expiration_notice" => "checkout_expiration_notice",
     "slack_sync"      => "slack:sync_users",
     "slack_profile_sync" => "slack:sync_profiles",
     "slack_channel_cache" => "slack:refresh_public_channel_cache",

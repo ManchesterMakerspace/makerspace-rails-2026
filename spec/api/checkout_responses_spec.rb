@@ -22,12 +22,15 @@ RSpec.describe 'Checkout response contracts', type: :request do
         tags 'Tool checkouts'
         security [sessionAuth: []]
         produces 'application/json'
+        if model == 'ToolCheckout'
+          parameter name: :status, in: :query, type: :string, required: false, enum: %w[active expired revoked history]
+        end
         if route == '/admin/tool_checkouts'
           parameter name: :member_id, in: :query, type: :string, required: false
           parameter name: :tool_id, in: :query, type: :string, required: false
           parameter name: :shop_id, in: :query, type: :string, required: false
           parameter name: :active, in: :query, type: :string, required: false, enum: %w[true false],
-                    description: 'true: only checkouts that are not revoked; false: only revoked ones'
+                    description: 'true: only current non-revoked unexpired checkouts; false: only revoked ones'
           parameter name: :reinstated, in: :query, type: :string, required: false, enum: %w[true false],
                     description: 'true: only reinstated pairs (the superseded revoked checkout and the active checkout that replaced it); false: leave out revoked checkouts that an active checkout has superseded'
           parameter name: :active_members_only, in: :query, type: :string, required: false, enum: %w[true],

@@ -1,6 +1,7 @@
 class ToolGroup
   include Mongoid::Document
   include Mongoid::Timestamps
+  include CheckoutTrainingPlan
 
   belongs_to :shop
   field :name, type: String

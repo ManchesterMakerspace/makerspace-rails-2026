@@ -1,4 +1,6 @@
 class ToolSerializer < ActiveModel::Serializer
+  attributes :checkout_training_plan_url, :checkout_expiration_years
+  attribute(:can_manage_checkout_expiration) { !!ToolGroup.manageable_by?(scope, object.shop_id) }
   attribute :requestor_annotation
   attributes :open, :id, :name, :wiki_url, :gdrive_id, :description, :disabled, :out_of_service,
              :allow_pending, :announce,
@@ -49,12 +51,12 @@ class ToolSerializer < ActiveModel::Serializer
   end
 
   attribute :unmet_prerequisite_ids, if: :include_availability? do
-    checked_out_tool_ids = checkout_context ? checkout_context.checked_out_tool_ids : ToolCheckout.where(member_id: scope.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
+    checked_out_tool_ids = checkout_context ? checkout_context.checked_out_tool_ids : ToolCheckout.valid_at.where(member_id: scope.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
     object.prerequisite_ids.map(&:to_s).reject { |pid| checked_out_tool_ids.include?(pid) }
   end
 
   attribute :unmet_prerequisite_names, if: :include_availability? do
-    checked_out_ids = checkout_context ? checkout_context.checked_out_tool_ids.to_a : ToolCheckout.where(member_id: scope.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
+    checked_out_ids = checkout_context ? checkout_context.checked_out_tool_ids.to_a : ToolCheckout.valid_at.where(member_id: scope.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
     unmet_ids = object.prerequisite_ids.map(&:to_s) - checked_out_ids
     checkout_context ? checkout_context.names(unmet_ids) : Tool.where(:id.in => unmet_ids).map(&:name)
   end

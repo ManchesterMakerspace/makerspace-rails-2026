@@ -1,4 +1,5 @@
 class ToolGroupSerializer < ActiveModel::Serializer
+  attribute :checkout_training_plan_url
   attributes :id, :shop_id, :name, :description, :prerequisite_ids, :included_tool_ids,
     :reservable, :requestable, :announce, :announce_channel, :archived, :revision
   attribute(:target_type) { 'group' }

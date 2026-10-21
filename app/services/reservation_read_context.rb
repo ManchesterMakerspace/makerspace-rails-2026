@@ -17,15 +17,35 @@ class ReservationReadContext
       .order_by(name: :asc).to_a.tap { |tools| remember_tools(tools) }
   end
 
-  def eligible_tools
+  def eligible_tools(through: nil)
+    if through
+      return ReservationPolicy.eligible_tools(
+        shop: shop, member: member, tools: candidate_tools, read_context: self, through: through
+      )
+    end
     @eligible_tools ||= ReservationPolicy.eligible_tools(
       shop: shop, member: member, tools: candidate_tools, read_context: self
     )
   end
 
-  def checked_out_tool_ids
-    @checked_out_tool_ids ||= ToolCheckout.where(member_id: member.id, revoked_at: nil)
-      .pluck(:tool_id).map(&:to_s).to_set
+  def checked_out_tool_ids(through: nil)
+    return valid_through_tool_ids(through) if through
+
+    @checked_out_tool_ids ||= valid_through_tool_ids(nil)
+  end
+
+  def checkouts
+    @checkouts ||= ToolCheckout.current_checkouts.where(member_id: member.id).to_a
+  end
+
+  def valid_through_tool_ids(at)
+    checkouts.select { |checkout| at ? checkout.valid_through?(at) : checkout.active? }.map { |checkout| checkout.tool_id.to_s }.to_set
+  end
+
+  def checkout_expirations(ids)
+    checkouts.select { |checkout| ids.include?(checkout.tool_id.to_s) && checkout.expires_on }.map do |checkout|
+      "#{tool_names(ids)[checkout.tool_id.to_s]} (expires #{checkout.expires_on.iso8601})"
+    end
   end
 
   def tool_names(ids)

@@ -5,9 +5,10 @@ class CheckoutDisplay
     tool = checkout.tool
     rows = [
       ["Tool", tool.name], ["Shop", include_shop ? tool.shop.name : nil], ["Description", tool.description],
-      ["Notes", tool.notes], ["Users channel", Service::SlackChannelCache.normalize_name(tool.users_channel)],
+      ["Notes", tool.notes_visible_to?(checkout.member) ? tool.notes : nil], ["Users channel", Service::SlackChannelCache.normalize_name(tool.users_channel)],
       ["Wiki", PublicCatalog.safe_url(tool.effective_wiki_url)],
       ["Checked out", checkout.checked_out_at&.to_date&.iso8601],
+      ["Expiration", checkout.expires_on ? "#{checkout.expired? ? 'Expired' : 'Expires'} #{checkout.expires_on.iso8601}" : "Never expires"],
       ["Reservable", tool.reservable? ? "Yes" : nil]
     ]
     approver = CheckoutApprover.find_by(member_id: checkout.member_id)&.can_approve_tool?(tool)

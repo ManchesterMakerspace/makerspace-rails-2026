@@ -81,7 +81,7 @@ class VolunteerEvent
     required_ids = Array(prerequisite_tool_ids).map(&:to_s).uniq
     return [] if required_ids.empty?
 
-    checked_out_ids = ToolCheckout.where(
+    checked_out_ids = ToolCheckout.valid_at.where(
       member_id: member.id,
       revoked_at: nil,
       :tool_id.in => required_ids

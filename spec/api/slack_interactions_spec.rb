@@ -6,7 +6,7 @@ describe "Slack interactions API", type: :request do
       operation: { servers: [{ url: "/", description: "Application root" }] } do
       tags "SlackInteractions"
       operationId "slackInteractions"
-      description "Callbacks: checkout_modal accepts block_actions and view_submission; checkout_request_submit accepts legacy submissions; reservation_submit also accepts view_closed. Checkout navigation calls views.update with the incoming view hash. Successful checkout submissions persist under the member/tool lock and enqueue request/cancellation announcements or approval invitations, DMs, success announcements and audit logging; request submissions also DM the linked requestor with the tool annotation or shop fallback; these Slack side effects, including volunteer-review and decision DMs, run in CheckoutNotificationJob outside the acknowledgement path. Submissions also enqueue replacement-first ephemeral outcome delivery and return response_action clear, even if enqueueing fails. The outcome job falls back to the submitting Slack user DM on replacement failure. Rejected submissions return response_action update with an explanatory modal, or errors keyed by input block ID. Checkout private_metadata is a signed, expiring contract containing member_id, optional shop_id, response_url, slack_user_id, step and optional record_id. Every transition reloads and authorizes these IDs. Display text is never an identifier. Checkout action IDs: checkout_menu_select, checkout_shop_select, checkout_tool_select, checkout_request_select, checkout_checkout_select, checkout_edit_note, checkout_cancel_request, checkout_approve_request, checkout_decline_request, checkout_approve_volunteer, checkout_decline_volunteer, checkout_back. Note input block/action ID: checkout_note. Declining a request requires a reason (at most 255 characters) in the required input with block/action ID checkout_reason; a missing or overlong reason returns errors keyed by checkout_reason, and a successful decline DMs the requester."
+      description "Callbacks: checkout_modal accepts block_actions and view_submission; checkout_request_submit accepts legacy submissions; reservation_submit also accepts view_closed. Reservation block actions reservation_scope_changed, reservation_tools_changed, date, start_time and duration refresh the modal; tool choices, prerequisite warnings and duration options require checkouts valid through the computed reservation end. Checkout navigation calls views.update with the incoming view hash. Successful checkout submissions persist under the member/tool lock and enqueue request/cancellation announcements or approval invitations, DMs, success announcements and audit logging; request submissions also DM the linked requestor with the tool annotation or shop fallback; these Slack side effects, including volunteer-review and decision DMs, run in CheckoutNotificationJob outside the acknowledgement path. Submissions also enqueue replacement-first ephemeral outcome delivery and return response_action clear, even if enqueueing fails. The outcome job falls back to the submitting Slack user DM on replacement failure. Rejected submissions return response_action update with an explanatory modal, or errors keyed by input block ID. Checkout private_metadata is a signed, expiring contract containing member_id, optional shop_id, response_url, slack_user_id, step and optional record_id. Every transition reloads and authorizes these IDs. Display text is never an identifier. Checkout action IDs: checkout_menu_select, checkout_shop_select, checkout_tool_select, checkout_request_select, checkout_checkout_select, checkout_edit_note, checkout_cancel_request, checkout_approve_request, checkout_decline_request, checkout_approve_volunteer, checkout_decline_volunteer, checkout_back. Note input block/action ID: checkout_note. Declining a request requires a reason (at most 255 characters) in the required input with block/action ID checkout_reason; a missing or overlong reason returns errors keyed by checkout_reason, and a successful decline DMs the requester."
       consumes "application/x-www-form-urlencoded"
       produces "application/json"
       parameter name: :"X-Slack-Signature", in: :header, type: :string,
@@ -85,6 +85,36 @@ describe "Slack interactions API", type: :request do
 
           expect(response).to have_http_status(:ok)
           expect(response.parsed_body).to eq({})
+        end
+
+        %w[date start_time duration].each do |action_id|
+          it "refreshes reservation expiration eligibility on #{action_id} changes" do
+            member = create(:member, :current)
+            shop = create(:shop)
+            tool = create(:tool, shop: shop)
+            expiry = Time.current.in_time_zone(CheckoutExpiration::ZONE).to_date + 1
+            create(:tool_checkout, member: member, tool: tool, expires_on: expiry)
+            shop.set(reservation_prerequisite_tool_ids: [tool.id.to_s])
+            expect(Service::SlackConnector).to receive(:update_modal) do |id, view, hash:|
+              expect(id).to eq('VEXPIRY')
+              expect(hash).to eq('view-hash')
+              expect(view[:submit][:text]).to eq('Review selection')
+              expect(view[:blocks].find { |item| item[:block_id] == 'duration' }).to be_nil
+            end
+            payload = { type: 'block_actions', actions: [{ action_id: action_id }], view: {
+              id: 'VEXPIRY', hash: 'view-hash', callback_id: 'reservation_submit',
+              private_metadata: { shop_id: shop.id.to_s, member_id: member.id.to_s }.to_json,
+              state: { values: {
+                scope: { reservation_scope_changed: { selected_option: { value: 'shop' } } },
+                date: { date: { selected_date: (expiry + 1).iso8601 } },
+                start_time: { start_time: { selected_time: '10:00' } },
+                duration: { duration: { selected_option: { value: 'hours:1.0' } } }
+              } }
+            } }
+            post '/slack/interactions', params: { payload: payload.to_json }
+            expect(response).to have_http_status(:ok)
+            expect(response.parsed_body).to eq({})
+          end
         end
 
         context "with checkout modal callbacks" do

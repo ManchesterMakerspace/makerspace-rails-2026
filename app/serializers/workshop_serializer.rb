@@ -34,6 +34,7 @@ class WorkshopSerializer < ActiveModel::Serializer
         id: tool.id.to_s,
         name: tool.name,
         wikiUrl: tool.effective_wiki_url,
+        checkoutTrainingPlanUrl: tool.checkout_training_plan_url,
         gdriveId: tool.gdrive_id,
         description: tool.description,
         locationName: tool.location&.name,
@@ -48,7 +49,7 @@ class WorkshopSerializer < ActiveModel::Serializer
         ).map(&:name),
         checkout: checkout && checkout_details(checkout),
         checkoutRequest: request && checkout_request_details(request),
-        checkoutRequestable: checkout.nil? && request.nil? &&
+        checkoutRequestable: (checkout.nil? || (checkout.current_checkout? && checkout.expired?)) && request.nil? &&
           checkout_requestable?(tool) && !tool.disabled? && !tool.open,
         reservationAvailable: tool_reservation_available?(tool),
         canCheckoutMember: can_checkout_member?(tool),
@@ -218,7 +219,7 @@ class WorkshopSerializer < ActiveModel::Serializer
   end
 
   def checked_out_tool_ids
-    @checked_out_tool_ids ||= ToolCheckout.where(
+    @checked_out_tool_ids ||= ToolCheckout.valid_at.where(
       member_id: viewer.id,
       revoked_at: nil
     ).pluck(:tool_id).map(&:to_s)
@@ -266,6 +267,9 @@ class WorkshopSerializer < ActiveModel::Serializer
     {
       id: checkout.id.to_s,
       active: checkout.active?,
+      expirationStatus: checkout.expiration_status,
+      expiresOn: checkout.expires_on&.iso8601,
+      checkoutTrainingPlanUrl: checkout.checkout_training_plan_url,
       checkedOutAt: checkout.checked_out_at&.iso8601,
       revokedAt: checkout.revoked_at&.iso8601,
       approvedByName: checkout.approved_by&.fullname

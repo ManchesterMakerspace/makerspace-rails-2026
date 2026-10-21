@@ -499,6 +499,8 @@ RSpec.configure do |config|
       type: :object,
       description: 'Editable tool settings for owning-shop managers, admins and board members. Omitted fields retain their values on update. Operational notes are saved with the other settings; additional approvers use the dedicated notes or annotation endpoints.',
       properties: {
+        checkout_training_plan_url: { type: :string, nullable: true, maxLength: 2048 },
+        checkout_expiration_years: { type: :integer, nullable: true, enum: [nil, 1, 2, 3, 4, 5] },
         name: { type: :string, description: 'Unique within the shop, ignoring case.' },
         shop_id: { type: :string },
         location_id: { type: :string, nullable: true, description: 'Location in the selected shop. Empty or null clears it.' },
@@ -529,6 +531,9 @@ RSpec.configure do |config|
         {
           type: :object,
           properties: {
+            checkoutTrainingPlanUrl: { type: :string, nullable: true },
+            checkoutExpirationYears: { type: :integer, nullable: true },
+            canManageCheckoutExpiration: { type: :boolean },
             canGenerateCheckoutRequiredSheet: { type: :boolean, readOnly: true, description: 'Present in authenticated management tool catalogs; false for unavailable resources or viewers without authority.' },
             id: { type: :string },
             shopId: { type: :string },

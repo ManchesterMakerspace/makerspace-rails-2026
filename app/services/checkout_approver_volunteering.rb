@@ -4,7 +4,7 @@ class CheckoutApproverVolunteering
     request = CheckoutMutationLock.with(member_id: member.id, tool_id: tool.id) do
       member.reload
       raise Error::UnprocessableEntity.new("You must have an active checkout for this tool") unless
-        ToolCheckout.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists?
+        ToolCheckout.valid_at.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).exists?
       raise Error::UnprocessableEntity.new("Your membership must be active and current") unless member.valid_for_checkout_request?
       if CheckoutApprover.find_by(member_id: member.id)&.can_approve_tool?(tool)
         raise Error::UnprocessableEntity.new("You are already an approver for this tool")
@@ -27,7 +27,7 @@ class CheckoutApproverVolunteering
       raise Error::UnprocessableEntity.new("The volunteer's membership is no longer eligible") unless
         volunteer&.valid_for_checkout_request?
       raise Error::UnprocessableEntity.new("The volunteer no longer has an active checkout") unless
-        ToolCheckout.where(member_id: request.member_id, tool_id: request.tool_id, revoked_at: nil).exists?
+        ToolCheckout.valid_at.where(member_id: request.member_id, tool_id: request.tool_id, revoked_at: nil).exists?
 
       record = CheckoutApproverMutationLock.with(member_id: request.member_id) do
         current = CheckoutApprover.find_or_initialize_by(member_id: request.member_id)

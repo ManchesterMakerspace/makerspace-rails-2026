@@ -85,3 +85,30 @@ retryable receipt; retry deletion after delivery recovers. See the executable
 [task response contracts](../spec/api/volunteer_task_responses_spec.rb) and
 [generated API specification](../swagger/v1/swagger.json). No anonymous route is
 added by this workflow.
+
+## Authenticated checkout expiration contracts
+
+Existing tool/group writes accept checkout_training_plan_url (blank clears);
+tool writes additionally accept checkout_expiration_years (null or 1–5).
+Existing serializers expose camelCase fields. Checkout responses include
+expiresOn (ISO date/null), expirationRevision, expirationStatus
+(active/expired/revoked/history), checkoutTrainingPlanUrl, renewedFromId,
+supersededById, canManageExpiration, and canRenew. Request responses include
+the requested resource's checkoutTrainingPlanUrl.
+
+PATCH /api/admin/tool_checkouts/:id/expiration accepts expires_on (ISO date or
+null) and expiration_revision, returning the updated checkout.
+POST /api/admin/tools/:id/checkout_expirations accepts expires_on (future ISO
+date), returning { affectedCount }. Both require a signed-in admin/board or
+shop-scoped RM. Invalid input is 422, missing resources 404, unauthorized scope
+403, and stale/historical individual targets 409; unauthenticated access is 401.
+List status=expired/history exposes explicit views. active=true means valid
+current checkouts; active=false retains its revoked-only meaning.
+
+GET /api/admin/system_configs adds checkout.checkout_expiration_notice_days
+and checkout.can_manage. PUT /api/admin/system_configs/update_setting accepts
+key=checkout_expiration_notice_days and a whole-number string >=4 (admin-only).
+POST /api/admin/system_configs/run_job accepts key=checkout_expiration_notice
+(admin-only), returning the existing queued acknowledgment. No anonymous route
+or public configuration secret is added. Portal renewal links use the existing
+/tool-checkouts?mode=self-service route.

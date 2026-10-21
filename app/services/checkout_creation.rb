@@ -21,7 +21,15 @@ class CheckoutCreation
         create_checkout.call
       end
     end
-    notify { ToolCheckoutSlackCanvasSyncJob.perform_later(checkout.tool.shop_id.to_s, checkout.id.to_s, 'add') }
+    notify do
+      if checkout.renewed_from_id.present?
+        # The expired predecessor may still be published. Rebuild from current
+        # records instead of appending a second line for the same member.
+        ToolCheckoutSlackCanvasSyncJob.perform_later(checkout.tool.shop_id.to_s)
+      else
+        ToolCheckoutSlackCanvasSyncJob.perform_later(checkout.tool.shop_id.to_s, checkout.id.to_s, 'add')
+      end
+    end
     Array(checkout.reconciled_requests).each { |request| notify { request.refresh_closed_announcement } }
     if defer_notifications
       CheckoutNotificationJob.enqueue("approval", checkout.id)
@@ -55,6 +63,7 @@ class CheckoutCreation
             signed_off_via: source, checked_out_at: Time.current, checkout_request_id: request&.id,
             request_note: note_request&.note.presence,
             defer_users_channel_invitation: true, defer_group_callbacks: true)
+          ToolCheckout.supersede_expired!(checkout)
           notify { CheckoutApproverCredit.award!(checkout) }
           checkout.reconciled_requests = ToolGroupCheckout.reconcile!(member.id)
           checkout

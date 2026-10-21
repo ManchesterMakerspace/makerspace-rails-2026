@@ -100,7 +100,7 @@ class ToolGroupsController < ApplicationController
   end
 
   def group_params
-    params.permit(:shop_id, :name, :description, :reservable, :requestable, :announce,
+    params.permit(:checkout_training_plan_url, :shop_id, :name, :description, :reservable, :requestable, :announce,
       :announce_channel, prerequisite_ids: [], included_tool_ids: []).to_h.symbolize_keys
   end
 

@@ -16,6 +16,7 @@ class ReservationService
       metrics[:resource_count] = normalized[:reservation_scope] == "shop" ? 1 : normalized[:tool_ids].length
       if reservation && !material_edit?(reservation, normalized)
         errors = normalized[:title].blank? ? ["Title is required"] : []
+        errors.concat(checkout_errors_for_edit(reservation, normalized))
         reasons = Array(reservation.approval_reasons)
         return {
           eligible: errors.empty?,
@@ -104,6 +105,8 @@ class ReservationService
           raise ::Error::UnprocessableEntity.new("Only future active reservations can be changed")
         end
         unless material_edit?(reservation, normalized)
+          checkout_errors = checkout_errors_for_edit(reservation, normalized)
+          raise Error::UnprocessableEntity.new(checkout_errors.join('; ')) if checkout_errors.any?
           reservation.update!(
             title: normalized[:title],
             calendar_sync_status: "pending",
@@ -387,7 +390,9 @@ class ReservationService
       )
       prerequisite_ids |= Array(attributes[:group_snapshots]).flat_map { |group| group['prerequisite_ids'] }.map(&:to_s)
       unless board_override
-        missing_ids = prerequisite_ids.reject { |id| read_context.checked_out_tool_ids.include?(id) }
+        missing_ids = prerequisite_ids.reject { |id| read_context.valid_through_tool_ids(attributes[:end_at]).include?(id) }
+        expiring = read_context.checkout_expirations(missing_ids)
+        errors << "Checkouts must remain valid through reservation end: #{expiring.join(', ')}" if expiring.any?
         names = read_context.tool_names(missing_ids)
         missing = missing_ids.filter_map { |id| { id: id, name: names[id] } if names[id] }
         if missing_ids.present?
@@ -455,7 +460,9 @@ class ReservationService
         resources: resources,
         reservation: reservation,
         duration_session_existing: duration_session_existing,
-        full_day: full_day
+        full_day: full_day,
+        prerequisite_ids: prerequisite_ids,
+        read_context: read_context
       )
 
       {
@@ -489,6 +496,22 @@ class ReservationService
       time.present? && (time.min == 0 || time.min == 30) && time.sec == 0
     end
 
+    # Title-only edits retain fee/catalog snapshots, but must not bypass expiration.
+    def checkout_errors_for_edit(reservation, attributes)
+      member = reservation.member
+      return [] if board_reservation_override?(member)
+      tools = Tool.where(:id.in => reservation.tool_ids).to_a
+      ids = ReservationPolicy.prerequisite_ids(shop: reservation.shop,
+        reservation_scope: reservation.reservation_scope, tools: tools, member: member)
+      ids |= Array(reservation.group_snapshots).flat_map { |group| group['prerequisite_ids'] }.map(&:to_s)
+      context = ReservationReadContext.new(shop: reservation.shop, member: member, resources: tools)
+      missing = ids - context.valid_through_tool_ids(attributes[:end_at]).to_a
+      return [] if missing.empty?
+      names = context.tool_names(missing).values.compact
+      expiration = context.checkout_expirations(missing)
+      ["Checkouts must remain valid through reservation end: #{(expiration + names).uniq.join(', ')}"]
+    end
+
     def maximum_duration_hours(
       member:,
       shop:,
@@ -498,12 +521,16 @@ class ReservationService
       resources:,
       reservation:,
       duration_session_existing:,
-      full_day: false
+      full_day: false,
+      prerequisite_ids: nil,
+      read_context: nil
     )
       return 0 unless start_at.present? && resources.present?
 
       return 72.0 if board_reservation_override?(member)
 
+      read_context ||= ReservationReadContext.new(shop: shop, member: member, resources: tools)
+      prerequisite_ids ||= ReservationPolicy.prerequisite_ids(shop: shop, reservation_scope: reservation_scope, tools: tools, member: member)
       configured_max = ReservationPolicy.aggregate(resources)[:maximum_duration_hours]
       if !full_day && !member.active_membership_subscription? && member.membership_expires_at.present?
         membership_max = (member.membership_expires_at - start_at) / 1.hour
@@ -520,6 +547,8 @@ class ReservationService
 
       1.upto(steps) do |step|
         candidate_end = full_day ? start_at.in_time_zone(ZONE).advance(days: step) : start_at + (step * 0.5).hours
+        valid_ids = read_context.valid_through_tool_ids(candidate_end)
+        break unless prerequisite_ids.all? { |id| valid_ids.include?(id.to_s) }
         break if !member.active_membership_subscription? && member.membership_expires_at.present? && candidate_end > member.membership_expires_at
         unless duration_session_exempt?(member)
           break if duration_session_errors(

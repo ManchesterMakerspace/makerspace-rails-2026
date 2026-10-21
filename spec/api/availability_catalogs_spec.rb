@@ -33,12 +33,15 @@ RSpec.describe 'Availability and volunteer credit catalogs', type: :request do
           expect(data['shops'].first['resourceManagers']).to include(hash_including('id' => manager.id.to_s))
           expect(data['tools'].map { |row| row['id'] }).to contain_exactly(available_tool.id.to_s, unavailable_tool.id.to_s)
           expect(data['tools']).to include(hash_including('id' => unavailable_tool.id.to_s, 'outOfService' => true))
+          expect(data['tools']).to all(include('canManageCheckoutExpiration' => false))
+          data['tools'].each { |row| expect(row).not_to have_key('notes') }
           expect(data).not_to have_key('toolGroups')
         end
         context 'when explicitly including groups' do
           let(:include_groups) { true }
           let!(:group) { ToolGroup.create!(shop: shop, name: 'Workshop kit', reservable: true, included_tool_ids: [available_tool.id.to_s]) }
           run_test! do |response|
+            expect(response.parsed_body['tools']).to all(include('canManageCheckoutExpiration' => false))
             expect(response.parsed_body['toolGroups']).to contain_exactly(hash_including(
               'id' => group.id.to_s, 'name' => group.name, 'targetType' => 'group',
               'includedTools' => [hash_including('id' => available_tool.id.to_s)]))

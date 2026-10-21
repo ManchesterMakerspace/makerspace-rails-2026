@@ -1,10 +1,13 @@
 # Reservation read performance
 
 Reservation modal builds and reservation evaluations use a short-lived
-`ReservationReadContext`. It shares candidate tools, active checkout IDs,
+`ReservationReadContext`. It shares candidate tools, current checkout records,
 prerequisite names and invoice options within one operation. It is not stored in
 Redis, a session, or Slack private metadata. Create/update evaluation constructs
 fresh context inside the existing reservation locks, after the member reload.
+Today-only eligibility and checks through each candidate end reuse one checkout
+read. End-specific eligibility is evaluated per end time, rather than reusing a
+cached today-only result; names and candidate tools remain cached within the build.
 
 Slack selected-tool validation and rendering share the same candidate list.
 Fee snapshots accept the already-loaded resources and batch distinct enabled fee

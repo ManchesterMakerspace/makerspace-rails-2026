@@ -54,4 +54,59 @@ RSpec.describe ToolCheckoutRequest do
       request.notify_requestor
     end
   end
+
+  describe 'training plan request confirmation' do
+    let(:member) { create(:member, :current) }
+    let(:url) { 'https://example.org/training?part=1&section=2' }
+    let(:tool) { create(:tool, checkout_training_plan_url: url) }
+
+    before do
+      SlackUser.create!(member: member, slack_id: 'UTRAINING', slack_email: member.email)
+      allow(Service::SlackConnector).to receive(:send_slack_message)
+    end
+
+    %i[tool tool_group].each do |target_type|
+      context "for a #{target_type}" do
+        let(:target) do
+          target_type == :tool ? tool : ToolGroup.create!(shop: tool.shop, name: 'Training kit',
+            included_tool_ids: [tool.id.to_s], checkout_training_plan_url: url)
+        end
+        let(:request) { ToolCheckoutRequest.create!(**{ member: member, target_type => target }) }
+
+        it 'confirms the request with an escaped training link and the next step' do
+          request.notify_requestor
+          expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+            include("Your checkout request for #{target.name} has been created.",
+              'Next step: review the material available in the ',
+              '<https://example.org/training?part=1&amp;section=2|Checkout training plan>'), 'UTRAINING').once
+        end
+
+        it 'includes the training link when the deferred Slack notification runs' do
+          CheckoutNotificationJob.perform_now('request', request.id.to_s)
+          expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+            include('|Checkout training plan>'), 'UTRAINING').once
+        end
+
+        it 'keeps the ordinary confirmation when this target has no training plan' do
+          target.update!(checkout_training_plan_url: nil)
+          request.notify_requestor
+          expect(Service::SlackConnector).to have_received(:send_slack_message).with(
+            satisfy { |message| message.include?('has been created.') && !message.include?('Checkout training plan') && !message.include?('Next step:') },
+            'UTRAINING').once
+        end
+
+        it 'skips members without a linked Slack identity' do
+          member.slack_user.destroy!
+          request.reload.notify_requestor
+          expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+        end
+
+        it 'preserves notification suppression even when a training plan is set' do
+          member.update!(status: 'suspended')
+          request.notify_requestor
+          expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+        end
+      end
+    end
+  end
 end

@@ -614,6 +614,14 @@ disabled. See `docs/jobs-tasks-services.MD` for timeouts and delivery details.
 
 ## Annotation for requestors
 
+When the requested tool or tool group has a **Checkout training plan** URL,
+the confirmation DM for a new portal or Slack request also tells the member:
+"Next step: review the material available in the Checkout training plan."
+**Checkout training plan** is a clickable Slack link to that target's URL.
+This uses the existing confirmation, independently of channel announcements;
+members without a linked Slack identity or with suppressed direct notifications
+do not receive a DM. A group uses its own URL, not a constituent tool's URL.
+
 Shops and tools have an optional `requestor_annotation` text field. Blank or
 whitespace-only values normalize to nil. Shop managers (plus admins and board
 members) edit the shop default. Owning-shop managers and eligible additional
@@ -704,3 +712,71 @@ a session awaiting TOTP receives `{ "error": "TOTP verification required." }`.
 Both bodies are documented by the `HomeUnauthorized` OpenAPI schema and retain
 the private/no-store header. See the executable Home API specification and
 the [portal Home documentation](../../makerspace-react-2026/docs/member-home.md).
+
+## Training plans, expiration, and renewal
+
+Tools and tool groups have an optional **Checkout Training Plan URL**. Catalog
+managers (admins, board members, and the shop's Resource Managers) can set an
+absolute HTTP/HTTPS URL; whitespace is trimmed and blank clears it. Requests
+show their requested resource's current URL. Checkouts use their tool's current
+URL, falling back only to their recorded originating group's current URL. A
+deleted group supplies no fallback; current group membership is not inferred.
+Portal request forms, pending-request chips, and checkout rows open training
+plans in a new browsing context. Slack request and own-checkout modals include
+escaped clickable links.
+
+**Checkouts expire after** on tool create/edit accepts Never (the default) or
+1–5 calendar years. Approval, group approval, and reinstatement calculate each
+tool's date using America/New_York; February 29 clamps to February 28 when
+needed. Policy edits affect future approvals only. Missing/null dates never
+expire. A checkout remains valid through its displayed date and expires at the
+following Eastern midnight.
+
+Member checkout lists offer Active, Expired, and History views. An eligible
+member can **Request renewal** for an expired checkout. Approval creates a new
+record and atomically links/supersedes the predecessor. Superseded records never
+become active through date edits. Revocation is separate: unresolved revocations
+still require admin/board reinstatement. Expiration alone does not reverse
+volunteer credit, remove Slack memberships, or remove explicit approvers.
+Prerequisites, voluntary approver eligibility, private notes granted through a
+checkout, active lists, group reconciliation, and canvas generation require a
+current non-revoked checkout whose date has not passed. Independent manager or
+approver permissions still apply.
+
+Managers can **Edit expiration** on current, non-revoked rows to any date or
+Never. Writes carry the displayed expiration revision and return a conflict
+when stale. **Set checkout expirations** on a selected tool confirms its name
+and current affected count, and accepts only a date later than today. Bulk
+changes include expired/undated records but exclude revoked and superseded
+history. Both operations use catalog/checkout locks, transactions, and actor +
+before/after audit records, without awarding credit. Reassigning the same date
+does not restart notices.
+
+### Checkout expiration deployment
+
+Deploy Rails contracts first. Run `bundle exec rake data:ensure_checkout_expiration_indexes`
+on the selected deployment database, then deploy the complete React build. The
+index task is repeatable and does not backfill expiration dates. Local React
+wrappers cover the new contracts; no generated client publication is needed.
+Run `bundle exec rake checkout_expiration_notice` manually, or use admin
+Jobs → **Checkout Expiration Notices** → **Run Now**. There is no new schedule.
+The first warning uses the admin setting (default 14 days, minimum 4); another
+is due at 3 days and a final notice after expiration. See [email](email.MD) and
+[job operations](jobs-tasks-services.MD).
+After scanning notices, the job queues a full checkout roster canvas rebuild for
+each shop with newly expired checkouts, including when member notices cannot be
+sent. Only successfully published rebuilds are skipped on later runs; failed
+enqueues or exhausted canvas retries can be retried by running the notice job
+again. Canvas updates run asynchronously. Legacy enqueue-only markers trigger
+a fresh rebuild on the next run.
+
+Wiki changes are prepared in [the release patch](wiki-checkout-expiration.patch).
+Apply/review against current WikiPages master and publish only after deployment.
+The environment-variable inventory is unchanged: no new variables or external
+email template dependencies are introduced.
+
+Renewal approval rebuilds the shop checkout canvas to replace a predecessor that
+may still be published after expiration. Bulk expiration changes hold one
+persistent catalog lock for the transaction; see [lock recovery](jobs-tasks-services.MD#bulk-expiration-locking-and-recovery).
+The Reinstated roster filter is offered only on the authorized management roster;
+the member endpoint does not support that filter.

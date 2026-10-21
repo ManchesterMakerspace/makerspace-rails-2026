@@ -1,4 +1,7 @@
 class ToolCheckoutSerializer < ActiveModel::Serializer
+  attributes :expires_on, :expiration_revision, :expiration_status, :checkout_training_plan_url, :renewed_from_id, :superseded_by_id
+  attribute(:can_manage_expiration) { object.current_checkout? && ToolGroup.manageable_by?(scope, checkout_tool&.shop_id) }
+  attribute(:can_renew) { !!(scope && checkout_tool && object.member_id == scope.id && object.current_checkout? && object.expired? && ToolCheckoutRequestEligibility.new(member: scope, tool: checkout_tool).eligible?) }
   attributes :group_id, :group_revision, :group_name, :approval_batch_id, :reinstated_from_id
   attribute :out_of_service do
     !!object.tool&.out_of_service
@@ -69,6 +72,11 @@ class ToolCheckoutSerializer < ActiveModel::Serializer
   # not-yet-approved request or a revoked checkout does not qualify.
   attribute :tool_notes, if: :tool_notes_visible? do
     checkout_tool.notes
+  end
+
+  def checkout_training_plan_url
+    return object.checkout_training_plan_url unless checkout_context
+    checkout_tool&.checkout_training_plan_url.presence || checkout_context.tool_groups[object.group_id.to_s]&.checkout_training_plan_url
   end
 
   def tool_notes_visible?

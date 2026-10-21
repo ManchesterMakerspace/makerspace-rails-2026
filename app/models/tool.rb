@@ -1,6 +1,22 @@
 class Tool
   include Mongoid::Document
   include DurationFeeResource
+  include CheckoutTrainingPlan
+  field :checkout_expiration_years, type: Integer
+  validates :checkout_expiration_years, numericality: { only_integer: true }, allow_nil: true
+  validates :checkout_expiration_years, inclusion: { in: 1..5 }, allow_nil: true
+  validate do
+    errors.add(:checkout_expiration_years, 'must be Never or a whole number from 1 to 5') if @invalid_checkout_expiration_years
+  end
+
+  # Check the input before Mongoid coerces fractions/invalid strings to integers.
+  def checkout_expiration_years=(value)
+    @invalid_checkout_expiration_years = !(value.nil? ||
+      (value.is_a?(Integer) && (1..5).cover?(value)) ||
+      (value.is_a?(String) && value.match?(/\A[1-5]\z/)))
+    write_attribute(:checkout_expiration_years, @invalid_checkout_expiration_years ? nil : value)
+  end
+
   include ActiveModel::Serializers::JSON
 
   field :name, type: String
@@ -108,7 +124,7 @@ class Tool
     return true if member.manages_shop?(shop_id)
     return true if CheckoutApprover.find_by(member_id: member.id)&.can_approve_tool?(self)
 
-    ToolCheckout.where(member_id: member.id, tool_id: id, revoked_at: nil).exists?
+    ToolCheckout.valid_at.where(member_id: member.id, tool_id: id, revoked_at: nil).exists?
   end
 
   def effective_reservation_prerequisite_ids
@@ -167,7 +183,7 @@ class Tool
   def enqueue_checkout_canvas_syncs(shop_ids)
     Shop.where(:id.in => shop_ids.compact.uniq).each do |affected_shop|
       has_active_checkouts = affected_shop.id.to_s == shop_id.to_s &&
-        ToolCheckout.where(tool_id: id, revoked_at: nil).exists?
+        ToolCheckout.valid_at.where(tool_id: id, revoked_at: nil).exists?
       next if affected_shop.checkout_canvas_id.blank? && !has_active_checkouts
 
       ToolCheckoutSlackCanvasSyncJob.perform_later(affected_shop.id.to_s)

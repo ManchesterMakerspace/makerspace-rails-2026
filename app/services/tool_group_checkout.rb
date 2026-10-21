@@ -10,7 +10,7 @@ class ToolGroupCheckout
     raise Error::UnprocessableEntity.new('Group unavailable') if group.disabled?
     raise Error::UnprocessableEntity.new('This group does not accept requests') if requesting && !group.requestable?
     tools = group.included_tools
-    active = ToolCheckout.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
+    active = ToolCheckout.valid_at.where(member_id: member.id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
     revoked = ToolCheckout.blocking_revoked_tool_ids(member.id)
     raise Error::UnprocessableEntity.new('A checkout in this group has been revoked') if (revoked & group.included_tool_ids).any?
     tools.each do |tool|
@@ -93,7 +93,7 @@ class ToolGroupCheckout
               raise Error::UnprocessableEntity.new('Complete prerequisite checkouts first') if review[:missing_prerequisite_ids].any?
               # A retry after successful approval returns the original physical records;
               # no additional checkout or credit is created.
-              existing = ToolCheckout.where(member_id: member.id, :tool_id.in => review[:held_tool_ids], revoked_at: nil).to_a
+              existing = ToolCheckout.valid_at.where(member_id: member.id, :tool_id.in => review[:held_tool_ids], revoked_at: nil).to_a
               batch_id = SecureRandom.uuid
               note_request = request || ToolCheckoutRequest.where(member_id: member.id, tool_group_id: group.id,
                 status: 'open').order_by(request_date: :asc, id: :asc).first
@@ -104,6 +104,7 @@ class ToolGroupCheckout
                   request_note: note_request&.note.presence,
                   defer_users_channel_invitation: true, defer_group_callbacks: true)
               end
+              created.each { |checkout| ToolCheckout.supersede_expired!(checkout) }
               if created.any?
                 credit = CheckoutApproverCredit.award!(created.first)
                 created.drop(1).each { |checkout| checkout.set(volunteer_credit_id: credit.id) } if credit
@@ -148,13 +149,13 @@ class ToolGroupCheckout
   end
 
   def self.reconcile!(member_id, tool_group_id: nil)
-    active = ToolCheckout.where(member_id: member_id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
+    active = ToolCheckout.valid_at.where(member_id: member_id, revoked_at: nil).pluck(:tool_id).map(&:to_s)
     requests = ToolCheckoutRequest.where(member_id: member_id, status: 'open')
     requests = requests.where(tool_group_id: tool_group_id) if tool_group_id
     requests.filter_map do |request|
       required = request.tool_group ? request.tool_group.included_tool_ids : [request.tool_id.to_s]
       next unless required.present? && (required - active).empty?
-      checkout = ToolCheckout.where(member_id: member_id, :tool_id.in => required, revoked_at: nil).first
+      checkout = ToolCheckout.valid_at.where(member_id: member_id, :tool_id.in => required, revoked_at: nil).first
       request.update!(status: 'closed', checked_out_id: checkout.id)
       request
     end

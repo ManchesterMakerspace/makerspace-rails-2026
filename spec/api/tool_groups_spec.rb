@@ -48,6 +48,7 @@ RSpec.describe 'Tool group API', type: :request do
       consumes 'application/json'
       produces 'application/json'
       parameter name: :body, in: :body, schema: { type: :object, required: %w[name shop_id included_tool_ids], properties: {
+        checkout_training_plan_url: { type: :string, nullable: true, maxLength: 2048 },
         name: { type: :string }, shop_id: { type: :string }, description: { type: :string },
         included_tool_ids: { type: :array, minItems: 1, items: { type: :string } },
         prerequisite_ids: { type: :array, items: { type: :string } }, reservable: { type: :boolean, default: false },
@@ -77,7 +78,7 @@ RSpec.describe 'Tool group API', type: :request do
     put 'Edit a group with optimistic revision checking (Admin, Board or shop RM)' do
       tags 'Tool groups'; security [sessionAuth: []]; consumes 'application/json'; produces 'application/json'
       parameter name: :body, in: :body, schema: { type: :object, required: ['revision'], properties: {
-        revision: { type: :integer }, name: { type: :string }, description: { type: :string },
+        revision: { type: :integer }, checkout_training_plan_url: { type: :string, nullable: true, maxLength: 2048 }, name: { type: :string }, description: { type: :string },
         included_tool_ids: { type: :array, minItems: 1, items: { type: :string } },
         prerequisite_ids: { type: :array, items: { type: :string } }, reservable: { type: :boolean },
         requestable: { type: :boolean }, announce: { type: :boolean }, announce_channel: { type: :string }

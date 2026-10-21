@@ -25,7 +25,13 @@ RSpec.describe SlackReservationModal do
     allow(relation).to receive(:order_by).with(name: :asc).and_return(relation)
     allow(relation).to receive(:to_a).and_return(tools)
     allow(prerequisite_relation).to receive(:only).with(:name).and_return(prerequisite_relation)
-    allow(ToolCheckout).to receive(:where).and_return(checkout_relation)
+    allow(ToolCheckout).to receive(:current_checkouts).and_return(checkout_relation)
+    allow(checkout_relation).to receive(:where).with(member_id: member.id).and_return(checkout_relation)
+    allow(checkout_relation).to receive(:to_a) do
+      checked_out_tool_ids.map do |id|
+        instance_double(ToolCheckout, tool_id: id, active?: true, valid_through?: true)
+      end
+    end
   end
 
   def resource_double(klass, overrides = {})
@@ -335,6 +341,22 @@ RSpec.describe SlackReservationModal do
 end
 
 RSpec.describe 'Slack reservation picker availability' do
+  it 'hides tools after their checkout expires, but keeps them available through the expiration date' do
+    shop = create(:shop, reservable: true)
+    member = create(:member, :current)
+    tool = create(:tool, shop: shop, reservable: true, open: false)
+    checkout = ToolCheckout.create!(member: member, tool: tool, defer_users_channel_invitation: true)
+    today = Time.current.in_time_zone(CheckoutExpiration::ZONE).to_date
+    checkout.set(expires_on: today)
+
+    view = SlackReservationModal.build(shop, member)
+    options = view[:blocks].find { |block| block[:block_id] == 'tools' }[:element][:options]
+    expect(options.pluck(:value)).to include(tool.id.to_s)
+
+    checkout.set(expires_on: today - 1)
+    expect(SlackReservationModal.build(shop, member)[:blocks].pluck(:block_id)).not_to include('tools')
+  end
+
   it 'excludes hidden and unavailable tools, including when all tools are unavailable' do
     shop = create(:shop, reservable: false)
     member = build(:member, :current)
@@ -373,10 +395,13 @@ RSpec.describe 'Slack group reservation prerequisites' do
     expect(view[:blocks].find { |block| block[:block_id] == 'reservation_policy_details' }[:text][:text]).to include('Required active checkout(s): Group orientation')
     expect(view[:submit][:text]).to eq('Review selection')
     duration = view[:blocks].find { |block| block[:block_id] == 'duration' }
-    expect(duration[:element][:options].last[:value]).to eq('hours:4.0')
+    expect(duration).to be_nil
 
     ToolCheckout.create!(member: member, tool: prerequisite, defer_users_channel_invitation: true)
-    expect(build.call[:submit][:text]).to eq('Reserve')
+    eligible_view = build.call
+    expect(eligible_view[:submit][:text]).to eq('Reserve')
+    duration = eligible_view[:blocks].find { |block| block[:block_id] == 'duration' }
+    expect(duration[:element][:options].last[:value]).to eq('hours:4.0')
     # Switching to the whole shop discards the previous group selection's rules.
     ToolCheckout.where(member_id: member.id).delete_all
     expect(SlackReservationModal.build(shop, member, reservation_scope: 'shop', tool_ids: ["group:#{group.id}"])[:submit][:text]).to eq('Reserve')

@@ -145,6 +145,11 @@ class ToolCheckoutRequest
     return if slack_id.blank?
 
     message = "Your checkout request for #{CheckoutDisplay.escape(target.name)} has been created."
+    training_url = PublicCatalog.safe_url(target.checkout_training_plan_url)
+    if training_url.present?
+      message += "\nNext step: review the material available in the " \
+                 "<#{CheckoutExpirationNotice.slack_url(training_url)}|Checkout training plan>."
+    end
     if tool_group
       message += "\nIncluded tools: #{tool_group.included_tools.map { |child| CheckoutDisplay.escape(child.name) }.join(', ')}"
     end
