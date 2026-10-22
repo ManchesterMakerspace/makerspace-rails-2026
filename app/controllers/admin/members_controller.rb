@@ -51,6 +51,8 @@ class Admin::MembersController < AdminController
 
     @member.reload
 
+    HouseholdSetupReminder.notify(@member, trigger: :renewal) if date != @member.expirationTime
+
     # Log membership revocation as its own dedicated event
     if becoming_revoked
       Service::AuditLogger.log(

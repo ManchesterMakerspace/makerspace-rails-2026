@@ -16,6 +16,8 @@ class MemberSerializer < MemberSummarySerializer
              :subscription_plan_id
 
   attribute :expiring_payment_card_types, if: :include_expiring_payment_card_types?
+  # Admin/board only (same audience as provisioning): a household-plan member with no household yet.
+  attribute :household_setup_needed, if: :include_provisioning?
 
   def totp_enabled
     object.otp_required_for_login? && object.otp_secret_encrypted.present?
@@ -41,6 +43,10 @@ class MemberSerializer < MemberSummarySerializer
 
   def group_name
     object.groupName
+  end
+
+  def household_setup_needed
+    object.household_setup_needed?
   end
 
   def household_role
