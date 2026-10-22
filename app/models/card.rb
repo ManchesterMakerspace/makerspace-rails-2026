@@ -61,6 +61,7 @@ class Card
   def perform_assignment_effects!
     settle_open_member_invoices
     enqueue_member_provisioning
+    HouseholdSetupReminder.notify(member, trigger: :fob)
   end
 
   private

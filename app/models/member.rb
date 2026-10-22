@@ -203,6 +203,21 @@ class Member
     nil
   end
 
+  # True when a member is billed on a household membership plan but is not yet
+  # part of a household (neither its primary nor a secondary). This is the state
+  # that needs an admin to create the household and attach the second adult.
+  # Uses the same "latest member invoice plan includes household" test that
+  # Admin::GroupsController#create requires before a household can be made.
+  # Expired memberships are excluded: they are not being onboarded or renewed.
+  def household_setup_needed?
+    return false if household_role.present?
+    return false unless active_membership_status?
+    return false if expirationTime.present? && expirationTime <= (Time.now.to_i * 1000)
+
+    latest = Invoice.where(resource_class: "member", resource_id: id.to_s).order_by(created_at: :desc).first
+    latest&.plan_id.to_s.include?("household")
+  end
+
   def direct_notifications_suppressed?
     %w[revoked suspended].include?(status)
   end

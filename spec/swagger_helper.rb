@@ -389,6 +389,7 @@ RSpec.configure do |config|
             earnedMembershipId: { type: :string, 'x-nullable': true },
             earnedMembershipActive: { type: :boolean },
             householdRole: { type: :string, enum: %w[primary secondary], nullable: true },
+            householdSetupNeeded: { type: :boolean, description: 'Admin and board only: billed on a household plan with no household yet' },
           },
           required: [:id, :expirationTime]
         }
