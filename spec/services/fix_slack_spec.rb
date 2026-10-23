@@ -23,6 +23,63 @@ RSpec.describe FixSlack do
     expect(tool[:element][:type]).to eq('external_select')
     expect(JSON.parse(view[:private_metadata])['submission_key']).to be_present
   end
+  it 'prepopulates the shop dropdown with every non-hidden shop in name order' do
+    woodworking = create(:shop, name: 'Woodworking', disabled: false)
+    electronics = create(:shop, name: 'Electronics', disabled: nil)
+    metalworking = create(:shop, name: 'Metalworking')
+    metalworking.unset(:disabled)
+    create(:shop, name: 'Hidden shop', disabled: true)
+
+    view = described_class.command_view(member, 'new')
+    shop = view[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element]
+    expect(shop).to include(type: 'static_select', action_id: 'shop_id')
+    expect(shop[:options]).to eq([
+      described_class.option('No Shop Selected', 'none'),
+      described_class.option(electronics.name, electronics.id),
+      described_class.option(metalworking.name, metalworking.id),
+      described_class.option(woodworking.name, woodworking.id)
+    ])
+    expect(shop[:initial_option]).to eq(shop[:options].first)
+  end
+
+  it 'keeps every shop and the default when the dropdown needs option groups' do
+    shops = Array.new(100) { |index| build(:shop, name: format('Shop %03d', index)) }
+    shop_scope = double('visible shops')
+    allow(Shop).to receive(:where).and_call_original
+    allow(Shop).to receive(:where).with(:disabled.ne => true).and_return(shop_scope)
+    allow(shop_scope).to receive(:order_by).with(name: :asc).and_return(shops)
+
+    view = described_class.command_view(member, 'new')
+    dropdown = view[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element]
+    expect(dropdown[:type]).to eq('static_select')
+    expect(dropdown).not_to have_key(:options)
+    expect(dropdown[:option_groups].size).to eq(2)
+    expect(dropdown[:option_groups].map { |group| group[:options].size }).to all(be <= 100)
+    options = dropdown[:option_groups].flat_map { |group| group[:options] }
+    expect(options.map { |option| option[:value] }).to eq(['none'] + shops.map { |shop| shop.id.to_s })
+    expect(options.map { |option| option[:text][:text] }).to eq(['No Shop Selected'] + shops.map(&:name))
+    expect(dropdown[:initial_option]).to eq(options.first)
+  end
+
+  %w[admin board_member resource_manager].each do |role|
+    it "excludes hidden shops from the new-report dropdown for #{role}s" do
+      hidden_shop = create(:shop, disabled: true)
+      visible_shop = create(:shop)
+      member.set(role: role, resource_manager_shop_ids: [hidden_shop.id.to_s])
+
+      view = described_class.command_view(member, 'new')
+      shop = view[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element]
+      expect(shop[:options].map { |option| option[:value] }).to eq(['none', visible_shop.id.to_s])
+    end
+  end
+
+  it 'keeps No Shop Selected available and selected when there are no visible shops' do
+    create(:shop, disabled: true)
+    view = described_class.command_view(member, 'new')
+    shop = view[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element]
+    expect(shop[:options]).to eq([described_class.option('No Shop Selected', 'none')])
+    expect(shop[:initial_option]).to eq(shop[:options].first)
+  end
   it 'renders each scoped paginated list and complete filter controls' do
     %w[mine assigned queue public].each do |mode|
       view = described_class.command_view(member, mode)
@@ -52,14 +109,14 @@ RSpec.describe FixSlack do
     described_class.interaction('type' => 'block_actions', 'trigger_id' => 'DM_TRIGGER',
       'actions' => [{ 'action_id' => 'fix_view', 'value' => { id: ticket.id }.to_json }])
   end
-  it 'prefills the channel shop and keeps it as the list and new-report filter' do
+  it 'keeps the channel shop as the list filter but defaults new reports to No Shop Selected' do
     shop = create(:shop, slack_channel: 'woodshop')
     expect(described_class.channel_shop(member, { 'channel_id' => 'C123', 'channel_name' => 'woodshop' })).to eq(shop)
     shop.set(slack_channel: 'C123')
     expect(described_class.channel_shop(member, { 'channel_id' => 'C123' })).to eq(shop)
     expect(described_class.channel_shop(member, { 'channel_id' => 'C_OTHER' })).to be_nil
     view = described_class.command_view(member, 'new', shop: shop)
-    expect(view[:blocks].find { |b| b[:block_id] == 'shop_id' }[:element][:initial_option][:value]).to eq(shop.id.to_s)
+    expect(view[:blocks].find { |b| b[:block_id] == 'shop_id' }[:element][:initial_option]).to eq(described_class.option('No Shop Selected', 'none'))
     expect(JSON.parse(view[:private_metadata]).dig('query', 'shop_id')).to eq(shop.id.to_s)
     expect(view[:blocks].select { |b| b[:type] == 'input' }).to all(include(:label, :hint))
     list = described_class.command_view(member, '', shop: shop)
@@ -136,6 +193,32 @@ RSpec.describe FixSlack do
     } })
     expect(result[:response_action]).to eq('update')
     expect(ticket.reload.shop_id).to be_nil
+  end
+
+  ['none', 'shop'].each do |selection|
+    it "creates a report with the static shop dropdown's #{selection} selection", requires_transactions: true do
+      channel_shop = create(:shop)
+      selected_shop = create(:shop) if selection == 'shop'
+      view = described_class.command_view(member, 'new', shop: channel_shop)
+      shop = view[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element]
+      chosen_option = selected_shop ? shop[:options].find { |option| option[:value] == selected_shop.id.to_s } : shop[:initial_option]
+      allow(described_class).to receive(:member!).and_return(member)
+
+      result = described_class.interaction('type' => 'view_submission', 'view' => {
+        'callback_id' => 'fix_new', 'private_metadata' => view[:private_metadata],
+        'state' => { 'values' => {
+          'title' => { 'title' => { 'value' => 'Repair needed' } },
+          'description' => { 'description' => { 'value' => 'The guard is loose.' } },
+          'category' => { 'category' => { 'selected_option' => { 'value' => 'broken' } } },
+          'shop_id' => { shop[:action_id] => { 'selected_option' => chosen_option.deep_stringify_keys } }
+        } }
+      })
+
+      expect(result[:response_action]).to eq('update')
+      ticket = FixTicket.find(JSON.parse(result[:view][:private_metadata])['id'])
+      expect(ticket.shop_id).to eq(selected_shop&.id)
+      expect(ticket.tool_id).to be_nil
+    end
   end
 
 end

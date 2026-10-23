@@ -20,8 +20,14 @@ Deploy the mixed-ID backend before the frontend; do not reset the counter in
 an existing deployment. Sequence numbers need not be gap-free.
 
 Both `/fix` and `/fix-tickets` use `/slack/commands/fix`. Apply the updated Slack
-manifest to register the alias. A matching shop channel name or ID prefills new
-reports and the list filter. Input blocks have persistent labels and hints.
+manifest to register the alias. A matching shop channel name or ID scopes the
+list filter. The new-report **Shop (optional)** dropdown is populated when the
+modal opens with all non-hidden shops in alphabetical order. **No Shop Selected**
+is the first and default option, including when the command is used in a shop's
+channel. Selecting a catalog tool still selects that tool's shop. Input blocks
+have persistent labels and hints. The wiki update is held in
+[wiki-fix-ticket-shop-dropdown.patch](wiki-fix-ticket-shop-dropdown.patch) until
+deployment.
 `/fix-tickets show` returns an ephemeral list of all authorized nonterminal
 tickets, including public tickets, the member's reports, assignments, and
 approver scope. In a shop channel it restricts the results and prefixes them
@@ -29,7 +35,7 @@ with `Tickets in <SHOP NAME>:`. Pages contain ten tickets; Next/Previous send
 another private page and recheck permissions. Detail and form buttons open
 authorized modals. No ticket list is posted publicly by this command.
 
-Creation validates catalog visibility inside the reporter transaction. Hidden shops/tools are available only to admins/board or the RM managing their shop, consistently in portal catalogs and Slack suggestions. Ordinary reports may still reference visible out-of-service tools or uncatalogued tools. Existing scoped staff ticket edits remain available.
+Creation validates catalog visibility inside the reporter transaction. Hidden shops/tools are available only to admins/board or the RM managing their shop in portal catalogs and Slack search suggestions. The new-report Slack Shop dropdown excludes hidden shops for every role. Ordinary reports may still reference visible out-of-service tools or uncatalogued tools. Existing scoped staff ticket edits remain available.
 
 Assignment events use a neutral Member actor and omit assignee-name deltas in history and Slack delivery, including older stored events. New events omit those deltas at write time. Current assignee lists remain visible; no event labels a named assignee as the reporter. Already delivered Slack messages are not rewritten. Ordinary task claim capabilities retain privileged prerequisite exemptions; linked repair bounties always require prerequisites.
 
