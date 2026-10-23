@@ -11,6 +11,7 @@ class AdminToolSerializer < ToolSerializer
   MANAGEMENT_ONLY_FIELDS = %i[
     disabled
     allow_pending
+    grants_fob_issuance
     announce
     announce_channel
     users_channel

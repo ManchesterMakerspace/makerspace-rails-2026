@@ -160,11 +160,15 @@ class Admin::ToolsController < ApplicationController
   end
 
   def tool_params
-    params.permit(:checkout_training_plan_url, :checkout_expiration_years, :open, :name, :requestor_annotation, :wiki_url, :gdrive_id, :description, :notes, :shop_id, :disabled, :announce,
-      :announce_channel, :users_channel, :reservable, :allow_pending, :location_id,
+    permitted = params.permit(:checkout_training_plan_url, :checkout_expiration_years, :open, :name, :requestor_annotation, :wiki_url, :gdrive_id, :description, :notes, :shop_id, :disabled, :announce,
+      :announce_channel, :users_channel, :reservable, :allow_pending, :location_id, :grants_fob_issuance,
       :max_concurrent_reservations, :reservation_horizon_days,
       :minimum_advance_notice_hours, :prohibit_same_day_reservations, :reservation_full_day, :max_reservation_duration_hours, :reservation_requires_approval,
       prerequisite_ids: [], duration_fees: [:invoice_option_id, :minimum_hours, :maximum_hours, :full_day], reservation_prerequisite_tool_ids: [])
+    # A capability flag: resource managers manage tools but must not be able to
+    # turn a tool into one that authorizes fob issuing.
+    permitted.delete(:grants_fob_issuance) unless is_admin? || is_board_member?
+    permitted
   end
 
   def resolve_changed_slack_channels(attributes, tool = nil, actor = nil)

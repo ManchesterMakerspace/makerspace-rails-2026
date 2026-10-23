@@ -189,6 +189,14 @@ Rails.application.routes.draw do
       post   '/volunteer/events/:id/checkin', to: 'volunteer#checkin_event'
       delete '/volunteer/events/:id/checkin', to: 'volunteer#remove_checkin'
 
+      # Fob issuers (volunteers with a fob-issuer checkout): first-fob issuing only
+      scope :fob_issuance, controller: :fob_issuance do
+        get  'members',     action: :members
+        get  'members/:id', action: :show
+        get  'cards/new',   action: :new_card
+        post 'cards',       action: :create
+      end
+
       namespace :admin do
         resources :cards, only: [:new, :create, :index, :update, :destroy] do
           get :lookup, on: :collection

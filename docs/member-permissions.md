@@ -70,6 +70,10 @@ recognized names:
 | `paypal_transfer` | The member-review rake task directly queries the matching globally enabled `DefaultPermission` before sending its PayPal report. It does not call `Member#is_allowed?`. |
 | `ping_no_purchase` | The member-review rake task directly queries the matching globally enabled `DefaultPermission` before sending its no-purchase report. It does not call `Member#is_allowed?`. |
 
+Issuing a member's first key fob is not a named permission. It is granted by an active
+checkout on the single tool flagged `grants_fob_issuance` (see
+[Card assignment](card-assignment.md#fob-issuers-volunteers)).
+
 `custom_billing` appears in test seed data, but is not an application-defined
 permission and has no production consumer currently.
 

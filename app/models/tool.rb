@@ -33,6 +33,9 @@ class Tool
   # Independent of Hidden (disabled): unavailable tools remain in the catalog.
   field :out_of_service, type: Boolean, default: false
   field :allow_pending, type: Boolean, default: false
+  # Holding an active checkout on a tool with this set lets a member issue first key
+  # fobs (see Member#fob_issuer? and FobIssuanceController). Admin/board only to set.
+  field :grants_fob_issuance, type: Boolean, default: false
   field :announce, type: Boolean, default: false
   field :announce_channel, type: String
   field :users_channel, type: String
@@ -72,6 +75,7 @@ class Tool
   validate :group_catalog_constraints
   before_destroy :prevent_group_reference_deletion
   validate :location_belongs_to_same_shop
+  validate :only_one_fob_issuance_tool
 
   index({ shop_id: 1, name: 1 }, {
     unique: true,
@@ -145,6 +149,14 @@ class Tool
   end
 
   private
+
+  # Exactly one tool may grant fob issuing, so there is a single, unambiguous
+  # "Fob Issuer" checkout to approve, revoke and recertify.
+  def only_one_fob_issuance_tool
+    return unless grants_fob_issuance
+    other = Tool.where(grants_fob_issuance: true, :id.ne => id).first
+    errors.add(:grants_fob_issuance, "is already set on #{other.name}; only one tool can grant fob issuing") if other
+  end
 
   def group_catalog_constraints
     if ToolGroup.where(shop_id: shop_id, name: name.to_s.strip).collation(locale: 'en', strength: 2).exists?

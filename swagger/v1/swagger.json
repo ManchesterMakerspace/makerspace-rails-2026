@@ -1164,6 +1164,10 @@
             "type": "boolean",
             "description": "Allow pending members to request checkout and reservations. Send false to clear; defaults to false on creation."
           },
+          "grants_fob_issuance": {
+            "type": "boolean",
+            "description": "Admin/board only (ignored for resource managers). Members with an active checkout on this tool may issue first key fobs. Only one tool may set it."
+          },
           "announce": {
             "type": "boolean"
           },
@@ -1304,6 +1308,10 @@
                 "default": false
               },
               "allowPending": {
+                "type": "boolean",
+                "default": false
+              },
+              "grantsFobIssuance": {
                 "type": "boolean",
                 "default": false
               },
