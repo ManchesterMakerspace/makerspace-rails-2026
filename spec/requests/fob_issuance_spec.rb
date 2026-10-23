@@ -180,6 +180,22 @@ RSpec.describe "Fob issuance", type: :request, requires_transactions: true do
     end
   end
 
+  describe "the isFobIssuer profile flag" do
+    it "is returned on the member's own profile only" do
+      sign_in issuer
+      get "/api/members/#{issuer.id}"
+      expect(JSON.parse(response.body)["isFobIssuer"]).to be(true)
+
+      sign_in create(:member, :current, :admin)
+      get "/api/members/#{issuer.id}"
+      expect(JSON.parse(response.body)).not_to have_key("isFobIssuer")
+
+      sign_in newcomer
+      get "/api/members/#{newcomer.id}"
+      expect(JSON.parse(response.body)["isFobIssuer"]).to be(false)
+    end
+  end
+
   describe "the fob issuer tool flag" do
     it "allows only one tool to carry it" do
       tool
