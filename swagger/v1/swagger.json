@@ -5035,6 +5035,9 @@
               "secondary"
             ],
             "nullable": true
+          },
+          "isFobIssuer": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -5072,7 +5075,8 @@
           "phone",
           "silenceEmails",
           "groupName",
-          "householdRole"
+          "householdRole",
+          "isFobIssuer"
         ],
         "additionalProperties": false,
         "description": "Complete current-member representation returned by Home. Privileged provisioning and optional expiring-payment-card fields are not requested by this endpoint."
