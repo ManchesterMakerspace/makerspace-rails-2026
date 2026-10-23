@@ -15,24 +15,26 @@ namespace :db do
     puts "Cleaning db..."
 
     Dir[Rails.root.join('spec/support/**/*.rb')].each { |f| require f }
-    DatabaseCleaner.strategy = :deletion
-    DatabaseCleaner.clean
-    FactoryBot.rewind_sequences
+    AvailableShopCache.with_bulk_changes do
+      DatabaseCleaner.strategy = :deletion
+      DatabaseCleaner.clean
+      FactoryBot.rewind_sequences
 
-    # Braintree cleanup options — only meaningful in test (CI) where we want a
-    # clean sandbox. Skipped in development to preserve local sandbox data.
-    if Rails.env.test?
-      braintree_options = (args[:options] || "").split(",").map(&:to_sym)
+      # Braintree cleanup options — only meaningful in test (CI) where we want a
+      # clean sandbox. Skipped in development to preserve local sandbox data.
+      if Rails.env.test?
+        braintree_options = (args[:options] || "").split(",").map(&:to_sym)
 
-      if braintree_options.length > 0
-        gateway = ::Service::BraintreeGateway.connect_gateway
-        cancel_subscriptions(gateway) if braintree_options.include?(:subscriptions)
-        delete_payment_methods(gateway) if braintree_options.include?(:payment_methods)
+        if braintree_options.length > 0
+          gateway = ::Service::BraintreeGateway.connect_gateway
+          cancel_subscriptions(gateway) if braintree_options.include?(:subscriptions)
+          delete_payment_methods(gateway) if braintree_options.include?(:payment_methods)
+        end
       end
-    end
 
-    puts "DB cleaned, seeding..."
-    SeedData.new.call
+      puts "DB cleaned, seeding..."
+      SeedData.new.call
+    end
     puts "Creating verified unique indexes..."
     Rake::Task["data:ensure_unique_indexes"].reenable
     Rake::Task["data:ensure_unique_indexes"].invoke

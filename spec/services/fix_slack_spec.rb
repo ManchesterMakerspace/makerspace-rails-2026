@@ -44,10 +44,9 @@ RSpec.describe FixSlack do
 
   it 'keeps every shop and the default when the dropdown needs option groups' do
     shops = Array.new(100) { |index| build(:shop, name: format('Shop %03d', index)) }
-    shop_scope = double('visible shops')
-    allow(Shop).to receive(:where).and_call_original
-    allow(Shop).to receive(:where).with(:disabled.ne => true).and_return(shop_scope)
-    allow(shop_scope).to receive(:order_by).with(name: :asc).and_return(shops)
+    allow(AvailableShopCache).to receive(:fetch).and_return(shops.map do |shop|
+      AvailableShopCache::Entry.new(id: shop.id.to_s, name: shop.name, slack_channel: nil)
+    end)
 
     view = described_class.command_view(member, 'new')
     dropdown = view[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element]
@@ -59,6 +58,8 @@ RSpec.describe FixSlack do
     expect(options.map { |option| option[:value] }).to eq(['none'] + shops.map { |shop| shop.id.to_s })
     expect(options.map { |option| option[:text][:text] }).to eq(['No Shop Selected'] + shops.map(&:name))
     expect(dropdown[:initial_option]).to eq(options.first)
+    selected = described_class.new_view(member, 'shop_id' => shops.last.id.to_s)
+    expect(selected[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element][:initial_option]).to eq(options.last)
   end
 
   %w[admin board_member resource_manager].each do |role|
@@ -79,6 +80,17 @@ RSpec.describe FixSlack do
     shop = view[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element]
     expect(shop[:options]).to eq([described_class.option('No Shop Selected', 'none')])
     expect(shop[:initial_option]).to eq(shop[:options].first)
+  end
+
+  it 'falls back to no shop for hidden, deleted, unknown and explicit no-shop selections' do
+    hidden = create(:shop, disabled: true)
+    deleted = create(:shop)
+    deleted.destroy!
+    [hidden.id.to_s, deleted.id.to_s, BSON::ObjectId.new.to_s, 'none'].each do |id|
+      view = described_class.new_view(member, 'shop_id' => id)
+      dropdown = view[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element]
+      expect(dropdown[:initial_option]).to eq(described_class.option('No Shop Selected', 'none'))
+    end
   end
   it 'renders each scoped paginated list and complete filter controls' do
     %w[mine assigned queue public].each do |mode|
@@ -109,14 +121,14 @@ RSpec.describe FixSlack do
     described_class.interaction('type' => 'block_actions', 'trigger_id' => 'DM_TRIGGER',
       'actions' => [{ 'action_id' => 'fix_view', 'value' => { id: ticket.id }.to_json }])
   end
-  it 'keeps the channel shop as the list filter but defaults new reports to No Shop Selected' do
+  it 'uses the channel shop as the list filter and new-report default' do
     shop = create(:shop, slack_channel: 'woodshop')
     expect(described_class.channel_shop(member, { 'channel_id' => 'C123', 'channel_name' => 'woodshop' })).to eq(shop)
     shop.set(slack_channel: 'C123')
     expect(described_class.channel_shop(member, { 'channel_id' => 'C123' })).to eq(shop)
     expect(described_class.channel_shop(member, { 'channel_id' => 'C_OTHER' })).to be_nil
     view = described_class.command_view(member, 'new', shop: shop)
-    expect(view[:blocks].find { |b| b[:block_id] == 'shop_id' }[:element][:initial_option]).to eq(described_class.option('No Shop Selected', 'none'))
+    expect(view[:blocks].find { |b| b[:block_id] == 'shop_id' }[:element][:initial_option]).to eq(described_class.option(shop.name, shop.id))
     expect(JSON.parse(view[:private_metadata]).dig('query', 'shop_id')).to eq(shop.id.to_s)
     expect(view[:blocks].select { |b| b[:type] == 'input' }).to all(include(:label, :hint))
     list = described_class.command_view(member, '', shop: shop)
@@ -201,7 +213,7 @@ RSpec.describe FixSlack do
       selected_shop = create(:shop) if selection == 'shop'
       view = described_class.command_view(member, 'new', shop: channel_shop)
       shop = view[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element]
-      chosen_option = selected_shop ? shop[:options].find { |option| option[:value] == selected_shop.id.to_s } : shop[:initial_option]
+      chosen_option = shop[:options].find { |option| option[:value] == (selected_shop&.id&.to_s || 'none') }
       allow(described_class).to receive(:member!).and_return(member)
 
       result = described_class.interaction('type' => 'view_submission', 'view' => {

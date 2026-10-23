@@ -2,7 +2,11 @@ class Slack::FixController < Slack::CommandsController
   skip_after_action :send_messages
   def command
     member = FixSlack.member!(params.to_unsafe_h)
-    shop = FixSlack.channel_shop(member, params.to_unsafe_h)
+    shop = if params[:text].to_s.strip.split.first == 'new'
+      AvailableShopCache.find_by_channel(channel_id: params[:channel_id], channel_name: params[:channel_name])
+    else
+      FixSlack.channel_shop(member, params.to_unsafe_h)
+    end
     view = FixSlack.command_view(member, params[:text].to_s.strip, shop: shop)
     return render json: view if view[:response_type] == 'ephemeral'
     Service::SlackConnector.open_modal(params[:trigger_id], view)

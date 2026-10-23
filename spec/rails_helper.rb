@@ -58,11 +58,14 @@ RSpec.configure do |config|
   config.before(:suite) do
     ensure_safe_database_cleaner_mlab_uri!
     DatabaseCleaner[:mongoid].clean_with(:deletion)
+    AvailableShopCache.invalidate
   end
   config.before(:each) do |example|
     ensure_safe_database_cleaner_mlab_uri!
     DatabaseCleaner[:mongoid].strategy = :deletion
     DatabaseCleaner[:mongoid].start
+    # DatabaseCleaner bypasses Shop callbacks. Clear only this database's display cache.
+    AvailableShopCache.invalidate
   end
   config.after(:each) do
     ensure_safe_database_cleaner_mlab_uri!

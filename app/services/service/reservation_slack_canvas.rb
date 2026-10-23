@@ -10,7 +10,7 @@ module Service
         dates = [today.iso8601, (today + 1.day).iso8601]
         failures = []
 
-        Shop.all.each do |shop|
+        AvailableShopCache.load_all.each do |shop|
           begin
             rebuild_shop_with_rate_limit_retry!(shop, dates)
           rescue => error

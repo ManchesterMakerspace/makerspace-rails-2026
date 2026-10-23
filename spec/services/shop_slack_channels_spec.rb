@@ -24,10 +24,10 @@ RSpec.describe Service::ShopSlackChannels do
     allow(Service::SlackChannelCache).to receive(:lookup).with("#private-shop")
       .and_return(id: "G34567890", name: "#private-shop")
 
-    expect(described_class.resolved.map { |channel| [channel.shop, channel.id] }).to eq([
-      [legacy, "C34567890"],
-      [metal, "C23456789"],
-      [wood, "C12345678"]
+    expect(described_class.resolved.map { |channel| [channel.shop.id, channel.id] }).to eq([
+      [legacy.id.to_s, "C34567890"],
+      [metal.id.to_s, "C23456789"],
+      [wood.id.to_s, "C12345678"]
     ])
     expect(Service::SlackChannelCache).not_to have_received(:lookup).with("#disabled-shop")
   end

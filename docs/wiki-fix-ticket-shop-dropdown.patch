@@ -6,7 +6,7 @@ diff --git a/digital-makerspace/members/report-a-problem.md b/digital-makerspace
  Type these in any Slack channel. The answers are private to you.
  
 -- **/fix new** opens the report form. In a shop's channel it fills in that shop for you.
-+- **/fix new** or **/fix-tickets new** opens the report form. **Shop (optional)** is a dropdown already filled with all non-hidden shops in alphabetical order. **No Shop Selected** is the first and default choice, even when you open the form from a shop's channel. Choose a shop if it applies to the problem. Selecting a catalog tool still uses that tool's shop.
++- **/fix new** or **/fix-tickets new** opens the report form. **Shop (optional)** is a dropdown already filled with all non-hidden shops in alphabetical order. **No Shop Selected** is the first choice. In a matching shop channel, that shop is selected automatically; otherwise **No Shop Selected** is selected. You can change the selection, including choosing no shop. Selecting a catalog tool still uses that tool's shop.
  - **/fix mine** lists your reports.
  - **/fix public** lists public tickets.
  - **/fix 2** opens ticket number 2.

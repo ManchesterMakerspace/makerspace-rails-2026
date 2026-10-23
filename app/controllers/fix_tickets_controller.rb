@@ -18,7 +18,7 @@ class FixTicketsController < ApplicationController
   end
   def catalog
     privileged = %w[admin board_member].include?(current_member.role)
-    shops = FixTicketService.catalog_shops(current_member)
+    shops = FixTicketService.shop_choices(current_member)
     tools = FixTicketService.catalog_tools(current_member)
     eligible = current_member.fully_active_unexpired?
     open_count = FixTicketService.count(current_member)

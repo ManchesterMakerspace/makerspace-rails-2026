@@ -11,11 +11,10 @@ class Admin::ShopsController < ApplicationController
 
   def index
     shops = if is_admin? || is_board_member?
-      Shop.all
+      AvailableShopCache.load_all
     else
-      Shop.where(:id.in => managed_shop_ids)
+      Shop.where(:id.in => managed_shop_ids).order_by(name: :asc).to_a
     end
-    shops = shops.order_by(name: :asc).to_a
     render json: shops, each_serializer: ShopSerializer, adapter: :attributes, sheet_viewer: current_member,
       checkout_context: CheckoutReadContext.for_shops(shops)
   end

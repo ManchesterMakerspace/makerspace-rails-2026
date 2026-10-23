@@ -10504,7 +10504,7 @@
             "url": "/"
           }
         ],
-        "description": "Handles /fix and /fix-tickets. new opens a prepopulated Shop dropdown containing all non-hidden shops in name order, preceded by the default No Shop Selected option, including in a shop channel. Other lists default to the matching shop channel filter. show returns an ephemeral, paginated list of all authorized open tickets (including public and approver scope), prefixed Tickets in SHOP NAME: in a shop channel. Ticket numbers accept an optional # prefix. Modal input blocks include persistent labels and hints.",
+        "description": "Handles /fix and /fix-tickets. new opens a prepopulated Shop dropdown containing all non-hidden shops in name order, preceded by No Shop Selected. A matching non-hidden channel shop is selected by default; otherwise No Shop Selected is selected. Other lists default to the matching shop channel filter. show returns an ephemeral, paginated list of all authorized open tickets (including public and approver scope), prefixed Tickets in SHOP NAME: in a shop channel. Ticket numbers accept an optional # prefix. Modal input blocks include persistent labels and hints.",
         "tags": [
           "Slack"
         ],
