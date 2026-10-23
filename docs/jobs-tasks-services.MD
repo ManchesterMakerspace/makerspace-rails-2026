@@ -814,6 +814,11 @@ cache. Fix-ticket creation, ordinary-member catalog/suggestions, Slack checkout
 selectors and non-hidden shop-channel enumeration consume display entries.
 Privileged hidden-shop scopes, authorization, routing decisions and reservation
 eligibility continue querying MongoDB. Public response fields are unchanged.
+`Service::ShopSlackChannels.associated?` checks live non-hidden shops when the
+cached channel association is absent, using the same normalized name/ID matching.
+This preserves checkout routing for newly created or reassigned channels after
+Redis recovers with a snapshot whose invalidation failed. Cache hits retain the
+fast path; channel enumeration and public-channel resolution remain unchanged.
 
 Redis read/write failures are logged and do not fail successful shop edits;
 reads fall back to MongoDB. Later reads and relevant writes retry maintenance.
