@@ -85,7 +85,10 @@ class Admin::GroupsController < AdminController
       resource_type:  'Group',
       resource_id:    @group.id,
       actor:          current_member,
-      subject:        secondary,
+      # The Slack sentence reads "on <subject>'s Group", so the subject is the household's
+      # primary (the Group's owner); the member who was added is named in the details.
+      subject:        @group.member,
+      message_details: "#{secondary.fullname} was added",
       after_snapshot: { groupName: @group.groupName, secondary_member_id: secondary.id.to_s,
                         secondary_name: secondary.fullname },
       slack_channel:  ::Service::SlackConnector.members_relations_channel
@@ -114,7 +117,8 @@ class Admin::GroupsController < AdminController
       resource_type:  'Group',
       resource_id:    @group.id,
       actor:          current_member,
-      subject:        secondary,
+      subject:        @group.member,
+      message_details: "#{secondary.fullname} was removed",
       after_snapshot: { groupName: @group.groupName, secondary_member_id: secondary.id.to_s,
                         secondary_name: secondary.fullname },
       slack_channel:  ::Service::SlackConnector.members_relations_channel
