@@ -117,12 +117,21 @@ class FixSlack
     end
     def new_view(member, query = {})
       FixTicketService.capacity!(member)
-      shop = FixTicketService.catalog_shops(member).where(id: query['shop_id']).first if query['shop_id'].present? && query['shop_id'] != 'none'
+      shop_options = [option('No Shop Selected', 'none')] + Shop.where(:disabled.ne => true).order_by(name: :asc).map { |shop| option(shop.name, shop.id) }
+      shop_input = input('shop_id', 'Shop (optional)', value: 'none', optional: true, options: shop_options)
+      shop_input[:hint] = plain('Choose a non-hidden shop, or leave No Shop Selected.')
+      # Slack caps each option list at 100; keep every shop available in larger catalogs.
+      if shop_options.length > 100
+        shop_input[:element].delete(:options)
+        shop_input[:element][:option_groups] = shop_options.each_slice(100).with_index.map do |options, index|
+          { label: plain("Shops #{index + 1}"), options: options }
+        end
+      end
       blocks = [text_block('Donation Offers show your identity by default; other categories hide it. Choose an identity preference below. Text may identify you. When configured, full notes are shared in the central tickets channel.'),
         input('title', 'Title'), input('description', 'Description', multi: true),
         input('show_identity', 'Identity preference', optional: true, options: [option('Use category default', 'default'), option('Show my identity', 'true'), option('Hide my identity', 'false')]),
         input('category', 'Category', options: FixTicket::CATEGORIES.map { |v| option(v.tr('_', ' ').capitalize, v) }),
-        external('shop_id', 'Shop (optional)', selected: shop ? [option(shop.name, shop.id)] : []),
+        shop_input,
         external('tool_id', 'Tool (optional; selects its shop)'),
         input('uncatalogued_tool', 'Uncatalogued tool name', optional: true),
         input('priority', 'Priority (1 highest; shifts your existing priorities)', optional: true, options: (1..10).map { |n| option(n, n) }),

@@ -774,6 +774,15 @@ is introduced; these receipts remain internal task/event data.
 
 `FixTicketDeliveryRecoveryJob` runs every ten minutes in config/schedule.rb; it re-enqueues tickets with undelivered events, including events whose original queue enqueue failed. External schedulers may run `bundle exec rake fix_tickets:recover_deliveries` every ten minutes instead. `data:ensure_unique_indexes` creates repair ticket, event, and reveal indexes alongside the core indexes during deployment. `fix_tickets:ensure_indexes` remains a compatibility alias for that task. FixTicketService owns transactional mutations/outbox creation; FixTicketPolicy owns scopes/capabilities; FixTicketDelivery owns notification content and routing.
 
+`FixSlack` builds the private `/fix new` and `/fix-tickets new` report modals at
+request time. Their Shop dropdown embeds all non-hidden shops in alphabetical
+order, with **No Shop Selected** first and selected by default even in a shop
+channel; opening the dropdown needs no options-search callback. Submission
+removes that empty-shop choice before calling `FixTicketService.create!`.
+Selecting a catalog tool still uses its shop, and channel-based ticket list
+filters retain their scope. Modal construction writes no ticket; submission
+uses the existing transactional service and validation/error handling.
+
 Central repair-ticket delivery allowlists status, confirmation, assignments, and announcement-note changes plus new discussion notes/bounties. Unrelated field updates do not create central replies or roots.
 
 FixTicketService maps MongoDB `TransactionsNotSupported` to an actionable HTTP 503 error; it never retries ticket writes outside a transaction. Local single-node replica-set setup is documented in `fix-tickets.MD`.

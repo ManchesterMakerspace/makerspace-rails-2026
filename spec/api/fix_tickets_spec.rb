@@ -319,7 +319,7 @@ RSpec.describe 'Fix tickets', type: :request do
   end
   path '/slack/commands/fix' do
     post 'Open Fix tickets; Slack signature, workspace and linked member required', operation: { servers: [{ url: '/' }] } do
-      description 'Handles /fix and /fix-tickets. new prefills a matching shop channel; other lists default to that shop filter. show returns an ephemeral, paginated list of all authorized open tickets (including public and approver scope), prefixed Tickets in SHOP NAME: in a shop channel. Ticket numbers accept an optional # prefix. Modal input blocks include persistent labels and hints.'
+      description 'Handles /fix and /fix-tickets. new opens a prepopulated Shop dropdown containing all non-hidden shops in name order, preceded by the default No Shop Selected option, including in a shop channel. Other lists default to the matching shop channel filter. show returns an ephemeral, paginated list of all authorized open tickets (including public and approver scope), prefixed Tickets in SHOP NAME: in a shop channel. Ticket numbers accept an optional # prefix. Modal input blocks include persistent labels and hints.'
       tags 'Slack'
       consumes 'application/x-www-form-urlencoded'
       produces 'application/json'
@@ -342,6 +342,19 @@ RSpec.describe 'Fix tickets', type: :request do
         it 'returns an ephemeral response from the root Slack route' do |example|
           post '/slack/commands/fix', params: { team_id: team_id, user_id: user_id, trigger_id: trigger_id }
           assert_response_matches_metadata(example.metadata)
+        end
+        it 'opens new reports with visible shops prepopulated and No Shop Selected as the default' do |example|
+          shop = create(:shop, name: 'Woodworking', slack_channel: 'woodworking')
+          create(:shop, name: 'Hidden shop', disabled: true)
+          post '/slack/commands/fix', params: { command: '/fix-tickets', text: 'new', team_id: team_id, user_id: user_id, trigger_id: trigger_id, channel_id: 'C_WOOD', channel_name: 'woodworking' }
+          assert_response_matches_metadata(example.metadata)
+          expect(Service::SlackConnector).to have_received(:open_modal) do |trigger, view|
+            expect(trigger).to eq(trigger_id)
+            dropdown = view[:blocks].find { |block| block[:block_id] == 'shop_id' }[:element]
+            expect(dropdown[:type]).to eq('static_select')
+            expect(dropdown[:options]).to eq([FixSlack.option('No Shop Selected', 'none'), FixSlack.option(shop.name, shop.id)])
+            expect(dropdown[:initial_option]).to eq(dropdown[:options].first)
+          end
         end
         it 'returns show results privately without opening a modal' do |example|
           shop = create(:shop, name: 'Woodworking', slack_channel: 'woodworking')
