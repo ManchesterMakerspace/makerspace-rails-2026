@@ -69,5 +69,18 @@ RSpec.describe Admin::GroupsController, type: :controller do
       expect(response).to have_http_status(200)
       expect(secondary.reload.groupName).to eq(primary.id.to_s)
     end
+
+    it "words the Slack note as the added member joining the primary's Group" do
+      secondary = create(:member, firstname: "Added", lastname: "Adult")
+      captured = nil
+      allow(Service::AuditLogger).to receive(:attempt_slack) { |message, _channel| captured = message; true }
+
+      post :add_member, params: { id: group.id.to_s, secondary_member_id: secondary.id.to_s }, format: :json
+
+      expect(response).to have_http_status(200)
+      expect(captured).to include("on #{primary.fullname}'s Group")
+      expect(captured).to include("Added Adult was added")
+      expect(captured).not_to include("on Added Adult's Group")
+    end
   end
 end
