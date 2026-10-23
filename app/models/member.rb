@@ -436,6 +436,25 @@ class Member
     false
   end
 
+  # Volunteers (open house staff) who hold an active, unexpired checkout on the tool
+  # flagged `grants_fob_issuance` may issue first key fobs. The tool is configured by
+  # admin/board, so its prerequisites (orientation, tour guide) are enforced by the
+  # normal checkout approval flow, and revoking or expiring the checkout removes the
+  # ability.
+  def fob_issuer?
+    return false unless fully_active_unexpired?
+    tool_ids = Tool.where(grants_fob_issuance: true).pluck(:id)
+    return false if tool_ids.empty?
+    ToolCheckout.where(member_id: id, :tool_id.in => tool_ids, revoked_at: nil, superseded_by_id: nil)
+      .to_a.any?(&:active?)
+  end
+
+  # True when the member has no access card that is still usable (lost and stolen
+  # cards do not count). Fob issuers may only issue to such members.
+  def awaiting_first_fob?
+    access_cards.none? { |card| !%w[lost stolen].include?(card.validity) }
+  end
+
   def valid_for_checkout_request?
     active_unexpired? && member_contract_signed_date.present?
   end

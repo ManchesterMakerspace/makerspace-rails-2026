@@ -67,13 +67,24 @@ class CardManagement
     MemberProvisioningJob.perform_later(member_id) if member_id
   end
 
-  def self.assign!(attributes, actor, uid_source: nil)
+  # Reader rejections a staff member may still import as a fob UID.
+  def self.importable_rejections
+    RejectionCard.where(holder: nil, :timeOf.gt => Date.today - 1.day)
+  end
+
+  # initial_only: the assignment fails if the member already holds a usable card, so a
+  # fob issuer can never replace (and so invalidate) an existing fob. Checked inside the
+  # transaction, after the member write that serializes concurrent assignments.
+  def self.assign!(attributes, actor, uid_source: nil, initial_only: false)
     card = nil
     audit = nil
     transaction do
       member = Member.find(attributes[:member_id])
       raise Error::NotFound.new unless member
       member.inc(card_operation_version: 1)
+      if initial_only && !member.reload.awaiting_first_fob?
+        raise Conflict, 'This member already has a key fob. Ask a board member to replace it.'
+      end
       raise Conflict, 'This UID is already registered.' if Card.where(uid: attributes[:uid]).exists?
       card = Card.new(attributes)
       card.defer_assignment_effects = true

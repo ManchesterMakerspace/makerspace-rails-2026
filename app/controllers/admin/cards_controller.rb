@@ -77,7 +77,7 @@ class Admin::CardsController < AdminController
 
   private
   def importable_rejections
-    RejectionCard.where(holder: nil, :timeOf.gt => Date.today - 1.day)
+    CardManagement.importable_rejections
   end
 
   def active_nfc_operator!

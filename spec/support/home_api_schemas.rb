@@ -68,7 +68,8 @@ module HomeApiSchemas
       phone: nullable_string,
       silenceEmails: { type: :boolean, nullable: true },
       groupName: nullable_string,
-      householdRole: household_role
+      householdRole: household_role,
+      isFobIssuer: boolean
     }).merge(description: 'Complete current-member representation returned by Home. Privileged provisioning and optional expiring-payment-card fields are not requested by this endpoint.'),
     HomeUnauthorized: {
       oneOf: [

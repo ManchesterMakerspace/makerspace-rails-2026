@@ -390,6 +390,7 @@ RSpec.configure do |config|
             earnedMembershipActive: { type: :boolean },
             householdRole: { type: :string, enum: %w[primary secondary], nullable: true },
             householdSetupNeeded: { type: :boolean, description: 'Admin and board only: billed on a household plan with no household yet' },
+            isFobIssuer: { type: :boolean, description: "Holds the fob-issuer checkout and may issue first key fobs" },
           },
           required: [:id, :expirationTime]
         }
@@ -512,6 +513,7 @@ RSpec.configure do |config|
         notes: { type: :string, nullable: true, description: 'Private operational notes. Empty or null clears them.' },
         open: { type: :boolean }, disabled: { type: :boolean },
         allow_pending: { type: :boolean, description: 'Allow pending members to request checkout and reservations. Send false to clear; defaults to false on creation.' },
+        grants_fob_issuance: { type: :boolean, description: 'Admin/board only (ignored for resource managers). Members with an active checkout on this tool may issue first key fobs. Only one tool may set it.' },
         announce: { type: :boolean }, announce_channel: { type: :string, nullable: true },
         users_channel: { type: :string, nullable: true },
         prerequisite_ids: { type: :array, items: { type: :string } },
@@ -548,6 +550,7 @@ RSpec.configure do |config|
             disabled: { type: :boolean },
             outOfService: { type: :boolean, default: false },
             allowPending: { type: :boolean, default: false },
+            grantsFobIssuance: { type: :boolean, default: false },
             announce: { type: :boolean },
             announceChannel: { type: :string, 'x-nullable': true },
             usersChannel: { type: :string, 'x-nullable': true },
