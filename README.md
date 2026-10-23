@@ -114,6 +114,12 @@ Then restore to development server
 mongorestore --uri "<uri for dev db>" dump/ --drop
 ```
 
+After restoring, run `bundle exec rake shops:refresh_cache` with the target
+`RAILS_ENV`, `MLAB_URI` and `REDIS_URL` configuration. This replaces the cached
+non-hidden shop list immediately; otherwise an old list can remain for up to
+three hours. Run it again after direct database edits or imports that bypass
+Shop callbacks. A failed refresh exits unsuccessfully and should be retried.
+
 
 # Testing
 RSpec covers backend models, services, requests/API contracts, and jobs. With the

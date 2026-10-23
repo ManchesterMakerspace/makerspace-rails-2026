@@ -19,11 +19,16 @@ module Service
       end
 
       def associated?(channel_name:, channel_id: nil)
+        return true if AvailableShopCache.find_by_channel(channel_id: channel_id, channel_name: channel_name).present?
+
+        # A failed invalidation can leave a recovered Redis serving an older list.
+        # Do not let a missing display-cache entry reject a newly configured channel.
         identifiers = [channel_name, channel_id].filter_map do |value|
           Service::SlackChannelCache.normalize_name(value).presence
         end
+        return false if identifiers.empty?
 
-        configured_shops.any? do |shop|
+        Shop.where(:disabled.ne => true, :slack_channel.nin => [nil, ""]).any? do |shop|
           identifiers.include?(Service::SlackChannelCache.normalize_name(shop.slack_channel))
         end
       end
@@ -31,7 +36,7 @@ module Service
       private
 
       def configured_shops
-        Shop.where(:disabled.ne => true, :slack_channel.nin => [nil, ""]).order_by(name: :asc)
+        AvailableShopCache.fetch.select { |shop| shop.slack_channel.present? }
       end
 
       def public_channel?(details)

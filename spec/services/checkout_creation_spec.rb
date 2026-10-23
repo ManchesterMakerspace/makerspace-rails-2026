@@ -118,7 +118,12 @@ RSpec.describe CheckoutCreation do
     allow(REDIS).to receive(:set).and_return(false)
     expect { create_checkout }.to raise_error(Error::UnprocessableEntity, /already being processed/)
     expect(ToolCheckout.count).to eq(0)
-    expect(REDIS).not_to have_received(:eval)
+    expect(REDIS).to have_received(:set).with(
+      "checkout_request_lock/catalog/#{tool.shop_id}", anything, nx: true, ex: 30)
+    # Lazy tool/shop fixtures also run Redis scripts to maintain the shop cache.
+    # Only releasing an unacquired checkout lock would violate this contract.
+    expect(REDIS).not_to have_received(:eval).with(anything,
+      keys: array_including(a_string_starting_with("checkout_request_lock/")), argv: anything)
   end
 
   it "preserves approval and request closure when canvas enqueueing fails" do

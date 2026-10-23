@@ -157,7 +157,7 @@ class SlackCheckoutModal
   end
 
   def shop_selector
-    shops = CheckoutInteractionQuery.new(member: @member).enabled_shops
+    shops = AvailableShopCache.fetch
     selector(SHOP, "Shop", shops.map { |shop| [shop.name, shop.id.to_s] })
   end
 

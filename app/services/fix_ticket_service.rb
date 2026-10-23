@@ -66,6 +66,15 @@ class FixTicketService
       managed = member.role == 'resource_manager' ? Array(member.resource_manager_shop_ids) : []
       tools.any_of({ :disabled.ne => true }, { :shop_id.in => managed })
     end
+    # Display choices only; catalog_shops remains live for authorization and tool scopes.
+    def shop_choices(member)
+      if %w[admin board_member].include?(member.role) ||
+          (member.role == 'resource_manager' && Array(member.resource_manager_shop_ids).any?)
+        catalog_shops(member).collation(AvailableShopCache::COLLATION).order_by(name: :asc, id: :asc).to_a
+      else
+        AvailableShopCache.fetch
+      end
+    end
     def create!(actor:, attributes:)
       attrs = normalize(attributes)
       raise Error::UnprocessableEntity.new('Unknown submission fields') if (attrs.keys - CREATE_FIELDS).any?

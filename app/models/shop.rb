@@ -45,6 +45,9 @@ class Shop
   has_many :reservation_blackouts, dependent: :destroy
 
   before_validation :normalize_external_fields
+  # Run before external integrations, which can fail after MongoDB has persisted.
+  after_save :refresh_available_shop_cache
+  after_destroy :refresh_available_shop_cache_after_destroy
   after_save :warm_changed_slack_channel_cache
   after_save :enqueue_checkout_canvas_sync_after_channel_change
 
@@ -80,6 +83,16 @@ class Shop
   end
 
   private
+
+  def refresh_available_shop_cache
+    return unless (previous_changes.keys & %w[_id name disabled slack_channel]).any?
+
+    AvailableShopCache.refresh
+  end
+
+  def refresh_available_shop_cache_after_destroy
+    AvailableShopCache.refresh
+  end
 
   def normalize_external_fields
     self.requestor_annotation = requestor_annotation.to_s.strip.presence

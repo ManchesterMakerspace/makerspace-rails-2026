@@ -2,9 +2,7 @@ class WorkshopsController < ApplicationController
   before_action :authenticate_member!
 
   def index
-    workshops = Shop.all
-    workshops = workshops.where(:disabled.ne => true) unless is_admin? || is_board_member?
-    workshops = workshops.order_by(name: :asc)
+    workshops = is_admin? || is_board_member? ? AvailableShopCache.load_all : AvailableShopCache.load_visible
 
     render json: {
       canAddShop: is_admin? || is_board_member?,

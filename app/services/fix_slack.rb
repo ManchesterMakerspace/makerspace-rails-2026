@@ -73,7 +73,7 @@ class FixSlack
       when 'tool_id'
         FixTicketService.catalog_tools(member).where(name: /#{term}/i).order_by(name: :asc).limit(100).map { |t| option("#{t.shop&.name}: #{t.name}", t.id) }
       when 'shop_id'
-        [option('No shop', 'none')] + FixTicketService.catalog_shops(member).where(name: /#{term}/i).order_by(name: :asc).limit(99).map { |s| option(s.name, s.id) }
+        [option('No shop', 'none')] + FixTicketService.shop_choices(member).select { |s| /#{term}/i.match?(s.name) }.first(99).map { |s| option(s.name, s.id) }
       when 'member_ids', 'assignee_id'
         data = JSON.parse(payload.dig('view', 'private_metadata') || '{}')
         if field == 'member_ids'
@@ -117,9 +117,11 @@ class FixSlack
     end
     def new_view(member, query = {})
       FixTicketService.capacity!(member)
-      shop_options = [option('No Shop Selected', 'none')] + Shop.where(:disabled.ne => true).order_by(name: :asc).map { |shop| option(shop.name, shop.id) }
-      shop_input = input('shop_id', 'Shop (optional)', value: 'none', optional: true, options: shop_options)
-      shop_input[:hint] = plain('Choose a non-hidden shop, or leave No Shop Selected.')
+      shops = AvailableShopCache.fetch
+      selected_shop = shops.find { |shop| shop.id == query['shop_id'].to_s }
+      shop_options = [option('No Shop Selected', 'none')] + shops.map { |shop| option(shop.name, shop.id) }
+      shop_input = input('shop_id', 'Shop (optional)', value: selected_shop&.id || 'none', optional: true, options: shop_options)
+      shop_input[:hint] = plain('Choose a non-hidden shop, or No Shop Selected. A matching channel shop is selected automatically.')
       # Slack caps each option list at 100; keep every shop available in larger catalogs.
       if shop_options.length > 100
         shop_input[:element].delete(:options)

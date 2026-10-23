@@ -23,11 +23,18 @@ Both `/fix` and `/fix-tickets` use `/slack/commands/fix`. Apply the updated Slac
 manifest to register the alias. A matching shop channel name or ID scopes the
 list filter. The new-report **Shop (optional)** dropdown is populated when the
 modal opens with all non-hidden shops in alphabetical order. **No Shop Selected**
-is the first and default option, including when the command is used in a shop's
-channel. Selecting a catalog tool still selects that tool's shop. Input blocks
+is the first option. A matching non-hidden shop channel name or configured ID
+selects that shop automatically; otherwise the default is **No Shop Selected**.
+The reporter can explicitly choose no shop. Selecting a catalog tool still selects that tool's shop. Input blocks
 have persistent labels and hints. The wiki update is held in
 [wiki-fix-ticket-shop-dropdown.patch](wiki-fix-ticket-shop-dropdown.patch) until
 deployment.
+Display choices use `AvailableShopCache`: non-hidden shop IDs, names and configured
+Slack channels, sorted with English case-insensitive collation and cached for
+three hours. Shop changes refresh this cache synchronously. Redis failures fall
+back to MongoDB; a failed invalidation can leave an older list until its original
+expiration. Submission permissions and routing still use authoritative records.
+Channel resolution remains in `SlackChannelCache`; this list never calls Slack.
 `/fix-tickets show` returns an ephemeral list of all authorized nonterminal
 tickets, including public tickets, the member's reports, assignments, and
 approver scope. In a shop channel it restricts the results and prefixes them

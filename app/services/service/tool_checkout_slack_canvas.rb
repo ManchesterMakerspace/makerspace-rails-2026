@@ -110,7 +110,7 @@ module Service
       end
 
       def rebuild_all!
-        Shop.all.each do |shop|
+        AvailableShopCache.load_all.each do |shop|
           next if shop.checkout_canvas_id.blank?
 
           sync!(shop)

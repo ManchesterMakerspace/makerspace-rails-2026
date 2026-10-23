@@ -776,12 +776,60 @@ is introduced; these receipts remain internal task/event data.
 
 `FixSlack` builds the private `/fix new` and `/fix-tickets new` report modals at
 request time. Their Shop dropdown embeds all non-hidden shops in alphabetical
-order, with **No Shop Selected** first and selected by default even in a shop
-channel; opening the dropdown needs no options-search callback. Submission
+order, with **No Shop Selected** first. A matching non-hidden channel shop is
+selected by default, otherwise the default is no shop; opening the dropdown
+needs no options-search callback. Submission
 removes that empty-shop choice before calling `FixTicketService.create!`.
 Selecting a catalog tool still uses its shop, and channel-based ticket list
 filters retain their scope. Modal construction writes no ticket; submission
 uses the existing transactional service and validation/error handling.
+
+`AvailableShopCache` is a synchronous display-list service. `fetch` stores only
+string `id`, `name`, and the persisted `slack_channel` (including null/blank) for
+shops whose `disabled != true`; out-of-service shops remain included. It never
+resolves Slack channels. JSON entries retain MongoDB's English strength-2
+collation order by name then ID. Empty lists are valid hits. Keys include schema
+version, Rails environment and effective MongoDB database. The fixed lifetime is
+10,800 seconds from snapshot start; reads never extend it. Generation tokens and
+atomic conditional publication reject snapshots overtaken by invalidation or
+older than three hours. Generation keys are retained to fence in-flight readers.
+
+Shop save/destroy callbacks refresh before post-save integration callbacks on
+creation, name/channel changes, hide/unhide and successful destruction. Invalid
+saves and aborted destruction do not refresh; unrelated fields do not refresh.
+These are Mongoid save/destroy callbacks, not transaction commit callbacks.
+Future transactional shop writes must arrange refresh after the outer transaction
+commits; never publish an uncommitted snapshot. `with_bulk_changes` invalidates
+before callback-bypassing imports/deletes and refreshes in ensure, including
+partial failure. `db:db_reset` uses it around clearing and seeding. Raw `set`,
+`update_all`, `delete_all` or direct database changes to cached fields must use
+this wrapper or explicitly refresh afterward. Existing raw canvas, Google-resource
+and outage-receipt updates do not change cached fields.
+
+`load_all` and `load_visible` own full MongoDB queries, return fresh Shop records,
+and warm from those same records without a second query. Complete shop/workshop
+indexes and reservation/checkout canvas and Google-resource maintenance scans
+use them. Restricted indexes, search, pagination and projections never warm the
+cache. Fix-ticket creation, ordinary-member catalog/suggestions, Slack checkout
+selectors and non-hidden shop-channel enumeration consume display entries.
+Privileged hidden-shop scopes, authorization, routing decisions and reservation
+eligibility continue querying MongoDB. Public response fields are unchanged.
+`Service::ShopSlackChannels.associated?` checks live non-hidden shops when the
+cached channel association is absent, using the same normalized name/ID matching.
+This preserves checkout routing for newly created or reassigned channels after
+Redis recovers with a snapshot whose invalidation failed. Cache hits retain the
+fast path; channel enumeration and public-channel resolution remain unchanged.
+
+Redis read/write failures are logged and do not fail successful shop edits;
+reads fall back to MongoDB. Later reads and relevant writes retry maintenance.
+A failed invalidation may leave stale entries until their original expiration
+(at most three hours). MongoDB remains authoritative. `refresh!` is strict for
+operators; `refresh` logs maintenance failures after successful persistence.
+Run `bundle exec rake shops:refresh_cache` after restores or out-of-band changes,
+with the target Rails environment, MongoDB database and Redis configuration.
+It rebuilds synchronously and exits unsuccessfully on failure or a superseded
+refresh (retry in that case). It is manual, not scheduled, and has no job-status
+record. No new environment variable, collection or index is required.
 
 Central repair-ticket delivery allowlists status, confirmation, assignments, and announcement-note changes plus new discussion notes/bounties. Unrelated field updates do not create central replies or roots.
 
