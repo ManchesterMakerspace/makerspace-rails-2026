@@ -850,7 +850,7 @@
               },
               "isFobIssuer": {
                 "type": "boolean",
-                "description": "Only on a member's own profile: holds the fob-issuer checkout and may issue first key fobs"
+                "description": "Holds the fob-issuer checkout and may issue first key fobs"
               }
             },
             "required": [

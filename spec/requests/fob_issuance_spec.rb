@@ -181,18 +181,19 @@ RSpec.describe "Fob issuance", type: :request, requires_transactions: true do
   end
 
   describe "the isFobIssuer profile flag" do
-    it "is returned on the member's own profile only" do
+    it "is true on a fob issuer's profile and false for everyone else" do
       sign_in issuer
       get "/api/members/#{issuer.id}"
       expect(JSON.parse(response.body)["isFobIssuer"]).to be(true)
 
-      sign_in create(:member, :current, :admin)
-      get "/api/members/#{issuer.id}"
-      expect(JSON.parse(response.body)).not_to have_key("isFobIssuer")
-
       sign_in newcomer
       get "/api/members/#{newcomer.id}"
       expect(JSON.parse(response.body)["isFobIssuer"]).to be(false)
+    end
+
+    it "is in the sign-in response, which the portal reads for the signed-in member" do
+      post "/api/members/sign_in", params: { member: { email: issuer.email, password: "password" } }, as: :json
+      expect(JSON.parse(response.body)["isFobIssuer"]).to be(true)
     end
   end
 

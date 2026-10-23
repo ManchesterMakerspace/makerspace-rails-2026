@@ -18,15 +18,13 @@ class MemberSerializer < MemberSummarySerializer
   attribute :expiring_payment_card_types, if: :include_expiring_payment_card_types?
   # Admin/board only (same audience as provisioning): a household-plan member with no household yet.
   attribute :household_setup_needed, if: :include_provisioning?
-  # Only on a member's own profile: tells the portal to show the Issue Fob screen.
-  attribute :is_fob_issuer, if: :viewer_is_self?
+  # Tells the portal to show the Issue Fob screen. Sign-in and session responses render
+  # the member without a viewer, so this is always included (the payload is only returned
+  # to the member themself or to staff).
+  attribute :is_fob_issuer
 
   def is_fob_issuer
     object.fob_issuer?
-  end
-
-  def viewer_is_self?
-    instance_options[:viewer]&.id == object.id
   end
 
   def totp_enabled

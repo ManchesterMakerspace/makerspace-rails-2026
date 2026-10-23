@@ -55,8 +55,8 @@ issuer, including admins who are not also issuers:
 | `GET /api/fob_issuance/cards/new` | The most recent unclaimed reader rejection UID, as for the admin form. |
 | `POST /api/fob_issuance/cards` | `member_id`, `uid`, optional `source`. Same UID rules as the admin route. Calls `CardManagement.assign!` with `initial_only: true`, so the assignment fails with 409 inside the transaction if the member already has a usable card (a fob issuer can never replace or invalidate a fob). The caller cannot be the recipient. Activation of a pending member, invoice settlement, provisioning and the `card_assigned` audit (actor = the issuer) are the same as for staff. |
 
-A member's own profile payload (`GET /api/members/:id`) carries `isFobIssuer`, which
-tells the portal to show the Issue Fob screen. It is omitted when anyone else views the profile.
+The member payload (`GET /api/members/:id` and the sign-in and session responses) carries
+`isFobIssuer`, which tells the portal to show the Issue Fob screen.
 
 After a successful issue, `FobIssuanceNotifier` sends the member a Slack direct
 message (when their Slack account is linked) and posts to the members relations

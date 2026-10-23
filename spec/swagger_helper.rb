@@ -390,7 +390,7 @@ RSpec.configure do |config|
             earnedMembershipActive: { type: :boolean },
             householdRole: { type: :string, enum: %w[primary secondary], nullable: true },
             householdSetupNeeded: { type: :boolean, description: 'Admin and board only: billed on a household plan with no household yet' },
-            isFobIssuer: { type: :boolean, description: "Only on a member's own profile: holds the fob-issuer checkout and may issue first key fobs" },
+            isFobIssuer: { type: :boolean, description: "Holds the fob-issuer checkout and may issue first key fobs" },
           },
           required: [:id, :expirationTime]
         }
