@@ -217,7 +217,7 @@ enter, but can only interact with tools allowing pending members.
 | `/checkout` | Opens the checkout menu and, outside a shop channel, an enabled-shop selector. |
 | `/checkout @member tool-name` | An authorized approver checks out the mentioned member on a tool in the current shop channel. An email address may replace the mention. |
 | `/checkout request` | In a shop channel, opens a request modal containing only eligible tools without an existing open request. Outside a shop channel, lists all of the caller's open requests across shops. |
-| `/checkout request tool-name` | Requests the named tool in the current shop channel after rechecking eligibility. |
+| `/checkout request tool-name` | Requests the named tool in the current shop channel after rechecking eligibility. If the member already holds a current, unexpired checkout on that tool, no request is created: the tool's notes are re-sent by direct message (when it has notes and the member can be messaged) and the reply says so, or says only that they are already checked out. Revoked or expired checkouts and tool groups still use the request path and its eligibility messages. |
 | `/checkout active` or `/checkout list` | In a shop channel, lists the caller's available active checkouts using the same alphabetical ordering and detail fields as the modal, without the redundant shop line. Outside a shop channel, behaves like `active all`. |
 | `/checkout active all` | Lists available active checkouts across enabled shops using the shared query and detail formatter. Each entry identifies its shop. |
 | `/checkout volunteer` | Opens the volunteer flow. A member in good standing may request approver access for any tool on which they have an active checkout. |

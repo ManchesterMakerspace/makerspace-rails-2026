@@ -42,6 +42,10 @@ class SlackCheckoutRequestJob < ApplicationJob
       return
     end
 
+    if tool.is_a?(Tool) && (checkout = active_checkout(invoker, tool))
+      return resend_notes(response_url, tool, checkout)
+    end
+
     create_request(response_url, invoker, tool)
   rescue => e
     SlackCheckoutOutcomeJob.report("request", error_class: e.class.name)
@@ -54,6 +58,29 @@ class SlackCheckoutRequestJob < ApplicationJob
     slack_user = SlackUser.find_by(slack_id: slack_id)
     return nil unless slack_user
     Member.find(slack_user.member_id)
+  end
+
+  # A current, unexpired, unrevoked checkout. A revoked or expired one still goes through
+  # the normal request path so the member gets the real eligibility message.
+  def active_checkout(member, tool)
+    ToolCheckout.valid_at.where(member_id: member.id, tool_id: tool.id, revoked_at: nil).first
+  end
+
+  # A member who already holds the tool does not need a request. The usual reason to ask
+  # again is to see the notes (a lock combination, say), so re-send them by DM. Holding the
+  # checkout already makes the notes visible to the member (Tool#notes_visible_to?). The
+  # reply only claims the DM was sent when it was. Tool groups keep the request path. See #402.
+  def resend_notes(response_url, tool, checkout)
+    name = CheckoutDisplay.escape(tool.name)
+    text =
+      if tool.notes.blank?
+        "You're already checked out on *#{name}*."
+      elsif checkout.send_notes_slack_notification
+        "You're already checked out on *#{name}* — notes re-sent via DM."
+      else
+        "You're already checked out on *#{name}*, but the notes could not be sent by DM. Open the tool in the Member Portal to read them."
+      end
+    post_response(response_url, :ephemeral, text)
   end
 
   def list_eligible_tools(response_url, invoker, shop)
