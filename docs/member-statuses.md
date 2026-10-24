@@ -85,10 +85,8 @@ write this field.
 
 ### Jobs, tasks, model callbacks, and direct writes
 
-- No scheduled job or Rake task changes an existing member's status. The
-  volunteering snapshot task's description mentions active/inactive status,
-  but the task only records which members currently qualify; it does not
-  update them. Expiration also never causes an automatic status transition.
+- No scheduled job or Rake task changes an existing member's status.
+  Expiration also never causes an automatic status transition.
 - The only status-writing model callback is `Card#activate_pending_member`,
   described above.
 - As with any persisted model field, maintenance code or a Rails console can

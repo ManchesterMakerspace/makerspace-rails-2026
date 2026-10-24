@@ -195,7 +195,6 @@ namespace :db do
     seeder.send(:create_historical_checkouts)
     seeder.send(:create_historical_volunteer_data)
     seeder.send(:create_historical_checkins)
-    seeder.send(:create_membership_snapshots)
     puts "Analytics seeding complete."
   end
 end
