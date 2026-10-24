@@ -116,10 +116,6 @@ class VolunteerTask
     VolunteerTask.find(parent_task_id) if parent_task_id
   end
 
-  def multi_use?
-    MULTI_USE_STATUSES.include?(status)
-  end
-
   def currently_cooling_down?
     status == 'recurring' && next_available.present? && next_available > Date.today
   end

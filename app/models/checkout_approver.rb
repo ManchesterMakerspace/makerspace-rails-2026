@@ -42,17 +42,6 @@ class CheckoutApprover
       Array(tool_ids).map(&:to_s).include?(tool.id.to_s)
   end
 
-  # Check if a member is a checkout approver (any shop)
-  def self.is_approver?(member_id)
-    exists?(member_id: member_id)
-  end
-
-  # Get shops a member can approve for
-  def self.shops_for_member(member_id)
-    approver = find_by(member_id: member_id)
-    approver ? approver.shops : []
-  end
-
   def self.tool_ids_for_member(member_id)
     approver = find_by(member_id: member_id)
     approver ? Array(approver.tool_ids) : []
