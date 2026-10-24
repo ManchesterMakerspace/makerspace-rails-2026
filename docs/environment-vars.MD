@@ -114,7 +114,6 @@ not imply that the feature will work without the value.
 | `USERNAME` | No | No default; required by the publish task. | Same. | Same. | GitHub username for authenticated publish-task clones. | [publish task](../lib/tasks/publish.rake) |
 | `VOLUNTEER_BOUNTY_TOKEN` | Yes | Defaults to an empty string; relevant only when token protection is enabled. | Same. | Same. | Token protecting volunteer bounty/leaderboard data. | — |
 | `VOLUNTEER_BOUNTY_TOKEN_ENABLED` | No | Defaults to `false`; enabled only for exact `true`. | Same. | Same. | Enables volunteer bounty token checks. | — |
-| `VOLUNTEER_SPREADSHEET` | No | No default; required for volunteering spreadsheet operations. | Same. | Same. | Google Sheets document ID for volunteer records. | [volunteering Drive service](../lib/service/google_drive/volunteering.rb) |
 | `VOLUNTEER_TASK_MAX_CREDIT` | No | Defaults to `2.0`. | Same. | Same. | Maximum credit assigned to a volunteer task. | [volunteer task model](../app/models/volunteer_task.rb) |
 | `WIKI_URL` | No | Blank/absent defaults to `https://wiki.manchestermakerspace.org`; trailing slashes are removed. | Same. | Same. | Public wiki base URL. | [wiki URL builder](../app/services/wiki_url_builder.rb) |
 

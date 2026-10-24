@@ -72,7 +72,6 @@ class SeedData
     create_historical_checkouts
     create_historical_volunteer_data
     create_historical_checkins
-    create_membership_snapshots
   end
 
   private
@@ -925,32 +924,4 @@ class SeedData
 
   # ── Membership Snapshots ──────────────────────────────────────────────────
   #
-  # Generate one snapshot per month for the full history window.
-  # Each snapshot records which member IDs were active at the last day of that month.
-  # Mirrors the logic in the existing rake task.
-
-  def create_membership_snapshots
-    total_months = HISTORY_YEARS * 12
-    count = 0
-
-    total_months.times do |month_offset|
-      snapshot_date = month_offset.months.ago.end_of_month.to_date
-      next if MembershipSnapshot.where(date: snapshot_date).exists?
-
-      snapshot_time_ms = snapshot_date.to_time.to_i * 1000
-
-      active_member_ids = Member.where(
-        :startDate.lte      => snapshot_date.to_time,
-        :expirationTime.gte => snapshot_time_ms
-      ).map { |m| m.id.as_json }
-
-      MembershipSnapshot.create!(
-        date:           snapshot_date,
-        active_members: active_member_ids
-      )
-      count += 1
-    end
-
-    puts "  [seed] Created #{count} monthly membership snapshots (#{MembershipSnapshot.count} total)."
-  end
 end

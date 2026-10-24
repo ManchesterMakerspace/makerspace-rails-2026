@@ -92,7 +92,7 @@ class Admin::AnalyticsController < AdminController
 
   # GET /api/admin/analytics/active_members
   # Active member count per month derived directly from the Member table.
-  # No dependency on MembershipSnapshot or any scheduled job.
+  # No dependency on any scheduled job.
   #
   # For each month in the range, counts members where:
   #   startDate <= end_of_month  AND  expirationTime >= end_of_month_ms

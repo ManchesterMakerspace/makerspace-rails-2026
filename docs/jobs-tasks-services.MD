@@ -381,20 +381,45 @@ values and would use the chosen scheduler's timezone.
 | Daily at 12:30 UTC | `CheckoutRequestReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'` | Runs the checkout-request reminder scan described above. Also exposed as `checkout_request_reminder` in the admin jobs list. |
 | Daily at 14:30 UTC | `CheckoutRequestDigestJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Sends the checkout-request approver digests described above. Also exposed as `checkout_request_digest` in the admin jobs list. |
 
+## Production schedule (Heroku Scheduler)
+
+Production work is scheduled in the **Heroku Scheduler** add-on of `makerspace-interface-prod`,
+not by Whenever. The dashboard is the source of truth; this table records it as of
+2026-10-24 (all times UTC, Basic dyno). Change the dashboard first, then update this table.
+A job that is in this repository but not in this table is not running in production *yet*.
+That does not make it dead: recent work often lands before its schedule entry is added, so
+check the job's age and author (`git log -S<name>`) and ask whoever added it before treating
+an unscheduled job as unused.
+
+| Command | Frequency | Notes |
+| --- | --- | --- |
+| `rake member_review` | Daily 00:00 | Built-in production Sunday guard, so it only does work on Sundays. |
+| `rake backup` | Daily 04:00 | Dumps the Mongo database with `mongodump` and uploads the archive to Google Drive (`Service::GoogleDrive.upload_backup`). |
+| `rake gc` | Daily 23:30 | Cleans up old invoicing Redis keys. Skips unless today is the day of month set by `SystemConfig::GARBAGE_COLLECT_DAY`. |
+| `bundle exec rake card_expiration_check` | Daily 03:00 | |
+| `bundle exec rake reservations:rebuild_slack_canvases` | Daily 05:30 | |
+| `rake invoice_review` | Daily 06:30 | Built-in production Sunday guard, so it only does work on Sundays. |
+| `bin/rails runner "SlackProfileSyncJob.perform_later"` | Daily 07:00 | |
+| `bin/rails runner "VolunteerEventReminderJob.perform_later"` | Daily 08:00 | |
+| `bundle exec rake slack:refresh_public_channel_cache` | Daily 08:30 | |
+| `bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'` | Daily 13:00 | |
+| `bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Daily 14:30 | |
+| `bin/rails runner "MemberProvisioningReconciliationJob.perform_now"` | Hourly at :20 | |
+
+The retired `volunteering:*` tasks (the volunteer spreadsheet) were never in this schedule
+and have been removed from the repository.
+
 ## Recurring production Rake tasks not installed by Whenever
 
 These tasks describe recurring production use in their source, but this
-repository's Whenever schedule does not invoke them. Configure them in the
-deployment scheduler only after choosing appropriate times and considering the
-side effects.
+repository's Whenever schedule does not invoke them. Where one is in the Heroku
+Scheduler table above, production runs it; otherwise configure it in the deployment
+scheduler only after choosing appropriate times and considering the side effects.
 
 | Task | Manual command | Intended cadence, purpose, and effect |
 | --- | --- | --- |
-| `member_review` | `RAILS_ENV=production bundle exec rake member_review` | Intended weekly. Its built-in production Sunday guard makes other days a no-op. See the admin-job table for notifications and effects. |
-| `invoice_review` | `RAILS_ENV=production bundle exec rake invoice_review` | Intended weekly. Its built-in production Sunday guard makes other days a no-op. See the admin-job table for report effects. |
-| `volunteering:update_activity` | `RAILS_ENV=production bundle exec rake volunteering:update_activity` | Intended daily. Stores a `MembershipSnapshot` containing IDs of currently active members and reports the count to the logs Slack channel. Re-running on the same date creates another snapshot unless database constraints prevent it. |
-| `volunteering:evaluate_requirements` | `RAILS_ENV=production bundle exec rake volunteering:evaluate_requirements` | Intended on the last day of each month and is a no-op on other production dates. Members appearing in more than 21 snapshots for the month have their requirement count updated in the volunteer Google Sheet, with a ten-second pause per member, followed by a Slack completion message. |
-| `volunteering:evaluate_eligibility` | `RAILS_ENV=production bundle exec rake volunteering:evaluate_eligibility` | Intended daily. It visits every current and former local member. When a member is absent from the volunteer Google Sheet, it first appends a row containing the member ID, name, start date, completion-count formula, and `N/A` for dates before eligibility; a run can therefore populate the sheet with rows for every missing local member. It then fills only blank volunteer-date cells with `-` when a matching membership snapshot says the member was active or `N/A` otherwise. Existing populated cells, including existing `-` and `N/A` values, are unchanged, so the task will not repair an incorrect populated value. The service sleeps for one second and the Rake loop sleeps for another second per member; adding a missing row introduces another one-second sleep. Allow at least two seconds per existing member, at least three per missing member, and Google API time. It reports completion to the logs channel. |
+| `member_review` | `RAILS_ENV=production bundle exec rake member_review` | Scheduled daily in Heroku Scheduler (see above); its built-in production Sunday guard makes other days a no-op, so it acts weekly. See the admin-job table for notifications and effects. |
+| `invoice_review` | `RAILS_ENV=production bundle exec rake invoice_review` | Scheduled daily in Heroku Scheduler (see above); its built-in production Sunday guard makes other days a no-op, so it acts weekly. See the admin-job table for report effects. |
 
 `RentalVacatingCheckJob` also says it should run nightly, but it has no Rake
 task and no entry in `config/schedule.rb`. If production policy requires it,
