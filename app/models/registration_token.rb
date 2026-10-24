@@ -42,8 +42,4 @@ class RegistrationToken
     MemberMailer.welcome_email(email).deliver_later
     self.save
   end
-
-  def create_link(id, base_token)
-    return "#/register/#{id}/#{base_token}"
-  end
 end
