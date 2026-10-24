@@ -404,6 +404,19 @@ invoke it with `RAILS_ENV=production bundle exec rails runner
 Relations channel, and queues an ended-rental email. It rescues errors per
 rental, so a run can finish even when some rentals were not changed.
 
+## Manual operator Rake tasks
+
+These tasks are run by hand and are not installed by Whenever or the admin job API. None
+has a built-in dry run. Run production commands only when the task's effect is wanted.
+
+| Task | Manual command | Purpose and effect |
+| --- | --- | --- |
+| `member_access:revoke` | `RAILS_ENV=production bundle exec rake member_access:revoke EMAIL=user@example.com` (or `MEMBER_ID=` or `NAME='First Last'`) | Offboarding for one member. Calls `Service::MemberAccess.revoke`, which removes the member's Google Drive resource access and Drive transfer share and removes their Slack access, then prints a status line per system. It changes remote access immediately and aborts if the member is not found or no selector is given. |
+| `members:reconcile_provisioning` | `RAILS_ENV=production bundle exec rake members:reconcile_provisioning` | Calls `Service::MemberProvisioning.backfill!`, which backfills the local Slack and Google Drive provisioning state **without changing remote access**, then prints counts (Slack invited, Slack live, Drive resources, Drive transfer). Used after provisioning changes or when the local state has drifted. |
+| `reservations:normalize_cancelled_status` | `RAILS_ENV=production bundle exec rake reservations:normalize_cancelled_status` | One-time normalization of legacy spelling: sets reservations with status `canceled` to `cancelled` and prints the count. Safe to re-run; it can be removed once production has no `canceled` reservations. |
+| `documents:download` | `RAILS_ENV=production bundle exec rake documents:download` | Downloads the Member Contract and Code of Conduct Google Docs and overwrites their HTML template files in the repository. A developer task; it does not touch member data. |
+| `documents:send_update_notice` | `RAILS_ENV=production bundle exec rake documents:send_update_notice` | Sends `MemberMailer.contract_updated` (with the amended Code of Conduct attached) to every member returned by `Service::Analytics::Members.query_total_members`, synchronously with `deliver_now` and no confirmation step. This is the only production caller of that mail. Household secondary members are currently skipped because `contract_updated` is not in the secondary exemption list (issue #127). |
+
 ## Supporting services
 
 Repair ticket delivery jobs accept integer sequence IDs (including their string

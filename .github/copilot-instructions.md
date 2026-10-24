@@ -51,3 +51,9 @@ Update overlapping instructions here whenever the canonical handbook changes.
   consistency, and `git diff --check`; no application suite is required. Finish with
   changes, actual checks, failures/missing prerequisites, docs/inventory updates
   (explicitly environment-variable inventory status), and companion/release needs.
+
+- Dead or duplicate code: check use from source, `git log`, specs, docs, and the React
+  client before asking anyone. An endpoint with siblings in use and no screen yet is an
+  unfinished feature, and every manual Rake task needs a row in
+  `docs/jobs-tasks-services.MD`. See "Dead code, duplicates, and orphans" in
+  [AGENTS.md](../AGENTS.md).

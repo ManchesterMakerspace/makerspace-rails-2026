@@ -322,3 +322,42 @@ update the collection inventory, and describe any separately required data rollo
 For a job change, test job/service and failure/idempotency behavior, then apply the
 jobs row plus email/environment/status rows as relevant. Neither task requires
 a React checkout unless its API or UI behavior changes.
+
+### Dead code, duplicates, and orphans
+
+Answer ownership and use questions from the repository; do not ask the maintainer for
+facts that source, history, and tests already hold. Start with the evidence:
+
+- **Unused method.** Search the method name across `app`, `lib`, `config`, `spec`,
+  `docs`, and `lib/tasks`; a name that appears only at its definition is a candidate.
+  Not dead even when it looks unused: Mongoid custom type hooks (`demongoize`, `evolve`,
+  `mongoize`), Devise hooks (`email_required?`, `password_required?`), callbacks named in
+  `before_`/`after_` declarations, and methods invoked with `send` or from a console
+  procedure in the docs.
+- **Orphan route.** List routes with `bundle exec rails routes --expanded` and compare them
+  with what the React app can call: the generated client in `makerspace-ts-api-client`,
+  literal paths in `src/api`, and paths built from a base variable. Search React for the
+  route's distinctive last segment (for example `cancellation_impact`), not for words like
+  `members` or `cards` that appear everywhere. Also account for callers that are not React:
+  Slack commands and interactions, the Braintree webhook, doorboto (`checkins`,
+  `rejections`), public catalog and short-link pages, and Devise reset links in email.
+  Removing a route is an API change: update `spec/api`, regenerate `swagger/v1/swagger.json`,
+  and the public-resources documentation per the table above.
+- **Unfinished feature, not dead code.** A recent endpoint whose siblings are called but
+  which has no screen yet (for example `POST /api/tool_groups/:id/decide_volunteer`, whose
+  `volunteer` and `volunteers` routes React uses) is waiting for its other half. Check
+  `git log -S<name>` and the sibling routes before removing anything.
+- **Rake task.** A task is live if it is in `config/schedule.rb`, CI, a doc, or is recent
+  and described in its own `desc`; check `git log` for its age. Every manual production
+  task belongs in [jobs-tasks-services.MD](docs/jobs-tasks-services.MD) (section
+  "Manual operator Rake tasks"); a task with no entry is a documentation gap first, and
+  dead only if it is also old and superseded (for example a one-time migration).
+- **Duplicate file.** `lib/` and `app/services/` are both Zeitwerk autoload roots, so a
+  file at the same relative path in both is a fork. Compare relative paths and class names
+  across `lib/`, `app/services/`, `app/models/`, and `app/helpers/`; the last check found
+  none.
+
+The React side has `node scripts/find-unreachable.js` (see the React handbook's "Finding
+and removing dead code"). Delete in small commits, one theme each, and remove a method
+together with its spec and doc rows. Run the affected specs, then the full suite for
+anything that touches models or routes.
