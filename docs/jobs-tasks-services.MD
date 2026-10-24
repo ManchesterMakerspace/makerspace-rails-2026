@@ -175,7 +175,10 @@ resolves shops from either the Slack channel ID or normalized channel name. It u
 an exact, case-insensitive tool-name match so similarly named tools cannot be
 selected ambiguously, then applies the same checkout-request eligibility service
 as the Member Portal and Slack
-modal, and rechecks tool/shop availability, membership, prerequisites, existing
+modal. When the member already holds a current, unexpired checkout on a named tool (not a
+group), it creates no request and instead re-sends the tool's notes by DM via
+`ToolCheckout#send_notes_slack_notification`, replying that the notes were re-sent only if a
+DM was actually sent. Otherwise it rechecks tool/shop availability, membership, prerequisites, existing
 checkouts, and open requests immediately before creating a request. Creation is
 serialized per member and tool so concurrent Slack deliveries cannot announce
 duplicate open requests.

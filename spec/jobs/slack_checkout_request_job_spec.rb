@@ -65,13 +65,54 @@ if ENV['RUN_OPTIONAL_SLACK_CHECKOUT_SPECS'] == 'true'
       expect(ToolCheckoutRequest.last.tool.name).to eq('Saw')
     end
 
-    it 'rejects a tool with an existing target checkout' do
-      create(:tool_checkout, member: member, tool: tool)
+    describe 'a member who already holds the tool (#402)' do
+      before { create(:tool_checkout, member: member, tool: tool) }
 
-      expect {
-        perform(tool.name)
-      }.not_to change { ToolCheckoutRequest.count }
-      expect(posted_bodies.last['text']).to include('checkout record already exists')
+      it 'creates no request and re-sends the notes by DM' do
+        expect(::Service::SlackConnector).to receive(:send_slack_message)
+          .with(a_string_including('Notes for', tool.name, 'Combo: 4-5-6'), 'U123')
+
+        expect { perform(tool.name) }.not_to change { ToolCheckoutRequest.count }
+
+        expect(posted_bodies.last['text']).to include("already checked out on *#{tool.name}*", 'notes re-sent via DM')
+      end
+
+      it 'says only that they are checked out when the tool has no notes' do
+        tool.update!(notes: nil)
+        expect(::Service::SlackConnector).not_to receive(:send_slack_message)
+
+        expect { perform(tool.name) }.not_to change { ToolCheckoutRequest.count }
+
+        expect(posted_bodies.last['text']).to include('already checked out')
+        expect(posted_bodies.last['text']).not_to include('re-sent')
+      end
+
+      it 'does not claim the notes were sent when the member cannot be messaged' do
+        allow_any_instance_of(Member).to receive(:direct_notifications_suppressed?).and_return(true)
+        expect(::Service::SlackConnector).not_to receive(:send_slack_message)
+
+        expect { perform(tool.name) }.not_to change { ToolCheckoutRequest.count }
+
+        expect(posted_bodies.last['text']).to include('could not be sent by DM')
+        expect(posted_bodies.last['text']).not_to include('re-sent')
+      end
+
+      it 'matches the tool name case-insensitively like any other request' do
+        expect(::Service::SlackConnector).to receive(:send_slack_message).with(a_string_including('Combo: 4-5-6'), 'U123')
+
+        perform(tool.name.upcase)
+
+        expect(posted_bodies.last['text']).to include('notes re-sent via DM')
+      end
+    end
+
+    it 'does not resend notes for an expired checkout; it goes through the normal request path' do
+      create(:tool_checkout, member: member, tool: tool, expires_on: Date.current - 3)
+      expect(::Service::SlackConnector).not_to receive(:send_slack_message).with(a_string_including('Notes for'), anything)
+
+      perform(tool.name)
+
+      expect(posted_bodies.last['text']).not_to include('re-sent')
     end
 
     it 'rejects a tool with a revoked target checkout' do
