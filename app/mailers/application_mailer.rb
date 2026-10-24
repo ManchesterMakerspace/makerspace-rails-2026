@@ -22,7 +22,12 @@ class ApplicationMailer < ActionMailer::Base
   end
 
   def household_secondary_exempt_member_mailer_action?
-    %w[household_disbanded password_changed admin_password_reset send_document].include?(action_name)
+    # Secondaries are bound by the same contract as everyone else and need a signed Member
+    # Contract before they can request any checkout, so the contract mail must reach them.
+    %w[
+      household_disbanded password_changed admin_password_reset
+      send_document contract_updated request_document
+    ].include?(action_name)
   end
 
   def delivery_recipient_member
