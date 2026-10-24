@@ -330,10 +330,18 @@ facts that source, history, and tests already hold. Start with the evidence:
 
 - **Unused method.** Search the method name across `app`, `lib`, `config`, `spec`,
   `docs`, and `lib/tasks`; a name that appears only at its definition is a candidate.
-  Not dead even when it looks unused: Mongoid custom type hooks (`demongoize`, `evolve`,
-  `mongoize`), Devise hooks (`email_required?`, `password_required?`), callbacks named in
-  `before_`/`after_` declarations, and methods invoked with `send` or from a console
-  procedure in the docs.
+  Read its body before deleting: a method that calls `super` is an override that the
+  framework invokes, so it never has a caller by name. `VolunteerEvent#update_document`
+  overrides Mongoid's persistence method to reschedule reminders atomically and looks
+  unused to a name search. Also not dead even when it looks unused: Mongoid custom type
+  hooks (`demongoize`, `evolve`, `mongoize`), Devise hooks (`email_required?`,
+  `password_required?`), callbacks named in `before_`/`after_` declarations, and methods
+  invoked with `send` or from a console procedure in the docs.
+- **Work in progress.** Code nothing calls on `master` may be called on an unmerged branch,
+  and recent features often have no scheduled job or screen yet. Before removing anything,
+  search the other remote branches (`git grep -n <name> origin/<branch>` for each of
+  `git branch -r`) and check `git log -S<name>` for its age and author. Treat anything added
+  in the last couple of months as unfinished until its author says otherwise.
 - **Orphan route.** List routes with `bundle exec rails routes --expanded` and compare them
   with what the React app can call: the generated client in `makerspace-ts-api-client`,
   literal paths in `src/api`, and paths built from a base variable. Search React for the
