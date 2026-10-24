@@ -386,7 +386,10 @@ values and would use the chosen scheduler's timezone.
 Production work is scheduled in the **Heroku Scheduler** add-on of `makerspace-interface-prod`,
 not by Whenever. The dashboard is the source of truth; this table records it as of
 2026-10-24 (all times UTC, Basic dyno). Change the dashboard first, then update this table.
-A job that is in this repository but not in this table is not running in production.
+A job that is in this repository but not in this table is not running in production *yet*.
+That does not make it dead: recent work often lands before its schedule entry is added, so
+check the job's age and author (`git log -S<name>`) and ask whoever added it before treating
+an unscheduled job as unused.
 
 | Command | Frequency | Notes |
 | --- | --- | --- |
