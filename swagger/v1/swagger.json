@@ -851,6 +851,29 @@
               "isFobIssuer": {
                 "type": "boolean",
                 "description": "Holds the fob-issuer checkout and may issue first key fobs"
+              },
+              "activeRentals": {
+                "type": "array",
+                "description": "Admin and board only: rentals still marked active, so staff can act when the membership ends",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "Space number and description"
+                    },
+                    "billing": {
+                      "type": "boolean",
+                      "description": "The rental still has its own subscription"
+                    }
+                  }
+                }
               }
             },
             "required": [

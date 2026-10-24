@@ -73,6 +73,7 @@ The exact number of emails before cancellation therefore depends on which webhoo
 | An administrator denies a pending rental request. | Member; **Update on Your Rental Request — Manchester Makerspace** | `rental_mailer/rental_request_denied`. |
 | A member schedules cancellation/vacating, or cancellation is scheduled through the rental model. | Member; **Rental Cancellation Confirmation — Manchester Makerspace** | `rental_mailer/rental_vacating`. |
 | A member/admin ends a rental, or the recurring vacating check reaches its effective end. | Member; **Your Rental Has Ended — Manchester Makerspace** | `rental_mailer/rental_ended`. |
+| A member's membership has ended (an admin revoked or suspended them, a membership subscription was cancelled, or the Sunday `member_review` finds it expired or cancelled) and they still have a rental marked `active`. | Member; **Your Membership Has Ended but You Still Have a Rental — Manchester Makerspace** | `rental_mailer/membership_lapsed`, sent by `RentalLapseNotifier`. It lists each space, says the rental keeps billing until cancelled, offers renewal first (not for revoked or suspended), explains Rentals tab > Cancel Rental and the board-member confirmation, and links the wiki's "End a rental" steps. Sent immediately on a subscription cancellation, and weekly only for members with no linked Slack account. Revoked and suspended members receive nothing, because the ApplicationMailer suppression applies. |
 
 All rental templates above are conventional Action Mailer HTML views and are not editable Google Docs.
 

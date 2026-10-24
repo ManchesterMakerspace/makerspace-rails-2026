@@ -391,6 +391,18 @@ RSpec.configure do |config|
             householdRole: { type: :string, enum: %w[primary secondary], nullable: true },
             householdSetupNeeded: { type: :boolean, description: 'Admin and board only: billed on a household plan with no household yet' },
             isFobIssuer: { type: :boolean, description: "Holds the fob-issuer checkout and may issue first key fobs" },
+            activeRentals: {
+              type: :array,
+              description: 'Admin and board only: rentals still marked active, so staff can act when the membership ends',
+              items: {
+                type: :object,
+                properties: {
+                  id: { type: :string }, number: { type: :string },
+                  description: { type: :string, description: 'Space number and description' },
+                  billing: { type: :boolean, description: 'The rental still has its own subscription' }
+                }
+              }
+            },
           },
           required: [:id, :expirationTime]
         }

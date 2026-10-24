@@ -241,6 +241,24 @@ RSpec.describe Admin::MembersController, type: :controller do
           expect(parsed_response["slackManualDeactivationRequired"]).to be true
         end
 
+        it "tells staff about active rentals when a member is revoked, and not for other edits (#276)" do
+          allow(Service::MemberAccess).to receive(:revoke)
+          member = Member.create valid_attributes.merge(status: "activeMember")
+
+          expect(RentalLapseNotifier).to receive(:notify_event).with(member, reason: :revoked).once
+
+          put :update, params: { id: member.to_param, status: "revoked" }, format: :json
+          put :update, params: { id: member.to_param, firstname: "Renamed" }, format: :json
+        end
+
+        it "tells staff about active rentals when a member is suspended (#276)" do
+          member = Member.create valid_attributes.merge(status: "activeMember")
+
+          expect(RentalLapseNotifier).to receive(:notify_event).with(member, reason: :suspended)
+
+          put :update, params: { id: member.to_param, status: "suspended" }, format: :json
+        end
+
         it "queues canvas owner access when assigning a Resource Manager to a shop" do
           shop = create(:shop)
           member = Member.create valid_attributes.merge(role: "member")

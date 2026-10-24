@@ -1,0 +1,15 @@
+<!DOCTYPE html><html><body>
+<h2>You Still Have an Active Rental</h2>
+<p>Hi <%= @member.firstname %>,</p>
+<p><%= @reason_text.capitalize %>, but you still have an active rental:</p>
+<ul>
+  <% @spaces.each do |space| %>
+    <li><strong><%= space %></strong></li>
+  <% end %>
+</ul>
+<p>A rental stays active, and keeps billing, until you cancel it.<% if @can_renew %> If you would rather keep it, renew your membership first.<% end %></p>
+<p>To end it, <a href="<%= @profile_url %>">open your profile in the Member Portal</a>, go to the <strong>Rentals</strong> tab, and choose <strong>Cancel Rental</strong>. A board member confirms the space is empty before it can be rented again.</p>
+<p><a href="<%= @help_url %>">Step-by-step help: End a rental</a></p>
+<p>If you have any questions please contact us at contact@manchestermakerspace.org.</p>
+<p>— Manchester Makerspace</p>
+</body></html>
