@@ -29,7 +29,7 @@ gem 'mongoid', '~> 8.1'
 gem 'mongoid_search', '~> 0.4'
 # Payments
 gem 'paypal-sdk-rest', '~> 1.7'
-gem 'braintree', '~> 4.41'
+gem 'braintree', '~> 4.42'
 gem 'slack-ruby-client', '~> 2.0'
 # Pinned below 3.0: that major release removes the `quirks_mode` keyword
 # multi_json still passes through to the json gem, which raises
@@ -39,7 +39,7 @@ gem 'slack-ruby-client', '~> 2.0'
 gem 'json', '~> 2.21'
 # Google Drive
 gem 'multi_json', '~> 1.21'
-gem 'faraday', '~> 2.14'
+gem 'faraday', '~> 2.15'
 gem 'google-apis-drive_v3'
 gem 'google-apis-sheets_v4'
 gem 'google-apis-admin_directory_v1'
@@ -56,7 +56,7 @@ gem 'wicked_pdf', '~> 2.8'
 gem 'wkhtmltopdf-binary', '~> 0.12.6'
 group :test do
   gem 'rspec-rails', '~> 7.1'
-  gem 'mongoid-rspec', '~> 4.1'
+  gem 'mongoid-rspec', '~> 4.4'
   gem 'database_cleaner-mongoid'
   gem 'simplecov', '~> 1.3'
   gem 'rswag-specs', '~> 2.14'
