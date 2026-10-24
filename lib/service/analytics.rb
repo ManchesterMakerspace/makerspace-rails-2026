@@ -104,40 +104,6 @@ module Service
         base.where(:status.in => Member::ACTIVE_MEMBERSHIP_STATUSES)
       end
 
-      def self.get_membership_lengths(base = query_not_landlord.where(:expirationTime.ne => nil))
-        base.pluck(:startDate, :expirationTime).to_a.map do |member|
-          startDate, expirationTime = member
-          date1 = startDate
-          date2 = Time.at(expirationTime.to_i/1000)
-          [startDate.strftime("%m/%d/%Y"), ((date2.year * 12 + date2.month) - (date1.year * 12 + date1.month))]
-        end
-      end
-
-      # Length in months
-      def self.get_average_membership_length(base = query_not_landlord.where(:expirationTime.ne => nil))
-        total_membership_length = base.pluck(:startDate, :expirationTime).to_a.reduce(0.0) do |memo, member|
-          startDate, expirationTime = member
-          date1 = startDate
-          date2 = Time.at(expirationTime.to_i/1000)
-          memo + ((date2.year * 12 + date2.month) - (date1.year * 12 + date1.month))
-        end
-
-        total_membership_length/base.size
-      end
-
-      def self.get_median_membership_length(base = query_not_landlord.where(:expirationTime.ne => nil))
-        membership_lengths = base.pluck(:startDate, :expirationTime).to_a.map do |member|
-          startDate, expirationTime = member
-          date1 = startDate
-          date2 = Time.at(expirationTime.to_i/1000)
-          ((date2.year * 12 + date2.month) - (date1.year * 12 + date1.month))
-        end
-
-        sorted = membership_lengths.sort
-        len = sorted.length
-        (sorted[(len - 1) / 2] + sorted[len / 2]) / 2.0
-      end
-
       def self.get_membership_per_month(base = query_not_landlord, start_date = Date.parse("08/01/2016"))
         active_members_by_month(start_date: start_date, end_date: Date.today, base: base, boundary: :start).map do |row|
           [Date.strptime(row[:date], "%Y-%m"), row[:count]]
@@ -247,18 +213,6 @@ module Service
     module Rentals
       def self.query_no_rental_contract(base = query_total_rentals) # Member review
         base.where(contract_on_file: false)
-      end
-
-      def self.query_expiring_rentals(base = query_total_rentals) # not used
-        base.where(:expiration.lte => ((Time.now + 2.weeks).to_i * 1000))
-      end
-
-      def self.query_unsubscribed_rentals(base = query_total_rentals)
-        base.where(:subscription_id => nil)
-      end
-
-      def self.query_subscribed_rentals(base = query_total_rentals) #not used
-        base.where(:subscription_id.ne => nil)
       end
 
       def self.query_total_rentals(base = Mongoid::Criteria.new(Rental))
@@ -455,10 +409,6 @@ module Service
 
       def self.get_donation_count(base = query_completed)
         get_donations(base).transform_values { |values| values[:count] }
-      end
-
-      def self.get_donation_dollars(base = query_completed)
-        get_donations(base).transform_values { |values| values[:total_amount] }
       end
 
       def self.get_membership_subscriptions(base = query_completed)

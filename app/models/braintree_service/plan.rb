@@ -41,12 +41,6 @@ class BraintreeService::Plan < Braintree::Plan
     plans.select { |plan| /rental/.match(plan.id) }
   end
 
-  def self.get_plan_by_id(gateway, id)
-    return if id.nil?
-    plans = self.get_plans(gateway)
-    plans.find { |plan| plan.id == id } unless plans.nil?
-  end
-
   def type
     if /rental/.match(self.id)
       :rental
