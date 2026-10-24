@@ -43,8 +43,10 @@ class Admin::MembersController < AdminController
 
     if becoming_revoked
       handle_revocation
+      RentalLapseNotifier.notify_event(@member, reason: :revoked)
     elsif becoming_suspended
       invalidate_member_sessions
+      RentalLapseNotifier.notify_event(@member, reason: :suspended)
     end
 
     notify_renewal(date)

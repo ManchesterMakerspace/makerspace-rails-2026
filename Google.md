@@ -127,7 +127,6 @@ the trusted link structure while escaping member-controlled label text.
 | Member review no purchase | `DOC_MEMBER_REVIEW_NO_PURCHASE_ID` | none |
 | Member review PayPal migration | `DOC_MEMBER_REVIEW_PAYPAL_ID` | none |
 | Member review missing contract | `DOC_MEMBER_REVIEW_MISSING_CONTRACT_ID` | `contract_type`, `document_url` |
-| Member review expired rental | `DOC_MEMBER_REVIEW_EXPIRED_RENTAL_ID` | `rental_numbers`, `renewal_url` |
 
 Unknown placeholders make an export invalid, and the prior Redis copy remains in
 place. Substitution values and final HTML are sanitized before use. Refresh updates

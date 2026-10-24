@@ -63,7 +63,6 @@ module Service
       member_review_no_purchase:           'DOC_MEMBER_REVIEW_NO_PURCHASE_ID',
       member_review_paypal:                 'DOC_MEMBER_REVIEW_PAYPAL_ID',
       member_review_missing_contract:       'DOC_MEMBER_REVIEW_MISSING_CONTRACT_ID',
-      member_review_expired_rental:         'DOC_MEMBER_REVIEW_EXPIRED_RENTAL_ID',
       membership_expiring_soon:             'EMAIL_MEMBERSHIP_EXPIRING_SOON_ID',
       membership_expired:                   'EMAIL_MEMBERSHIP_EXPIRED_ID'
     }.freeze
@@ -95,7 +94,6 @@ module Service
       member_review_no_purchase: { format: :text, placeholders: [], fallback: 'external_templates/member_review_no_purchase' },
       member_review_paypal: { format: :text, placeholders: [], fallback: 'external_templates/member_review_paypal' },
       member_review_missing_contract: { format: :text, placeholders: %w[contract_type document_url], fallback: 'external_templates/member_review_missing_contract' },
-      member_review_expired_rental: { format: :text, placeholders: %w[rental_numbers renewal_url], fallback: 'external_templates/member_review_expired_rental' },
       membership_expiring_soon: { format: :html, placeholders: [], fallback: 'external_templates/membership_expiring_soon' },
       membership_expired: { format: :html, placeholders: [], fallback: 'external_templates/membership_expired' }
     }.freeze
