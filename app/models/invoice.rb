@@ -243,6 +243,11 @@ class Invoice
     )
 
     BillingMailer.canceled_subscription(self.member.email, self.resource_class, cancellation_reason: reason_clause).deliver_later
+
+    # A membership subscription ending does not touch the member's rentals, which bill on their
+    # own subscriptions. Tell staff and the member so they cancel the rental if they do not
+    # want to keep it (#276).
+    RentalLapseNotifier.notify_event(self.member, reason: :cancelled) if self.resource_class == "member"
   end
 
   def self.process_cancellation(invoice_id, skip_notification=false)

@@ -41,7 +41,9 @@ task :member_review => :environment do
       # - expirationTime can be nil (member never paid)
       # Using either field alone misses cases — both are required.
       now_ms = Time.now.to_i * 1000
-      @expired_with_rentals = Rental.where(:status.in => ["active", "vacating"]).map(&:member).compact.select do |member|
+      # Only rentals still marked active need the member to act; a vacating rental is already
+      # being ended and staff see it in the 🟡 posts.
+      @expired_with_rentals = Rental.where(status: "active").map(&:member).compact.select do |member|
         member.expirationTime.nil? ||
         member.expirationTime < now_ms ||
         !member.active_membership_status?
@@ -195,35 +197,16 @@ task :member_review => :environment do
 
       # Notify admins and members of expired memberships with active rentals
       if @expired_with_rentals.length > 0
-        add_context("Expired members with active rentals", @expired_with_rentals)
-        rental_messages = @expired_with_rentals.map do |member|
-          rentals = Rental.where(member_id: member.id, :status.in => ["active", "vacating"])
-          rental_numbers = rentals.map(&:number).join(", ")
-          has_rental_sub = rentals.any? { |r| r.subscription_id.present? }
-          sub_flag = has_rental_sub ? " _(rental sub still active — billing!)_" : ""
-          "<#{@base_url}/members/#{member.id}|#{member.fullname}> — Rentals: #{rental_numbers}#{sub_flag}"
-        end
+        add_context("Membership ended, but they still have an active rental", @expired_with_rentals)
+        rental_messages = @expired_with_rentals.map { |member| RentalLapseNotifier.weekly_line(member) }.compact
         @management_messages.push({
           "type": "section",
           "text": { "type": "mrkdwn", "text": rental_messages.join("\n") }
         })
 
-        # Also notify each member directly so they know to renew
-        @expired_with_rentals.each do |member|
-          slack_user = SlackUser.find_by(member_id: member.id)
-          next unless slack_user
-
-          rentals = Rental.where(member_id: member.id, :status.in => ["active", "vacating"])
-          rental_numbers = rentals.map { |r| "##{r.number}" }.join(", ")
-
-          message = render_member_template(
-            :member_review_expired_rental,
-            slack_user,
-            rental_numbers: rental_numbers,
-            renewal_url: "#{@base_url}/members/#{member.id}"
-          )
-          ::Service::SlackConnector.send_slack_message(message, slack_user.slack_id)
-        end
+        # Tell each member too: a Slack DM, or an email when they have no Slack account.
+        # Revoked and suspended members cannot be reached, so the staff post above says so.
+        @expired_with_rentals.each { |member| RentalLapseNotifier.notify_member_weekly(member) }
       end
 
       # Send management their report
