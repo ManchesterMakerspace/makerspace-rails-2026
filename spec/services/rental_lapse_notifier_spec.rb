@@ -31,6 +31,45 @@ RSpec.describe RentalLapseNotifier do
     end
   end
 
+  describe "the rental's staff note" do
+    it "is added to the staff post, so staff see it before telling anyone to vacate, and never to the member" do
+      rental.update_attributes!(notes: "contains facilities cleaning supplies")
+      slack_user = link_slack
+
+      described_class.notify_event(member, reason: :cancelled)
+
+      expect(::Service::SlackConnector).to have_received(:enque_message).with(
+        a_string_including("BS-Tote-3 (Black Tote)", "note: contains facilities cleaning supplies"), channel, anything
+      )
+      expect(::Service::SlackConnector).to have_received(:enque_message).with(
+        satisfy { |text| !text.include?("cleaning supplies") }, slack_user.slack_id, anything
+      )
+      expect(described_class.weekly_line(member, reason: :expired)).to include("note: contains facilities cleaning supplies")
+    end
+
+    it "adds nothing when the rental has no note" do
+      rental.update_attributes!(notes: "  ")
+      expect(described_class.weekly_line(member, reason: :expired)).not_to include("note:")
+    end
+
+    it "shortens a long note" do
+      rental.update_attributes!(notes: "x" * 300)
+
+      line = described_class.weekly_line(member, reason: :expired)
+
+      expect(line).to include("…")
+      expect(line.length).to be < 500
+    end
+
+    # Rental sanitizes notes on save, so check the Slack escaping on an unsaved rental too.
+    it "escapes Slack formatting and mentions" do
+      note = described_class.note_for(Rental.new(notes: "<!channel> fish & *chips* `code`"))
+
+      expect(note).to include("&lt;!channel&gt;", "&amp;")
+      expect(note).not_to include("<!channel>", "*", "`")
+    end
+  end
+
   describe ".reason_for" do
     it "classifies why a membership counts as ended" do
       expect(described_class.reason_for(build(:member, status: "revoked"))).to eq(:revoked)

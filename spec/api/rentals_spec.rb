@@ -39,6 +39,13 @@ describe 'Rentals API', type: :request do
         run_test!
       end
 
+      response '403', "Forbidden reading a different member's rental (owner and staff only)" do
+        before { sign_in create(:member) }
+        schema '$ref' => '#/components/schemas/error'
+        let(:id) { create(:rental, member: create(:member)).id }
+        run_test!
+      end
+
       response '404', 'rental not found' do
         before { sign_in create(:member) }
         schema '$ref' => '#/components/schemas/error'
