@@ -34,6 +34,30 @@ RSpec.describe RentalsController, type: :controller do
     end
   end
 
+  describe "GET #show authorization" do
+    let(:rental) { Rental.create(valid_attributes.merge(notes: "assigned to WOODSHOP")) }
+
+    it "lets the owner read it" do
+      get :show, params: { id: rental.to_param }
+      expect(response).to have_http_status(200)
+    end
+
+    it "refuses another member, so nobody can read someone else's rental by id" do
+      sign_in create(:member)
+      get :show, params: { id: rental.to_param }
+      expect(response).to have_http_status(403)
+      expect(response.body).not_to include("WOODSHOP")
+    end
+
+    it "lets admin, board, and resource manager read any rental" do
+      [create(:member, :admin), create(:member, role: "board_member"), create(:member, role: "resource_manager")].each do |staff|
+        sign_in staff
+        get :show, params: { id: rental.to_param }
+        expect(response).to have_http_status(200)
+      end
+    end
+  end
+
   describe "GET #show" do
     it "assigns the requested rental as @rental" do
       rental = Rental.create(valid_attributes)

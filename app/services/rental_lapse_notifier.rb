@@ -48,6 +48,19 @@ class RentalLapseNotifier
     detail ? "#{rental.number} (#{detail})" : rental.number.to_s
   end
 
+  NOTE_LIMIT = 140
+
+  # The rental's staff-facing note ("assigned to WOODSHOP", "contains facilities cleaning supplies"),
+  # shortened and escaped for Slack, so staff see it before telling anyone to vacate. Nil when
+  # there is none. It is for staff only and is never put in the member's message.
+  def self.note_for(rental)
+    note = rental.notes.to_s.squish
+    return nil if note.blank?
+
+    note = "#{note[0, NOTE_LIMIT - 1]}…" if note.length > NOTE_LIMIT
+    CheckoutDisplay.escape(note)
+  end
+
   # One staff line: "Name's membership has expired, but they still have an active rental: ..."
   def self.staff_text(member, reason, rentals)
     spaces = rentals.map { |rental| describe_with_billing(rental) }.to_sentence
@@ -112,7 +125,8 @@ class RentalLapseNotifier
 
   def self.describe_with_billing(rental)
     billing = rental.subscription_id.present? ? " _(still billing)_" : ""
-    "#{describe(rental)}#{billing}"
+    note = note_for(rental)
+    "#{describe(rental)}#{billing}#{note ? " — note: #{note}" : ''}"
   end
 
   def self.deliver_to_member(member, reason, rentals, email:)

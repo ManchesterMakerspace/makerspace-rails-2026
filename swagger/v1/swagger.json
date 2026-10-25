@@ -13177,6 +13177,9 @@
           "200": {
             "description": "rental found"
           },
+          "403": {
+            "description": "Forbidden reading a different member's rental (owner and staff only)"
+          },
           "404": {
             "description": "rental not found"
           },

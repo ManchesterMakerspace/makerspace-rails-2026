@@ -10,7 +10,14 @@ class RentalsController < AuthenticationController
     )
   end
 
+  # A rental carries the member's name, ids, subscription and notes, so only its owner and
+  # staff may read it. index is already limited to the caller's own rentals, and update,
+  # cancel, decline_agreement and mark_vacated check ownership too.
   def show
+    unless @rental.member_id.to_s == current_member.id.to_s || is_admin? || is_board_member? || is_resource_manager?
+      raise ::Error::Forbidden.new
+    end
+
     render json: @rental, adapter: :attributes
   end
 
