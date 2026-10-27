@@ -2,7 +2,7 @@ class Admin::AuditLogsController < AdminController
   include FastQuery::MongoidQuery
 
   def index
-    logs = AuditLog.all
+    logs = AuditLog.in_category(params[:category])
 
     logs = logs.where(log_type: params[:log_type])           if params[:log_type].present?
     logs = logs.where(event_type: params[:event_type])       if params[:event_type].present?
@@ -20,6 +20,19 @@ class Admin::AuditLogsController < AdminController
     logs = paginate_resource(logs, query_params[:page_num])
 
     render_with_total_items(logs, { each_serializer: AuditLogSerializer, adapter: :attributes })
+  end
+
+  # The filter choices for the audit log screen: the categories, and the event
+  # types that actually occur in the log (so the Event list cannot go stale).
+  def filters
+    categories = [{ value: AuditLog::ALL_EXCEPT_SLACK, label: 'All except Slack messages' },
+                  { value: AuditLog::ALL, label: 'All' }] +
+                 AuditLog::CATEGORIES.map { |key, rule| { value: key, label: rule[:label] } } +
+                 [{ value: AuditLog::OTHER_CATEGORY, label: 'Other' }]
+    event_types = AuditLog.distinct(:event_type).compact.sort.map do |event_type|
+      { value: event_type, category: AuditLog.category_for(event_type) }
+    end
+    render json: { categories: categories, eventTypes: event_types }
   end
 
   private

@@ -203,7 +203,9 @@ Rails.application.routes.draw do
         end
         resources :checkins, only: [:index]
         resources :rejections, only: [:index]
-        resources :audit_logs, only: [:index]
+        resources :audit_logs, only: [:index] do
+          get :filters, on: :collection
+        end
         resources :invoices, only: [:index, :create, :update, :destroy] do
           member do
             post :force_cancel

@@ -226,7 +226,9 @@ module Service
       return nil if channel.blank?
 
       begin
-        ::Service::SlackConnector.send_slack_message(message, channel)
+        # This entry already records the post in slack_posted, so the Slack
+        # message log skips it.
+        ::Service::SlackMessageLog.without_logging { ::Service::SlackConnector.send_slack_message(message, channel) }
         true
       rescue => e
         notify_honeybadger(e, context: { slack_channel: channel, slack_message: message })

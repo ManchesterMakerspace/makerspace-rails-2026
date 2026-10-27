@@ -69,7 +69,13 @@ class ShopOutageSlackJob < ApplicationJob
     response = Service::SlackConnector.client.chat_postMessage(**options,
       mrkdwn: false, parse: 'none', link_names: false, unfurl_links: false, unfurl_media: false)
     raise 'Slack did not return a message timestamp' if response['ts'].blank?
+    Service::SlackMessageLog.record(channel: options[:channel], message: options[:blocks] || options[:text],
+      source: 'ShopOutageSlackJob', response: response)
     response
+  rescue => e
+    Service::SlackMessageLog.record(channel: options[:channel], message: options[:blocks] || options[:text],
+      source: 'ShopOutageSlackJob', error: e)
+    raise
   end
 
   def receipt(shop, outage_id, **attributes)

@@ -104,6 +104,75 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
         expect(second_page.length).to eq(1)
         expect(second_page.first['eventType']).to eq('member_updated')
       end
+
+      describe 'category filter' do
+        def add_log(log_type, event_type)
+          AuditLog.create!(log_type: log_type, event_type: event_type, resource_type: 'Member',
+                           resource_id: member.id, slack_message: event_type)
+        end
+
+        before do
+          add_log('member', 'system_email_sent')
+          add_log('slack', 'slack_message_sent')
+          add_log('member', 'invoice_settled')
+          add_log('member', 'brand_new_event')
+        end
+
+        def event_types_for(category)
+          get :index, params: { category: category }, format: :json
+          JSON.parse(response.body).map { |log| log['eventType'] }
+        end
+
+        it 'returns one category, using the event type' do
+          expect(event_types_for('email')).to eq(['system_email_sent'])
+          expect(event_types_for('slack')).to eq(['slack_message_sent'])
+          expect(event_types_for('billing')).to eq(['invoice_settled'])
+          expect(event_types_for('members')).to eq(['member_updated'])
+          expect(event_types_for('settings')).to eq(['portal_setting_changed'])
+        end
+
+        it 'puts unmapped event types in Other so nothing drops out of view' do
+          expect(event_types_for('other')).to eq(['brand_new_event'])
+        end
+
+        it 'leaves Slack messages out of "all except Slack", and includes them in All' do
+          expect(event_types_for('all_except_slack')).not_to include('slack_message_sent')
+          expect(event_types_for('all_except_slack').size).to eq(5)
+          expect(event_types_for('all').size).to eq(6)
+          expect(event_types_for('').size).to eq(6)
+        end
+
+        it 'returns each entry with its category' do
+          get :index, params: { category: 'billing' }, format: :json
+          expect(JSON.parse(response.body).first['category']).to eq('billing')
+        end
+
+        it 'rejects an unknown category' do
+          get :index, params: { category: 'nonsense' }, format: :json
+          expect(response).to have_http_status(:unprocessable_content)
+        end
+      end
+    end
+
+    describe 'GET #filters' do
+      it 'lists the categories and the event types present in the log, each with its category' do
+        sign_in board
+        get :filters, format: :json
+        expect(response).to have_http_status(:ok)
+        body = JSON.parse(response.body)
+        expect(body['categories'].first).to eq('value' => 'all_except_slack', 'label' => 'All except Slack messages')
+        expect(body['categories'].map { |c| c['value'] }).to include('all', 'email', 'slack', 'settings', 'other')
+        expect(body['eventTypes']).to eq([
+          { 'value' => 'member_updated', 'category' => 'members' },
+          { 'value' => 'portal_setting_changed', 'category' => 'settings' }
+        ])
+      end
+
+      it 'is forbidden to a resource manager' do
+        sign_in rm
+        get :filters, format: :json
+        expect(response).to have_http_status(:forbidden)
+      end
     end
 
     context 'as board member' do

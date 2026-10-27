@@ -33,6 +33,31 @@ RSpec.describe FixTicketDelivery do
       expect(event.reload.delivered['unscoped-staff-0']['channel']).to eq(destination)
     end
   end
+  it 'records each post in the audit log as a Slack message, without changing how it posts' do
+    Service::SlackMessageLog.enabled = true
+    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'C1234567890', thread_ts: nil)).and_return({ 'ts' => '100.001', 'channel' => 'C1234567890' })
+    expect(client).to receive(:chat_postMessage).with(hash_including(channel: 'C1234567890', thread_ts: '100.001')).and_return({ 'ts' => '100.002', 'channel' => 'C1234567890' })
+    described_class.call(ticket, event)
+    entries = AuditLog.where(log_type: 'slack').to_a
+    expect(entries.size).to eq(2)
+    expect(entries.map(&:slack_channel).uniq).to eq(['C1234567890'])
+    expect(entries.map { |entry| entry.after_snapshot['ts'] }).to match_array(%w[100.001 100.002])
+    expect(entries.map { |entry| entry.after_snapshot['source'] }).to all(start_with('FixTicketDelivery'))
+  ensure
+    Service::SlackMessageLog.enabled = false
+  end
+
+  it 'records a failed post and still raises it' do
+    Service::SlackMessageLog.enabled = true
+    allow(client).to receive(:chat_postMessage).and_raise(StandardError, 'Slack down')
+    expect { described_class.call(ticket, event) }.to raise_error(StandardError, 'Slack down')
+    entry = AuditLog.where(log_type: 'slack').first
+    expect(entry.event_type).to eq('slack_message_failed')
+    expect(entry.after_snapshot['error']).to include('Slack down')
+  ensure
+    Service::SlackMessageLog.enabled = false
+  end
+
   it 'stops queued central delivery when a blank override disables the environment channel' do
     expect(event.central_enabled).to be(true)
     SystemConfig.set('slack_channel_tickets', '')

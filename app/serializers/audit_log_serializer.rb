@@ -3,6 +3,7 @@ class AuditLogSerializer < ApplicationSerializer
   attributes :id,
              :log_type,
              :event_type,
+             :category,
              :actor_id,
              :actor_name,
              :subject_id,

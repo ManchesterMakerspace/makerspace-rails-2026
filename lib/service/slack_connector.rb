@@ -30,17 +30,38 @@ module Service
       related_keys = REDIS.keys(uniquifier)
       related_keys.reduce({}) { |msg_hash, key| msg_hash.merge({ key => REDIS.get(key) }) }
     end
-    def send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel)
-      ::Service::SlackConnector.send_slack_messages(messages, channel)
+    # Extra options (source:) are forwarded only when given, so callers and specs
+    # that use the plain (message, channel) form see exactly that call.
+    def send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel, **options)
+      ::Service::SlackConnector.send_slack_messages(messages, channel, **options)
     end
-    def self.send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel)
-      send_slack_message(format_slack_messages(messages, channel), channel) unless messages.nil? || messages.empty? || Rails.env.test?
+    def self.send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel, source: nil)
+      send_slack_message(format_slack_messages(messages, channel), channel, **(source ? { source: source } : {})) unless messages.nil? || messages.empty? || Rails.env.test?
     end
-    def send_slack_message(message, channel = ::Service::SlackConnector.members_relations_channel)
-      ::Service::SlackConnector.send_slack_message(message, channel)
+    def send_slack_message(message, channel = ::Service::SlackConnector.members_relations_channel, **options)
+      ::Service::SlackConnector.send_slack_message(message, channel, **options)
     end
-    def self.send_slack_message(message, channel = ::Service::SlackConnector.members_relations_channel)
+    # Every send is recorded in the audit log (Service::SlackMessageLog), except
+    # inside Service::SlackMessageLog.without_logging -- AuditLogger wraps its own
+    # Slack posts in that, because the audit entry already records the post.
+    def self.send_slack_message(message, channel = ::Service::SlackConnector.members_relations_channel, source: nil)
       return if Rails.env.test?
+      response = post_slack_message(message, channel)
+      record_slack_message(channel: channel, message: message, source: source, response: response)
+      response
+    rescue => e
+      record_slack_message(channel: channel, message: message, source: source, error: e)
+      raise
+    end
+    # Recording must never break or change a send, even where the audit log is
+    # not loaded (the standalone connector specs) -- so nothing escapes here.
+    def self.record_slack_message(**attributes)
+      return unless defined?(::Service::SlackMessageLog)
+      ::Service::SlackMessageLog.record(**attributes)
+    rescue StandardError
+      nil
+    end
+    def self.post_slack_message(message, channel)
       send_as_msg = message.kind_of?(String)
       begin
         if send_as_msg
