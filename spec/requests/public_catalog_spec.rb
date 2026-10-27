@@ -177,6 +177,18 @@ RSpec.describe "Public catalog", type: :request do
     expect(response.body).not_to include("Hidden")
   end
 
+  it "tells visitors to click a tool's link to request checkout, but only when a listed tool needs one" do
+    get "/shops/#{shop.id}/public.html"
+    hint = "To request checkout, click the link for the tool below."
+    expect(response.body).to include(hint)
+    expect(response.body.index(hint)).to be < response.body.index(%(href="/tool/#{tool.id}/public.html"))
+
+    tool.update!(open: true)
+    get "/shops/#{shop.id}/public.html"
+    expect(response.body).not_to include(hint)
+    expect(response.body).to include("No checkout required")
+  end
+
   it "uses the HTML cache for 30 minutes and content ETags" do
     expect(cache).to receive(:fetch).with(anything, expires_in: 30.minutes).at_least(:once).and_call_original
     get "/tools/#{tool.id}/public.html"
