@@ -30,17 +30,28 @@ module Service
       related_keys = REDIS.keys(uniquifier)
       related_keys.reduce({}) { |msg_hash, key| msg_hash.merge({ key => REDIS.get(key) }) }
     end
-    def send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel)
-      ::Service::SlackConnector.send_slack_messages(messages, channel)
+    def send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel, source: nil)
+      ::Service::SlackConnector.send_slack_messages(messages, channel, source: source)
     end
-    def self.send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel)
-      send_slack_message(format_slack_messages(messages, channel), channel) unless messages.nil? || messages.empty? || Rails.env.test?
+    def self.send_slack_messages(messages, channel = ::Service::SlackConnector.members_relations_channel, source: nil)
+      send_slack_message(format_slack_messages(messages, channel), channel, source: source) unless messages.nil? || messages.empty? || Rails.env.test?
     end
-    def send_slack_message(message, channel = ::Service::SlackConnector.members_relations_channel)
-      ::Service::SlackConnector.send_slack_message(message, channel)
+    def send_slack_message(message, channel = ::Service::SlackConnector.members_relations_channel, audit: true, source: nil)
+      ::Service::SlackConnector.send_slack_message(message, channel, audit: audit, source: source)
     end
-    def self.send_slack_message(message, channel = ::Service::SlackConnector.members_relations_channel)
+    # Every send is recorded in the audit log (Service::SlackMessageLog) unless
+    # audit: false -- AuditLogger passes that for its own Slack posts, whose
+    # audit entry already records the post.
+    def self.send_slack_message(message, channel = ::Service::SlackConnector.members_relations_channel, audit: true, source: nil)
       return if Rails.env.test?
+      response = post_slack_message(message, channel)
+      ::Service::SlackMessageLog.record(channel: channel, message: message, source: source, response: response) if audit
+      response
+    rescue => e
+      ::Service::SlackMessageLog.record(channel: channel, message: message, source: source, error: e) if audit
+      raise
+    end
+    def self.post_slack_message(message, channel)
       send_as_msg = message.kind_of?(String)
       begin
         if send_as_msg

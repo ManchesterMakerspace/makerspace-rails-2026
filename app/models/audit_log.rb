@@ -7,6 +7,7 @@ class AuditLog
   # ── Discriminator ──────────────────────────────────────────────────────────
   # "member"  — changes to member records, invoices, rentals, etc.
   # "portal"  — changes to SystemConfig / portal settings
+  # "slack"   — a Slack message the portal sent (Service::SlackMessageLog)
   field :log_type,      type: String
 
   # ── Event classification ───────────────────────────────────────────────────
@@ -56,6 +57,64 @@ class AuditLog
   index({ subject_id:   1 })
   index({ resource_type: 1, resource_id: 1 })
   index({ created_at:   1 })
+
+  # ── Categories ─────────────────────────────────────────────────────────────
+  # The audit log screen filters by category. A category is derived from the
+  # event type (prefixes and exact names below), so every existing entry has
+  # one without a data migration. An event type that matches none is "other",
+  # so a new event type never drops out of view. Categories must not overlap,
+  # so the database filter and category_for always agree (a spec checks this).
+  CATEGORIES = {
+    'email'        => { label: 'Email',                   exact: %w[system_email_sent], prefixes: [] },
+    'slack'        => { label: 'Slack messages',          exact: [], prefixes: %w[slack_message_] },
+    'settings'     => { label: 'Settings & system',       exact: %w[portal_setting_changed permissions_updated document_upload_failed google_api_permission_denied],
+                        prefixes: %w[template_] },
+    'members'      => { label: 'Members & accounts',      exact: %w[password_changed contract_signed blocked_login_attempt slack_email_mismatch fob_checkout_lookup],
+                        prefixes: %w[member_ membership_ household_ totp_ card_ earned_membership_ slack_invite_ slack_identity_] },
+    'billing'      => { label: 'Billing',                 exact: %w[refund_requested],
+                        prefixes: %w[invoice_ transaction_ subscription_ payment_method_ braintree_] },
+    'rentals'      => { label: 'Rentals',                 exact: [], prefixes: %w[rental_] },
+    'checkouts'    => { label: 'Checkouts, tools & shops', exact: [],
+                        prefixes: %w[tool_ shop_ location_ checkout_] },
+    'reservations' => { label: 'Reservations',            exact: [], prefixes: %w[reservation_ board_reservation_] },
+    'fix_tickets'  => { label: 'Fix tickets',             exact: [], prefixes: %w[ticket_ fix_ticket_] },
+    'volunteer'    => { label: 'Volunteer',               exact: [], prefixes: %w[volunteer_] },
+  }.freeze
+  OTHER_CATEGORY = 'other'.freeze
+  ALL = 'all'.freeze
+  # "All except Slack messages" -- the screen's default, so admin actions are
+  # not buried under routine bot posts.
+  ALL_EXCEPT_SLACK = 'all_except_slack'.freeze
+
+  def self.category_for(event_type)
+    name = event_type.to_s
+    CATEGORIES.each do |key, rule|
+      return key if rule[:exact].include?(name) || rule[:prefixes].any? { |prefix| name.start_with?(prefix) }
+    end
+    OTHER_CATEGORY
+  end
+
+  def self.category_condition(key)
+    rule = CATEGORIES.fetch(key)
+    patterns = rule[:prefixes].map { |prefix| /\A#{Regexp.escape(prefix)}/ }
+    { 'event_type' => { '$in' => rule[:exact] + patterns } }
+  end
+
+  # Criteria for a category key; "all", nil or "" means every entry.
+  def self.in_category(key)
+    case key.to_s
+    when '', ALL then all
+    when ALL_EXCEPT_SLACK then where(:log_type.ne => Service::SlackMessageLog::LOG_TYPE)
+    when OTHER_CATEGORY then where('$nor' => CATEGORIES.keys.map { |category| category_condition(category) })
+    else
+      raise ::Error::UnprocessableEntity.new("Unknown audit log category: #{key}") unless CATEGORIES.key?(key.to_s)
+      where(category_condition(key.to_s))
+    end
+  end
+
+  def category
+    self.class.category_for(event_type)
+  end
 
   # ── Validations ────────────────────────────────────────────────────────────
   validates :log_type,      presence: true

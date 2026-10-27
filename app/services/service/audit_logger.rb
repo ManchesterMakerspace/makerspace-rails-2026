@@ -226,7 +226,8 @@ module Service
       return nil if channel.blank?
 
       begin
-        ::Service::SlackConnector.send_slack_message(message, channel)
+        # audit: false -- this entry already records the post in slack_posted.
+        ::Service::SlackConnector.send_slack_message(message, channel, audit: false)
         true
       rescue => e
         notify_honeybadger(e, context: { slack_channel: channel, slack_message: message })

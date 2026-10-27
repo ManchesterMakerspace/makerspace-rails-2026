@@ -15,7 +15,10 @@ class SlackMessagesJob < ApplicationJob
         messages.push(parsed_payload["message"])
         keys.push(key)
       end
-      send_slack_messages(messages, channel)
+      # Keys are "<request_id>.<label of the code that queued the message>";
+      # the labels tell the audit log which code sent this combined post.
+      sources = keys.map { |key| key.to_s.split('.', 2).last }.uniq
+      send_slack_messages(messages, channel, source: sources.join(', '))
       REDIS.del(*keys)
     end
   end

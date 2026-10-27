@@ -100,6 +100,23 @@ RSpec.describe ShopAvailabilityService do
     expect(shop.reload.ts_oos).to eq('123.456')
   end
 
+  it 'records the outage post in the audit log as a Slack message' do
+    Service::SlackMessageLog.enabled = true
+    shop.set(out_of_service: true, out_of_service_note: 'Leak', outage_id: 'outage-1')
+    client = double('Slack')
+    allow(Service::SlackConnector).to receive(:client).and_return(client)
+    allow(Service::SlackConnector).to receive(:resolved_channel_id).with('#woodshop').and_return('C123456789')
+    allow(client).to receive(:chat_postMessage).and_return('ts' => '123.456', 'channel' => 'C123456789')
+    ShopOutageSlackJob.perform_now(shop.id.to_s, 'outage-1', '#woodshop', shop.name, 'Leak')
+    entry = AuditLog.where(log_type: 'slack').first
+    expect(entry.event_type).to eq('slack_message_sent')
+    expect(entry.slack_channel).to eq('C123456789')
+    expect(entry.slack_message).to include('Reason: Leak')
+    expect(entry.after_snapshot).to include('source' => 'ShopOutageSlackJob', 'ts' => '123.456')
+  ensure
+    Service::SlackMessageLog.enabled = false
+  end
+
   it 'clears the shop flag without clearing a tool flag and broadcasts a reply only once' do
     tool = create(:tool, shop: shop, out_of_service: true)
     shop.set(out_of_service: true, out_of_service_note: 'Leak', outage_id: 'outage-1', ts_oos: '123.456', oos_channel_id: 'C123456789')

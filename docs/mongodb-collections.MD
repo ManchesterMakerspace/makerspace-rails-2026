@@ -84,7 +84,7 @@ conditions are included where they are part of the index contract.
 
 | Collection | Model | Purpose | Expected indexes (in addition to `_id`) |
 | --- | --- | --- | --- |
-| `audit_logs` | `AuditLog` | Immutable audit events for member, billing, rental, reservation, and administrative actions. | `{ log_type: 1 }`; `{ event_type: 1 }`; `{ actor_id: 1 }`; `{ subject_id: 1 }`; `{ resource_type: 1, resource_id: 1 }`; `{ created_at: 1 }` |
+| `audit_logs` | `AuditLog` | Immutable audit events for member, billing, rental, reservation, and administrative actions, plus one entry per Slack message the portal sends (`log_type: "slack"`, `event_type` `slack_message_sent` or `slack_message_failed`, `resource_type: "SlackChannel"` with the destination channel or Slack user ID as `resource_id`, the member as subject for a DM, the text in `slack_message` and the sending code, receipt and error in `after_snapshot`). Slack entries grow the collection noticeably faster than other events; there is no expiry yet. A category used by the admin filter is derived from `event_type` (`AuditLog::CATEGORIES`), not stored. | `{ log_type: 1 }`; `{ event_type: 1 }`; `{ actor_id: 1 }`; `{ subject_id: 1 }`; `{ resource_type: 1, resource_id: 1 }`; `{ created_at: 1 }` |
 | `braintree__notifications` | `BraintreeService::Notification` | Stored Braintree webhook kind, timestamp, and payload data. | None |
 | `cards` | `Card` | Member access-card identifiers, holder details, expiration, and validity. | Unique `{ uid: 1 }`, partial when `uid` is a string; `{ member_id: 1 }` (deployment task) |
 | `checkins` | None (direct collection access) | Facility check-in events used by administrative check-in and space-usage reporting. | None beyond `_id` is declared by this repository |

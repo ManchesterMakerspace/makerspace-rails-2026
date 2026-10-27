@@ -5296,6 +5296,247 @@
         }
       }
     },
+    "/admin/audit_logs": {
+      "get": {
+        "summary": "Lists audit log entries (admin or board)",
+        "tags": [
+          "Audit Log"
+        ],
+        "operationId": "adminListAuditLogs",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "all, all_except_slack, a category key from GET /admin/audit_logs/filters, or other. Omit (or all) for every entry.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "logType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actorId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subjectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageNum",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "entries in the category, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "logType": {
+                        "type": "string",
+                        "description": "member, portal, or slack (a Slack message the portal sent)"
+                      },
+                      "eventType": {
+                        "type": "string"
+                      },
+                      "category": {
+                        "type": "string",
+                        "description": "Derived from eventType; see GET /admin/audit_logs/filters"
+                      },
+                      "actorId": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "actorName": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "subjectId": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "subjectName": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "resourceType": {
+                        "type": "string"
+                      },
+                      "resourceId": {
+                        "type": "string"
+                      },
+                      "fieldChanges": {
+                        "type": "object",
+                        "nullable": true
+                      },
+                      "beforeSnapshot": {
+                        "type": "object",
+                        "nullable": true
+                      },
+                      "afterSnapshot": {
+                        "type": "object",
+                        "nullable": true
+                      },
+                      "slackChannel": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "slackMessage": {
+                        "type": "string"
+                      },
+                      "slackPosted": {
+                        "type": "boolean",
+                        "nullable": true
+                      },
+                      "ipAddress": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "logType",
+                      "eventType",
+                      "category",
+                      "resourceType",
+                      "slackMessage",
+                      "createdAt"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "unknown category"
+          },
+          "403": {
+            "description": "not an admin or board member"
+          }
+        }
+      }
+    },
+    "/admin/audit_logs/filters": {
+      "get": {
+        "summary": "Lists the audit log filter choices: categories and the event types present",
+        "tags": [
+          "Audit Log"
+        ],
+        "operationId": "adminListAuditLogFilters",
+        "responses": {
+          "200": {
+            "description": "filter choices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "label"
+                        ]
+                      }
+                    },
+                    "eventTypes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "category"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "categories",
+                    "eventTypes"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not an admin or board member"
+          }
+        }
+      }
+    },
     "/admin/billing/receipts/{id}": {
       "get": {
         "summary": "Get a receipt for an invoice",

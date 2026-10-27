@@ -135,9 +135,15 @@ class FixTicketDelivery
       # against Slack history before any subsequent send is attempted.
       attempt = { 'channel' => channel, 'thread_ts' => thread_ts, 'oldest' => (Time.current.to_f - 5).to_s }
       event.set(delivery_attempts: event.delivery_attempts.merge(key => attempt))
-      response = client.chat_postMessage(channel: channel, text: text, thread_ts: thread_ts,
-        reply_broadcast: broadcast, client_msg_id: uuid, parse: 'none', link_names: false, unfurl_links: false, unfurl_media: false,
-        **(blocks ? { blocks: blocks } : {}))
+      begin
+        response = client.chat_postMessage(channel: channel, text: text, thread_ts: thread_ts,
+          reply_broadcast: broadcast, client_msg_id: uuid, parse: 'none', link_names: false, unfurl_links: false, unfurl_media: false,
+          **(blocks ? { blocks: blocks } : {}))
+      rescue => e
+        Service::SlackMessageLog.record(channel: channel, message: text, source: "FixTicketDelivery #{key}", error: e)
+        raise
+      end
+      Service::SlackMessageLog.record(channel: channel, message: text, source: "FixTicketDelivery #{key}", response: response)
       Thread.current[:fix_delivery_lease]&.call
       receipt = { 'ts' => response['ts'], 'channel' => response['channel'] }
       event.set(delivered: event.delivered.merge(key => receipt))

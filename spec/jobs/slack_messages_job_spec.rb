@@ -28,7 +28,7 @@ RSpec.describe SlackMessagesJob, type: :job do
   end
 
   it "Dispatches slack messages from Redis cache by request_id" do
-    expect_any_instance_of(Service::SlackConnector).to receive(:send_slack_messages).with(["Message2", "Message3"], nil)
+    expect_any_instance_of(Service::SlackConnector).to receive(:send_slack_messages).with(["Message2", "Message3"], nil, source: "method, method2")
     SlackMessagesJob.perform_now(target_id)
   end
 
