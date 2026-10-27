@@ -78,13 +78,15 @@ RSpec.describe Service::SlackMessageLog do
       expect(entries.first.slack_message).to eq("*Request* for Lathe\nRequested today")
     end
 
-    it 'does not record when the caller passes audit: false' do
+    it 'does not record sends made inside without_logging, and records again afterwards' do
       live!
       allow(client).to receive(:chat_postMessage).and_return({ 'ok' => true, 'ts' => '3.3' })
 
-      Service::SlackConnector.send_slack_message('already audited', 'logs', audit: false)
-
+      described_class.without_logging { Service::SlackConnector.send_slack_message('already audited', 'logs') }
       expect(entries).to be_empty
+
+      Service::SlackConnector.send_slack_message('normal', 'logs')
+      expect(entries.map(&:slack_message)).to eq(['normal'])
     end
 
     it 'never blocks or breaks the message when the audit write fails' do

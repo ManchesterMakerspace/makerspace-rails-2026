@@ -31,6 +31,7 @@ module Service
     # error:    the exception, when it failed.
     def self.record(channel:, message:, source: nil, response: nil, error: nil)
       return unless enabled
+      return if suppressed?
       return if channel.blank?
 
       member = dm_member(channel)
@@ -53,9 +54,23 @@ module Service
         ip_address:    Current.ip_address
       )
     rescue => e
-      Rails.logger.error("[SlackMessageLog] Failed to record Slack message to #{channel}: #{e.class} #{e.message}")
+      Rails.logger.error("[SlackMessageLog] Failed to record Slack message to #{channel}: #{e.class} #{e.message}") if Rails.respond_to?(:logger)
       Honeybadger.notify(e, context: { slack_channel: channel.to_s }) if defined?(Honeybadger)
       nil
+    end
+
+    # Runs the block without recording any Slack message sent inside it
+    # (AuditLogger uses this for its own posts, which its entry already records).
+    def self.without_logging
+      previous = Thread.current[:slack_message_log_suppressed]
+      Thread.current[:slack_message_log_suppressed] = true
+      yield
+    ensure
+      Thread.current[:slack_message_log_suppressed] = previous
+    end
+
+    def self.suppressed?
+      Thread.current[:slack_message_log_suppressed] == true
     end
 
     def self.dm_member(channel)
