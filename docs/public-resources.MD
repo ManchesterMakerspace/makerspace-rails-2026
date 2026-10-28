@@ -112,3 +112,15 @@ POST /api/admin/system_configs/run_job accepts key=checkout_expiration_notice
 (admin-only), returning the existing queued acknowledgment. No anonymous route
 or public configuration secret is added. Portal renewal links use the existing
 /tool-checkouts?mode=self-service route.
+
+## Companion NFC management and API (pending deployment)
+
+No Rails public route or executable Swagger contract changes. The ESP32 serves
+authenticated /, /config (GET/POST), /stats, /api/local/stats, /cache/cards,
+/cache/checkouts, /enrollment/disable (POST), /update and ElegantOTA /ota routes.
+All require compiled-in management credentials; mutations add CSRF/session
+checks. These management pages belong on an HTTPS-proxied isolated network.
+
+Restricted /reader/v1 routes live in ts-data-api, not Rails. They require verified
+device mTLS identity through a trusted gateway. See [ESP32 readers](esp32-readers.md)
+and the companion READER_API.md for methods, envelopes and status codes.

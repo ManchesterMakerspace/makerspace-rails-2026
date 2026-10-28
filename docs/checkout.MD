@@ -780,3 +780,12 @@ may still be published after expiration. Bulk expiration changes hold one
 persistent catalog lock for the transaction; see [lock recovery](jobs-tasks-services.MD#bulk-expiration-locking-and-recovery).
 The Reinstated roster filter is offered only on the authorized management roster;
 the member endpoint does not support that filter.
+
+## ESP32 tool reader consumer (pending deployment)
+
+The companion API exports current non-revoked/non-superseded tool checkouts to a
+reader configured for that tool. Null expires_on stays non-expiring; dated grants
+end at the start of the next America/New_York day, including DST. Card/membership
+expiry may shorten access. Tool/shop unavailability removes grants; verified
+revocation or expiry stops an enabled tool relay. The reader does not create or
+renew a checkout by scanning a fob. See [ESP32 readers](esp32-readers.md).

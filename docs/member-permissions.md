@@ -230,3 +230,14 @@ and active-canvas eligibility. Expiration does not remove independent approver
 assignments or manager permissions, revoke records, or change member status.
 An eligible owner may request renewal; unresolved revoked checkouts still need
 admin/board reinstatement. Superseded history grants no checkout-derived rights.
+
+## Physical ESP32 readers (pending deployment)
+
+The companion reader requires activeMember and unexpired membership/card data;
+tool readers additionally require a current valid checkout and available tool/shop.
+Enrollment only provisions an already assigned card and never grants membership
+or tool permission. Local reader management uses separately provisioned compiled
+credentials; it does not inherit Rails browser roles or change portal permissions.
+Readers authenticate to restricted ts-data-api endpoints with individual client
+certificates. Offline cached authorization can persist until expiry; revocation
+requires connectivity to become known. See [ESP32 readers](esp32-readers.md).

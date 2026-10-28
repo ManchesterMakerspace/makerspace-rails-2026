@@ -304,3 +304,24 @@ expiry scans. Deploy it with the repeatable
 index without changing documents. Existing member/tool lookup indexes remain.
 Expiration audits use existing audit logs; notice settings and run status use
 the existing SystemConfig storage.
+
+## ESP32 reader companion collections (pending deployment)
+
+See [ESP32 readers](esp32-readers.md). These are top-level collections owned by
+ts-data-api, not embedded Mongoid documents:
+- `nfc_readers`: immutable ObjectId, unique name and normalized certificateFingerprint,
+  enabled, role, toolId, enrollmentEnabled, where, previousNames and enrollmentFence.
+  Run the companion `scripts/reader-indexes.cjs` explicitly to create the two
+  unique indexes after auditing duplicates. The implicit _id index remains.
+- `nfc_card_credentials`: _id equals the assigned card ObjectId; uid/memberId binding,
+  pending/active state, AES-GCM sealed material, creation/enrollment timestamps and
+  enrolling reader. No TTL or automatic orphan deletion. Release/reassignment
+  makes the old binding unusable; retirement is an explicit operator action.
+
+Existing `cards` gain an internal numeric `readerEnrollmentFence` only when an
+enrollment transaction runs; it serializes against concurrent card mutation.
+Existing `checkins`/`rejections` retain uid/validity/where/delay/holder/time/reader/timeOf
+and add authenticated deviceId, reason and timeQuality. Event _id is stable across
+retries; conflicting duplicates are rejected rather than updated. timeOf is null
+for pre-clock rejections. No event/index backfill runs. FirstScan is local flash
+metadata and is not a field written into the MongoDB cards collection.

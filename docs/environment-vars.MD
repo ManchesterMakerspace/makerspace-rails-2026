@@ -149,3 +149,24 @@ executable code does not retrieve them.
 | `SLACK_TICKETS_CHANNEL` | No | Optional; blank disables central publication | Initial channel ID or name, overridable under System settings → Slack (stored as `slack_channel_tickets`). A saved blank override disables publication even when this environment variable is set; no default channel is used. Channel for every new ticket and threaded updates, including full notes. Bounties broadcast replies. Independent of public visibility and per-ticket shop announcements. Bot must be able to post/read its messages. Existing `SLACK_ENV` development redirection applies. |
 
 `ticket_open_limit` is a positive-integer SystemConfig setting, default 10, editable only by admins; it is not an environment variable. /fix always requires SLACK_SIGNING_SECRET, including development.
+
+## ESP32 reader companion service (pending deployment)
+
+No new Rails environment variables or dotenv selection rules are introduced.
+The environment inventory is extended for ts-data-api, which runs separately.
+See [ESP32 readers](esp32-readers.md) and the companion READER_API.md.
+
+| Variable | Secret | Requirement/default | Consumer |
+| --- | --- | --- | --- |
+| READER_DATA_SOURCE | No | Required; no default; key in existing DATA_SOURCES | Reader database routing |
+| READER_DATABASE | No | Required; no default | Explicit makerspace database |
+| READER_PROXY_SECRET | Yes | Required; no default | Trusted mTLS gateway and API only |
+| READER_KEY_ENCRYPTION_KEY | Yes | Required for credentials; base64 32-byte key | Server AES-GCM credential storage |
+| READER_MQTT_URL | No | Optional; unset disables sync publisher; mqtts:// only | Change-stream invalidation worker |
+| READER_MQTT_USERNAME | Deployment-specific | Optional; broker-specific | Service publisher |
+| READER_MQTT_PASSWORD | Yes | Optional; broker-specific | Service publisher |
+| NODE_EXTRA_CA_CERTS | No (path) | Optional Node runtime setting | Private broker CA trust |
+
+Atlas credentials stay in the companion service's DATA_SOURCES configuration.
+Reader client certificates, cache keys and management passwords are compiled
+from the firmware's ignored secrets.h, not exposed in Rails public configuration.

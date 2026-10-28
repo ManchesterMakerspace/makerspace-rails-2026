@@ -61,3 +61,15 @@ The member payload (`GET /api/members/:id` and the sign-in and session responses
 After a successful issue, `FobIssuanceNotifier` sends the member a Slack direct
 message (when their Slack account is linked) and posts to the members relations
 channel. Failures there are logged and do not undo the card.
+
+## ESP32 enrollment after assignment (pending deployment)
+
+See [ESP32 readers](esp32-readers.md). The existing Rails assignment/release
+workflow stays authoritative. Assign the UID before presenting the card to a
+supervised station with Enrollment station enabled. The reader provisions and
+verifies per-card Classic keys/credential; an unknown card is rejected without
+being modified. Enrollment does not alter membership eligibility. Credentials
+bind to the assigned card ObjectId, UID and member; release/reassignment
+invalidates the old binding. ts-data-api enrollment transactions increment an
+internal card fence so they conflict with concurrent assignment/release.
+FirstScan is stored separately at each reader and is not imported into cards.

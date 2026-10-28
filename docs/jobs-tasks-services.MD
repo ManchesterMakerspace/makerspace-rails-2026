@@ -1013,3 +1013,24 @@ CheckoutCreation queues a full shop checkout canvas rebuild for renewals
 (renewed_from_id present). The rebuild renders current valid members once,
 replacing stale expired predecessor lines. Initial checkouts retain incremental
 adds. Neither path sends notices inside its approval transaction.
+
+## ESP32 reader supporting service (pending deployment)
+
+The separate ts-data-api service owns the synchronous /reader/v1 config, lookup,
+snapshot, enrollment and event-ingestion handlers. Enrollment uses MongoDB
+transactions with station/card conflict fences; event ingestion is immutable and
+idempotent. It never assigns cards, grants checkouts, or changes member status.
+See [ESP32 readers](esp32-readers.md).
+
+Its optional startReaderSync worker watches cards, members, tools, shops,
+tool_checkouts, nfc_card_credentials and nfc_readers and publishes MQTTS
+readers/all/invalidate hints. Stream/broker errors reconnect; firmware's
+five-minute refresh recovers missed hints. This is a service-lifetime worker,
+not a Rails scheduled job or a System settings runnable job.
+
+Manual companion deployment command: `node scripts/reader-indexes.cjs`, after
+checking existing reader names/fingerprints. It creates unique indexes in
+nfc_readers; it does not run at startup. Companion validation command:
+`npm run test:disposable`, which creates a disposable MongoDB replica set and
+overrides DATA_SOURCES. Neither command is a Rails rake task. Firmware owns
+flash-spool retries, cache persistence and local relay timing.
