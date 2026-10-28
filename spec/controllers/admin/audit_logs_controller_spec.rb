@@ -135,6 +135,13 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
           expect(event_types_for('other')).to eq(['brand_new_event'])
         end
 
+        it 'returns account provisioning events under members, not other' do
+          add_log('member', 'google_drive_provisioning_failed')
+          add_log('member', 'slack_manual_invite_required')
+          expect(event_types_for('members')).to match_array(%w[member_updated google_drive_provisioning_failed slack_manual_invite_required])
+          expect(event_types_for('other')).to eq(['brand_new_event'])
+        end
+
         it 'leaves Slack messages out of "all except Slack", and includes them in All' do
           expect(event_types_for('all_except_slack')).not_to include('slack_message_sent')
           expect(event_types_for('all_except_slack').size).to eq(5)
