@@ -25,6 +25,10 @@ RSpec.describe AuditLog, '.category_for' do
     tool_created tool_deleted tool_group_checkout_created tool_notes_updated tool_requestor_annotation_updated tool_updated
     totp_disabled totp_enabled totp_reset transaction_created transaction_refunded volunteer_task_credit_changed
     slack_message_sent slack_message_failed
+    google_drive_access_confirmed google_drive_provisioning_failed google_drive_provisioning_blocked
+    google_drive_previous_email_revoked slack_invite_succeeded slack_promotion_succeeded
+    slack_manual_invite_required slack_manual_promotion_required
+    slack_previous_identity_revoked slack_previous_identity_detached card_assigned card_released
   ]
 
   it 'maps every event type the application writes to a category' do
@@ -45,6 +49,13 @@ RSpec.describe AuditLog, '.category_for' do
     expect(described_class.category_for('slack_message_sent')).to eq('slack')
     expect(described_class.category_for('slack_invite_failed')).to eq('members')
     expect(described_class.category_for('slack_identity_conflict')).to eq('members')
+  end
+
+  it 'files account provisioning events (Slack invite and promotion, Google Drive access) under members' do
+    %w[google_drive_provisioning_failed google_drive_access_confirmed slack_promotion_succeeded
+       slack_manual_invite_required slack_manual_promotion_required slack_previous_identity_detached].each do |event_type|
+      expect(described_class.category_for(event_type)).to eq('members'), event_type
+    end
   end
 
   it 'puts an unknown event type in other' do
