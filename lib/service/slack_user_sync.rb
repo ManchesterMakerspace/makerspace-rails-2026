@@ -299,7 +299,60 @@ module Service
     #    (deactivated, email changed, etc.) even though nothing ever actually
     #    resolved it for the member.
     def self.detect_conflicts
-      conflicts = live_conflicts
+      merge_persisted_conflicts(live_conflicts)
+    end
+
+    # The admin page's version of detect_conflicts. The live scan pages through
+    # Slack's whole directory inside the web request, which can outlast Heroku's
+    # 30 second limit (the request is then cut off with a 503). So its result is
+    # cached for a few minutes, it gives up after LIVE_SCAN_DEADLINE_SECONDS, and
+    # when it cannot finish the saved conflicts are still returned. Returns
+    # [conflicts, status] where status is :fresh (just scanned), :cached, or
+    # :unavailable (the live check failed; only saved conflicts are included).
+    LIVE_CONFLICTS_CACHE_KEY = 'slack_identity_conflicts:live'.freeze
+    LIVE_CONFLICTS_FAILURE_KEY = 'slack_identity_conflicts:live_failed'.freeze
+    LIVE_CONFLICTS_TTL_SECONDS = 300
+    LIVE_CONFLICTS_FAILURE_TTL_SECONDS = 60
+    LIVE_SCAN_DEADLINE_SECONDS = 20
+
+    class LiveScanTimeout < StandardError; end
+
+    def self.detect_conflicts_for_page
+      live, status = cached_live_conflicts
+      [merge_persisted_conflicts(live), status]
+    end
+
+    # Resolving a conflict changes what a fresh scan would find, so the page
+    # clears the cached result rather than showing a resolved conflict again.
+    def self.clear_live_conflicts_cache
+      REDIS.del(LIVE_CONFLICTS_CACHE_KEY, LIVE_CONFLICTS_FAILURE_KEY)
+    rescue StandardError => e
+      Rails.logger.warn("[SlackUserSync] could not clear the conflicts cache: #{e.class} #{e.message}")
+    end
+
+    def self.cached_live_conflicts
+      cached = REDIS.get(LIVE_CONFLICTS_CACHE_KEY)
+      return [JSON.parse(cached, symbolize_names: true), :cached] if cached
+      # A scan that just failed is not retried by every reload while Slack is struggling.
+      return [[], :unavailable] if REDIS.get(LIVE_CONFLICTS_FAILURE_KEY)
+
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + LIVE_SCAN_DEADLINE_SECONDS
+      conflicts = live_conflicts(deadline: deadline)
+      REDIS.set(LIVE_CONFLICTS_CACHE_KEY, conflicts.to_json, ex: LIVE_CONFLICTS_TTL_SECONDS)
+      [conflicts, :fresh]
+    rescue StandardError => e
+      Rails.logger.error("[SlackUserSync] live conflict scan unavailable: #{e.class} #{e.message}")
+      begin
+        REDIS.set(LIVE_CONFLICTS_FAILURE_KEY, '1', ex: LIVE_CONFLICTS_FAILURE_TTL_SECONDS)
+      rescue StandardError
+        nil
+      end
+      [[], :unavailable]
+    end
+    private_class_method :cached_live_conflicts
+
+    def self.merge_persisted_conflicts(conflicts)
+      conflicts = conflicts.dup
       found_slack_ids = conflicts.map { |c| c[:slack_id] }
 
       SlackIdentityConflict.unresolved.each do |persisted|
@@ -322,19 +375,25 @@ module Service
 
       conflicts
     end
+    private_class_method :merge_persisted_conflicts
 
-    def self.live_conflicts
+    def self.live_conflicts(deadline: nil)
       return [] unless ::Service::SlackConnector.api_token_present?
 
       client = ::Service::SlackConnector.client
       conflicts = []
       cursor = nil
+      past_deadline = -> { deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline }
 
       loop do
+        raise LiveScanTimeout, 'live Slack scan ran out of time' if past_deadline.call
+
         response = client.users_list(limit: 200, cursor: cursor)
         raise 'Slack API returned ok=false' unless response['ok']
 
         response['members'].each do |slack_user|
+          raise LiveScanTimeout, 'live Slack scan ran out of time' if past_deadline.call
+
           next if slack_user['is_bot'] || slack_user['deleted'] || slack_user['id'] == 'USLACKBOT'
 
           slack_id    = slack_user['id']

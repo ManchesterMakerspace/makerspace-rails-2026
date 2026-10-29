@@ -1,7 +1,11 @@
 class Admin::SlackIdentityConflictsController < AdminController
   # GET /api/admin/slack_identity_conflicts
+  # live_check is "fresh" (Slack was just scanned), "cached" (a scan from the last
+  # few minutes), or "unavailable" (the scan could not finish, so only conflicts
+  # saved earlier are listed).
   def index
-    render json: { conflicts: Service::SlackUserSync.detect_conflicts }
+    conflicts, live_check = Service::SlackUserSync.detect_conflicts_for_page
+    render json: { conflicts: conflicts, live_check: live_check }
   end
 
   # POST /api/admin/slack_identity_conflicts/reassign
@@ -12,6 +16,7 @@ class Admin::SlackIdentityConflictsController < AdminController
       member_id: params[:member_id],
       actor: current_member
     )
+    Service::SlackUserSync.clear_live_conflicts_cache
     render json: { message: "#{params[:slack_id]} linked to #{member.fullname}", member_id: member.id.to_s }, status: :ok
   end
 
@@ -25,6 +30,7 @@ class Admin::SlackIdentityConflictsController < AdminController
       slack_name: params[:slack_name],
       actor: current_member
     )
+    Service::SlackUserSync.clear_live_conflicts_cache
     render json: { message: "#{params[:slack_id]} dismissed for #{member.fullname}", member_id: member.id.to_s }, status: :ok
   end
 end
