@@ -66,6 +66,8 @@ module HomeApiSchemas
         postalCode: nullable_string
       }),
       phone: nullable_string,
+      signupSource: nullable_string,
+      signupSourceDetail: nullable_string,
       silenceEmails: { type: :boolean, nullable: true },
       groupName: nullable_string,
       householdRole: household_role,

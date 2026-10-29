@@ -10,12 +10,17 @@ class MemberSerializer < MemberSummarySerializer
              :address,
              :phone,
              :silence_emails,
+             :signup_source,
+             :signup_source_detail,
              :member_contract_on_file,
              :group_name,
              :household_role,
              :subscription_plan_id
 
   attribute :expiring_payment_card_types, if: :include_expiring_payment_card_types?
+  # Admin/board only: the member staff linked as having referred this one.
+  attribute :referred_by_member_id, if: :include_provisioning?
+  attribute :referred_by_member_name, if: :include_provisioning?
   # Admin/board only (same audience as provisioning): a household-plan member with no household yet.
   attribute :household_setup_needed, if: :include_provisioning?
   # Admin/board only (same audience as provisioning): rentals still marked active, so staff
@@ -28,6 +33,12 @@ class MemberSerializer < MemberSummarySerializer
 
   def is_fob_issuer
     object.fob_issuer?
+  end
+
+  def referred_by_member_name
+    return if object.referred_by_member_id.blank?
+
+    Member.unscoped.where(id: object.referred_by_member_id).first&.fullname
   end
 
   def totp_enabled

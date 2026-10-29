@@ -301,6 +301,32 @@ RSpec.describe Admin::MembersController, type: :controller do
           expect(member.reload.silence_emails).to be false
         end
 
+        it "lets admins correct how a member heard of the makerspace" do
+          member = Member.create valid_attributes
+
+          put :update, params: { id: member.to_param, signupSource: 'class', signupSourceDetail: 'Intro to Welding' }, format: :json
+          expect(response).to have_http_status(200)
+          expect(JSON.parse(response.body)).to include('signupSource' => 'class', 'signupSourceDetail' => 'Intro to Welding')
+
+          put :update, params: { id: member.to_param, signupSource: 'walk_in' }, format: :json
+          expect(member.reload.signup_source).to eq('walk_in')
+          expect(member.signup_source_detail).to be_nil
+        end
+
+        it "lets admins link the member who referred a friend, and clears the link when the source changes" do
+          referrer = Member.create valid_attributes.merge(email: 'referrer@example.com')
+          member = Member.create valid_attributes
+
+          put :update, params: { id: member.to_param, signupSource: 'friend', signupSourceDetail: 'Jane',
+                                 referredByMemberId: referrer.id.to_s }, format: :json
+          expect(response).to have_http_status(200)
+          expect(JSON.parse(response.body)).to include('referredByMemberId' => referrer.id.to_s,
+                                                       'referredByMemberName' => referrer.fullname)
+
+          put :update, params: { id: member.to_param, signupSource: 'website' }, format: :json
+          expect(member.reload.referred_by_member_id).to be_nil
+        end
+
         it "lets admins manually block and unblock Google Drive provisioning" do
           member = Member.create valid_attributes
 

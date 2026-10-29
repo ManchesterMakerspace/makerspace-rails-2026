@@ -94,6 +94,20 @@ class Member
   field :silence_emails, type: Boolean # Stop marketing emails to user
   field :notes, type: String
 
+  # How the member first heard of the makerspace, for conversion metrics (for
+  # example members who came over from a class). Asked as an optional question
+  # at signup and correctable by staff on the member profile. The detail is
+  # free text typed at signup: the class name for "class", the person's name
+  # for "friend". For "friend", staff can also link the actual referring member
+  # (referred_by_member_id) from the profile; it is never offered on the public
+  # signup form, which must not expose the member list.
+  SIGNUP_SOURCES = %w[class walk_in friend website social other].freeze
+  SIGNUP_SOURCES_WITH_DETAIL = %w[class friend].freeze
+  field :signup_source, type: String
+  field :signup_source_detail, type: String
+  field :referred_by_member_id, type: BSON::ObjectId
+  before_validation :normalize_signup_source
+
   # External account provisioning is scoped to the member's current email.
   # AuditLog retains history when these current-state fields are reset.
   field :provisioning_initialized_at, type: Time
@@ -147,6 +161,11 @@ class Member
   validates :cardID, uniqueness: true, allow_nil: true
   validates_inclusion_of :status, in: ["activeMember", "pending", "nonMember", "revoked", "inactive", "suspended"]
   validates_inclusion_of :role, in: ["admin", "board_member", "resource_manager", "member"]
+  # Checked only when changed, so a choice retired from SIGNUP_SOURCES later does
+  # not block saving the members who already have it.
+  validates :signup_source, inclusion: { in: SIGNUP_SOURCES }, allow_nil: true, if: :signup_source_changed?
+  validates :signup_source_detail, length: { maximum: 100 }
+  validate :referrer_is_another_member, if: :referred_by_member_id_changed?
 
   index({ email: 1 }, {
     unique: true,
@@ -729,6 +748,26 @@ class Member
       # they hold -- confirmed happening on every subscription renewal.
       c.skip_provisioning_enqueue = true
       c.update(expiry: self.expirationTime)
+    end
+  end
+
+  # Blank answers (an unanswered dropdown) are stored as nil. The typed name is
+  # kept only for the sources that ask for one, and the linked referrer only for
+  # "friend", so changing the source cannot leave stale details behind.
+  def normalize_signup_source
+    self.signup_source = signup_source.presence
+    self.signup_source_detail = signup_source_detail.presence
+    self.signup_source_detail = nil unless SIGNUP_SOURCES_WITH_DETAIL.include?(signup_source)
+    self.referred_by_member_id = nil unless signup_source == "friend"
+  end
+
+  def referrer_is_another_member
+    return if referred_by_member_id.blank?
+
+    if referred_by_member_id == id
+      errors.add(:referred_by_member_id, "cannot be the member themself")
+    elsif !Member.where(id: referred_by_member_id).exists?
+      errors.add(:referred_by_member_id, "must be an existing member")
     end
   end
 

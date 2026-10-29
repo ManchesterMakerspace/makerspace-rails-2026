@@ -177,6 +177,8 @@ describe 'Registrations API', type: :request do
           firstname: { type: :string },
           lastname: { type: :string },
           phone: { type: :string },
+          signupSource: { type: :string, description: 'Optional: how the member first heard of the makerspace: class, walk_in, friend, website, social or other' },
+          signupSourceDetail: { type: :string, description: 'Optional free text: the class name for class, the referrer\'s name for friend' },
           'cf-turnstile-response': {
             type: :string,
             description: 'Cloudflare Turnstile token; enforced when TURNSTILE_SECRET is configured'

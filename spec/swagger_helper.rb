@@ -359,6 +359,9 @@ RSpec.configure do |config|
           type: :object,
           properties: {
             phone: { type: :string, 'x-nullable': true },
+            signupSource: { type: :string, 'x-nullable': true, description: 'How the member first heard of the makerspace: class, walk_in, friend, website, social or other' },
+            signupSourceDetail: { type: :string, 'x-nullable': true, description: 'Free text: the class name when signupSource is class, the referrer\'s name when it is friend' },
+            referredByMemberId: { type: :string, 'x-nullable': true, description: 'Staff-linked member who referred this one; kept only when signupSource is friend. Returned to admin and board only.' },
             address: {
               type: :object,
               'x-nullable': true,
@@ -391,6 +394,7 @@ RSpec.configure do |config|
             householdRole: { type: :string, enum: %w[primary secondary], nullable: true },
             householdSetupNeeded: { type: :boolean, description: 'Admin and board only: billed on a household plan with no household yet' },
             isFobIssuer: { type: :boolean, description: "Holds the fob-issuer checkout and may issue first key fobs" },
+            referredByMemberName: { type: :string, 'x-nullable': true, description: 'Admin and board only: name of the member linked as the referrer' },
             activeRentals: {
               type: :array,
               description: 'Admin and board only: rentals still marked active, so staff can act when the membership ends',
@@ -425,6 +429,9 @@ RSpec.configure do |config|
         silenceEmails: { type: :boolean },
         resourceManagerShopIds: { type: :array, items: { type: :string } },
         phone: { type: :string },
+        signupSource: { type: :string, description: 'How the member first heard of the makerspace: class, walk_in, friend, website, social or other' },
+        signupSourceDetail: { type: :string, description: 'Free text: the class name when signupSource is class, the referrer\'s name when it is friend' },
+        referredByMemberId: { type: :string, description: 'Member who referred this one; kept only when signupSource is friend' },
         address: {
           type: :object,
           properties: {
