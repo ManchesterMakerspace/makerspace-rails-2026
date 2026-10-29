@@ -259,6 +259,69 @@ RSpec.describe Service::SlackUserSync do
     end
   end
 
+  describe '.detect_conflicts_for_page' do
+    let(:client) { double('Slack client') }
+    let(:cache_keys) do
+      [described_class::LIVE_CONFLICTS_CACHE_KEY, described_class::LIVE_CONFLICTS_FAILURE_KEY]
+    end
+
+    before do
+      REDIS.del(*cache_keys)
+      allow(Service::SlackConnector).to receive(:api_token_present?).and_return(true)
+      allow(Service::SlackConnector).to receive(:client).and_return(client)
+      allow(Service::AuditLogger).to receive(:log)
+      allow(client).to receive(:users_lookupByEmail).and_raise(Slack::Web::Api::Errors::UsersNotFound.new('not_found'))
+    end
+
+    after { REDIS.del(*cache_keys) }
+
+    def saved_conflict_for(member)
+      SlackIdentityConflict.create!(
+        slack_id: 'USAVED', slack_name: 'Saved', slack_email: member.email, member_id: member.id,
+        conflicting_slack_id: 'ULINKED'
+      )
+    end
+
+    it 'scans once, then serves the cached result without scanning Slack again' do
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true, 'members' => [], 'response_metadata' => { 'next_cursor' => '' }
+      )
+
+      expect(described_class.detect_conflicts_for_page).to eq([[], :fresh])
+      expect(described_class.detect_conflicts_for_page).to eq([[], :cached])
+      expect(client).to have_received(:users_list).once
+    end
+
+    it 'still lists saved conflicts when the live scan fails, and does not retry on every reload' do
+      member = create(:member)
+      saved_conflict_for(member)
+      allow(client).to receive(:users_list).and_raise(Faraday::TimeoutError)
+
+      conflicts, status = described_class.detect_conflicts_for_page
+      expect(status).to eq(:unavailable)
+      expect(conflicts).to contain_exactly(hash_including(slack_id: 'USAVED', member_id: member.id.to_s))
+
+      expect(described_class.detect_conflicts_for_page.last).to eq(:unavailable)
+      expect(client).to have_received(:users_list).once
+    end
+
+    it 'reports unavailable when the scan runs out of time' do
+      allow(described_class).to receive(:live_conflicts).and_raise(described_class::LiveScanTimeout)
+
+      expect(described_class.detect_conflicts_for_page).to eq([[], :unavailable])
+    end
+
+    it 'scans again once the cache is cleared' do
+      allow(client).to receive(:users_list).and_return(
+        'ok' => true, 'members' => [], 'response_metadata' => { 'next_cursor' => '' }
+      )
+      described_class.detect_conflicts_for_page
+      described_class.clear_live_conflicts_cache
+
+      expect(described_class.detect_conflicts_for_page.last).to eq(:fresh)
+    end
+  end
+
   describe '.detect_conflicts' do
     let(:client) { double('Slack client') }
 

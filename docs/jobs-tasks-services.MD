@@ -582,6 +582,19 @@ messages (source `email bounce`). The members list shows `mailtrap.status` `sent
 delivery report yet") when an email went out for the current address but Mailtrap has reported
 nothing, `unknown` when none did.
 
+### Slack identity conflicts page
+
+`GET /api/admin/slack_identity_conflicts` (`Service::SlackUserSync.detect_conflicts_for_page`)
+lists the Slack accounts that cannot be linked because the member already has another. It combines
+a live scan of Slack's whole user directory with the conflicts saved earlier in
+`slack_identity_conflicts`. The scan pages through Slack inside the web request, so it is cached in
+Redis (`slack_identity_conflicts:live`, 5 minutes) and stops after 20 seconds. If it fails or runs
+out of time, the request still succeeds with the saved conflicts only and
+`live_check: "unavailable"` (`slack_identity_conflicts:live_failed`, 60 seconds, stops every reload
+from retrying a failing scan). `live_check` is otherwise `fresh` or `cached`. Reassigning or
+dismissing a conflict clears both keys. The scan itself does not write anything. Without this, a
+slow Slack response exceeded Heroku's 30 second limit and the page failed with a 503.
+
 ### Volunteer approval reminders
 
 `VolunteerEventReminderJob` keeps its daily 08:00 schedule template and

@@ -9,9 +9,9 @@ RSpec.describe Admin::SlackIdentityConflictsController, type: :controller do
   before { sign_in admin }
 
   describe "GET #index" do
-    it "returns the conflicts detected by the sync service" do
-      allow(Service::SlackUserSync).to receive(:detect_conflicts).and_return(
-        [{ slack_id: 'UNEW', member_id: member.id.to_s, member_name: member.fullname }]
+    it "returns the conflicts detected by the sync service and how fresh the live check is" do
+      allow(Service::SlackUserSync).to receive(:detect_conflicts_for_page).and_return(
+        [[{ slack_id: 'UNEW', member_id: member.id.to_s, member_name: member.fullname }], :cached]
       )
 
       get :index, format: :json
@@ -19,6 +19,7 @@ RSpec.describe Admin::SlackIdentityConflictsController, type: :controller do
       expect(response).to have_http_status(200)
       parsed = JSON.parse(response.body)
       expect(parsed['conflicts'].first).to include('slack_id' => 'UNEW', 'member_id' => member.id.to_s)
+      expect(parsed['live_check']).to eq('cached')
     end
   end
 
@@ -27,10 +28,12 @@ RSpec.describe Admin::SlackIdentityConflictsController, type: :controller do
       allow(Service::SlackUserSync).to receive(:reassign_identity)
         .with(slack_id: 'UNEW', member_id: member.id.to_s, actor: admin)
         .and_return(member)
+      allow(Service::SlackUserSync).to receive(:clear_live_conflicts_cache)
 
       post :reassign, params: { slack_id: 'UNEW', member_id: member.id.to_s }, format: :json
 
       expect(response).to have_http_status(200)
+      expect(Service::SlackUserSync).to have_received(:clear_live_conflicts_cache)
       parsed = JSON.parse(response.body)
       expect(parsed['member_id']).to eq(member.id.to_s)
       expect(parsed['message']).to include('UNEW')
