@@ -20,6 +20,7 @@ class MemberSummarySerializer < ActiveModel::Serializer
              :firebase_uid,
              :merged_at,
              :paid_pending_start,
+             :fob_issued,
              :startDate
 
   attribute :provisioning, if: :include_provisioning?
@@ -164,5 +165,13 @@ class MemberSummarySerializer < ActiveModel::Serializer
       resource_id:    object.id.to_s,
       :settled_at.ne => nil
     ).exists?
+  end
+
+  # Whether the member has ever been issued a fob (any card record, lost or not --
+  # the same test that holds a paid term until the first fob, Member#delay_invoice_operation).
+  # The portal uses it to flag a running term that has no fob behind it. The members
+  # list preloads access_cards, so this adds no query there.
+  def fob_issued
+    object.access_cards.to_a.any?
   end
 end

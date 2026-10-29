@@ -73,4 +73,27 @@ RSpec.describe MemberSummarySerializer do
       expect(serialize(member)[:paidPendingStart]).to eq(false)
     end
   end
+
+  describe '#fob_issued' do
+    def serialize(member)
+      ActiveModelSerializers::SerializableResource.new(
+        member,
+        serializer: described_class,
+        adapter: :attributes
+      ).as_json
+    end
+
+    it 'is false for a member who has never been issued a fob' do
+      member = create(:member, expirationTime: (Time.current + 1.month).to_i * 1000)
+
+      expect(serialize(member)[:fobIssued]).to eq(false)
+    end
+
+    it 'is true once a fob has been issued' do
+      member = create(:member, expirationTime: (Time.current + 1.month).to_i * 1000)
+      create(:card, member: member)
+
+      expect(serialize(member.reload)[:fobIssued]).to eq(true)
+    end
+  end
 end
