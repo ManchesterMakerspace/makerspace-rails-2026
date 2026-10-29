@@ -592,6 +592,16 @@
               "promotion"
             ],
             "x-nullable": true
+          },
+          "lastError": {
+            "type": "string",
+            "x-nullable": true,
+            "description": "Why the latest Slack invite attempt failed, or that the email changed and a re-invite is needed"
+          },
+          "lastAttemptAt": {
+            "type": "string",
+            "format": "date-time",
+            "x-nullable": true
           }
         },
         "required": [

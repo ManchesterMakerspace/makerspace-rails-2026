@@ -595,6 +595,19 @@ from retrying a failing scan). `live_check` is otherwise `fresh` or `cached`. Re
 dismissing a conflict clears both keys. The scan itself does not write anything. Without this, a
 slow Slack response exceeded Heroku's 30 second limit and the page failed with a 503.
 
+### Slack re-invite after an email change
+
+When a member's email changes, `Member#handle_successful_email_change` resets their Slack tracking
+and sets `slack_manual_action_required: "invite"` (the old Slack account is recorded as the
+previous identity and is only deactivated when staff use the Slack button on the profile, which
+runs `MemberProvisioning.invite_slack`). The same step now writes a `slack_manual_invite_required`
+audit entry that posts to the admin channel (`SlackConnector.admin_channel`), naming the old and
+new address, so the pending step is not only a red icon. It is skipped for members Slack
+provisioning ignores (not active or pending, or already expired) and a failure to post is logged,
+never raised. The provisioning payload (admin and board only) also returns the reason:
+`slack.lastError` and `slack.lastAttemptAt`, which the members list tooltip uses to say why the
+Slack indicator is red.
+
 ### Volunteer approval reminders
 
 `VolunteerEventReminderJob` keeps its daily 08:00 schedule template and

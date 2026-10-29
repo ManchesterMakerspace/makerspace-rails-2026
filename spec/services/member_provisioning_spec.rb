@@ -696,5 +696,37 @@ RSpec.describe Service::MemberProvisioning do
       expect(member.slack_manual_action_required).to eq('invite')
       expect(member.google_resources_access_confirmed_at).to be_nil
     end
+
+    it 'reports why a Slack invite is needed after an email change' do
+      member = create(:member)
+      member.update!(email: 'changed@example.com')
+
+      slack = described_class.provisioning_status(member.reload)[:slack]
+      expect(slack[:manual_action_required]).to eq('invite')
+      expect(slack[:last_error]).to eq('Member email changed; manual reprovisioning is required')
+    end
+
+    it 'tells the admin channel when an email change leaves a Slack re-invite required' do
+      allow(Service::AuditLogger).to receive(:log)
+      member = create(:member)
+
+      member.update!(email: 'changed@example.com')
+
+      expect(Service::AuditLogger).to have_received(:log).with(
+        hash_including(event_type: 'slack_manual_invite_required',
+                       slack_channel: Service::SlackConnector.admin_channel,
+                       message_details: a_string_including('changed@example.com'))
+      )
+    end
+
+    it 'does not announce a Slack re-invite for an expired member, whom Slack provisioning ignores' do
+      allow(Service::AuditLogger).to receive(:log)
+      member = create(:member)
+      member.set(expirationTime: (Time.current.to_i - 86_400) * 1000)
+
+      member.update!(email: 'changed@example.com')
+
+      expect(Service::AuditLogger).not_to have_received(:log).with(hash_including(event_type: 'slack_manual_invite_required'))
+    end
   end
 end
