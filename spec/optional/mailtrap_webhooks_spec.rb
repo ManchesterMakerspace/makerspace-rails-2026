@@ -47,6 +47,24 @@ if ENV['RUN_OPTIONAL_MAILTRAP_SPECS'] == 'true'
       expect(member.mailtrap_id).to eq(mailtrap_event.id)
     end
 
+    it "queues one bounce notification per address, not one per repeated failure" do
+      allow(EmailBounceNotificationJob).to receive(:perform_later)
+      bounce = ->(id) { JSON.generate(events: [payload_hash[:events].first.merge(event: "bounce", event_id: id)]) }
+
+      post_webhook(body: bounce.call("evt_b1"))
+      post_webhook(body: bounce.call("evt_b2"))
+
+      expect(EmailBounceNotificationJob).to have_received(:perform_later).once
+    end
+
+    it "does not queue a bounce notification for a delivery" do
+      allow(EmailBounceNotificationJob).to receive(:perform_later)
+
+      post_webhook(body: payload)
+
+      expect(EmailBounceNotificationJob).not_to have_received(:perform_later)
+    end
+
     it "verifies the Mailtrap signature when a secret is configured" do
       original_secret = ENV["MAILTRAP_WEBHOOK_SIGNATURE"]
       ENV["MAILTRAP_WEBHOOK_SIGNATURE"] = "mailtrap-secret"

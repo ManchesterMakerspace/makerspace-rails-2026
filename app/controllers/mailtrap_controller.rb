@@ -79,7 +79,24 @@ class MailtrapController < ApplicationController
       current_priority = current_event ? EVENT_PRIORITY.fetch(current_event.event.to_s, 0) : -1
 
       member.set(mailtrap_id: mailtrap_event.id) if new_priority >= current_priority
+
+      notify_hard_failure(mailtrap_event)
     end
+  end
+
+  HARD_FAILURES = %w[bounce reject suspension].freeze
+
+  # Alert once per address: a repeat failure for an address that already has an
+  # earlier one does not post again. Never lets a notification problem fail the
+  # webhook, which must still answer 200 so Mailtrap does not redeliver.
+  def notify_hard_failure(mailtrap_event)
+    return unless HARD_FAILURES.include?(mailtrap_event.event.to_s)
+    return if MailtrapEvent.where(member_id: mailtrap_event.member_id, email: mailtrap_event.email,
+                                  :event.in => HARD_FAILURES, :_id.ne => mailtrap_event.id).exists?
+
+    EmailBounceNotificationJob.perform_later(mailtrap_event.id.to_s)
+  rescue StandardError => e
+    Rails.logger.error("[Mailtrap] Could not queue bounce notification for #{mailtrap_event.id}: #{e.class} #{e.message}")
   end
 
   def mailtrap_attributes(event)

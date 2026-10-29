@@ -12,6 +12,7 @@ This document inventories email that the Rails application can initiate. “Temp
 - A household secondary does not ordinarily receive `MemberMailer` messages. The password-changed, admin-password-reset, signed-document, contract-updated, document-request, and household-disbanded actions are exceptions. Billing and rental messages are not filtered merely because the recipient is a household secondary.
 - `silence_emails` suppresses `MarketingMailer` mail, but does **not** suppress transactional member, billing, or rental mail.
 - Devise password-reset mail inherits directly from `Devise::Mailer`, rather than `ApplicationMailer`, and consequently does not use the application suppression callback.
+- When Mailtrap reports a hard failure (`bounce`, `reject` or `suspension`) for a member's address, the member receives a Slack DM (not email) and the member relations channel is told. See [Email bounce alerts](jobs-tasks-services.MD#email-bounce-alerts).
 
 ## Editable-template behavior
 
