@@ -47,10 +47,12 @@ class MembersController < AuthenticationController
       end
 
       members = @members.to_a
+      events_by_key = mailtrap_events_by_member_id_email(members)
       return render_with_total_items(members, {
         each_serializer: MemberSummarySerializer,
         adapter: :attributes,
-        mailtrap_events_by_member_id_email: mailtrap_events_by_member_id_email(members),
+        mailtrap_events_by_member_id_email: events_by_key,
+        mailtrap_messages_by_member_id_email: mailtrap_messages_by_member_id_email(members, events_by_key),
         include_provisioning: is_admin? || is_board_member?
       })
     end
@@ -130,6 +132,22 @@ class MembersController < AuthenticationController
         .each_with_object({}) do |event, events_by_key|
           key = [event.member_id.to_s, event.email.to_s.downcase]
           events_by_key[key] ||= event
+        end
+    end
+
+    # Newest send record per member and current address, loaded only for members
+    # with no matching Mailtrap event (the serializer reports those as "sent").
+    def mailtrap_messages_by_member_id_email(members, events_by_key)
+      pairs = members.map { |member| [member.id, member.email.to_s.downcase] }
+        .reject { |id, email| email.blank? || events_by_key.key?([id.to_s, email]) }
+      return {} if pairs.empty?
+
+      MailtrapMessage
+        .where(:member_id.in => pairs.map(&:first), :email.in => pairs.map(&:last).uniq)
+        .desc(:created_at)
+        .each_with_object({}) do |message, messages_by_key|
+          key = [message.member_id.to_s, message.email.to_s.downcase]
+          messages_by_key[key] ||= message
         end
     end
 

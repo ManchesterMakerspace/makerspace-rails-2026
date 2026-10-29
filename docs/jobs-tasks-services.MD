@@ -557,6 +557,31 @@ request is approved, declined, timed out or cancelled, each posted reminder is e
 (immediately for a decline, timeout or cancellation or when the approval's notifications run,
 otherwise by the next daily scan).
 
+### Email bounce alerts
+
+`EmailBounceNotificationJob` is enqueued by `MailtrapController` (the `POST /mailtrap_listener`
+webhook) the first time Mailtrap reports a `bounce`, `reject` or `suspension` for a member's
+address. A later failure for the same member and address is ignored, so the alert fires once per
+address. The job runs in-process (Async adapter) and is not scheduled, not in the admin job list
+and has no status tracking; a failure is logged and the webhook still answers 200.
+
+The job does nothing if the member no longer exists, has direct notifications suppressed
+(`revoked` or `suspended`), or has since changed to a different email address. Otherwise:
+
+- For a `bounce` or `reject`, it sends the member a Slack DM (only when they have a Slack link that
+  is not invalidated) saying an email to that address could not be delivered and linking to their
+  profile to update it.
+- It always posts to the member relations channel (`members_relations_channel`) naming the member,
+  the address, the failure and Mailtrap's reason text, and whether the member was told. A
+  `suspension` is a sending-side problem, so the member is not messaged and the channel message says
+  so. A member with no usable Slack link is reported as "not been told" so the board can contact
+  them another way.
+
+There is no email fallback and no retry. Both messages are recorded in the audit log as Slack
+messages (source `email bounce`). The members list shows `mailtrap.status` `sent` ("Sent, no
+delivery report yet") when an email went out for the current address but Mailtrap has reported
+nothing, `unknown` when none did.
+
 ### Volunteer approval reminders
 
 `VolunteerEventReminderJob` keeps its daily 08:00 schedule template and

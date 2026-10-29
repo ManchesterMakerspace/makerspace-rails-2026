@@ -59,7 +59,7 @@ class MemberSummarySerializer < ActiveModel::Serializer
 
   def mailtrap
     event = current_email_mailtrap_event
-    return unknown_mailtrap_status unless event
+    return sent_mailtrap_status || unknown_mailtrap_status unless event
 
     {
       id: event.id,
@@ -84,6 +84,31 @@ class MemberSummarySerializer < ActiveModel::Serializer
 
   def preloaded_mailtrap_event(current_email)
     instance_options[:mailtrap_events_by_member_id_email][[object.id.to_s, current_email]]
+  end
+
+  # Mailtrap has reported nothing for the current address, but an email was
+  # handed to SMTP for it. Report "sent" so a member who was just emailed is not
+  # shown the same way as one who has never been emailed.
+  def sent_mailtrap_status
+    message = current_email_mailtrap_message
+    return unless message
+
+    {
+      id: nil,
+      timestamp: message.created_at&.in_time_zone("Eastern Time (US & Canada)")&.iso8601,
+      email: message.email,
+      status: "sent",
+      value: "Sent, no delivery report yet"
+    }
+  end
+
+  def current_email_mailtrap_message
+    current_email = object.email.to_s.downcase
+    if instance_options.key?(:mailtrap_messages_by_member_id_email)
+      return instance_options[:mailtrap_messages_by_member_id_email][[object.id.to_s, current_email]]
+    end
+
+    MailtrapMessage.where(member_id: object.id, email: current_email).desc(:created_at).first
   end
 
   def unknown_mailtrap_status

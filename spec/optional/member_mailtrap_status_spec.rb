@@ -75,6 +75,26 @@ if ENV['RUN_OPTIONAL_MAILTRAP_SPECS'] == 'true'
         value: "delivery"
       )
     end
+
+    def mailtrap_payload(member)
+      ActiveModelSerializers::SerializableResource.new(
+        member.reload, serializer: MemberSummarySerializer, adapter: :attributes
+      ).as_json[:mailtrap]
+    end
+
+    it "reports sent when an email went out for the current address but Mailtrap has reported nothing" do
+      member = create(:member, email: "current@example.com")
+      MailtrapMessage.create!(message_id: "abc", subject: "Thank you for registering", email: member.email, member_id: member.id)
+
+      expect(mailtrap_payload(member)).to include(email: member.email, status: "sent")
+    end
+
+    it "reports unknown when no email was ever sent to the current address" do
+      member = create(:member, email: "current@example.com")
+      MailtrapMessage.create!(message_id: "abc", subject: "Old", email: "old@example.com", member_id: member.id)
+
+      expect(mailtrap_payload(member)).to include(status: "unknown", value: "No attempts made")
+    end
   end
 
 end
