@@ -1,5 +1,4 @@
 class Admin::MembersController < AdminController
-  include Service::GoogleDrive
   before_action :set_member, only: [:update, :update_password, :send_password_reset, :invite_google_drive, :invite_slack, :soft_delete, :restore]
 
   def create

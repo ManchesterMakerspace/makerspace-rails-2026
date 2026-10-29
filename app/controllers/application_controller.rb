@@ -94,10 +94,6 @@ class ApplicationController < ActionController::Base
     current_member.try(:valid_for_checkout_request?) && CheckoutApprover.exists?(member_id: current_member.id)
   end
 
-  def can_view_disabled_tools?
-    is_admin? || is_board_member?
-  end
-
   def manages_shop?(shop_or_id)
     current_member.try(:manages_shop?, shop_or_id) || false
   end
@@ -121,14 +117,6 @@ class ApplicationController < ActionController::Base
     return Shop.all.pluck(:id).map(&:to_s) if is_admin? || is_board_member?
     return Array(current_member.resource_manager_shop_ids).map(&:to_s) if is_resource_manager?
     []
-  end
-
-  def checkout_visible_tool_ids
-    ids = Tool.where(:shop_id.in => managed_shop_ids).pluck(:id).map(&:to_s)
-    if current_member.try(:valid_for_checkout_request?)
-      ids |= CheckoutApprover.allowed_tool_ids_for_member(current_member.id)
-    end
-    ids
   end
 
   def filter_requests
