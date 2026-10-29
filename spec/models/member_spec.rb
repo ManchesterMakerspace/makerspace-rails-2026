@@ -181,6 +181,45 @@ RSpec.describe Member, type: :model do
     end
   end
 
+  describe "signup source" do
+    it "stores blank answers as nil and keeps the typed name only for class and friend" do
+      member = build(:member, signup_source: "", signup_source_detail: "Intro to Welding")
+      expect(member).to be_valid
+      expect(member.signup_source).to be_nil
+      expect(member.signup_source_detail).to be_nil
+
+      %w[class friend].each do |source|
+        member.signup_source = source
+        member.signup_source_detail = "Intro to Welding"
+        expect(member).to be_valid
+        expect(member.signup_source_detail).to eq("Intro to Welding")
+      end
+    end
+
+    it "links a referring member only for friend, and never to the member themself or a missing member" do
+      referrer = create(:member)
+      member = create(:member, signup_source: "friend", referred_by_member_id: referrer.id)
+      expect(member.reload.referred_by_member_id).to eq(referrer.id)
+
+      member.signup_source = "website"
+      member.valid?
+      expect(member.referred_by_member_id).to be_nil
+
+      member.assign_attributes(signup_source: "friend", referred_by_member_id: member.id)
+      expect(member).not_to be_valid
+      member.referred_by_member_id = BSON::ObjectId.new
+      expect(member).not_to be_valid
+    end
+
+    it "rejects a new unknown source but allows saving a member whose stored source was retired" do
+      expect(build(:member, signup_source: "billboard")).not_to be_valid
+
+      member = create(:member)
+      member.set(signup_source: "retired_choice")
+      expect(member.reload).to be_valid
+    end
+  end
+
   # Need this because we store things in milliseconds instead of ruby seconds
   def conv_to_ms(time)
     time.to_i * 1000

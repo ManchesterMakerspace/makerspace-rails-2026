@@ -211,12 +211,14 @@ class Admin::MembersController < AdminController
     params.require([:firstname, :lastname, :email])
     params.permit(:firstname, :lastname, :role, :email, :status,
       :silence_emails, :member_contract_on_file, :phone, :notes,
+      :signup_source, :signup_source_detail, :referred_by_member_id,
       resource_manager_shop_ids: [], resourceManagerShopIds: [],
       address: [:street, :city, :state, :postal_code])
   end
 
   def update_member_params
     params.permit(:firstname, :lastname, :role, :status, :expiration_time, :renew, :member_contract_on_file, :notes,
+      :signup_source, :signup_source_detail, :referred_by_member_id,
       :silence_emails, :phone, :subscription, :email, :google_drive_provisioning_blocked,
       resource_manager_shop_ids: [], resourceManagerShopIds: [],
       address: [:street, :unit, :city, :state, :postal_code])

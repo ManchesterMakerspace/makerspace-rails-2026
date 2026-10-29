@@ -108,6 +108,20 @@ RSpec.describe RegistrationsController, type: :controller do
         }.to change(Member, :count).by(1)
       end
 
+      it "records how the member heard of the makerspace" do
+        allow(Service::TurnstileVerifier).to receive(:new).and_return(verifier)
+        allow(verifier).to receive(:valid?).and_return(true)
+
+        post :create,
+          params: valid_attributes.merge('cf-turnstile-response' => 'browser-token',
+                                         signup_source: 'class', signup_source_detail: 'Intro to Welding'),
+          format: :json
+
+        member = Member.find_by(email: valid_attributes[:email].downcase)
+        expect(member.signup_source).to eq('class')
+        expect(member.signup_source_detail).to eq('Intro to Welding')
+      end
+
       it "uses the canonical Turnstile response when an underscored parameter is also present" do
         expect(Service::TurnstileVerifier).to receive(:new).with(
           token: 'canonical-token',
