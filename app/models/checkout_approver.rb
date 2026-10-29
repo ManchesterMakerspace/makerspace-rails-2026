@@ -42,11 +42,6 @@ class CheckoutApprover
       Array(tool_ids).map(&:to_s).include?(tool.id.to_s)
   end
 
-  def self.tool_ids_for_member(member_id)
-    approver = find_by(member_id: member_id)
-    approver ? Array(approver.tool_ids) : []
-  end
-
   def self.allowed_tool_ids_for_member(member_id)
     approver = find_by(member_id: member_id)
     return [] unless approver

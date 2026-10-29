@@ -2,7 +2,7 @@ class Admin::ToolCheckoutsController < ApplicationController
   include Service::SlackConnector
   before_action :authenticate_member!
   before_action :authorize_index, only: [:index]
-  before_action :find_checkout, only: [:update, :destroy, :reinstate, :expiration]
+  before_action :find_checkout, only: [:destroy, :reinstate, :expiration]
   before_action :authorize_approver, only: [:create, :destroy]
   before_action :authorize_reinstatement, only: [:reinstate]
 
@@ -84,25 +84,6 @@ class Admin::ToolCheckoutsController < ApplicationController
     render json: payload
   end
 
-  def update
-    # Only allow updating revocation fields
-    if update_params[:revoked_at] || update_params[:revocation_reason]
-      was_active = @checkout.revoked_at.nil?
-      if was_active && update_params[:revoked_at].present?
-        CheckoutApproverMutationLock.with(member_id: @checkout.member_id) do
-          CheckoutMutationLock.with(member_id: @checkout.member_id, tool_id: @checkout.tool_id) do
-            @checkout.reload
-            @checkout.approver_mutation_lock_held = true
-            @checkout.update_attributes!(update_params.merge(revoked_by_id: current_member.id))
-          end
-        end
-      else
-        @checkout.update_attributes!(update_params)
-      end
-    end
-    render json: @checkout, serializer: ToolCheckoutSerializer, adapter: :attributes, scope: current_member
-  end
-
   def destroy
     reason = params[:revocation_reason].presence
     raise ::Error::UnprocessableEntity.new("Revocation reason is required") unless reason
@@ -149,10 +130,6 @@ class Admin::ToolCheckoutsController < ApplicationController
   # How the approver identified the member: by fob tap ("fob"), or the default.
   def sign_off_source
     checkout_params[:source] == "fob" ? "fob" : "portal"
-  end
-
-  def update_params
-    params.permit(:revoked_at, :revocation_reason)
   end
 
   def find_checkout
