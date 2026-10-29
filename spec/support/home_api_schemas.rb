@@ -50,6 +50,7 @@ module HomeApiSchemas
       firebaseUid: nullable_string,
       mergedAt: nullable_timestamp,
       paidPendingStart: boolean,
+      fobIssued: boolean,
       startDate: nullable_timestamp,
       cardId: nullable_string,
       subscription: boolean,

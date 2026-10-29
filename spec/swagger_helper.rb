@@ -324,6 +324,7 @@ RSpec.configure do |config|
         memberContractSignedDate: { type: :string, 'x-nullable': true },
         memberContractOnFile: { type: :boolean },
         paidPendingStart: { type: :boolean },
+        fobIssued: { type: :boolean, description: 'False when no fob (card) has ever been issued to the member' },
         household: {
           type: :object, nullable: true,
           properties: {

@@ -693,6 +693,10 @@
           "paidPendingStart": {
             "type": "boolean"
           },
+          "fobIssued": {
+            "type": "boolean",
+            "description": "False when no fob (card) has ever been issued to the member"
+          },
           "household": {
             "type": "object",
             "nullable": true,
@@ -5017,6 +5021,9 @@
           "paidPendingStart": {
             "type": "boolean"
           },
+          "fobIssued": {
+            "type": "boolean"
+          },
           "startDate": {
             "type": "string",
             "format": "date-time",
@@ -5136,6 +5143,7 @@
           "firebaseUid",
           "mergedAt",
           "paidPendingStart",
+          "fobIssued",
           "startDate",
           "cardId",
           "subscription",
