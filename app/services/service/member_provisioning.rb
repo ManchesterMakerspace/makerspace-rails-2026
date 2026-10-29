@@ -283,7 +283,9 @@ module Service
           invite_mode: member.slack_invite_mode,
           joined_at: iso8601(member.slack_joined_at),
           full_member_at: iso8601(member.slack_full_member_at),
-          manual_action_required: member.slack_manual_action_required
+          manual_action_required: member.slack_manual_action_required,
+          last_error: member.slack_last_error.presence,
+          last_attempt_at: iso8601(member.slack_last_attempt_at)
         },
         google_drive: {
           status: google_status(member, current: current),

@@ -922,6 +922,29 @@ class Member
       google_last_attempt_at: nil,
       google_last_error: nil
     )
+    notify_slack_reinvite_needed(previous_email)
+  end
+
+  # The Slack step after an email change is manual (the old Slack account is only
+  # deactivated when staff re-invite), so tell the admin channel rather than
+  # leaving a small red icon on the profile that nobody may look at. Skipped for
+  # members Slack provisioning is blocked for (not active, or expired).
+  def notify_slack_reinvite_needed(previous_email)
+    return unless active_membership_status?
+    return if expirationTime.present? && expirationTime <= (Time.current.to_i * 1000)
+
+    ::Service::AuditLogger.log(
+      log_type: "member",
+      event_type: "slack_manual_invite_required",
+      resource_type: "Member",
+      resource_id: id,
+      subject: self,
+      message_details: "Email changed from #{previous_email} to #{email}. Slack needs a manual re-invite: use the " \
+        "Slack button on their profile (it deactivates their old Slack account and invites the new address).",
+      slack_channel: ::Service::SlackConnector.admin_channel
+    )
+  rescue StandardError => e
+    Rails.logger.error("[Member] could not announce the Slack re-invite needed for #{id}: #{e.class} #{e.message}")
   end
 
   def enqueue_member_provisioning

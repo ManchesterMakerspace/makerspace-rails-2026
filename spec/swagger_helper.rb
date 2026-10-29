@@ -284,7 +284,9 @@ RSpec.configure do |config|
         inviteMode: { type: :string, enum: %w[full_member single_channel_guest], 'x-nullable': true },
         joinedAt: { type: :string, format: :'date-time', 'x-nullable': true },
         fullMemberAt: { type: :string, format: :'date-time', 'x-nullable': true },
-        manualActionRequired: { type: :string, enum: %w[invite promotion], 'x-nullable': true }
+        manualActionRequired: { type: :string, enum: %w[invite promotion], 'x-nullable': true },
+        lastError: { type: :string, 'x-nullable': true, description: 'Why the latest Slack invite attempt failed, or that the email changed and a re-invite is needed' },
+        lastAttemptAt: { type: :string, format: :'date-time', 'x-nullable': true }
       },
       required: [:status]
     },
