@@ -409,6 +409,7 @@ an unscheduled job as unused.
 | `bundle exec rake slack:refresh_public_channel_cache` | Daily 08:30 | |
 | `bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'` | Daily 13:00 | |
 | `bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Daily 14:30 | |
+| `bundle exec rails runner 'MemberReminderJob.perform_now'` | Daily 15:00 | Sends the fob and signup reminder emails, each only while its switch is on in Portal Settings, Jobs. Added 2026-10-31. |
 | `bin/rails runner "MemberProvisioningReconciliationJob.perform_now"` | Hourly at :20 | |
 
 The retired `volunteering:*` tasks (the volunteer spreadsheet) were never in this schedule
