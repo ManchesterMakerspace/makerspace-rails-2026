@@ -64,7 +64,9 @@ module Service
       member_review_paypal:                 'DOC_MEMBER_REVIEW_PAYPAL_ID',
       member_review_missing_contract:       'DOC_MEMBER_REVIEW_MISSING_CONTRACT_ID',
       membership_expiring_soon:             'EMAIL_MEMBERSHIP_EXPIRING_SOON_ID',
-      membership_expired:                   'EMAIL_MEMBERSHIP_EXPIRED_ID'
+      membership_expired:                   'EMAIL_MEMBERSHIP_EXPIRED_ID',
+      fob_reminder:                         'EMAIL_FOB_REMINDER_ID',
+      signup_reminder:                      'EMAIL_SIGNUP_REMINDER_ID'
     }.freeze
 
     TEMPLATE_DEFINITIONS = {
@@ -95,7 +97,9 @@ module Service
       member_review_paypal: { format: :text, placeholders: [], fallback: 'external_templates/member_review_paypal' },
       member_review_missing_contract: { format: :text, placeholders: %w[contract_type document_url], fallback: 'external_templates/member_review_missing_contract' },
       membership_expiring_soon: { format: :html, placeholders: [], fallback: 'external_templates/membership_expiring_soon' },
-      membership_expired: { format: :html, placeholders: [], fallback: 'external_templates/membership_expired' }
+      membership_expired: { format: :html, placeholders: [], fallback: 'external_templates/membership_expired' },
+      fob_reminder: { format: :html, placeholders: %w[paid_date], fallback: 'external_templates/fob_reminder' },
+      signup_reminder: { format: :html, placeholders: [], fallback: 'external_templates/signup_reminder' }
     }.freeze
 
     HTML_TAGS = %w[p div h1 h2 h3 h4 h5 h6 a strong b em i u ul ol li br blockquote table thead tbody tr th td].freeze

@@ -18,7 +18,12 @@ candidate window. Stale, claimed, and unobserved noncanonical identifiers return
 
 Assignment, old-card invalidation, pending-member activation, rejection-card
 claiming, and the finalized audit snapshot share one MongoDB transaction.
-Invoice and provisioning effects run only after commit.
+Invoice and provisioning effects run only after commit. On a member's first card,
+every paid invoice that has not been applied yet is applied, which is how a payment
+held while the member had no fob becomes membership time. Invoices marked
+`refunded` are skipped, so a refunded payment cannot grant time, and applying a
+membership invoice also brings an `inactive` or `nonMember` account back to
+`activeMember` (see [member-statuses.md](member-statuses.md)).
 
 `GET /api/admin/cards/lookup?uid=...` accepts an exact UID already assigned to a
 card, including noncanonical legacy identifiers. It performs no normalization or

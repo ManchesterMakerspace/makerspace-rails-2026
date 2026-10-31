@@ -92,7 +92,8 @@ class Card
 
   def settle_open_member_invoices
     if self == self.member.access_cards.first
-      open_invoices = self.member.invoices.where(:transaction_id.nin => ["", nil], settled_at: nil)
+      # A refunded payment must not grant membership time when it is finally applied.
+      open_invoices = self.member.invoices.where(:transaction_id.nin => ["", nil], settled_at: nil, :refunded.ne => true)
       open_invoices.each { |i| i.send(:execute_invoice_operation) }
     end
   end

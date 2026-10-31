@@ -15523,6 +15523,25 @@
                     "job_schedule": {
                       "type": "object"
                     },
+                    "reminders": {
+                      "type": "object",
+                      "required": [
+                        "fob_reminder_days",
+                        "signup_reminder_days"
+                      ],
+                      "properties": {
+                        "fob_reminder_days": {
+                          "type": "string",
+                          "default": "7",
+                          "description": "Days after a member's first payment before the \"come get your key fob\" email goes out (7 sends it on day 8). Whole number 1 to 14. A second reminder follows 14 days later, and nothing is sent after 30 days. Switch it on with the fob_reminder_enabled flag."
+                        },
+                        "signup_reminder_days": {
+                          "type": "string",
+                          "default": "7",
+                          "description": "Days after signup before the \"finish joining\" email goes out to pending members (7 sends it on day 8). Whole number 1 to 14. A second reminder follows 14 days later, and nothing is sent after 30 days. Switch it on with the signup_reminder_enabled flag."
+                        }
+                      }
+                    },
                     "security": {
                       "type": "object",
                       "required": [
@@ -15638,7 +15657,9 @@
                       "devise_timeout_minutes",
                       "channel_cache_refresh_day",
                       "card_expiration_check_day",
-                      "garbage_collect_day"
+                      "garbage_collect_day",
+                      "fob_reminder_days",
+                      "signup_reminder_days"
                     ]
                   },
                   "value": {
@@ -15684,7 +15705,9 @@
                           "devise_timeout_minutes",
                           "channel_cache_refresh_day",
                           "card_expiration_check_day",
-                          "garbage_collect_day"
+                          "garbage_collect_day",
+                          "fob_reminder_days",
+                          "signup_reminder_days"
                         ]
                       }
                     }
@@ -17330,6 +17353,7 @@
                       "member_provisioning_reconciliation",
                       "volunteer_event_reminder",
                       "membership_expiration_notice",
+                      "member_reminders",
                       "checkout_request_reminder",
                       "checkout_request_digest"
                     ]

@@ -7,9 +7,9 @@ the validation in `app/models/member.rb`.
 | --- | --- |
 | `activeMember` | A fully activated member. This is the normal status after a card has been issued. |
 | `pending` | A member who completed signup but has not yet been fully activated. Creating their card changes this status to `activeMember`. |
-| `nonMember` | An account retained in the portal without active member privileges. |
+| `nonMember` | An account retained in the portal without active member privileges, such as someone who registered and never joined. A processed membership payment changes it to `activeMember` (see below). |
 | `revoked` | Membership access has been revoked. Existing revocation workflows handle related deprovisioning and reservation cancellation. |
-| `inactive` | An inactive account without active member privileges. |
+| `inactive` | An inactive account without active member privileges, such as a former member who left. A processed membership payment changes it to `activeMember` (see below). |
 | `suspended` | A recognized suspended account state. It is not treated as an active membership status unless a feature explicitly defines otherwise. |
 
 ## Active membership checks
@@ -77,18 +77,38 @@ fields do not include `status`.
 
 ### Webhook callbacks
 
-There are **no webhook callbacks that update `Member#status`**. In particular,
-the PayPal IPN (`POST /ipnlistener`) and Braintree webhook
-(`POST /billing/braintree_listener`) can update subscription/invoice state,
-but do not change member status. Mailtrap and Slack callbacks likewise do not
-write this field.
+No webhook callback writes `Member#status` itself, but one reaches it indirectly:
+when the PayPal IPN (`POST /ipnlistener`) or Braintree webhook
+(`POST /billing/braintree_listener`) processes a membership payment, the invoice
+is executed, and executing a membership invoice calls
+`Member#reactivate_for_payment!` (see the next section). Mailtrap and Slack
+callbacks do not write this field.
+
+### Membership payments (invoice processing)
+
+`Invoice#execute_invoice_operation` runs when a membership payment is processed,
+and again for held payments when a member's first card is issued. For an invoice
+with `resource_class: "member"` it first calls `Member#reactivate_for_payment!`:
+
+| Current status | After a processed membership payment |
+| --- | --- |
+| `inactive` or `nonMember` | `activeMember`. This happens whether the payment is applied immediately or held because the member has no fob yet. |
+| `revoked` or `suspended` | Unchanged. Those are deliberate staff decisions, so a payment never lifts them. |
+| `activeMember` or `pending` | Unchanged. |
+
+The write is atomic (no validations or callbacks), mirroring
+`Card#activate_pending_member`. A member with a fob gets provisioning and the
+Slack checkout canvas through the renewal that follows; a member with no fob has
+them queued by the method itself. Each change writes a
+`member_reactivated_by_payment` audit entry (no Slack post). Refunded invoices
+are skipped when held payments are applied at the first fob.
 
 ### Jobs, tasks, model callbacks, and direct writes
 
 - No scheduled job or Rake task changes an existing member's status.
   Expiration also never causes an automatic status transition.
-- The only status-writing model callback is `Card#activate_pending_member`,
-  described above.
+- The status-writing paths in the model layer are `Card#activate_pending_member`
+  and `Member#reactivate_for_payment!`, both described above.
 - As with any persisted model field, maintenance code or a Rails console can
   change the value directly (for example, `member.update!(status: ...)` or
   assignment followed by `save!`). These validated writes accept only the

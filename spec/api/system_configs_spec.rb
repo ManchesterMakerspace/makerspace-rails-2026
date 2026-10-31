@@ -29,6 +29,10 @@ RSpec.describe 'System configuration', type: :request do
             ticket_bounty_max_credit: { type: :string, default: '2.0', description: 'Maximum credits for creating a bounty from a repair ticket. Finite number at least 0.5; changes are audited.' }
           } }, totp: { type: :object },
           reservation: { type: :object }, job_schedule: { type: :object },
+          reminders: { type: :object, required: %w[fob_reminder_days signup_reminder_days], properties: {
+            fob_reminder_days: { type: :string, default: '7', description: 'Days after a member\'s first payment before the "come get your key fob" email goes out (7 sends it on day 8). Whole number 1 to 14. A second reminder follows 14 days later, and nothing is sent after 30 days. Switch it on with the fob_reminder_enabled flag.' },
+            signup_reminder_days: { type: :string, default: '7', description: 'Days after signup before the "finish joining" email goes out to pending members (7 sends it on day 8). Whole number 1 to 14. A second reminder follows 14 days later, and nothing is sent after 30 days. Switch it on with the signup_reminder_enabled flag.' }
+          } },
           security: { type: :object, required: %w[ticket_open_limit devise_timeout_minutes], properties: {
             ticket_open_limit: { type: :integer, minimum: 1, default: 10, description: 'Maximum nonterminal reports per reporter; current admin/board reporters are exempt. Only admins can change this setting.' },
             devise_timeout_minutes: { type: :string }
@@ -76,6 +80,28 @@ RSpec.describe 'System configuration', type: :request do
           before { SystemConfig.set('ticket_open_limit', '12') }
           run_test! { |response| expect(JSON.parse(response.body).dig('security', 'ticket_open_limit')).to eq(12) }
         end
+        context 'member reminder settings' do
+          run_test! do |response|
+            body = JSON.parse(response.body)
+            expect(body.fetch('reminders')).to eq('fob_reminder_days' => '7', 'signup_reminder_days' => '7')
+            expect(body.fetch('flags')).to include('fob_reminder_enabled' => false, 'signup_reminder_enabled' => false)
+          end
+          context 'with saved values and the reminders switched on' do
+            before do
+              SystemConfig.set(SystemConfig::FOB_REMINDER_DAYS, '10')
+              SystemConfig.set(SystemConfig::FOB_REMINDER_ENABLED, 'true')
+            end
+            run_test! do |response|
+              body = JSON.parse(response.body)
+              expect(body.dig('reminders', 'fob_reminder_days')).to eq('10')
+              expect(body.dig('flags', 'fob_reminder_enabled')).to eq(true)
+            end
+          end
+          context 'with a stored value that is out of range' do
+            before { SystemConfig.set(SystemConfig::SIGNUP_REMINDER_DAYS, '40') }
+            run_test! { |response| expect(JSON.parse(response.body).dig('reminders', 'signup_reminder_days')).to eq('7') }
+          end
+        end
       end
     end
   end
@@ -118,6 +144,13 @@ RSpec.describe 'System configuration', type: :request do
             run_test! { expect(SystemConfig.slack_tickets_channel).to eq('') }
           end
         end
+        context 'member reminder days' do
+          let(:setting) { { key: 'fob_reminder_days', value: '10' } }
+          run_test! do
+            expect(SystemConfig.get('fob_reminder_days')).to eq('10')
+            expect(Service::AuditLogger).to have_received(:log).with(hash_including(field_changes: { 'fob_reminder_days' => ['', '10'] }))
+          end
+        end
         context 'ticket bounty credit maximum' do
           let(:setting) { { key: 'ticket_bounty_max_credit', value: '15' } }
           before do
@@ -137,6 +170,15 @@ RSpec.describe 'System configuration', type: :request do
         context 'invalid ticket bounty maximum' do
           let(:setting) { { key: 'ticket_bounty_max_credit', value: 'NaN' } }
           run_test! { expect(SystemConfig.get('ticket_bounty_max_credit')).to be_nil }
+        end
+        %w[0 15 -1 3.5 abc].each do |bad_days|
+          context "reminder days of #{bad_days.inspect}" do
+            let(:setting) { { key: 'signup_reminder_days', value: bad_days } }
+            run_test! do |response|
+              expect(SystemConfig.get('signup_reminder_days')).to be_nil
+              expect(JSON.parse(response.body)['error']).to match(/1 to 14/)
+            end
+          end
         end
       end
       response '403', 'Only admins may change ticket_open_limit' do
