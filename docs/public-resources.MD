@@ -112,3 +112,10 @@ POST /api/admin/system_configs/run_job accepts key=checkout_expiration_notice
 (admin-only), returning the existing queued acknowledgment. No anonymous route
 or public configuration secret is added. Portal renewal links use the existing
 /tool-checkouts?mode=self-service route.
+
+GET /api/admin/system_configs also returns the flags fob_reminder_enabled and
+signup_reminder_enabled and a reminders group (fob_reminder_days,
+signup_reminder_days, strings). PUT update_flag accepts the two flags, PUT
+update_setting accepts the two days keys (a whole number from 1 to 14, else 422),
+and POST run_job accepts key=member_reminders. Admin and board only, like the other
+settings; no anonymous route is added.

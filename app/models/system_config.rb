@@ -15,6 +15,16 @@ class SystemConfig
   SLACK_PROFILE_SYNC_ENABLED = "slack_profile_sync_enabled"
   SIGNUP_LOCKOUT_ENABLED = "signup_lockout_enabled"
 
+  # Member reminder emails (Service::MemberReminders). Both flags default to off, so the job
+  # can be deployed and scheduled before it sends anything. The "days" settings are days after
+  # the first payment / the signup that the first reminder waits (default 7, so day 8).
+  FOB_REMINDER_ENABLED = "fob_reminder_enabled"
+  SIGNUP_REMINDER_ENABLED = "signup_reminder_enabled"
+  FOB_REMINDER_DAYS = "fob_reminder_days"
+  SIGNUP_REMINDER_DAYS = "signup_reminder_days"
+  REMINDER_DAYS_DEFAULT = 7
+  REMINDER_DAYS_MAX = 14
+
   # Heroku Scheduler has no native monthly cadence, so these jobs run daily
   # via a rake task that only does real work on the configured day of month.
   CHANNEL_CACHE_REFRESH_DAY = "channel_cache_refresh_day"
@@ -35,6 +45,7 @@ class SystemConfig
     "member_provisioning_reconciliation" => "member_provisioning_reconciliation",
     "volunteer_event_reminder" => "volunteer_event_reminder",
     "membership_expiration_notice" => "membership_expiration_notice",
+    "member_reminders" => "member_reminders",
     "checkout_request_reminder" => "checkout_request_reminder",
     "checkout_request_digest" => "checkout_request_digest"
   }.freeze
@@ -65,6 +76,15 @@ class SystemConfig
 
   def self.enabled?(key)
     get(key).to_s.downcase == "true"
+  end
+
+  # Whole days from REMINDER_DAYS_DEFAULT when unset or out of range, so a bad stored value
+  # can never push the second reminder past the 30-day cutoff.
+  def self.reminder_days(key)
+    value = get(key).to_s.strip
+    return REMINDER_DAYS_DEFAULT unless value.match?(/\A\d+\z/) && value.to_i.between?(1, REMINDER_DAYS_MAX)
+
+    value.to_i
   end
 
   def self.record_run(job_key, success:)

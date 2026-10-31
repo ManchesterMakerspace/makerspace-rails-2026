@@ -9,6 +9,8 @@ class Admin::SystemConfigsController < AdminController
     'require_totp_board',
     'require_totp_rm',
     SystemConfig::SIGNUP_LOCKOUT_ENABLED,
+    SystemConfig::FOB_REMINDER_ENABLED,
+    SystemConfig::SIGNUP_REMINDER_ENABLED,
   ].freeze
 
   # Keys that can be updated as plain string values
@@ -40,6 +42,9 @@ class Admin::SystemConfigsController < AdminController
     SystemConfig::CHANNEL_CACHE_REFRESH_DAY,
     SystemConfig::CARD_EXPIRATION_CHECK_DAY,
     SystemConfig::GARBAGE_COLLECT_DAY,
+    # Member reminder emails
+    SystemConfig::FOB_REMINDER_DAYS,
+    SystemConfig::SIGNUP_REMINDER_DAYS,
   ].freeze
 
   ALL_EDITABLE_KEYS = (FLAG_KEYS + SETTING_KEYS).freeze
@@ -54,6 +59,8 @@ class Admin::SystemConfigsController < AdminController
       require_totp_board:             SystemConfig.enabled?('require_totp_board'),
       require_totp_rm:                SystemConfig.enabled?('require_totp_rm'),
       signup_lockout_enabled:         SystemConfig.enabled?(SystemConfig::SIGNUP_LOCKOUT_ENABLED),
+      fob_reminder_enabled:           SystemConfig.enabled?(SystemConfig::FOB_REMINDER_ENABLED),
+      signup_reminder_enabled:        SystemConfig.enabled?(SystemConfig::SIGNUP_REMINDER_ENABLED),
     }
 
     jobs = SystemConfig::JOB_KEYS.map do |job_key, task_name|
@@ -109,6 +116,11 @@ class Admin::SystemConfigsController < AdminController
       garbage_collect_day:             SystemConfig.get(SystemConfig::GARBAGE_COLLECT_DAY)             || '1',
     }
 
+    reminders = {
+      fob_reminder_days:    SystemConfig.reminder_days(SystemConfig::FOB_REMINDER_DAYS).to_s,
+      signup_reminder_days: SystemConfig.reminder_days(SystemConfig::SIGNUP_REMINDER_DAYS).to_s,
+    }
+
     render json: {
       checkout: { checkout_expiration_notice_days: CheckoutExpirationNotice.advance_days, can_manage: is_admin? },
       flags:     flags,
@@ -119,6 +131,7 @@ class Admin::SystemConfigsController < AdminController
       security:  security,
       reservation: reservation,
       job_schedule: job_schedule,
+      reminders: reminders,
     }, status: :ok
   end
 
@@ -221,6 +234,8 @@ class Admin::SystemConfigsController < AdminController
       VolunteerEventReminderJob.perform_later
     when 'membership_expiration_notice'
       MembershipExpirationNoticeJob.perform_later
+    when 'member_reminders'
+      MemberReminderJob.perform_later
     when 'checkout_request_reminder'
       CheckoutRequestReminderJob.perform_later
     when 'checkout_request_digest'
@@ -274,6 +289,12 @@ class Admin::SystemConfigsController < AdminController
       raise Error::Forbidden.new unless current_member.role == 'admin'
       return true if value.match?(/\A[1-9]\d*\z/)
       render json: { error: 'ticket_open_limit must be a positive integer' }, status: :unprocessable_entity
+      return false
+    end
+    if [SystemConfig::FOB_REMINDER_DAYS, SystemConfig::SIGNUP_REMINDER_DAYS].include?(key)
+      return true if value.match?(/\A\d+\z/) && value.to_i.between?(1, SystemConfig::REMINDER_DAYS_MAX)
+      render json: { error: "Reminder days must be a whole number from 1 to #{SystemConfig::REMINDER_DAYS_MAX}" },
+             status: :unprocessable_entity
       return false
     end
     return true unless key == 'devise_timeout_minutes'

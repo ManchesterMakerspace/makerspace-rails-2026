@@ -702,4 +702,80 @@ RSpec.describe Invoice, type: :model do
       expect(new_invoice).to be_valid
     end
   end
+
+  describe "reactivating a lapsed account when a membership payment is processed" do
+    before { allow_any_instance_of(Member).to receive(:send_renewal_slack_message) }
+
+    %w[inactive nonMember].each do |lapsed_status|
+      it "makes a #{lapsed_status} member with a fob active and renews them" do
+        lapsed = create(:member, status: lapsed_status, expirationTime: nil)
+        fob = create(:card, member: lapsed, uid: SecureRandom.hex(6))
+        invoice = create(:invoice, member: lapsed, transaction_id: "paid_txn")
+
+        invoice.send(:execute_invoice_operation)
+
+        expect(lapsed.reload.status).to eq("activeMember")
+        expect(lapsed.expirationTime).to be_present
+        expect(fob.reload.validity).to eq("activeMember")
+        expect(invoice.reload.settled_at).to be_present
+      end
+
+      it "makes a #{lapsed_status} member without a fob active and holds the payment" do
+        lapsed = create(:member, status: lapsed_status, expirationTime: nil)
+        invoice = create(:invoice, member: lapsed, transaction_id: "paid_txn")
+        allow(invoice).to receive(:enque_message)
+
+        invoice.send(:execute_invoice_operation)
+
+        expect(lapsed.reload.status).to eq("activeMember")
+        expect(lapsed.expirationTime).to be_nil
+        expect(invoice.reload.settled_at).to be_nil
+      end
+    end
+
+    %w[revoked suspended].each do |locked_status|
+      it "never changes a #{locked_status} member" do
+        locked = create(:member, status: locked_status, expirationTime: nil)
+        create(:card, member: locked, uid: SecureRandom.hex(6))
+        invoice = create(:invoice, member: locked, transaction_id: "paid_txn")
+
+        invoice.send(:execute_invoice_operation)
+
+        expect(locked.reload.status).to eq(locked_status)
+      end
+    end
+
+    it "leaves an already active member's status alone and writes no reactivation entry" do
+      active = create(:member, status: "activeMember", expirationTime: nil)
+      create(:card, member: active, uid: SecureRandom.hex(6))
+      invoice = create(:invoice, member: active, transaction_id: "paid_txn")
+
+      invoice.send(:execute_invoice_operation)
+
+      expect(active.reload.status).to eq("activeMember")
+      expect(AuditLog.where(event_type: "member_reactivated_by_payment", resource_id: active.id).count).to eq(0)
+    end
+
+    it "queues provisioning once and writes an audit entry when it reactivates a member with a fob" do
+      lapsed = create(:member, status: "inactive", expirationTime: nil)
+      create(:card, member: lapsed, uid: SecureRandom.hex(6))
+      invoice = create(:invoice, member: lapsed, transaction_id: "paid_txn")
+
+      expect { invoice.send(:execute_invoice_operation) }
+        .to have_enqueued_job(MemberProvisioningJob).with(lapsed.id.to_s).exactly(:once)
+
+      entry = AuditLog.find_by(event_type: "member_reactivated_by_payment", resource_id: lapsed.id)
+      expect(entry).to be_present
+      expect(entry.field_changes).to eq("status" => ["inactive", "activeMember"])
+    end
+
+    it "queues provisioning once when it reactivates a member with no fob, because the payment is only held" do
+      lapsed = create(:member, status: "nonMember", expirationTime: nil)
+      invoice = create(:invoice, member: lapsed, transaction_id: "paid_txn")
+      allow(invoice).to receive(:enque_message)
+
+      expect { invoice.send(:execute_invoice_operation) }
+        .to have_enqueued_job(MemberProvisioningJob).with(lapsed.id.to_s).exactly(:once)
+    end
+  end
 end

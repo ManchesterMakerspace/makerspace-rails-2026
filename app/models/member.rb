@@ -137,6 +137,12 @@ class Member
   # See Service::MembershipExpirationNotice.
   field :membership_expiring_soon_notice_sent_for, type: Integer
   field :membership_expired_notice_sent_for, type: Integer
+  # Service::MemberReminders: how many "come get your fob" / "finish joining" reminders were
+  # sent and when the last went out. Two reminders at most; see the service for the schedule.
+  field :fob_reminder_count,              type: Integer, default: 0
+  field :fob_reminder_last_sent_at,       type: Time
+  field :signup_reminder_count,           type: Integer, default: 0
+  field :signup_reminder_last_sent_at,    type: Time
 
   # Soft-delete marker for a "ghost" account -- a duplicate signup (e.g. a
   # member who couldn't access their original account/email and created a
@@ -670,6 +676,36 @@ class Member
     if operation.to_sym == :renew=
       (self.access_cards || []).length == 0
     end
+  end
+
+  # Statuses a processed membership payment lifts back to activeMember. revoked and
+  # suspended are deliberate staff decisions, so a payment never changes them.
+  REACTIVATED_BY_PAYMENT = %w[inactive nonMember].freeze
+
+  # Called when a membership payment is processed, whether it is applied now or held
+  # until the first fob. Mirrors Card#activate_pending_member: an atomic status write
+  # (no validations or callbacks), then the work the status change would have queued.
+  def reactivate_for_payment!
+    return false unless REACTIVATED_BY_PAYMENT.include?(status)
+
+    previous_status = status
+    set(status: 'activeMember')
+    # With a fob the renewal that follows saves the expiration, and that save queues both of
+    # these. With no fob the payment is only held, so nothing else will.
+    if access_cards.none?
+      MemberProvisioningJob.perform_later(id.to_s)
+      Service::ToolCheckoutSlackCanvas.enqueue_for_members([id])
+    end
+    Service::AuditLogger.log(
+      log_type:        'member',
+      event_type:      'member_reactivated_by_payment',
+      resource_type:   'Member',
+      resource_id:     id,
+      subject:         self,
+      field_changes:   { 'status' => [previous_status, 'activeMember'] },
+      message_details: "A membership payment was processed for a member whose status was #{previous_status}."
+    )
+    true
   end
 
   # Emit to Member & Management channels on renewal

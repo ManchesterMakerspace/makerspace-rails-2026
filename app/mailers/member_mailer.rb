@@ -121,6 +121,37 @@ class MemberMailer < ApplicationMailer
          template_name: 'google_doc_email'
   end
 
+  # paid_on is an ISO date string (Service::MemberReminders): the day of the member's first payment.
+  def fob_reminder(member_id, paid_on)
+    @member = Member.find(member_id)
+    variables = ::Service::EmailTemplate.common_variables(@member)
+      .merge(paid_date: Date.iso8601(paid_on.to_s).strftime('%B %-d, %Y'))
+    @google_doc_content = ::Service::EmailTemplate.render(
+      :fob_reminder,
+      variables,
+      fallback: true,
+      format: :html
+    )
+    mail to: @member.email,
+         subject: "Your Manchester Makerspace membership is paid. Come get your key fob",
+         template_path: 'shared',
+         template_name: 'google_doc_email'
+  end
+
+  def signup_reminder(member_id)
+    @member = Member.find(member_id)
+    @google_doc_content = ::Service::EmailTemplate.render(
+      :signup_reminder,
+      ::Service::EmailTemplate.common_variables(@member),
+      fallback: true,
+      format: :html
+    )
+    mail to: @member.email,
+         subject: "Finish joining Manchester Makerspace",
+         template_path: 'shared',
+         template_name: 'google_doc_email'
+  end
+
   def contract_updated(member_id)
     @member = Member.find(member_id)
     document_name = ::Service::GoogleDrive.get_document_name(@member, "Code of Conduct")
