@@ -25,6 +25,14 @@ class SystemConfig
   REMINDER_DAYS_DEFAULT = 7
   REMINDER_DAYS_MAX = 14
 
+  # The Slack Identity Conflicts page scans Slack's user directory in pieces (Service::SlackUserSync).
+  # This is how many Slack accounts one piece checks at most; a smaller number is gentler on Slack and
+  # the server (and slower overall), so an admin lowers it from that page if the scan still fails.
+  SLACK_CONFLICT_SCAN_SIZE = "slack_conflict_scan_size"
+  SLACK_CONFLICT_SCAN_SIZE_DEFAULT = 200
+  SLACK_CONFLICT_SCAN_SIZE_MIN = 10
+  SLACK_CONFLICT_SCAN_SIZE_MAX = 500
+
   # Heroku Scheduler has no native monthly cadence, so these jobs run daily
   # via a rake task that only does real work on the configured day of month.
   CHANNEL_CACHE_REFRESH_DAY = "channel_cache_refresh_day"
@@ -83,6 +91,16 @@ class SystemConfig
   def self.reminder_days(key)
     value = get(key).to_s.strip
     return REMINDER_DAYS_DEFAULT unless value.match?(/\A\d+\z/) && value.to_i.between?(1, REMINDER_DAYS_MAX)
+
+    value.to_i
+  end
+
+  # Slack accounts one piece of the conflict scan checks. Falls back to the default when unset or out of range,
+  # so a bad stored value can never make a piece too large (or zero).
+  def self.slack_conflict_scan_size
+    value = get(SLACK_CONFLICT_SCAN_SIZE).to_s.strip
+    return SLACK_CONFLICT_SCAN_SIZE_DEFAULT unless value.match?(/\A\d+\z/) &&
+                                                   value.to_i.between?(SLACK_CONFLICT_SCAN_SIZE_MIN, SLACK_CONFLICT_SCAN_SIZE_MAX)
 
     value.to_i
   end

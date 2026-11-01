@@ -20,6 +20,41 @@ RSpec.describe Admin::SlackIdentityConflictsController, type: :controller do
       parsed = JSON.parse(response.body)
       expect(parsed['conflicts'].first).to include('slack_id' => 'UNEW', 'member_id' => member.id.to_s)
       expect(parsed['live_check']).to eq('cached')
+      expect(parsed).not_to have_key('progress')
+    end
+
+    it "includes the scan size setting so the page can show and change it" do
+      allow(Service::SlackUserSync).to receive(:detect_conflicts_for_page).and_return([[], :cached])
+
+      get :index, format: :json
+      expect(JSON.parse(response.body)['scan_size']).to eq(200)
+
+      SystemConfig.set(SystemConfig::SLACK_CONFLICT_SCAN_SIZE, '40')
+      get :index, format: :json
+      expect(JSON.parse(response.body)['scan_size']).to eq(40)
+    end
+
+    it "says how far the scan has got while it is still scanning, so the page can ask again" do
+      allow(Service::SlackUserSync).to receive(:detect_conflicts_for_page).and_return([[], :scanning])
+      allow(Service::SlackUserSync).to receive(:live_scan_progress)
+        .and_return(checked: 400, estimated_total: 1400, waiting_seconds: 0)
+
+      get :index, format: :json
+
+      parsed = JSON.parse(response.body)
+      expect(response).to have_http_status(200)
+      expect(parsed['live_check']).to eq('scanning')
+      expect(parsed['progress']).to eq('checked' => 400, 'estimated_total' => 1400, 'waiting_seconds' => 0)
+    end
+
+    it "reports an unavailable live check without progress" do
+      allow(Service::SlackUserSync).to receive(:detect_conflicts_for_page).and_return([[], :unavailable])
+
+      get :index, format: :json
+
+      parsed = JSON.parse(response.body)
+      expect(parsed['live_check']).to eq('unavailable')
+      expect(parsed).not_to have_key('progress')
     end
   end
 

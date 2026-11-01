@@ -7299,6 +7299,110 @@
         }
       }
     },
+    "/admin/slack_identity_conflicts": {
+      "get": {
+        "summary": "Lists Slack accounts that cannot be linked because the member already has another",
+        "tags": [
+          "Slack identity conflicts"
+        ],
+        "operationId": "adminListSlackIdentityConflicts",
+        "description": "The live check of Slack runs in pieces, one per request. While live_check is \"scanning\" the conflicts found so far are returned with progress, and the caller asks again until it is fresh. scan_size is the slack_conflict_scan_size setting: how many Slack accounts one piece checks.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conflicts and how the live check of Slack is going",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "conflicts",
+                    "live_check",
+                    "scan_size"
+                  ],
+                  "properties": {
+                    "conflicts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slack_id": {
+                            "type": "string"
+                          },
+                          "slack_name": {
+                            "type": "string"
+                          },
+                          "slack_email": {
+                            "type": "string"
+                          },
+                          "member_id": {
+                            "type": "string"
+                          },
+                          "member_name": {
+                            "type": "string"
+                          },
+                          "conflicting_slack_id": {
+                            "type": "string"
+                          },
+                          "conflicting_slack_name": {
+                            "type": "string"
+                          },
+                          "conflicting_slack_email": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "live_check": {
+                      "type": "string",
+                      "enum": [
+                        "fresh",
+                        "cached",
+                        "scanning",
+                        "unavailable"
+                      ],
+                      "description": "fresh: a check just finished. cached: a check from the last few minutes. scanning: a check is under way. unavailable: it failed repeatedly, so only conflicts saved earlier are listed."
+                    },
+                    "scan_size": {
+                      "type": "integer",
+                      "minimum": 10,
+                      "maximum": 500,
+                      "default": 200,
+                      "description": "Slack accounts one piece of the check looks at."
+                    },
+                    "progress": {
+                      "type": "object",
+                      "description": "Only while live_check is scanning.",
+                      "properties": {
+                        "checked": {
+                          "type": "integer"
+                        },
+                        "estimated_total": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "From the last finished check; null until one has finished."
+                        },
+                        "waiting_seconds": {
+                          "type": "integer",
+                          "description": "Seconds Slack asked us to wait before the next piece."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin or board member"
+          }
+        }
+      }
+    },
     "/reservation_catalog": {
       "get": {
         "summary": "List enabled reservation shops and their reservable tools",
@@ -15793,7 +15897,8 @@
                       "card_expiration_check_day",
                       "garbage_collect_day",
                       "fob_reminder_days",
-                      "signup_reminder_days"
+                      "signup_reminder_days",
+                      "slack_conflict_scan_size"
                     ]
                   },
                   "value": {
@@ -15841,7 +15946,8 @@
                           "card_expiration_check_day",
                           "garbage_collect_day",
                           "fob_reminder_days",
-                          "signup_reminder_days"
+                          "signup_reminder_days",
+                          "slack_conflict_scan_size"
                         ]
                       }
                     }

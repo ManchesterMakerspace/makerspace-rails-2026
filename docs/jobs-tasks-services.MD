@@ -593,13 +593,33 @@ nothing, `unknown` when none did.
 `GET /api/admin/slack_identity_conflicts` (`Service::SlackUserSync.detect_conflicts_for_page`)
 lists the Slack accounts that cannot be linked because the member already has another. It combines
 a live scan of Slack's whole user directory with the conflicts saved earlier in
-`slack_identity_conflicts`. The scan pages through Slack inside the web request, so it is cached in
-Redis (`slack_identity_conflicts:live`, 5 minutes) and stops after 20 seconds. If it fails or runs
-out of time, the request still succeeds with the saved conflicts only and
-`live_check: "unavailable"` (`slack_identity_conflicts:live_failed`, 60 seconds, stops every reload
-from retrying a failing scan). `live_check` is otherwise `fresh` or `cached`. Reassigning or
-dismissing a conflict clears both keys. The scan itself does not write anything. Without this, a
-slow Slack response exceeded Heroku's 30 second limit and the page failed with a 503.
+`slack_identity_conflicts`. A whole scan does not fit in one web request (Heroku's limit is 30
+seconds and a large workspace took longer), so each request runs one **piece** and the page asks
+again until it is done:
+
+- A piece reads Slack's directory from where the last one stopped, for at most 12 seconds or
+  `slack_conflict_scan_size` accounts, whichever comes first (always at least one account). The setting
+  is an admin/board portal setting (10 to 500, default 200, edited on the page itself with
+  `PUT /api/admin/system_configs/update_setting`; anything else is a 422). It is also the page size asked
+  of Slack, fixed when a scan starts so the saved position stays valid if the setting changes mid-scan.
+  Saving it clears the scan in progress and the cached result so the next request starts over with the
+  new number. Lower it when pieces still time out.
+- Progress lives in Redis (`slack_identity_conflicts:scan`, 15 minutes): the Slack cursor, how many
+  accounts of that page are done, the conflicts found so far and a failure count. A Redis lock
+  (`slack_identity_conflicts:scan_lock`, 30 seconds) stops two requests from running the same piece.
+- A finished scan is cached (`slack_identity_conflicts:live`, 5 minutes) and its account count is kept
+  30 days (`slack_identity_conflicts:last_total`) as the estimated total for the progress display.
+- Slack answering "too many requests" is not a failure: the piece waits as long as Slack asked
+  (`progress.waiting_seconds`) and carries on. Three failed pieces in a row give up with
+  `live_check: "unavailable"` (`slack_identity_conflicts:live_failed`, 60 seconds, stops every reload
+  from retrying a failing scan) and the request still succeeds with the saved conflicts only.
+- The response is `{ conflicts, live_check, scan_size }` plus `progress` (`checked`, `estimated_total`,
+  `waiting_seconds`) while scanning. `live_check` is `fresh` (a scan just finished), `cached`,
+  `scanning` (conflicts found so far plus the saved ones) or `unavailable`.
+
+Reassigning or dismissing a conflict clears the cached result, the scan in progress and the lock. The
+scan itself does not write anything. Without the pieces, a slow Slack response exceeded Heroku's 30
+second limit and the page failed with a 503.
 
 ### Slack re-invite after an email change
 

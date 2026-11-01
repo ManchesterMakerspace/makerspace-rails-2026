@@ -119,3 +119,9 @@ signup_reminder_days, strings). PUT update_flag accepts the two flags, PUT
 update_setting accepts the two days keys (a whole number from 1 to 14, else 422),
 and POST run_job accepts key=member_reminders. Admin and board only, like the other
 settings; no anonymous route is added.
+
+PUT update_setting also accepts key=slack_conflict_scan_size (a whole number from 10 to
+500, else 422; default 200), the number of Slack accounts one request of the Slack
+identity conflicts check looks at. GET /api/admin/slack_identity_conflicts now returns
+scan_size, live_check may be scanning, and a progress object accompanies it while a
+check is under way; see jobs-tasks-services.MD. Still admin and board only.
