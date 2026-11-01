@@ -230,6 +230,82 @@ RSpec.describe CheckoutRequestDigest do
       described_class.deliver_all!(now: now)
 
       expect(Service::SlackConnector).not_to have_received(:send_slack_message)
+        .with(a_string_including("Open checkout requests ("), anything)
+    end
+
+    describe "requests nobody would receive" do
+      let(:channel) { Service::SlackConnector.members_relations_channel }
+
+      it "posts one list to Members Relations, once a day, and keeps doing so until someone is assigned" do
+        request_for(pat, bandsaw, 4)
+        request_for(lee, lathe, 12)
+
+        described_class.deliver_all!(now: now)
+        described_class.deliver_all!(now: now + 1.hour)
+
+        expect(Service::SlackConnector).to have_received(:send_slack_message).once.with(
+          a_string_including("nobody to approve them (2)", "Lathe (Metalworking) – 12 days old",
+                             "Laguna Bandsaw (Woodworking) – 4 days old", "Tag a resource manager"), channel)
+
+        described_class.deliver_all!(now: now + 1.day)
+        expect(Service::SlackConnector).to have_received(:send_slack_message).with(a_string_including("nobody to approve"), channel).twice
+      end
+
+      it "says nothing once someone who can receive it is assigned" do
+        woodworking_manager
+        request_for(pat, bandsaw, 0, hours_ago: 1)
+
+        described_class.deliver_all!(now: now)
+
+        expect(Service::SlackConnector).not_to have_received(:send_slack_message).with(a_string_including("nobody"), anything)
+      end
+
+      it "counts a shop whose only contact has no Slack link, but not a request nobody could act on" do
+        create(:member, :resource_manager, :current, resource_manager_shop_ids: [shop.id.to_s])
+        request_for(pat, bandsaw, 2)
+        expired = create(:member, :current, firstname: "Old", lastname: "Member")
+        expired.update!(status: "revoked")
+        request_for(expired, lathe, 2)
+
+        described_class.deliver_all!(now: now)
+
+        expect(Service::SlackConnector).to have_received(:send_slack_message)
+          .with(a_string_including("(1)", "Laguna Bandsaw"), channel).once
+      end
+
+      it "caps the list, retries after a failed post, and never stops the digests" do
+        woodworking_manager
+        request_for(pat, bandsaw, 0, hours_ago: 1)
+        Array.new(described_class::MAX_UNASSIGNED_LISTED + 2) { |i| request_for(create(:member, :current), lathe, 3 + i) }
+        calls = 0
+        allow(Service::SlackConnector).to receive(:send_slack_message).with(a_string_including("nobody"), channel) do
+          calls += 1
+          raise "Slack down" if calls == 1
+        end
+
+        described_class.deliver_all!(now: now)
+        described_class.deliver_all!(now: now + 1.hour)
+
+        expect(Service::SlackConnector).to have_received(:send_slack_message).with(a_string_including("Open checkout requests ("), "UWOOD")
+        # the first post failed, so the next run posted the same list again
+        expect(Service::SlackConnector).to have_received(:send_slack_message)
+          .with(a_string_including("and 2 more."), channel).twice
+        expect(Service::ErrorReporter).to have_received(:notify).with(instance_of(RuntimeError), context: { phase: "checkout request unassigned report" })
+      end
+    end
+
+    it "includes an admin or board member tagged to the shop as its RM, but not an untagged one or one tagged elsewhere" do
+      link_slack(create(:member, :admin, :current, resource_manager_shop_ids: [shop.id.to_s]), "UTAGADMIN")
+      link_slack(create(:member, :board_member, :current, resource_manager_shop_ids: [shop.id.to_s]), "UTAGBOARD")
+      link_slack(create(:member, :board_member, :current, resource_manager_shop_ids: [metal.id.to_s]), "UOTHERSHOP")
+      link_slack(create(:member, :admin, :current), "UUNTAGGED")
+      request_for(pat, bandsaw, 0, hours_ago: 1)
+
+      described_class.deliver_all!(now: now)
+
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(a_string_including("(1)"), "UTAGADMIN").once
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(a_string_including("(1)"), "UTAGBOARD").once
+      expect(Service::SlackConnector).to have_received(:send_slack_message).twice
     end
 
     it "ignores resolved requests and skips recipients without Slack or with suppressed notifications" do
