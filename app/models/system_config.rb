@@ -55,7 +55,8 @@ class SystemConfig
     "membership_expiration_notice" => "membership_expiration_notice",
     "member_reminders" => "member_reminders",
     "checkout_request_reminder" => "checkout_request_reminder",
-    "checkout_request_digest" => "checkout_request_digest"
+    "checkout_request_digest" => "checkout_request_digest",
+    "rental_vacating_check" => "rental_vacating_check"
   }.freeze
 
   def self.get(key)

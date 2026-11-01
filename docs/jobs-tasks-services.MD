@@ -344,7 +344,8 @@ job wrapper records `job_status_<admin key>` with a completion time and
 | `member_reminders` | `member_reminders` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'MemberReminderJob.perform_now'`. | Sends the two member reminder emails, each only while its flag is on (`fob_reminder_enabled`, `signup_reminder_enabled`; both off by default, so nothing is sent until an admin enables them). The fob reminder goes to members who paid but have no fob; the signup reminder goes to `pending` members who signed up and have not paid or been issued a fob. Both send on day 8 (the `fob_reminder_days` / `signup_reminder_days` setting, default 7, plus one) and again 14 days later, never after 30 days, at most one per member per run, with a matching Slack DM when the member has a linked Slack account. Sent state is kept on the member (`fob_reminder_count`, `fob_reminder_last_sent_at`, `signup_reminder_count`, `signup_reminder_last_sent_at`). Each member is handled separately, so one failure is reported and the rest continue. Only the job wrapper records status. |
 | `volunteer_event_reminder` | `volunteer_event_reminder` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Sends/retries assigned shop RM review DMs for submitted tasks and dated open events ready for closure; posts or updates Members Relations Channel reminders after more than five days and retries saved final-outcome updates. See the volunteer approval reminder workflow below. Individual delivery failures do not fail the complete scan. |
 | `checkout_request_reminder` | `checkout_request_reminder` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'`. | Posts a "still waiting" reminder in the configured Resource Managers Slack channel (`slack_channel_rm`, default `resource_managers`) for every open checkout request that has been open for 5 days, then again at 10 and 15 days (three reminders in all, the third being the last); declines (as a system decision, audit-logged and DMed to the requester) a request still unrecorded 5 days after the third reminder; edits each posted reminder when its request is approved, declined, timed out or cancelled and retries any resolution edit that failed. Each reminder is recorded on the request, so a reminder is never posted twice. Individual failures are reported without stopping the scan. See the checkout request notifications section below. |
-| `checkout_request_digest` | `checkout_request_digest` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'`. | Sends each resource manager and assigned approver one Slack DM rolling up every open checkout request they can act on, grouped by requester with each tool, its shop, and its age in calendar days. A recipient is messaged only when there is a request new since their last digest, or an open request that is exactly 5, 10, 15, ... days old, and at most once a day; nothing is sent otherwise. Not sent to a requester about their own request, or to members without a linked Slack account or with suppressed notifications. Redis keys (`checkout_request_digest:MEMBER_ID:DATE`, `checkout_request_digest_last:MEMBER_ID`) prevent duplicates and track the last digest, and `checkout_request_digest_message:MEMBER_ID` remembers the last digest's Slack message so the next digest can edit it into a "replaced" stub; the daily key is released after a failed send. Individual failures are reported without stopping the run. |
+| `checkout_request_digest` | `checkout_request_digest` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'`. | Sends each resource manager and assigned approver one Slack DM rolling up every open checkout request they can act on, grouped by requester with each tool, its shop, and its age in calendar days. A recipient is messaged only when there is a request new since their last digest, or an open request that is exactly 5, 10, 15, ... days old, and at most once a day; nothing is sent otherwise. Not sent to a requester about their own request, or to members without a linked Slack account or with suppressed notifications. Redis keys (`checkout_request_digest:MEMBER_ID:DATE`, `checkout_request_digest_last:MEMBER_ID`) prevent duplicates and track the last digest, and `checkout_request_digest_message:MEMBER_ID` remembers the last digest's Slack message so the next digest can edit it into a "replaced" stub; the daily key is released after a failed send. Individual failures are reported without stopping the run. Also posts one daily list to Members Relations of open requests nobody would receive a digest for, until someone is assigned. |
+| `rental_vacating_check` | `rental_vacating_check` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'RentalVacatingCheckJob.perform_now'`. | Reminds staff, in one Members Relations post, about rentals still `vacating` after their end date and rentals a member says they have vacated (`awaiting_verification`). It never changes a rental and posts nothing when none are waiting. Records its run status. |
 
 ### Triggering through the admin API
 
@@ -390,7 +391,7 @@ values and would use the chosen scheduler's timezone.
 
 Production work is scheduled in the **Heroku Scheduler** add-on of `makerspace-interface-prod`,
 not by Whenever. The dashboard is the source of truth; this table records it as of
-2026-10-24 (all times UTC, Basic dyno). Change the dashboard first, then update this table.
+2026-11-01 (all times UTC, Basic dyno). Change the dashboard first, then update this table.
 A job that is in this repository but not in this table is not running in production *yet*.
 That does not make it dead: recent work often lands before its schedule entry is added, so
 check the job's age and author (`git log -S<name>`) and ask whoever added it before treating
@@ -404,13 +405,36 @@ an unscheduled job as unused.
 | `bundle exec rake card_expiration_check` | Daily 03:00 | |
 | `bundle exec rake reservations:rebuild_slack_canvases` | Daily 05:30 | |
 | `rake invoice_review` | Daily 06:30 | Built-in production Sunday guard, so it only does work on Sundays. |
-| `bin/rails runner "SlackProfileSyncJob.perform_later"` | Daily 07:00 | |
-| `bin/rails runner "VolunteerEventReminderJob.perform_later"` | Daily 08:00 | |
+| `bin/rails runner "SlackProfileSyncJob.perform_now"` | Daily 07:00 | Only does work while `slack_profile_sync_enabled` is on. |
+| `bin/rails runner "VolunteerEventReminderJob.perform_now"` | Daily 08:00 | |
+| `bundle exec rake slack:sync_users` | Daily 05:00 | Only does work while `slack_sync_enabled` is on. |
 | `bundle exec rake slack:refresh_public_channel_cache` | Daily 08:30 | |
 | `bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'` | Daily 13:00 | |
 | `bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Daily 14:30 | |
 | `bundle exec rails runner 'MemberReminderJob.perform_now'` | Daily 15:00 | Sends the fob and signup reminder emails, each only while its switch is on in Portal Settings, Jobs. Added 2026-10-31. |
 | `bin/rails runner "MemberProvisioningReconciliationJob.perform_now"` | Hourly at :20 | |
+| `bundle exec rails runner "MembershipExpirationNoticeJob.perform_now"` | Daily 11:30 | |
+| `bundle exec rake fix_tickets:recover_deliveries` | Every 10 minutes | Runs `FixTicketDeliveryRecoveryJob`. |
+| `bundle exec rails runner "FixTicketAssigneeExpirationJob.perform_now"` | Daily 23:00 | |
+| `bundle exec rake checkout_expiration_notice` | Daily 23:00 | Runs `CheckoutExpirationNoticeJob`. |
+
+Use `perform_now` in these commands, not `perform_later`: a Scheduler process exits when its script
+ends. `Service::JobDrain` (see "Scheduled processes wait for queued jobs") now keeps work a job queues
+from being lost, but `perform_now` also records the run and surfaces errors at the point they happen.
+The profile sync and the volunteer reminder used `perform_later` until 2026-11-01 and never ran
+unattended: their last recorded runs were manual. `RentalVacatingCheckJob` is not in this table yet;
+schedule it daily (for example `bundle exec rails runner "RentalVacatingCheckJob.perform_now"` at 14:00)
+once the vacated-verification change below is deployed.
+
+### Scheduled processes wait for queued jobs
+
+Scheduled work runs in short-lived `rails runner` and rake processes. Production uses Active Job's default
+in-process queue, so a job that calls `deliver_later` or `perform_later` only queues it on a thread pool, and the
+process could exit before it ran, silently dropping an email or follow-up job. `config/initializers/job_drain.rb`
+registers an `at_exit` hook (not in the test environment) that calls `Service::JobDrain.wait!`: for the in-process
+adapter it waits for the pool to finish, giving up after 25 seconds, and for any other adapter it does nothing.
+This also makes a web dyno finish queued jobs when it shuts down, within the same 25 seconds. Code that sends
+with a direct Slack post (the checkout digest and reminder, for example) was never affected.
 
 The retired `volunteering:*` tasks (the volunteer spreadsheet) were never in this schedule
 and have been removed from the repository.
@@ -427,13 +451,18 @@ scheduler only after choosing appropriate times and considering the side effects
 | `member_review` | `RAILS_ENV=production bundle exec rake member_review` | Scheduled daily in Heroku Scheduler (see above); its built-in production Sunday guard makes other days a no-op, so it acts weekly. See the admin-job table for notifications and effects. |
 | `invoice_review` | `RAILS_ENV=production bundle exec rake invoice_review` | Scheduled daily in Heroku Scheduler (see above); its built-in production Sunday guard makes other days a no-op, so it acts weekly. See the admin-job table for report effects. |
 
-`RentalVacatingCheckJob` also says it should run nightly, but it has no Rake
-task and no entry in `config/schedule.rb`. If production policy requires it,
-invoke it with `RAILS_ENV=production bundle exec rails runner
-'RentalVacatingCheckJob.perform_now'`. It changes expired `vacating` rentals to
-`cancelled`, DMs the member, posts the cancellation notice to the Member
-Relations channel, and queues an ended-rental email. It rescues errors per
-rental, so a run can finish even when some rentals were not changed.
+`RentalVacatingCheckJob` is a daily reminder to staff and never changes a rental. It used to cancel
+expired `vacating` rentals itself, which freed a spot without anyone checking the space was empty. A spot is now
+released only by a person. A rental the member marks vacated (their own **Mark Vacated** click, or "Yes, I Have
+Vacated" in the cancel dialog) becomes `awaiting_verification` and still holds the spot; staff (resource manager,
+board member or admin, never the rental's own member) then check the space and use **Verify Vacated**
+(`POST /api/rentals/:id/verify_vacated`), which cancels the rental, sends the member the rental-ended notice and
+writes a `rental_vacated_verified` audit entry. Staff marking another member's `vacating` rental vacated is the
+same verification and releases it at once. `vacating` and `awaiting_verification` rentals both keep their spot
+unavailable (`RentalSpot#available?`). The job posts one Members Relations message listing rentals awaiting
+verification (with how long each has waited, from `vacated_reported_at`) and vacating rentals past their end date,
+and repeats daily until someone acts. Invoke it with `RAILS_ENV=production bundle exec rails runner
+'RentalVacatingCheckJob.perform_now'`; it is also the `rental_vacating_check` admin job.
 
 ## Manual operator Rake tasks
 
@@ -536,13 +565,20 @@ contracts and [member field lifecycle](mongodb-collections.MD) for persistence.
 Approvers are told about open checkout requests by a roll-up DM, not per request.
 `CheckoutRequestDigestJob` runs daily at 14:30 UTC (about 10:30 am Eastern) and as the `checkout_request_digest` admin job.
 `CheckoutRequestDigest` rolls up (leaving out requests the approver could not act on, such as one from an expired member or with unmet prerequisites), for each resource manager assigned to a request's shop and
-each approver assigned to the tool, its shop, or the requested group (not every admin or board
-member, and never the requester), every open request they can act on, grouped by requester with
+each approver assigned to the tool, its shop, or the requested group (an admin or board member only
+when tagged to that request's shop as its resource manager, or assigned as an approver, so never every admin or
+board member, and never the requester), every open request they can act on, grouped by requester with
 the tool, shop and age in calendar days. It sends only when a request is new since that
 person's last digest, or when some open request is exactly 5, 10, 15, ... days old, and at
 most once a day. Recipients with no linked Slack account or suppressed direct notifications
 (`revoked` or `suspended`) receive nothing. The new digest is always a fresh message (Slack does not notify on edits); the recipient's previous digest, tracked by a Redis key holding its channel and `ts` (30-day expiry), is then edited into a "Replaced by a newer digest below." stub, best effort. Redis keys per recipient track the day's send
 (36-hour expiry) and the time of the last digest (90-day expiry). There is no email fallback.
+
+Each run also looks for open requests an approver could act on but that nobody would receive a digest for (the shop
+has no resource manager tagged, and no approver is assigned to the tool, shop or group, or those people have no
+Slack link). It posts one list of them (tool, shop and age, up to 10) to the Members Relations channel, at most once
+a day (Redis key `checkout_request_digest:unassigned:<date>`, 36-hour expiry), and repeats daily until somebody is
+assigned. A failed post releases the key, is reported, and is retried by the next run; it never stops the digests.
 The tool's announce-channel post for a new request is unchanged and immediate.
 
 `CheckoutRequestReminderJob` runs daily at 12:30 UTC (about 8:30 am Eastern) and as the

@@ -7,7 +7,10 @@ class Rental
   include ActiveModel::Serializers::JSON
   include Publishable
 
-  STATUSES = %w[pending pending_agreement active vacating cancelled denied agreement_denied].freeze
+  STATUSES = %w[pending pending_agreement active vacating awaiting_verification cancelled denied agreement_denied].freeze
+  # A spot is held until staff confirm it is empty: `awaiting_verification` is a rental the member
+  # says they have vacated, not yet confirmed by staff, so it is not released.
+  HELD_STATUSES = %w[active pending pending_agreement vacating awaiting_verification].freeze
 
   belongs_to :member
 
@@ -19,15 +22,21 @@ class Rental
   field :notes,                type: String
   field :status,               type: String, default: "active"
   field :rental_spot_id,       type: String
+  # When the member said they had vacated (status awaiting_verification), for the staff reminder.
+  field :vacated_reported_at,  type: Time
 
   search_in :number, member: %i[firstname lastname email]
 
   after_destroy :publish_destroy
 
   validates :number, presence: true, uniqueness: {
-    conditions: -> { where(:status.in => ["active", "pending", "pending_agreement", "vacating"]) }
+    conditions: -> { where(:status.in => HELD_STATUSES) }
   }
   validates :status, inclusion: { in: STATUSES }
+
+  def awaiting_verification?
+    status == "awaiting_verification"
+  end
 
   def rental_spot
     return nil if rental_spot_id.blank?

@@ -245,6 +245,8 @@ class Admin::SystemConfigsController < AdminController
       CheckoutRequestReminderJob.perform_later
     when 'checkout_request_digest'
       CheckoutRequestDigestJob.perform_later
+    when 'rental_vacating_check'
+      RentalVacatingCheckJob.perform_later
     end
 
     render json: { message: "#{job_key} enqueued successfully" }, status: :ok

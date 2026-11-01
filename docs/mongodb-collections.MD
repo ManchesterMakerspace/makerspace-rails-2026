@@ -111,7 +111,7 @@ conditions are included where they are part of the index contract.
 | `rejections` | `RejectionCard` | Rejected/unassigned access-card scans available for later assignment. | None |
 | `rental_spots` | `RentalSpot` | Physical rentable locations or storage units and their rental-type configuration. | None |
 | `rental_types` | `RentalType` | Rental product categories and links to invoice options. | Unique `{ display_name: 1 }`, partial when `display_name` is a string |
-| `rentals` | `Rental` | A member's rental assignment, agreement, subscription, expiration, and lifecycle status. | `{ member_id: 1 }` (deployment task) |
+| `rentals` | `Rental` | A member's rental assignment, agreement, subscription, expiration, and lifecycle status (including `awaiting_verification`, with `vacated_reported_at` set when the member reported vacating). | `{ member_id: 1 }` (deployment task) |
 | `reservation_blackouts` | `ReservationBlackout` | One-time or recurring periods when a shop cannot be reserved. | `{ shop_id: 1, recurrence: 1, start_date: 1, end_date: 1 }` |
 | `reservations` | `Reservation` | Shop/tool reservation intervals, approval state, invoicing, and external-calendar synchronization. | Sparse `{ invoice: 1 }`; `{ shop_id: 1, status: 1, start_at: 1, end_at: 1 }`; `{ member_id: 1, status: 1, start_at: 1, end_at: 1 }`; `{ tool_ids: 1, status: 1, start_at: 1, end_at: 1 }` |
 | `shortcodes` | `Shortcode` | Permanent mappings from generated short codes to deep-link target URLs. | Full unique `{ code: 1 }`; full unique `{ target_url: 1 }` |

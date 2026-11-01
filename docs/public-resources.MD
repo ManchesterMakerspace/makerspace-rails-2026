@@ -125,3 +125,10 @@ PUT update_setting also accepts key=slack_conflict_scan_size (a whole number fro
 identity conflicts check looks at. GET /api/admin/slack_identity_conflicts now returns
 scan_size, live_check may be scanning, and a progress object accompanies it while a
 check is under way; see jobs-tasks-services.MD. Still admin and board only.
+
+Rentals: a rental's `status` may now be `awaiting_verification` (the member says they have vacated; the spot stays
+held). DELETE /api/rentals/:id/cancel with vacated=true and POST /api/rentals/:id/mark_vacated by the rental's own
+member now set it, instead of cancelling. New POST /api/rentals/:id/verify_vacated lets a resource manager,
+board member or admin (not the rental's own member) confirm the space is empty: it cancels the rental. 422 unless
+the rental is awaiting verification; 403 for anyone else. POST run_job also accepts key=rental_vacating_check.
+Staff calling mark_vacated on another member's vacating rental still cancels it at once.
