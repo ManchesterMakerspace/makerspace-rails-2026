@@ -302,30 +302,60 @@ module Service
       merge_persisted_conflicts(live_conflicts)
     end
 
-    # The admin page's version of detect_conflicts. The live scan pages through
-    # Slack's whole directory inside the web request, which can outlast Heroku's
-    # 30 second limit (the request is then cut off with a 503). So its result is
-    # cached for a few minutes, it gives up after LIVE_SCAN_DEADLINE_SECONDS, and
-    # when it cannot finish the saved conflicts are still returned. Returns
-    # [conflicts, status] where status is :fresh (just scanned), :cached, or
-    # :unavailable (the live check failed; only saved conflicts are included).
+    # The admin page's version of detect_conflicts. A scan of Slack's whole user directory can outlast
+    # Heroku's 30 second request limit (the request is then cut off with a 503), so the page scans in
+    # pieces: each request checks as many Slack accounts as fit in LIVE_SCAN_CHUNK_SECONDS, saves where it
+    # stopped and what it found in Redis, and the page asks again until the scan is complete. Progress is
+    # never thrown away by a slow or failed piece. A finished scan is cached for a few minutes.
+    #
+    # Returns [conflicts, status] where status is
+    #   :fresh        a scan just finished
+    #   :cached       a scan from the last few minutes
+    #   :scanning     a scan is under way; conflicts holds what it has found so far plus the saved ones
+    #                 (see .live_scan_progress for how far it has got)
+    #   :unavailable  the scan failed repeatedly; only the saved conflicts are included
+    # The scan only reads: it writes no audit entries and posts nothing to Slack.
     LIVE_CONFLICTS_CACHE_KEY = 'slack_identity_conflicts:live'.freeze
     LIVE_CONFLICTS_FAILURE_KEY = 'slack_identity_conflicts:live_failed'.freeze
+    LIVE_SCAN_STATE_KEY = 'slack_identity_conflicts:scan'.freeze
+    LIVE_SCAN_LOCK_KEY = 'slack_identity_conflicts:scan_lock'.freeze
+    LIVE_SCAN_LAST_TOTAL_KEY = 'slack_identity_conflicts:last_total'.freeze
     LIVE_CONFLICTS_TTL_SECONDS = 300
     LIVE_CONFLICTS_FAILURE_TTL_SECONDS = 60
-    LIVE_SCAN_DEADLINE_SECONDS = 20
-
-    class LiveScanTimeout < StandardError; end
+    LIVE_SCAN_STATE_TTL_SECONDS = 900
+    LIVE_SCAN_LAST_TOTAL_TTL_SECONDS = 30 * 24 * 60 * 60
+    LIVE_SCAN_CHUNK_SECONDS = 12
+    LIVE_SCAN_LOCK_SECONDS = 30
+    LIVE_SCAN_MAX_FAILURES = 3
+    LIVE_SCAN_DEFAULT_RETRY_AFTER_SECONDS = 5
 
     def self.detect_conflicts_for_page
       live, status = cached_live_conflicts
       [merge_persisted_conflicts(live), status]
     end
 
-    # Resolving a conflict changes what a fresh scan would find, so the page
-    # clears the cached result rather than showing a resolved conflict again.
+    # How far an unfinished scan has got: { checked:, estimated_total:, waiting_seconds: }, or nil when no
+    # scan is under way. estimated_total is the size of the last finished scan (nil the first time), and
+    # waiting_seconds is how long Slack has asked us to wait before the next request.
+    def self.live_scan_progress
+      state = load_scan_state
+      return nil unless state
+
+      last_total = REDIS.get(LIVE_SCAN_LAST_TOTAL_KEY).to_i
+      {
+        checked: state[:checked].to_i,
+        estimated_total: last_total.positive? ? last_total : nil,
+        waiting_seconds: [(state[:retry_at].to_f - Time.now.to_f).ceil, 0].max
+      }
+    rescue StandardError => e
+      Rails.logger.warn("[SlackUserSync] could not read the scan progress: #{e.class} #{e.message}")
+      nil
+    end
+
+    # Resolving a conflict changes what a fresh scan would find, so the page clears the cached result and any
+    # scan in progress rather than showing a resolved conflict again.
     def self.clear_live_conflicts_cache
-      REDIS.del(LIVE_CONFLICTS_CACHE_KEY, LIVE_CONFLICTS_FAILURE_KEY)
+      REDIS.del(LIVE_CONFLICTS_CACHE_KEY, LIVE_CONFLICTS_FAILURE_KEY, LIVE_SCAN_STATE_KEY, LIVE_SCAN_LOCK_KEY)
     rescue StandardError => e
       Rails.logger.warn("[SlackUserSync] could not clear the conflicts cache: #{e.class} #{e.message}")
     end
@@ -333,13 +363,10 @@ module Service
     def self.cached_live_conflicts
       cached = REDIS.get(LIVE_CONFLICTS_CACHE_KEY)
       return [JSON.parse(cached, symbolize_names: true), :cached] if cached
-      # A scan that just failed is not retried by every reload while Slack is struggling.
+      # A scan that just failed repeatedly is not retried by every reload while Slack is struggling.
       return [[], :unavailable] if REDIS.get(LIVE_CONFLICTS_FAILURE_KEY)
 
-      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + LIVE_SCAN_DEADLINE_SECONDS
-      conflicts = live_conflicts(deadline: deadline)
-      REDIS.set(LIVE_CONFLICTS_CACHE_KEY, conflicts.to_json, ex: LIVE_CONFLICTS_TTL_SECONDS)
-      [conflicts, :fresh]
+      advance_live_scan
     rescue StandardError => e
       Rails.logger.error("[SlackUserSync] live conflict scan unavailable: #{e.class} #{e.message}")
       begin
@@ -350,6 +377,112 @@ module Service
       [[], :unavailable]
     end
     private_class_method :cached_live_conflicts
+
+    # Runs one piece of the scan (or, when another request is already running one, just reports where the
+    # scan is). The state lives in Redis: the Slack cursor of the page being read, how many of its accounts
+    # are done, the conflicts found so far, and how many pieces in a row have failed.
+    def self.advance_live_scan
+      unless ::Service::SlackConnector.api_token_present?
+        REDIS.set(LIVE_CONFLICTS_CACHE_KEY, [].to_json, ex: LIVE_CONFLICTS_TTL_SECONDS)
+        return [[], :fresh]
+      end
+
+      state = load_scan_state || new_scan_state
+      # A second admin, or a page that asks again before the last piece is done, must not run the same
+      # scan twice at once.
+      return [state[:conflicts], :scanning] unless REDIS.set(LIVE_SCAN_LOCK_KEY, '1', nx: true, ex: LIVE_SCAN_LOCK_SECONDS)
+
+      begin
+        finished = run_scan_chunk(state)
+        state[:failures] = 0
+      rescue Slack::Web::Api::Errors::TooManyRequestsError => e
+        # Slack asked us to slow down: not a failure. Keep the progress and wait as long as it said.
+        wait = e.respond_to?(:retry_after) ? e.retry_after.to_i : 0
+        state[:retry_at] = Time.now.to_f + (wait.positive? ? wait : LIVE_SCAN_DEFAULT_RETRY_AFTER_SECONDS)
+        finished = false
+      rescue StandardError => e
+        Rails.logger.error("[SlackUserSync] live conflict scan piece failed: #{e.class} #{e.message}")
+        state[:failures] = state[:failures].to_i + 1
+        if state[:failures] >= LIVE_SCAN_MAX_FAILURES
+          REDIS.del(LIVE_SCAN_STATE_KEY)
+          REDIS.set(LIVE_CONFLICTS_FAILURE_KEY, '1', ex: LIVE_CONFLICTS_FAILURE_TTL_SECONDS)
+          Rails.logger.error("[SlackUserSync] live conflict scan unavailable: #{e.class} #{e.message}")
+          return [[], :unavailable]
+        end
+        finished = false
+      ensure
+        REDIS.del(LIVE_SCAN_LOCK_KEY)
+      end
+
+      if finished
+        REDIS.set(LIVE_CONFLICTS_CACHE_KEY, state[:conflicts].to_json, ex: LIVE_CONFLICTS_TTL_SECONDS)
+        REDIS.set(LIVE_SCAN_LAST_TOTAL_KEY, state[:checked], ex: LIVE_SCAN_LAST_TOTAL_TTL_SECONDS)
+        REDIS.del(LIVE_SCAN_STATE_KEY)
+        [state[:conflicts], :fresh]
+      else
+        save_scan_state(state)
+        [state[:conflicts], :scanning]
+      end
+    end
+    private_class_method :advance_live_scan
+
+    # Reads Slack's user directory from where the saved state left off, for up to LIVE_SCAN_CHUNK_SECONDS or
+    # SystemConfig.slack_conflict_scan_size accounts, whichever comes first (always at least one account, so a
+    # slow Slack call cannot stall the scan). The same number is the size of the pages asked of Slack, fixed
+    # when the scan starts so a saved cursor and offset stay meaningful if the setting changes. Returns true
+    # when the whole directory has been read, false when there is more. A page is resumed by asking Slack for
+    # it again with the saved cursor and skipping the accounts already done.
+    def self.run_scan_chunk(state)
+      return false if state[:retry_at].to_f > Time.now.to_f
+
+      size = (state[:size] ||= ::SystemConfig.slack_conflict_scan_size)
+      client = ::Service::SlackConnector.client
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + LIVE_SCAN_CHUNK_SECONDS
+      out_of_time = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline }
+      processed = 0
+
+      loop do
+        response = client.users_list(limit: size, cursor: state[:cursor].presence)
+        raise 'Slack API returned ok=false' unless response['ok']
+
+        response['members'].each_with_index do |slack_user, index|
+          next if index < state[:offset].to_i
+          return false if processed.positive? && (processed >= size || out_of_time.call)
+
+          conflict = conflict_for_slack_user(slack_user)
+          state[:conflicts] << conflict if conflict
+          state[:offset] = index + 1
+          state[:checked] = state[:checked].to_i + 1
+          processed += 1
+        end
+
+        next_cursor = response.dig('response_metadata', 'next_cursor').to_s
+        return true if next_cursor.blank?
+
+        state[:cursor] = next_cursor
+        state[:offset] = 0
+        return false if processed.positive? && (processed >= size || out_of_time.call)
+      end
+    end
+    private_class_method :run_scan_chunk
+
+    def self.new_scan_state
+      { cursor: nil, offset: 0, checked: 0, conflicts: [], failures: 0, retry_at: nil, size: nil, started_at: Time.now.to_f }
+    end
+    private_class_method :new_scan_state
+
+    def self.load_scan_state
+      raw = REDIS.get(LIVE_SCAN_STATE_KEY)
+      raw ? JSON.parse(raw, symbolize_names: true) : nil
+    rescue JSON::ParserError
+      nil
+    end
+    private_class_method :load_scan_state
+
+    def self.save_scan_state(state)
+      REDIS.set(LIVE_SCAN_STATE_KEY, state.to_json, ex: LIVE_SCAN_STATE_TTL_SECONDS)
+    end
+    private_class_method :save_scan_state
 
     def self.merge_persisted_conflicts(conflicts)
       conflicts = conflicts.dup
@@ -377,57 +510,21 @@ module Service
     end
     private_class_method :merge_persisted_conflicts
 
-    def self.live_conflicts(deadline: nil)
+    # The whole scan in one go, with no time limit (used by .detect_conflicts, not by the admin page).
+    def self.live_conflicts
       return [] unless ::Service::SlackConnector.api_token_present?
 
       client = ::Service::SlackConnector.client
       conflicts = []
       cursor = nil
-      past_deadline = -> { deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline }
 
       loop do
-        raise LiveScanTimeout, 'live Slack scan ran out of time' if past_deadline.call
-
         response = client.users_list(limit: 200, cursor: cursor)
         raise 'Slack API returned ok=false' unless response['ok']
 
         response['members'].each do |slack_user|
-          raise LiveScanTimeout, 'live Slack scan ran out of time' if past_deadline.call
-
-          next if slack_user['is_bot'] || slack_user['deleted'] || slack_user['id'] == 'USLACKBOT'
-
-          slack_id    = slack_user['id']
-          slack_email = slack_user.dig('profile', 'email').to_s.strip.downcase
-          name        = slack_user['name'].to_s.strip
-          real_name   = slack_user.dig('profile', 'real_name').to_s.strip
-          next if slack_email.blank?
-
-          existing = SlackUser.unscoped.where(slack_id: slack_id).first
-          next if existing && quarantined_identity?(existing)
-
-          member = resolve_member(
-            existing: existing,
-            slack_email: slack_email,
-            slack_id: slack_id,
-            display_name: real_name.presence || name,
-            source: 'conflict scan'
-          )
-          next unless member
-          next unless member.active_membership_status?
-
-          conflict = existing ? active_identity_conflict(member, excluding: existing) : active_identity_conflict(member)
-          next unless conflict
-
-          conflicts << {
-            slack_id: slack_id,
-            slack_name: real_name.presence || name,
-            slack_email: slack_email,
-            member_id: member.id.to_s,
-            member_name: member.fullname,
-            conflicting_slack_id: conflict.slack_id,
-            conflicting_slack_name: conflict.real_name.presence || conflict.name,
-            conflicting_slack_email: conflict.slack_email
-          }
+          conflict = conflict_for_slack_user(slack_user)
+          conflicts << conflict if conflict
         end
 
         cursor = response.dig('response_metadata', 'next_cursor').to_s
@@ -437,6 +534,41 @@ module Service
       conflicts
     end
     private_class_method :live_conflicts
+
+    # One entry of Slack's user directory -> the conflict it represents, or nil. Read-only: unlike
+    # .resolve_member it never reports an email mismatch (an audit entry and a logs-channel post), which a
+    # page that scans again every few minutes would repeat each time. The regular sync does that reporting.
+    def self.conflict_for_slack_user(slack_user)
+      return nil if slack_user['is_bot'] || slack_user['deleted'] || slack_user['id'] == 'USLACKBOT'
+
+      slack_id    = slack_user['id']
+      slack_email = slack_user.dig('profile', 'email').to_s.strip.downcase
+      name        = slack_user['name'].to_s.strip
+      real_name   = slack_user.dig('profile', 'real_name').to_s.strip
+      return nil if slack_email.blank?
+
+      existing = SlackUser.unscoped.where(slack_id: slack_id).first
+      return nil if existing && quarantined_identity?(existing)
+
+      member = existing&.member || Member.find_by(email: slack_email)
+      return nil unless member
+      return nil unless member.active_membership_status?
+
+      conflict = existing ? active_identity_conflict(member, excluding: existing) : active_identity_conflict(member)
+      return nil unless conflict
+
+      {
+        slack_id: slack_id,
+        slack_name: real_name.presence || name,
+        slack_email: slack_email,
+        member_id: member.id.to_s,
+        member_name: member.fullname,
+        conflicting_slack_id: conflict.slack_id,
+        conflicting_slack_name: conflict.real_name.presence || conflict.name,
+        conflicting_slack_email: conflict.slack_email
+      }
+    end
+    private_class_method :conflict_for_slack_user
 
     # Admin-driven resolution: unlink whichever other active identity the
     # member currently holds, then link the chosen slack_id via the normal

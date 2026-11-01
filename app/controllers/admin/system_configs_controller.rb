@@ -45,6 +45,8 @@ class Admin::SystemConfigsController < AdminController
     # Member reminder emails
     SystemConfig::FOB_REMINDER_DAYS,
     SystemConfig::SIGNUP_REMINDER_DAYS,
+    # Slack Identity Conflicts page scan size (edited from that page)
+    SystemConfig::SLACK_CONFLICT_SCAN_SIZE,
   ].freeze
 
   ALL_EDITABLE_KEYS = (FLAG_KEYS + SETTING_KEYS).freeze
@@ -191,6 +193,9 @@ class Admin::SystemConfigsController < AdminController
       SystemConfig.set(key, value)
     end
 
+    # A scan in progress was started with the old piece size; start the next one with the new size.
+    Service::SlackUserSync.clear_live_conflicts_cache if key == SystemConfig::SLACK_CONFLICT_SCAN_SIZE
+
     # Audit log goes to logs channel for all setting changes.
     # volunteer_discount_id also posts to treasurer via notify_volunteer_discount_changed above —
     # that post is intentionally left in place for treasurer visibility.
@@ -289,6 +294,14 @@ class Admin::SystemConfigsController < AdminController
       raise Error::Forbidden.new unless current_member.role == 'admin'
       return true if value.match?(/\A[1-9]\d*\z/)
       render json: { error: 'ticket_open_limit must be a positive integer' }, status: :unprocessable_entity
+      return false
+    end
+    if key == SystemConfig::SLACK_CONFLICT_SCAN_SIZE
+      min = SystemConfig::SLACK_CONFLICT_SCAN_SIZE_MIN
+      max = SystemConfig::SLACK_CONFLICT_SCAN_SIZE_MAX
+      return true if value.match?(/\A\d+\z/) && value.to_i.between?(min, max)
+      render json: { error: "Slack accounts per scan step must be a whole number from #{min} to #{max}" },
+             status: :unprocessable_entity
       return false
     end
     if [SystemConfig::FOB_REMINDER_DAYS, SystemConfig::SIGNUP_REMINDER_DAYS].include?(key)

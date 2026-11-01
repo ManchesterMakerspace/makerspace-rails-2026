@@ -151,6 +151,15 @@ RSpec.describe 'System configuration', type: :request do
             expect(Service::AuditLogger).to have_received(:log).with(hash_including(field_changes: { 'fob_reminder_days' => ['', '10'] }))
           end
         end
+        context 'Slack conflict scan size' do
+          let(:setting) { { key: 'slack_conflict_scan_size', value: '50' } }
+          before { allow(Service::SlackUserSync).to receive(:clear_live_conflicts_cache) }
+          run_test! do
+            expect(SystemConfig.slack_conflict_scan_size).to eq(50)
+            expect(Service::SlackUserSync).to have_received(:clear_live_conflicts_cache)
+            expect(Service::AuditLogger).to have_received(:log).with(hash_including(field_changes: { 'slack_conflict_scan_size' => ['', '50'] }))
+          end
+        end
         context 'ticket bounty credit maximum' do
           let(:setting) { { key: 'ticket_bounty_max_credit', value: '15' } }
           before do
@@ -170,6 +179,15 @@ RSpec.describe 'System configuration', type: :request do
         context 'invalid ticket bounty maximum' do
           let(:setting) { { key: 'ticket_bounty_max_credit', value: 'NaN' } }
           run_test! { expect(SystemConfig.get('ticket_bounty_max_credit')).to be_nil }
+        end
+        %w[9 501 0 -1 2.5 abc].each do |bad_size|
+          context "Slack conflict scan size of #{bad_size.inspect}" do
+            let(:setting) { { key: 'slack_conflict_scan_size', value: bad_size } }
+            run_test! do |response|
+              expect(SystemConfig.get('slack_conflict_scan_size')).to be_nil
+              expect(JSON.parse(response.body)['error']).to match(/10 to 500/)
+            end
+          end
         end
         %w[0 15 -1 3.5 abc].each do |bad_days|
           context "reminder days of #{bad_days.inspect}" do
