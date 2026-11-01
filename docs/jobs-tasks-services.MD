@@ -417,14 +417,13 @@ an unscheduled job as unused.
 | `bundle exec rake fix_tickets:recover_deliveries` | Every 10 minutes | Runs `FixTicketDeliveryRecoveryJob`. |
 | `bundle exec rails runner "FixTicketAssigneeExpirationJob.perform_now"` | Daily 23:00 | |
 | `bundle exec rake checkout_expiration_notice` | Daily 23:00 | Runs `CheckoutExpirationNoticeJob`. |
+| `bundle exec rails runner "RentalVacatingCheckJob.perform_now"` | Daily 13:30 | The staff reminder about vacating and awaiting-verification rentals. It never changes a rental, but before the vacated-verification change was deployed this class cancelled expired vacating rentals itself. Added 2026-11-01. |
 
 Use `perform_now` in these commands, not `perform_later`: a Scheduler process exits when its script
 ends. `Service::JobDrain` (see "Scheduled processes wait for queued jobs") now keeps work a job queues
 from being lost, but `perform_now` also records the run and surfaces errors at the point they happen.
 The profile sync and the volunteer reminder used `perform_later` until 2026-11-01 and never ran
-unattended: their last recorded runs were manual. `RentalVacatingCheckJob` is not in this table yet;
-schedule it daily (for example `bundle exec rails runner "RentalVacatingCheckJob.perform_now"` at 14:00)
-once the vacated-verification change below is deployed.
+unattended: their last recorded runs were manual.
 
 ### Scheduled processes wait for queued jobs
 
