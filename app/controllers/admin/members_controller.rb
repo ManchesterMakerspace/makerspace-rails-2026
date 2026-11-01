@@ -154,11 +154,23 @@ class Admin::MembersController < AdminController
   # Marks a duplicate/abandoned ("ghost") account as deleted -- revokes its
   # access, hides it from normal member queries, and frees its email for
   # reuse. Refuses to run on a currently-active, unexpired, or subscribed
-  # member. Never notifies the member.
+  # member, or on one with an open invoice. Removes the member from Slack and
+  # the managed Google Drive folders and sets the status to inactive. Never
+  # notifies the member.
+  #
+  # If a Slack or Drive removal fails, responds 422 with manual_removal_required: true
+  # and the list of problems. The admin removes them by hand and repeats the request
+  # with manual_removal_confirmed=true to finish; that confirmation is audited.
   def soft_delete
-    ::Service::MemberSoftDelete.delete!(@member, actor: current_member)
+    confirmed = ActiveModel::Type::Boolean.new.cast(params[:manual_removal_confirmed]) || false
+    ::Service::MemberSoftDelete.delete!(@member, actor: current_member, manual_removal_confirmed: confirmed)
     render json: @member, serializer: MemberSerializer, adapter: :attributes,
       include_provisioning: true and return
+  rescue Service::MemberSoftDelete::ManualRemovalRequiredError => e
+    render json: { message: e.message, manual_removal_required: true, problems: e.problems },
+      status: :unprocessable_content and return
+  rescue Service::MemberSoftDelete::OpenInvoicesError => e
+    render json: { message: e.message, open_invoices: e.count }, status: :unprocessable_content and return
   rescue Service::MemberSoftDelete::ActiveMembershipError, Service::MemberSoftDelete::AlreadyDeletedError => e
     render json: { message: e.message }, status: :unprocessable_content and return
   end

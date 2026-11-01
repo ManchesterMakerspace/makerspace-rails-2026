@@ -65,6 +65,7 @@ first login, and admin member creation).
 | Entry point | Who/when | Possible transition |
 | --- | --- | --- |
 | `PATCH /api/admin/members/:id` or `PUT /api/admin/members/:id` (`Admin::MembersController#update`) | An authenticated admin or board member can include `status` in the request. The controller passes it to `Member#update!`, so the model's inclusion validation applies. Revocation and suspension also trigger their respective cleanup/session-invalidating behavior. | The current value to any supported value supplied by the caller. |
+| `POST /api/admin/members/:id/soft_delete` (`Admin::MembersController#soft_delete`) | An admin soft-deletes a duplicate or abandoned account (`Service::MemberSoftDelete.delete!`). After the checks pass and the member has been removed from Slack and the managed Drive folders, the status is set to `inactive` so the member's cards go invalid. `revoked` and `suspended` are deliberate blocks and are kept. Restoring (`POST .../restore`) does not change the status; an admin reactivates the account. | Any status except `revoked` and `suspended` to `inactive`. |
 | `POST /api/admin/cards` (`Admin::CardsController#create`) | Creating a card runs the `Card#activate_pending_member` `after_create` callback. The callback does nothing unless the associated existing member is pending. | `pending` to `activeMember`. |
 
 The card transition belongs to the model callback, not only to the HTTP
@@ -108,7 +109,9 @@ are skipped when held payments are applied at the first fob.
 - No scheduled job or Rake task changes an existing member's status.
   Expiration also never causes an automatic status transition.
 - The status-writing paths in the model layer are `Card#activate_pending_member`
-  and `Member#reactivate_for_payment!`, both described above.
+  and `Member#reactivate_for_payment!`, both described above. The soft delete
+  (`Service::MemberSoftDelete`) writes `inactive` with an ordinary callback-running
+  update, so provisioning is queued but finds no member once the account is hidden.
 - As with any persisted model field, maintenance code or a Rails console can
   change the value directly (for example, `member.update!(status: ...)` or
   assignment followed by `save!`). These validated writes accept only the

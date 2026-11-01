@@ -139,6 +139,13 @@ RSpec.describe Admin::MembersController, type: :controller do
     end
 
     describe "POST #soft_delete" do
+      # The real teardown would call Slack and Google with the dummy test credentials.
+      before do
+        allow(Service::MemberAccess).to receive(:full_deprovision).and_return(
+          slack: { status: :not_found }, gdrive_resources: { status: :not_found }, gdrive_transfer_share: { status: :not_found }
+        )
+      end
+
       it "soft-deletes an eligible member and returns it" do
         member = create(:member, status: "inactive")
 
@@ -165,6 +172,63 @@ RSpec.describe Admin::MembersController, type: :controller do
         post :soft_delete, params: { id: member.to_param }, format: :json
 
         expect(response).to have_http_status(422)
+      end
+
+      it "sets the status to inactive" do
+        member = create(:member, status: "activeMember", expirationTime: nil)
+
+        post :soft_delete, params: { id: member.to_param }, format: :json
+
+        expect(response).to have_http_status(200)
+        expect(member.reload.status).to eq("inactive")
+      end
+
+      it "refuses when the member has an open invoice and reports how many" do
+        member = create(:member, status: "inactive", expirationTime: nil)
+        create(:invoice, member: member, transaction_id: "held_txn")
+
+        post :soft_delete, params: { id: member.to_param }, format: :json
+
+        body = JSON.parse(response.body)
+        expect(response).to have_http_status(422)
+        expect(body["message"]).to match(/1 open invoice/)
+        expect(body["open_invoices"]).to eq(1)
+        expect(member.reload.merged_at).to be_nil
+      end
+
+      context "when removing the member from Slack or Drive fails" do
+        let(:member) { create(:member, status: "inactive", expirationTime: nil) }
+
+        before do
+          allow(Service::MemberAccess).to receive(:full_deprovision).and_return(
+            slack: { status: :error, message: "not_allowed_token_type" },
+            gdrive_resources: { status: :not_found }, gdrive_transfer_share: { status: :not_found }
+          )
+        end
+
+        it "stops, asks for a manual-removal confirmation, and leaves the account visible" do
+          post :soft_delete, params: { id: member.to_param }, format: :json
+
+          body = JSON.parse(response.body)
+          expect(response).to have_http_status(422)
+          expect(body["manual_removal_required"]).to eq(true)
+          expect(body["problems"]).to eq(["Slack: not_allowed_token_type"])
+          expect(member.reload.merged_at).to be_nil
+        end
+
+        it "finishes once the admin confirms they removed the member by hand" do
+          post :soft_delete, params: { id: member.to_param, manual_removal_confirmed: "true" }, format: :json
+
+          expect(response).to have_http_status(200)
+          expect(member.reload.merged_at).to be_present
+        end
+
+        it "does not treat anything but a true value as a confirmation" do
+          post :soft_delete, params: { id: member.to_param, manual_removal_confirmed: "false" }, format: :json
+
+          expect(response).to have_http_status(422)
+          expect(member.reload.merged_at).to be_nil
+        end
       end
     end
 

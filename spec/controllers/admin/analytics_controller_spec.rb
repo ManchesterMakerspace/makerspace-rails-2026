@@ -22,6 +22,19 @@ RSpec.describe Admin::AnalyticsController, type: :controller do
     expect(JSON.parse(response.body)['membersWithExpiringPaymentMethods']).to eq(4)
   end
 
+  it 'leaves soft-deleted accounts out of the signups per month' do
+    create(:member, startDate: Time.utc(2024, 5, 10))
+    create(:member, startDate: Time.utc(2024, 5, 20))
+    deleted = create(:member, startDate: Time.utc(2024, 5, 25))
+    deleted.update_attribute(:merged_at, Time.current)
+
+    get :member_growth, params: { year: 2024 }, format: :json
+
+    expect(response).to have_http_status(:ok)
+    may = JSON.parse(response.body).find { |row| row['month'] == '2024-05' }
+    expect(may['count']).to eq(2)
+  end
+
   it 'includes the count of lost members' do
     get :index, format: :json
 

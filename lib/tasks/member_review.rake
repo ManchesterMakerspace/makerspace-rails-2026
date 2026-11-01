@@ -43,7 +43,7 @@ task :member_review => :environment do
       now_ms = Time.now.to_i * 1000
       # Only rentals still marked active need the member to act; a vacating rental is already
       # being ended and staff see it in the 🟡 posts.
-      @expired_with_rentals = Rental.where(status: "active").map(&:member).compact.select do |member|
+      @expired_with_rentals = Rental.where(status: "active").map(&:member).compact.reject { |member| member.merged_at.present? }.select do |member|
         member.expirationTime.nil? ||
         member.expirationTime < now_ms ||
         !member.active_membership_status?

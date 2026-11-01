@@ -6848,6 +6848,140 @@
         }
       }
     },
+    "/admin/members/{id}/soft_delete": {
+      "post": {
+        "summary": "Soft-delete a duplicate or abandoned account (admin or board)",
+        "tags": [
+          "Members"
+        ],
+        "description": "Hides the account from ordinary member lists and search, frees its email for reuse, removes the member from Slack and the managed Google Drive folders, cancels any subscription, sets the status to inactive (revoked and suspended are kept) and writes an audit entry. The member is never notified, and mail addressed to a soft-deleted member is dropped. Refused with 422 when the member has an active unexpired membership or live subscription, or an open invoice (not settled and not refunded, which includes a paid payment held for a fob). If a Slack or Drive removal fails, or was skipped for a member who has that access, it is refused with 422 and manual_removal_required: true; remove them by hand and repeat with manual_removal_confirmed=true.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Member id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "manual_removal_confirmed",
+            "in": "query",
+            "required": false,
+            "description": "Set to true after removing the member from Slack and Drive by hand, to finish a delete that stopped with manual_removal_required.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account was soft-deleted and the member is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The delete was refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "open_invoices": {
+                      "type": "integer",
+                      "description": "Present when the refusal is because of open invoices."
+                    },
+                    "manual_removal_required": {
+                      "type": "boolean",
+                      "description": "True when a Slack or Drive removal still has to be done by hand."
+                    },
+                    "problems": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "What could not be removed automatically; present with manual_removal_required."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/members/{id}/restore": {
+      "post": {
+        "summary": "Restore a soft-deleted account (admin or board)",
+        "tags": [
+          "Members"
+        ],
+        "description": "Makes the account appear in member lists and search again. It does not change the status (an account deleted through the portal stays inactive until an admin reactivates it) and does not re-grant Slack or Drive access.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Member id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account was restored and the member is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The account is not deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/cards/lookup": {
       "get": {
         "summary": "Look up an NFC or exact assigned legacy UID (active admin or board)",
