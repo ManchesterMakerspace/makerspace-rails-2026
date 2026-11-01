@@ -345,6 +345,7 @@ job wrapper records `job_status_<admin key>` with a completion time and
 | `volunteer_event_reminder` | `volunteer_event_reminder` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Sends/retries assigned shop RM review DMs for submitted tasks and dated open events ready for closure; posts or updates Members Relations Channel reminders after more than five days and retries saved final-outcome updates. See the volunteer approval reminder workflow below. Individual delivery failures do not fail the complete scan. |
 | `checkout_request_reminder` | `checkout_request_reminder` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'`. | Posts a "still waiting" reminder in the configured Resource Managers Slack channel (`slack_channel_rm`, default `resource_managers`) for every open checkout request that has been open for 5 days, then again at 10 and 15 days (three reminders in all, the third being the last); declines (as a system decision, audit-logged and DMed to the requester) a request still unrecorded 5 days after the third reminder; edits each posted reminder when its request is approved, declined, timed out or cancelled and retries any resolution edit that failed. Each reminder is recorded on the request, so a reminder is never posted twice. Individual failures are reported without stopping the scan. See the checkout request notifications section below. |
 | `checkout_request_digest` | `checkout_request_digest` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'`. | Sends each resource manager and assigned approver one Slack DM rolling up every open checkout request they can act on, grouped by requester with each tool, its shop, and its age in calendar days. A recipient is messaged only when there is a request new since their last digest, or an open request that is exactly 5, 10, 15, ... days old, and at most once a day; nothing is sent otherwise. Not sent to a requester about their own request, or to members without a linked Slack account or with suppressed notifications. Redis keys (`checkout_request_digest:MEMBER_ID:DATE`, `checkout_request_digest_last:MEMBER_ID`) prevent duplicates and track the last digest, and `checkout_request_digest_message:MEMBER_ID` remembers the last digest's Slack message so the next digest can edit it into a "replaced" stub; the daily key is released after a failed send. Individual failures are reported without stopping the run. Also posts one daily list to Members Relations of open requests nobody would receive a digest for, until someone is assigned. |
+| `rental_vacating_check` | `rental_vacating_check` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'RentalVacatingCheckJob.perform_now'`. | Reminds staff, in one Members Relations post, about rentals still `vacating` after their end date and rentals a member says they have vacated (`awaiting_verification`). It never changes a rental and posts nothing when none are waiting. Records its run status. |
 
 ### Triggering through the admin API
 
@@ -412,7 +413,6 @@ an unscheduled job as unused.
 | `bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Daily 14:30 | |
 | `bundle exec rails runner 'MemberReminderJob.perform_now'` | Daily 15:00 | Sends the fob and signup reminder emails, each only while its switch is on in Portal Settings, Jobs. Added 2026-10-31. |
 | `bin/rails runner "MemberProvisioningReconciliationJob.perform_now"` | Hourly at :20 | |
-
 | `bundle exec rails runner "MembershipExpirationNoticeJob.perform_now"` | Daily 11:30 | |
 | `bundle exec rake fix_tickets:recover_deliveries` | Every 10 minutes | Runs `FixTicketDeliveryRecoveryJob`. |
 | `bundle exec rails runner "FixTicketAssigneeExpirationJob.perform_now"` | Daily 23:00 | |
@@ -435,6 +435,7 @@ registers an `at_exit` hook (not in the test environment) that calls `Service::J
 adapter it waits for the pool to finish, giving up after 25 seconds, and for any other adapter it does nothing.
 This also makes a web dyno finish queued jobs when it shuts down, within the same 25 seconds. Code that sends
 with a direct Slack post (the checkout digest and reminder, for example) was never affected.
+
 The retired `volunteering:*` tasks (the volunteer spreadsheet) were never in this schedule
 and have been removed from the repository.
 
@@ -450,13 +451,18 @@ scheduler only after choosing appropriate times and considering the side effects
 | `member_review` | `RAILS_ENV=production bundle exec rake member_review` | Scheduled daily in Heroku Scheduler (see above); its built-in production Sunday guard makes other days a no-op, so it acts weekly. See the admin-job table for notifications and effects. |
 | `invoice_review` | `RAILS_ENV=production bundle exec rake invoice_review` | Scheduled daily in Heroku Scheduler (see above); its built-in production Sunday guard makes other days a no-op, so it acts weekly. See the admin-job table for report effects. |
 
-`RentalVacatingCheckJob` also says it should run nightly, but it has no Rake
-task and no entry in `config/schedule.rb`. If production policy requires it,
-invoke it with `RAILS_ENV=production bundle exec rails runner
-'RentalVacatingCheckJob.perform_now'`. It changes expired `vacating` rentals to
-`cancelled`, DMs the member, posts the cancellation notice to the Member
-Relations channel, and queues an ended-rental email. It rescues errors per
-rental, so a run can finish even when some rentals were not changed.
+`RentalVacatingCheckJob` is a daily reminder to staff and never changes a rental. It used to cancel
+expired `vacating` rentals itself, which freed a spot without anyone checking the space was empty. A spot is now
+released only by a person. A rental the member marks vacated (their own **Mark Vacated** click, or "Yes, I Have
+Vacated" in the cancel dialog) becomes `awaiting_verification` and still holds the spot; staff (resource manager,
+board member or admin, never the rental's own member) then check the space and use **Verify Vacated**
+(`POST /api/rentals/:id/verify_vacated`), which cancels the rental, sends the member the rental-ended notice and
+writes a `rental_vacated_verified` audit entry. Staff marking another member's `vacating` rental vacated is the
+same verification and releases it at once. `vacating` and `awaiting_verification` rentals both keep their spot
+unavailable (`RentalSpot#available?`). The job posts one Members Relations message listing rentals awaiting
+verification (with how long each has waited, from `vacated_reported_at`) and vacating rentals past their end date,
+and repeats daily until someone acts. Invoke it with `RAILS_ENV=production bundle exec rails runner
+'RentalVacatingCheckJob.perform_now'`; it is also the `rental_vacating_check` admin job.
 
 ## Manual operator Rake tasks
 
@@ -567,18 +573,18 @@ person's last digest, or when some open request is exactly 5, 10, 15, ... days o
 most once a day. Recipients with no linked Slack account or suppressed direct notifications
 (`revoked` or `suspended`) receive nothing. The new digest is always a fresh message (Slack does not notify on edits); the recipient's previous digest, tracked by a Redis key holding its channel and `ts` (30-day expiry), is then edited into a "Replaced by a newer digest below." stub, best effort. Redis keys per recipient track the day's send
 (36-hour expiry) and the time of the last digest (90-day expiry). There is no email fallback.
-The tool's announce-channel post for a new request is unchanged and immediate.
-
-`CheckoutRequestReminderJob` runs daily at 12:30 UTC (about 8:30 am Eastern) and as the
-`checkout_request_reminder` admin job. A request open for 5 calendar days gets a message in the
-Resource Managers channel (`slack_channel_rm`): "MEMBER requested checkout on TOOL (SHOP) on DATE
-and is still waiting. If this was already done in person, please record the checkout so this
 
 Each run also looks for open requests an approver could act on but that nobody would receive a digest for (the shop
 has no resource manager tagged, and no approver is assigned to the tool, shop or group, or those people have no
 Slack link). It posts one list of them (tool, shop and age, up to 10) to the Members Relations channel, at most once
 a day (Redis key `checkout_request_digest:unassigned:<date>`, 36-hour expiry), and repeats daily until somebody is
 assigned. A failed post releases the key, is reported, and is retried by the next run; it never stops the digests.
+The tool's announce-channel post for a new request is unchanged and immediate.
+
+`CheckoutRequestReminderJob` runs daily at 12:30 UTC (about 8:30 am Eastern) and as the
+`checkout_request_reminder` admin job. A request open for 5 calendar days gets a message in the
+Resource Managers channel (`slack_channel_rm`): "MEMBER requested checkout on TOOL (SHOP) on DATE
+and is still waiting. If this was already done in person, please record the checkout so this
 stops." It is reminded again at 10 and 15 days; the third reminder says it is the last and gives
 the automatic decline date, and no fourth is posted. Receipts are kept in the request's
 `reminders` hash keyed by reminder number; `reminder_open` marks a request whose posted reminders

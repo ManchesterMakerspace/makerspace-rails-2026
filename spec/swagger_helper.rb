@@ -1067,6 +1067,8 @@ RSpec.configure do |config|
             id: { type: :string },
             memberName: { type: :string },
             subscriptionId: { type: :string, 'x-nullable': true },
+            status: { type: :string, enum: Rental::STATUSES,
+                      description: 'awaiting_verification: the member says they have vacated; the spot is held until staff verify it is empty.' },
           },
           required: [:id, :memberName]
         }

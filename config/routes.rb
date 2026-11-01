@@ -145,6 +145,7 @@ Rails.application.routes.draw do
           delete :cancel
           delete :decline_agreement
           post   :mark_vacated
+          post   :verify_vacated
         end
       end
 

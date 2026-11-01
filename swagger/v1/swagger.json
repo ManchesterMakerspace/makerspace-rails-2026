@@ -2692,6 +2692,20 @@
               "subscriptionId": {
                 "type": "string",
                 "x-nullable": true
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "pending_agreement",
+                  "active",
+                  "vacating",
+                  "awaiting_verification",
+                  "cancelled",
+                  "denied",
+                  "agreement_denied"
+                ],
+                "description": "awaiting_verification: the member says they have vacated; the spot is held until staff verify it is empty."
               }
             },
             "required": [
@@ -13786,6 +13800,158 @@
         }
       }
     },
+    "/rentals/{id}/cancel": {
+      "delete": {
+        "summary": "Cancels the signed-in member's rental; vacated=true holds it for staff verification",
+        "tags": [
+          "Rentals"
+        ],
+        "operationId": "cancelRental",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vacated",
+            "in": "query",
+            "required": false,
+            "description": "true: the member says they have already vacated, so the rental becomes awaiting_verification. Otherwise it becomes vacating until its end date.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rental vacating, or awaiting verification when vacated=true",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rental"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the signed-in member's rental",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rentals/{id}/mark_vacated": {
+      "post": {
+        "summary": "Marks a vacating rental as vacated; staff on another member's rental release it, a member's own click waits for verification",
+        "tags": [
+          "Rentals"
+        ],
+        "operationId": "markRentalVacated",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rental awaiting verification (member) or cancelled (staff on another member's rental)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rental"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Neither the rental's member nor staff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Rental is not vacating",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rentals/{id}/verify_vacated": {
+      "post": {
+        "summary": "Staff (resource manager, board or admin) verify the space is empty and release a rental awaiting verification",
+        "tags": [
+          "Rentals"
+        ],
+        "operationId": "verifyRentalVacated",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rental cancelled and the member told it has ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rental"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not staff, or staff verifying their own rental",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Rental is not awaiting verification",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/shops/{id}": {
       "parameters": [
         {
@@ -17595,7 +17761,8 @@
                       "membership_expiration_notice",
                       "member_reminders",
                       "checkout_request_reminder",
-                      "checkout_request_digest"
+                      "checkout_request_digest",
+                      "rental_vacating_check"
                     ]
                   }
                 }
