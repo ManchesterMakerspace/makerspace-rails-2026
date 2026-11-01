@@ -390,7 +390,7 @@ values and would use the chosen scheduler's timezone.
 
 Production work is scheduled in the **Heroku Scheduler** add-on of `makerspace-interface-prod`,
 not by Whenever. The dashboard is the source of truth; this table records it as of
-2026-10-24 (all times UTC, Basic dyno). Change the dashboard first, then update this table.
+2026-11-01 (all times UTC, Basic dyno). Change the dashboard first, then update this table.
 A job that is in this repository but not in this table is not running in production *yet*.
 That does not make it dead: recent work often lands before its schedule entry is added, so
 check the job's age and author (`git log -S<name>`) and ask whoever added it before treating
@@ -404,14 +404,37 @@ an unscheduled job as unused.
 | `bundle exec rake card_expiration_check` | Daily 03:00 | |
 | `bundle exec rake reservations:rebuild_slack_canvases` | Daily 05:30 | |
 | `rake invoice_review` | Daily 06:30 | Built-in production Sunday guard, so it only does work on Sundays. |
-| `bin/rails runner "SlackProfileSyncJob.perform_later"` | Daily 07:00 | |
-| `bin/rails runner "VolunteerEventReminderJob.perform_later"` | Daily 08:00 | |
+| `bin/rails runner "SlackProfileSyncJob.perform_now"` | Daily 07:00 | Only does work while `slack_profile_sync_enabled` is on. |
+| `bin/rails runner "VolunteerEventReminderJob.perform_now"` | Daily 08:00 | |
+| `bundle exec rake slack:sync_users` | Daily 05:00 | Only does work while `slack_sync_enabled` is on. |
 | `bundle exec rake slack:refresh_public_channel_cache` | Daily 08:30 | |
 | `bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'` | Daily 13:00 | |
 | `bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Daily 14:30 | |
 | `bundle exec rails runner 'MemberReminderJob.perform_now'` | Daily 15:00 | Sends the fob and signup reminder emails, each only while its switch is on in Portal Settings, Jobs. Added 2026-10-31. |
 | `bin/rails runner "MemberProvisioningReconciliationJob.perform_now"` | Hourly at :20 | |
 
+| `bundle exec rails runner "MembershipExpirationNoticeJob.perform_now"` | Daily 11:30 | |
+| `bundle exec rake fix_tickets:recover_deliveries` | Every 10 minutes | Runs `FixTicketDeliveryRecoveryJob`. |
+| `bundle exec rails runner "FixTicketAssigneeExpirationJob.perform_now"` | Daily 23:00 | |
+| `bundle exec rake checkout_expiration_notice` | Daily 23:00 | Runs `CheckoutExpirationNoticeJob`. |
+
+Use `perform_now` in these commands, not `perform_later`: a Scheduler process exits when its script
+ends. `Service::JobDrain` (see "Scheduled processes wait for queued jobs") now keeps work a job queues
+from being lost, but `perform_now` also records the run and surfaces errors at the point they happen.
+The profile sync and the volunteer reminder used `perform_later` until 2026-11-01 and never ran
+unattended: their last recorded runs were manual. `RentalVacatingCheckJob` is not in this table yet;
+schedule it daily (for example `bundle exec rails runner "RentalVacatingCheckJob.perform_now"` at 14:00)
+once the vacated-verification change below is deployed.
+
+### Scheduled processes wait for queued jobs
+
+Scheduled work runs in short-lived `rails runner` and rake processes. Production uses Active Job's default
+in-process queue, so a job that calls `deliver_later` or `perform_later` only queues it on a thread pool, and the
+process could exit before it ran, silently dropping an email or follow-up job. `config/initializers/job_drain.rb`
+registers an `at_exit` hook (not in the test environment) that calls `Service::JobDrain.wait!`: for the in-process
+adapter it waits for the pool to finish, giving up after 25 seconds, and for any other adapter it does nothing.
+This also makes a web dyno finish queued jobs when it shuts down, within the same 25 seconds. Code that sends
+with a direct Slack post (the checkout digest and reminder, for example) was never affected.
 The retired `volunteering:*` tasks (the volunteer spreadsheet) were never in this schedule
 and have been removed from the repository.
 
