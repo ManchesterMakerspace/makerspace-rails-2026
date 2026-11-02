@@ -455,6 +455,11 @@ class Invoice
     operation = OPERATION_FUNCTIONS.find{ |f| f == self.operation }
     raise ::Error::UnprocessableEntity.new("Unable to process invoice. Invalid operation for invoice #{self.id}") if operation.nil?
 
+    # A processed membership payment (applied now, or held until the first fob) brings an
+    # inactive or non-member account back to active. Done before the renewal so any
+    # existing fob picks up the new status when the expiration is saved.
+    resource.reactivate_for_payment! if resource_class == "member" && resource.respond_to?(:reactivate_for_payment!)
+
     # Test a validation function if it exists
     if !OPERATION_RESOURCES[self.resource_class].method_defined?(:delay_invoice_operation) || (!self.resource.nil? && !self.resource.delay_invoice_operation(operation))
       raise ::Error::UnprocessableEntity.new("Unable to process invoice. Operation failed for invoice #{self.id}") unless resource.execute_operation(operation, self)

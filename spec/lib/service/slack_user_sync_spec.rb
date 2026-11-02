@@ -262,7 +262,25 @@ RSpec.describe Service::SlackUserSync do
   describe '.detect_conflicts_for_page' do
     let(:client) { double('Slack client') }
     let(:cache_keys) do
-      [described_class::LIVE_CONFLICTS_CACHE_KEY, described_class::LIVE_CONFLICTS_FAILURE_KEY]
+      [
+        described_class::LIVE_CONFLICTS_CACHE_KEY, described_class::LIVE_CONFLICTS_FAILURE_KEY,
+        described_class::LIVE_SCAN_STATE_KEY, described_class::LIVE_SCAN_LOCK_KEY, described_class::LIVE_SCAN_LAST_TOTAL_KEY
+      ]
+    end
+
+    def slack_member(id, email = "#{id.downcase}@example.com")
+      { 'id' => id, 'is_bot' => false, 'deleted' => false, 'name' => id, 'profile' => { 'email' => email, 'real_name' => id } }
+    end
+
+    def directory_page(members, next_cursor = '')
+      { 'ok' => true, 'members' => members, 'response_metadata' => { 'next_cursor' => next_cursor } }
+    end
+
+    # A member who already has one Slack account, so a second one with the same email is a conflict.
+    def member_with_duplicate_slack_account(duplicate_id)
+      member = create(:member, email: "#{duplicate_id.downcase}@example.com")
+      SlackUser.create!(member: member, slack_id: "ULINKED#{duplicate_id}", slack_email: member.email, real_name: 'Linked')
+      slack_member(duplicate_id, member.email)
     end
 
     before do
@@ -283,42 +301,204 @@ RSpec.describe Service::SlackUserSync do
     end
 
     it 'scans once, then serves the cached result without scanning Slack again' do
-      allow(client).to receive(:users_list).and_return(
-        'ok' => true, 'members' => [], 'response_metadata' => { 'next_cursor' => '' }
-      )
+      allow(client).to receive(:users_list).and_return(directory_page([]))
 
       expect(described_class.detect_conflicts_for_page).to eq([[], :fresh])
       expect(described_class.detect_conflicts_for_page).to eq([[], :cached])
       expect(client).to have_received(:users_list).once
     end
 
-    it 'still lists saved conflicts when the live scan fails, and does not retry on every reload' do
+    it 'finishes a directory that fits in one piece in a single request, and remembers its size' do
+      allow(client).to receive(:users_list).and_return(directory_page([slack_member('UONE'), slack_member('UTWO')]))
+
+      expect(described_class.detect_conflicts_for_page.last).to eq(:fresh)
+      expect(REDIS.get(described_class::LIVE_SCAN_LAST_TOTAL_KEY)).to eq('2')
+      expect(described_class.live_scan_progress).to be_nil
+    end
+
+    context 'when the directory takes more than one piece' do
+      # With no time budget each request still checks one account, so every account is its own piece.
+      before { stub_const('Service::SlackUserSync::LIVE_SCAN_CHUNK_SECONDS', 0) }
+
+      let(:duplicate) { member_with_duplicate_slack_account('UDUP') }
+
+      before do
+        allow(client).to receive(:users_list).with(limit: 200, cursor: nil)
+          .and_return(directory_page([slack_member('UONE'), duplicate], 'PAGE2'))
+        allow(client).to receive(:users_list).with(limit: 200, cursor: 'PAGE2')
+          .and_return(directory_page([slack_member('UTHREE')]))
+      end
+
+      def poll
+        results = []
+        results << described_class.detect_conflicts_for_page until results.any? && results.last.last != :scanning
+        results
+      end
+
+      it 'carries on from where it stopped, keeps what it found, and ends with the full result' do
+        results = poll
+
+        expect(results.map(&:last)).to eq(%i[scanning scanning fresh])
+        expect(results[0].first).to eq([])
+        expect(results[1].first).to contain_exactly(hash_including(slack_id: 'UDUP'))
+        expect(results.last.first).to contain_exactly(hash_including(slack_id: 'UDUP', conflicting_slack_id: 'ULINKEDUDUP'))
+        expect(described_class.detect_conflicts_for_page.last).to eq(:cached)
+      end
+
+      it 'reads the page it stopped in again with the saved cursor instead of starting over' do
+        poll
+
+        expect(client).to have_received(:users_list).with(limit: 200, cursor: nil).twice
+        expect(client).to have_received(:users_list).with(limit: 200, cursor: 'PAGE2').once
+      end
+
+      it 'says how far it has got, and estimates the total from the last finished scan' do
+        described_class.detect_conflicts_for_page
+
+        expect(described_class.live_scan_progress).to eq(checked: 1, estimated_total: nil, waiting_seconds: 0)
+
+        poll
+        described_class.clear_live_conflicts_cache
+        described_class.detect_conflicts_for_page
+
+        expect(described_class.live_scan_progress).to include(checked: 1, estimated_total: 3)
+      end
+
+      it 'does not run the same scan twice at once' do
+        REDIS.set(described_class::LIVE_SCAN_LOCK_KEY, '1', ex: 30)
+
+        conflicts, status = described_class.detect_conflicts_for_page
+
+        expect(status).to eq(:scanning)
+        expect(conflicts).to eq([])
+        expect(client).not_to have_received(:users_list)
+      end
+
+      it 'does not lose its progress when one piece fails' do
+        described_class.detect_conflicts_for_page
+        calls = 0
+        allow(client).to receive(:users_list).with(limit: 200, cursor: nil) do
+          calls += 1
+          raise Faraday::TimeoutError if calls == 1
+
+          directory_page([slack_member('UONE'), duplicate], 'PAGE2')
+        end
+
+        statuses = [described_class.detect_conflicts_for_page, *poll].map(&:last)
+
+        expect(statuses.last).to eq(:fresh)
+        expect(described_class.detect_conflicts_for_page.first).to contain_exactly(hash_including(slack_id: 'UDUP'))
+      end
+
+      it 'waits as long as Slack asks when it is told to slow down, without counting it as a failure' do
+        too_many = Slack::Web::Api::Errors::TooManyRequestsError.allocate
+        allow(too_many).to receive(:retry_after).and_return(30)
+        allow(client).to receive(:users_list).with(limit: 200, cursor: nil).and_raise(too_many)
+
+        _, status = described_class.detect_conflicts_for_page
+
+        expect(status).to eq(:scanning)
+        expect(described_class.live_scan_progress[:waiting_seconds]).to be_between(29, 30)
+
+        described_class.detect_conflicts_for_page
+
+        expect(client).to have_received(:users_list).once
+      end
+    end
+
+    context 'with the scan size setting' do
+      let(:first_page) { (1..10).map { |n| slack_member("UA#{n}") } }
+      let(:second_page) { [slack_member('UB1'), slack_member('UB2')] }
+
+      before do
+        SystemConfig.set(SystemConfig::SLACK_CONFLICT_SCAN_SIZE, '10')
+        allow(client).to receive(:users_list).with(limit: 10, cursor: nil).and_return(directory_page(first_page, 'PAGE2'))
+        allow(client).to receive(:users_list).with(limit: 10, cursor: 'PAGE2').and_return(directory_page(second_page))
+      end
+
+      after { SystemConfig.where(key: SystemConfig::SLACK_CONFLICT_SCAN_SIZE).delete_all }
+
+      it 'asks Slack for pages that size and stops each piece after that many accounts' do
+        expect(described_class.detect_conflicts_for_page.last).to eq(:scanning)
+        expect(described_class.live_scan_progress).to include(checked: 10)
+
+        expect(described_class.detect_conflicts_for_page.last).to eq(:fresh)
+        expect(client).to have_received(:users_list).with(limit: 10, cursor: nil).once
+        expect(client).to have_received(:users_list).with(limit: 10, cursor: 'PAGE2').once
+      end
+
+      it 'keeps the size a scan started with if the setting changes before it finishes' do
+        described_class.detect_conflicts_for_page
+        SystemConfig.set(SystemConfig::SLACK_CONFLICT_SCAN_SIZE, '50')
+
+        described_class.detect_conflicts_for_page
+
+        expect(client).not_to have_received(:users_list).with(limit: 50, cursor: anything)
+        expect(client).to have_received(:users_list).with(limit: 10, cursor: 'PAGE2')
+      end
+
+      it 'uses the new size for the next scan once the cache is cleared' do
+        described_class.detect_conflicts_for_page
+        SystemConfig.set(SystemConfig::SLACK_CONFLICT_SCAN_SIZE, '50')
+        described_class.clear_live_conflicts_cache
+        allow(client).to receive(:users_list).with(limit: 50, cursor: nil).and_return(directory_page([slack_member('UONE')]))
+
+        expect(described_class.detect_conflicts_for_page.last).to eq(:fresh)
+        expect(client).to have_received(:users_list).with(limit: 50, cursor: nil).once
+      end
+    end
+
+    it 'gives up after repeated failures, still lists saved conflicts, and does not retry on every reload' do
       member = create(:member)
       saved_conflict_for(member)
       allow(client).to receive(:users_list).and_raise(Faraday::TimeoutError)
 
+      first = described_class.detect_conflicts_for_page
+      second = described_class.detect_conflicts_for_page
       conflicts, status = described_class.detect_conflicts_for_page
+
+      expect([first.last, second.last]).to eq(%i[scanning scanning])
       expect(status).to eq(:unavailable)
       expect(conflicts).to contain_exactly(hash_including(slack_id: 'USAVED', member_id: member.id.to_s))
 
       expect(described_class.detect_conflicts_for_page.last).to eq(:unavailable)
-      expect(client).to have_received(:users_list).once
+      expect(client).to have_received(:users_list).exactly(3).times
+      expect(described_class.live_scan_progress).to be_nil
     end
 
-    it 'reports unavailable when the scan runs out of time' do
-      allow(described_class).to receive(:live_conflicts).and_raise(described_class::LiveScanTimeout)
+    it 'reports unavailable when the scan cannot even start' do
+      allow(described_class).to receive(:advance_live_scan).and_raise(StandardError, 'redis down')
 
       expect(described_class.detect_conflicts_for_page).to eq([[], :unavailable])
     end
 
-    it 'scans again once the cache is cleared' do
-      allow(client).to receive(:users_list).and_return(
-        'ok' => true, 'members' => [], 'response_metadata' => { 'next_cursor' => '' }
-      )
+    it 'scans again once the cache is cleared, and clearing drops a scan in progress' do
+      allow(client).to receive(:users_list).and_return(directory_page([]))
       described_class.detect_conflicts_for_page
+      REDIS.set(described_class::LIVE_SCAN_STATE_KEY, { cursor: 'X', offset: 5, checked: 5, conflicts: [] }.to_json)
       described_class.clear_live_conflicts_cache
 
+      expect(REDIS.get(described_class::LIVE_SCAN_STATE_KEY)).to be_nil
       expect(described_class.detect_conflicts_for_page.last).to eq(:fresh)
+    end
+
+    it 'reports no conflicts as a finished scan when Slack is not configured' do
+      allow(Service::SlackConnector).to receive(:api_token_present?).and_return(false)
+
+      expect(described_class.detect_conflicts_for_page).to eq([[], :fresh])
+    end
+
+    it 'only reads: no audit entry, no new Slack identity and no Slack post, even for a linked member whose Slack email changed' do
+      member = create(:member, email: 'portal@example.com')
+      SlackUser.create!(member: member, slack_id: 'ULINKED', slack_email: 'portal@example.com', real_name: 'Linked')
+      allow(client).to receive(:users_list)
+        .and_return(directory_page([slack_member('ULINKED', 'changed-in-slack@example.com'), member_with_duplicate_slack_account('UDUP')]))
+      allow(Service::SlackConnector).to receive(:send_slack_message)
+
+      expect { described_class.detect_conflicts_for_page }.not_to change { [SlackUser.unscoped.count, SlackIdentityConflict.count] }
+
+      expect(Service::AuditLogger).not_to have_received(:log)
+      expect(Service::SlackConnector).not_to have_received(:send_slack_message)
     end
   end
 

@@ -37,6 +37,42 @@ RSpec.describe 'notification suppression', type: :mailer do
       expect(message.perform_deliveries).to be(false)
     end
 
+    describe 'soft-deleted members' do
+      let(:deleted) { create(:member, status: 'inactive', expirationTime: nil) }
+
+      before { deleted.update_attribute(:merged_at, Time.current) }
+
+      it 'does not send non-marketing mail, even though the mailer still finds them by id' do
+        message = described_class.request_document('member_contract', deleted.id.to_s).deliver_now
+
+        expect(message.to).to eq([deleted.email])
+        expect(message.perform_deliveries).to be(false)
+      end
+
+      it 'does not send a mail queued before they were deleted' do
+        message = described_class.membership_expiring_soon(deleted.id.to_s).deliver_now
+
+        expect(message.perform_deliveries).to be(false)
+      end
+
+      it 'sends to a live member who has since taken over the same address, since a delete frees the email' do
+        replacement = create(:member, email: deleted.email)
+
+        message = described_class.request_document('member_contract', replacement.id.to_s).deliver_now
+
+        expect(message.to).to eq([deleted.email])
+        expect(message.perform_deliveries).to be(true)
+      end
+
+      it 'sends again once the account is restored' do
+        deleted.update_attribute(:merged_at, nil)
+
+        message = described_class.request_document('member_contract', deleted.id.to_s).deliver_now
+
+        expect(message.perform_deliveries).to be(true)
+      end
+    end
+
     it 'sends document requests to secondary household members, who need a signed contract to request checkouts' do
       primary = create(:member)
       secondary = create(:member, groupName: primary.id.to_s)

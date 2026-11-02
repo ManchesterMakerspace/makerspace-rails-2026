@@ -51,6 +51,10 @@ every :day, at: '9am' do
   runner "MembershipExpirationNoticeJob.perform_later"
 end
 
+every :day, at: '9:30am' do
+  runner "MemberReminderJob.perform_later"
+end
+
 # The checkout request jobs below are given in UTC, the server's time zone: 12:30 UTC is
 # 8:30 am Eastern and 14:30 UTC is 10:30 am Eastern during daylight saving time (an hour
 # earlier in Eastern time otherwise).

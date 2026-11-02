@@ -1,6 +1,6 @@
 class RentalsController < AuthenticationController
   include FastQuery::MongoidQuery
-  before_action :set_rental, only: [:show, :update, :cancel, :decline_agreement, :mark_vacated]
+  before_action :set_rental, only: [:show, :update, :cancel, :decline_agreement, :mark_vacated, :verify_vacated]
 
   def index
     @rentals = Rental.where(member_id: current_member.id)
@@ -173,8 +173,7 @@ class RentalsController < AuthenticationController
     if vacated
       active_invoice = Invoice.active_invoice_for_resource(@rental.id)
       active_invoice&.destroy
-      @rental.update_attributes!(status: "cancelled")
-      notify_rental_ended(@rental)
+      hold_for_verification(@rental)
     else
       @rental.update_attributes!(status: "vacating")
       expiry = @rental.expiration ? Time.at(@rental.expiration / 1000).strftime("%B %-d, %Y") : "the end of your current rental period"
@@ -194,33 +193,76 @@ class RentalsController < AuthenticationController
     render json: @rental, serializer: RentalSerializer, adapter: :attributes
   end
 
-  # POST /api/rentals/:id/mark_vacated — member or admin marks a vacating rental as vacated
+  # POST /api/rentals/:id/mark_vacated — marks a vacating rental as vacated.
+  # The member saying so does not release the spot: the rental waits (awaiting_verification) until
+  # staff confirm the space is empty. Staff marking another member's rental vacated is that
+  # confirmation, so it is released at once.
   def mark_vacated
-    unless @rental.member_id.to_s == current_member.id.to_s || is_admin? || is_board_member? || is_resource_manager?
+    unless @rental.member_id.to_s == current_member.id.to_s || staff?
       raise ::Error::Forbidden.new
     end
     raise ::Error::UnprocessableEntity.new("Rental is not in vacating status.") unless @rental.status == "vacating"
 
-    active_invoice = Invoice.active_invoice_for_resource(@rental.id)
-    active_invoice&.destroy
+    Invoice.active_invoice_for_resource(@rental.id)&.destroy
 
-    @rental.update_attributes!(status: "cancelled")
-    notify_rental_ended(@rental)
+    if staff_verifying?(@rental)
+      release_rental(@rental)
+      audit_vacated('rental_vacated')
+    else
+      hold_for_verification(@rental)
+      audit_vacated('rental_vacated_reported')
+    end
 
+    render json: @rental, serializer: RentalSerializer, adapter: :attributes
+  end
+
+  # POST /api/rentals/:id/verify_vacated — staff confirm the space is empty and release the rental.
+  # A staff member cannot verify their own rental.
+  def verify_vacated
+    raise ::Error::Forbidden.new unless staff?
+    raise ::Error::Forbidden.new("Another staff member must verify that your rental was vacated.") unless staff_verifying?(@rental)
+    raise ::Error::UnprocessableEntity.new("Rental is not awaiting verification.") unless @rental.awaiting_verification?
+
+    Invoice.active_invoice_for_resource(@rental.id)&.destroy
+    release_rental(@rental)
+    audit_vacated('rental_vacated_verified')
+
+    render json: @rental, serializer: RentalSerializer, adapter: :attributes
+  end
+
+  private
+
+  def staff?
+    is_admin? || is_board_member? || is_resource_manager?
+  end
+
+  # Staff acting on someone else's rental. The owner's own click is never a verification.
+  def staff_verifying?(rental)
+    staff? && rental.member_id.to_s != current_member.id.to_s
+  end
+
+  def release_rental(rental)
+    rental.update_attributes!(status: "cancelled")
+    notify_rental_ended(rental)
+  end
+
+  # The member says the space is empty. The spot stays held until staff confirm it.
+  def hold_for_verification(rental)
+    rental.update_attributes!(status: "awaiting_verification", vacated_reported_at: Time.current)
+    notify_awaiting_verification(rental)
+  end
+
+  def audit_vacated(event_type)
     ::Service::AuditLogger.log(
       log_type:       'member',
-      event_type:     'rental_vacated',
+      event_type:     event_type,
       resource_type:  'Rental',
       resource_id:    @rental.id,
       actor:          current_member,
       subject:        @rental.member,
       after_snapshot: { number: @rental.number, status: @rental.status }
     )
-
-    render json: @rental, serializer: RentalSerializer, adapter: :attributes
   end
-
-  private
 
   def set_rental
     @rental = Rental.find(params[:id])
@@ -270,6 +312,23 @@ class RentalsController < AuthenticationController
       ::Service::SlackConnector.request_caller_id("rentals.notify_rental_ended.management.#{rental.id}")
     )
     RentalMailer.rental_ended(member.id.to_s, rental.id.to_s).deliver_later
+  end
+
+  def notify_awaiting_verification(rental)
+    member = rental.member
+    slack_user = SlackUser.find_by(member_id: member.id)
+    unless slack_user.nil?
+      enque_message(
+        "Thanks. Staff will check that *#{rental.number}* is empty before the space is released.",
+        slack_user.slack_id,
+        ::Service::SlackConnector.request_caller_id("rentals.notify_awaiting_verification.member.#{rental.id}")
+      )
+    end
+    enque_message(
+      "🟠 #{member.fullname} says they have vacated *#{rental.number}*. Please check the space is empty, "       "then click *Verify Vacated* on their Rentals tab to release it.",
+      ::Service::SlackConnector.members_relations_channel,
+      ::Service::SlackConnector.request_caller_id("rentals.notify_awaiting_verification.management.#{rental.id}")
+    )
   end
 
   def notify_rental_vacating(rental, expiry)

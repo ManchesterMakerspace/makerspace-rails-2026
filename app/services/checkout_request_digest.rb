@@ -10,10 +10,10 @@
 # The digest always lists all of their open requests, not just the new or old
 # ones. Days are calendar days in the application time zone.
 #
-# Recipients are the resource managers for the request's shop and the approvers
-# assigned to the tool, its shop, or the requested group. Admin and board members
-# are not included unless they also hold one of those roles, and the requester is
-# never a recipient of their own request. Someone with no open requests gets no
+# Recipients are the resource managers for the request's shop (anyone tagged to the shop as its RM,
+# including an admin or board member so tagged) and the approvers assigned to the tool, its shop, or
+# the requested group. An admin or board member who is neither tagged to the shop nor an assigned
+# approver is not included, and the requester is never a recipient of their own request. Someone with no open requests gets no
 # message. Recipients without a linked Slack account, or whose direct
 # notifications are suppressed (`revoked` or `suspended`), are skipped.
 #
@@ -25,9 +25,15 @@
 #
 # A per-recipient, per-day Redis key stops a rerun of the job from sending the
 # same digest twice; a failed send releases the key so the next run retries it.
+#
+# A request nobody would receive (its shop has no resource manager tagged, and no approver is assigned
+# to its tool, shop or group, or those people have no Slack link) would otherwise sit unseen, so
+# each run also posts one line per such request to the Members Relations channel, once a day, until
+# somebody is assigned.
 module CheckoutRequestDigest
   MAX_REQUESTERS = 30
   MILESTONE_DAYS = 5
+  MAX_UNASSIGNED_LISTED = 10
   KEY_TTL = 36.hours
   LAST_TTL = 90.days
   MESSAGE_TTL = 30.days
@@ -45,6 +51,45 @@ module CheckoutRequestDigest
         Service::ErrorReporter.notify(error, context: { phase: 'checkout request digest',
                                                         member_id: member.id.to_s })
       end
+      report_unassigned!(now: now)
+    end
+
+    # Open requests an approver could act on, but that nobody would receive a digest for.
+    def unassigned_requests
+      ToolCheckoutRequest.where(status: 'open').select do |request|
+        request.target && request.member && actionable?(request) && recipients(request).empty?
+      end
+    end
+
+    # One post a day to Members Relations listing them, so a gap in who is assigned is seen
+    # the first day it happens. A failed post releases the day's key so the next run retries it.
+    def report_unassigned!(now: Time.current)
+      requests = unassigned_requests
+      return if requests.empty?
+
+      key = "checkout_request_digest:unassigned:#{now.to_date.iso8601}"
+      return unless REDIS.set(key, '1', nx: true, ex: KEY_TTL.to_i)
+
+      begin
+        Service::SlackConnector.send_slack_message(unassigned_message(requests, now: now),
+                                                   Service::SlackConnector.members_relations_channel)
+      rescue => error
+        REDIS.del(key)
+        Service::ErrorReporter.notify(error, context: { phase: 'checkout request unassigned report' })
+      end
+    end
+
+    def unassigned_message(requests, now: Time.current)
+      lines = ["Open checkout requests with nobody to approve them (#{requests.size})", '']
+      requests.sort_by(&:request_date).first(MAX_UNASSIGNED_LISTED).each do |request|
+        lines << "• #{CheckoutDisplay.escape(request.target.name)} " \
+                 "(#{CheckoutDisplay.escape(request.target.shop&.name)}) – #{age(request, now)}"
+      end
+      lines << "and #{requests.size - MAX_UNASSIGNED_LISTED} more." if requests.size > MAX_UNASSIGNED_LISTED
+      lines << ''
+      lines << 'Tag a resource manager to the shop, or assign a checkout approver to the tool or shop, ' \
+               'so the daily digest reaches them. Until then only the channel reminder mentions the request.'
+      lines.join("\n")
     end
 
     # { Member => [ToolCheckoutRequest, ...] } for every eligible recipient.
@@ -79,7 +124,9 @@ module CheckoutRequestDigest
       return [] unless target&.shop_id
 
       shop_id = target.shop_id
-      managers = Member.where(role: 'resource_manager',
+      # Whoever is tagged as the shop's resource manager, as on the shop page: an admin or board member
+      # tagged to this shop counts as its RM, one who is not tagged to it does not.
+      managers = Member.where(:role.in => Member::RESOURCE_MANAGER_TAGGABLE_ROLES,
                               :resource_manager_shop_ids.in => [shop_id, shop_id.to_s]).to_a
       (managers + assigned_approvers(request, target, shop_id)).uniq(&:id)
                                                                .reject { |member| member.id == request.member_id }

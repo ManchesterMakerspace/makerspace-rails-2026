@@ -115,4 +115,108 @@ describe 'Rentals API', type: :request do
       end
     end
   end
+
+  # Ending a rental. A member saying they have vacated does not release the spot: the rental waits
+  # (awaiting_verification) until staff verify the space is empty.
+  context 'ending a rental' do
+    let(:owner) { create(:member, :current) }
+    let(:staff) { create(:member, :current, :resource_manager) }
+    let(:signed_in) { owner }
+
+    before do
+      ActiveJob::Base.queue_adapter = :test
+      allow(Service::SlackConnector).to receive(:enque_message)
+      allow(Service::AuditLogger).to receive(:log)
+      sign_in signed_in
+    end
+
+    path '/rentals/{id}/cancel' do
+      delete "Cancels the signed-in member's rental; vacated=true holds it for staff verification" do
+        tags 'Rentals'
+        operationId 'cancelRental'
+        produces 'application/json'
+        parameter name: :id, in: :path, type: :string
+        parameter name: :vacated, in: :query, type: :boolean, required: false,
+                  description: 'true: the member says they have already vacated, so the rental becomes awaiting_verification. Otherwise it becomes vacating until its end date.'
+
+        let(:id) { create(:rental, member: owner, status: 'active').id.to_s }
+
+        response '200', 'Rental vacating, or awaiting verification when vacated=true' do
+          schema '$ref' => '#/components/schemas/Rental'
+          let(:vacated) { true }
+          run_test! { |response| expect(JSON.parse(response.body)['status']).to eq('awaiting_verification') }
+
+          context 'without vacated' do
+            let(:vacated) { false }
+            run_test! { |response| expect(JSON.parse(response.body)['status']).to eq('vacating') }
+          end
+        end
+
+        response '403', "Not the signed-in member's rental" do
+          schema '$ref' => '#/components/schemas/error'
+          let(:vacated) { true }
+          let(:id) { create(:rental, member: create(:member), status: 'active').id.to_s }
+          run_test!
+        end
+      end
+    end
+
+    path '/rentals/{id}/mark_vacated' do
+      post "Marks a vacating rental as vacated; staff on another member's rental release it, a member's own click waits for verification" do
+        tags 'Rentals'
+        operationId 'markRentalVacated'
+        produces 'application/json'
+        parameter name: :id, in: :path, type: :string
+
+        let(:id) { create(:rental, member: owner, status: 'vacating').id.to_s }
+
+        response '200', "Rental awaiting verification (member) or cancelled (staff on another member's rental)" do
+          schema '$ref' => '#/components/schemas/Rental'
+          run_test! { |response| expect(JSON.parse(response.body)['status']).to eq('awaiting_verification') }
+        end
+
+        response '403', "Neither the rental's member nor staff" do
+          schema '$ref' => '#/components/schemas/error'
+          let(:signed_in) { create(:member, :current) }
+          let(:id) { create(:rental, member: owner, status: 'vacating').id.to_s }
+          run_test!
+        end
+
+        response '422', 'Rental is not vacating' do
+          schema '$ref' => '#/components/schemas/error'
+          let(:id) { create(:rental, member: owner, status: 'active').id.to_s }
+          run_test!
+        end
+      end
+    end
+
+    path '/rentals/{id}/verify_vacated' do
+      post 'Staff (resource manager, board or admin) verify the space is empty and release a rental awaiting verification' do
+        tags 'Rentals'
+        operationId 'verifyRentalVacated'
+        produces 'application/json'
+        parameter name: :id, in: :path, type: :string
+
+        let(:signed_in) { staff }
+        let(:id) { create(:rental, member: owner, status: 'awaiting_verification').id.to_s }
+
+        response '200', 'Rental cancelled and the member told it has ended' do
+          schema '$ref' => '#/components/schemas/Rental'
+          run_test! { |response| expect(JSON.parse(response.body)['status']).to eq('cancelled') }
+        end
+
+        response '403', 'Not staff, or staff verifying their own rental' do
+          schema '$ref' => '#/components/schemas/error'
+          let(:signed_in) { owner }
+          run_test!
+        end
+
+        response '422', 'Rental is not awaiting verification' do
+          schema '$ref' => '#/components/schemas/error'
+          let(:id) { create(:rental, member: owner, status: 'vacating').id.to_s }
+          run_test!
+        end
+      end
+    end
+  end
 end

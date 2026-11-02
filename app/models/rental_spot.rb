@@ -41,12 +41,9 @@ class RentalSpot
   end
 
   def currently_rented?
-    Rental.where(number: number).where(
-      "$or" => [
-        { status: "active" },
-        { status: "pending" }
-      ]
-    ).exists?
+    # A vacating rental, or one the member says they have vacated but staff have not yet verified,
+    # still holds the spot.
+    Rental.where(number: number, :status.in => %w[active pending vacating awaiting_verification]).exists?
   end
 
   def parent_rented?

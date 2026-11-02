@@ -21,11 +21,14 @@ class Admin::AnalyticsController < AdminController
   #
   # Response: [{ month: "2024-01", count: 12 }, ...]
   def member_growth
-    # Build match clause — only filter by date when a year is explicitly requested
+    # Build match clause — only filter by date when a year is explicitly requested.
+    # merged_at: nil leaves out soft-deleted (duplicate/abandoned) accounts: they are not members.
+    # This raw aggregate bypasses Member's default scope, so the filter has to be spelled out.
     match_clause = {
       'startDate' => { '$ne' => nil },
       'firstname' => { '$ne' => 'Landlord' },
-      'lastname'  => { '$ne' => 'Fob' }
+      'lastname'  => { '$ne' => 'Fob' },
+      'merged_at' => nil
     }
 
     if params[:year].present?
