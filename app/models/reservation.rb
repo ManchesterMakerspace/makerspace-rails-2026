@@ -3,7 +3,7 @@ class Reservation
   include Mongoid::Timestamps
   include ActiveModel::Serializers::JSON
 
-  STATUSES = %w[pending unpaid approved denied cancelled].freeze
+  STATUSES = %w[pending unpaid approved denied cancelled abandoned].freeze
   SCOPES = %w[shop tools].freeze
   ACTIVE_STATUSES = %w[pending unpaid approved].freeze
   SOURCES = %w[portal slack].freeze
@@ -39,6 +39,19 @@ class Reservation
   field :decision_note, type: String
   field :decided_at, type: Time
   field :source, type: String, default: "portal"
+  field :reader_revision, type: Integer, default: 0
+  field :reader_state_version, type: Integer, default: 0
+  field :reader_scope_changed_at, type: Time
+  field :arrived_at, type: Time
+  field :arrival_reader_id, type: String
+  field :arrival_tool_id, type: String
+  field :arrival_checkin_id, type: String
+  field :abandoned_at, type: Time
+  field :abandonment_reason, type: String
+  field :reader_monitor_started_at, type: Time
+  field :reader_monitors, type: Hash, default: {}
+  field :reader_receipts, type: Hash, default: {}
+  field :reader_sync_pending, type: Boolean, default: false
   field :calendar_event_id, type: String
   field :calendar_html_link, type: String
   field :calendar_sync_status, type: String
@@ -57,6 +70,7 @@ class Reservation
   index({ tool_ids: 1, status: 1, start_at: 1, end_at: 1 })
 
   after_initialize :normalize_legacy_cancelled_status
+  before_update :advance_reader_revision
 
   validates :title, presence: true
   validates :member, :shop, :start_at, :end_at, presence: true
@@ -86,6 +100,8 @@ class Reservation
     status == "denied"
   end
 
+  def abandoned? = status == "abandoned"
+
   def effective_approval_details
     details = Array(approval_details).map { |detail| detail.to_h.stringify_keys }
     return details if details.present?
@@ -108,6 +124,18 @@ class Reservation
   end
 
   private
+
+  def advance_reader_revision
+    scope_fields = %w[start_at shop_id member_id reservation_scope tool_ids]
+    return if (changes.keys & (scope_fields + %w[end_at status])).empty?
+    self.reader_revision = reader_revision.to_i + 1
+    if (changes.keys & scope_fields).any?
+      self.reader_scope_changed_at = Time.current
+      self.arrived_at = self.arrival_reader_id = self.arrival_tool_id = self.arrival_checkin_id = nil
+      self.reader_monitor_started_at = nil
+      self.reader_monitors = {}
+    end
+  end
 
   def normalize_legacy_cancelled_status
     self.status = "cancelled" if status == "canceled"

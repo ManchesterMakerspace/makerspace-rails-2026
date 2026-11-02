@@ -1,5 +1,8 @@
 # Shop and Tool Reservations
 
+Reader attendance, early logoff release and the terminal `abandoned` status are
+specified in [Reader reservation attendance](reader-reservations.MD).
+
 ## Group selection
 
 Reservation inputs accept `tool_group_ids` alongside `tool_ids`. The service

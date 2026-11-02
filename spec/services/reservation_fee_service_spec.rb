@@ -262,6 +262,9 @@ RSpec.describe ReservationFeeService do
     reservation.update!(status: "cancelled")
     described_class.reconcile!(reservation)
     expect(reservation.reload.status).to eq("cancelled")
+    reservation.update!(status: "abandoned")
+    described_class.reconcile!(reservation)
+    expect(reservation.reload.status).to eq("abandoned")
   end
 
   it "issues the confirmed fee only after RM approval, then approves on payment" do

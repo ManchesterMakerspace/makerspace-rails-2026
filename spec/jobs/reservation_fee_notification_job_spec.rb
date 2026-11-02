@@ -31,6 +31,14 @@ RSpec.describe ReservationFeeNotificationJob do
     expect(invoice.reload.settled).to eq(false)
   end
 
+  it "does not send a no-show notification from a delayed fee job" do
+    reservation.update!(status: "abandoned")
+    expect(Service::SlackConnector).not_to receive(:send_slack_message)
+    expect(Service::SlackConnector).not_to receive(:update_slack_message)
+    described_class.perform_now(reservation.id.to_s)
+    expect(invoice.reload.amount).to eq(30)
+  end
+
   %w[approved denied].each do |status|
     it "updates the saved DM for a #{status} reservation without an invoice" do
       reservation.update!(invoice: nil, status: status, decision_note: "Manager decision", notified_at: "old.ts", notified_channel_id: "D123")

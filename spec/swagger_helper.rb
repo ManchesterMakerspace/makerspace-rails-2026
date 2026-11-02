@@ -699,7 +699,11 @@ RSpec.configure do |config|
             required: [:resourceId, :resourceName, :invoiceOptionId, :name, :unitHours, :units, :unitAmount, :amount]
           }
         },
-        status: { type: :string, enum: %w[pending unpaid approved denied cancelled] },
+        status: { type: :string, enum: %w[pending unpaid approved denied cancelled abandoned] },
+        readerRevision: { type: :integer },
+        arrivedAt: { type: :string, format: 'date-time', nullable: true },
+        abandonedAt: { type: :string, format: 'date-time', nullable: true },
+        abandonmentReason: { type: :string, nullable: true },
         approvalReasons: { type: :array, items: { type: :string } },
         approvalDetails: {
           type: :array,
