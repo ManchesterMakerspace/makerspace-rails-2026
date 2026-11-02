@@ -1064,3 +1064,20 @@ CheckoutCreation queues a full shop checkout canvas rebuild for renewals
 (renewed_from_id present). The rebuild renders current valid members once,
 replacing stale expired predecessor lines. Initial checkouts retain incremental
 adds. Neither path sends notices inside its approval transaction.
+
+
+### Companion reader session audit service
+
+The ESP32 tool-session journal delivers checkins and checkend events through
+POST /reader/v1/events on ts-data-api, with independent MQTT QoS 1 acknowledgments.
+The gateway's tool/shop change stream emits scoped refresh hints rather than
+stop-all invalidations. Deploy gateway/broker ACL updates before firmware. No new
+Rails job, recurring task, environment variable, or generated API client release
+is needed. Reader freshness defaults to a compile-time configurable 15 minutes.
+
+
+The companion reader-indexes.cjs deployment task now also enforces one checkend
+per reader/checkin. Run it before gateway rollout and resolve any reported
+historical duplicates manually; it never deletes audit records. Both companion
+repositories now have push/PR GitHub CI for their affected tests; firmware CI also
+builds the ESP32 image. No Rails jobs or environment variables changed.

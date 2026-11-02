@@ -304,3 +304,20 @@ expiry scans. Deploy it with the repeatable
 index without changing documents. Existing member/tool lookup indexes remain.
 Expiration audits use existing audit logs; notice settings and run status use
 the existing SystemConfig storage.
+
+
+### Reader tool-session audit extension
+
+The companion ts-data-api writes the new singular checkend collection directly.
+It retains checkin identity/time fields and adds checkinId, kicked, kickedBy
+(memberId/uid/holder), reason, and shop/tool identity/name snapshots. The native
+_id index supports idempotent retries. No Rails Mongoid model, migration, UI, or
+API endpoint is added. Tool checkins remain in checkins; every session ending,
+including kicks and reboot recovery, is represented in checkend. Unknown reboot
+ending times are 0/timeOf=null rather than an estimated usage duration.
+
+
+The session-recovery review adds a gateway-owned unique partial index on
+checkend(deviceId, checkinId), named one_end_per_reader_checkin, for string
+checkinId values. Deploy with ts-data-api/scripts/reader-indexes.cjs before the
+reviewed gateway. The script fails on existing duplicates without modifying them.
