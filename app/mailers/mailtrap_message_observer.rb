@@ -4,6 +4,10 @@
 # so Mailtrap webhook events can be joined back to the original email.
 class MailtrapMessageObserver
   def self.delivered_email(message)
+    # Rails still informs observers when a mailer turned delivery off (suppressed members), but nothing
+    # was sent, so there is nothing for the email log or the member's audit trail to record.
+    return unless message.perform_deliveries
+
     msg_id = message.message_id.to_s.gsub(/\A<|>\z/, '')
     return if msg_id.blank?
 

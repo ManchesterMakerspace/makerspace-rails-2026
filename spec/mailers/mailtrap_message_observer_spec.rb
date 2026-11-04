@@ -17,6 +17,16 @@ RSpec.describe MailtrapMessageObserver do
     allow(Service::AuditLogger).to receive(:log)
   end
 
+  it 'records nothing for a message a mailer suppressed' do
+    message = build_message(to: member.email, subject: 'Suppressed', message_id: 'suppressed123@example.com')
+    message.perform_deliveries = false
+
+    described_class.delivered_email(message)
+
+    expect(MailtrapMessage.where(message_id: 'suppressed123@example.com')).to be_empty
+    expect(Service::AuditLogger).not_to have_received(:log)
+  end
+
   it 'records the message and logs a system_email_sent audit entry when the recipient is a known member' do
     message = build_message(to: member.email, subject: 'Your password was changed', message_id: 'abc123@example.com')
 

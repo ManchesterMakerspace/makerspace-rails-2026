@@ -121,3 +121,22 @@ The existing public reservation agenda still shows approved bookings only;
 abandoned records release availability without exposing attendance journals.
 Authenticated reservation serialization includes revision, arrival timestamp,
 abandonment timestamp/reason. See [the private contract](reader-reservations.MD).
+GET /api/admin/system_configs also returns the flags fob_reminder_enabled and
+signup_reminder_enabled and a reminders group (fob_reminder_days,
+signup_reminder_days, strings). PUT update_flag accepts the two flags, PUT
+update_setting accepts the two days keys (a whole number from 1 to 14, else 422),
+and POST run_job accepts key=member_reminders. Admin and board only, like the other
+settings; no anonymous route is added.
+
+PUT update_setting also accepts key=slack_conflict_scan_size (a whole number from 10 to
+500, else 422; default 200), the number of Slack accounts one request of the Slack
+identity conflicts check looks at. GET /api/admin/slack_identity_conflicts now returns
+scan_size, live_check may be scanning, and a progress object accompanies it while a
+check is under way; see jobs-tasks-services.MD. Still admin and board only.
+
+Rentals: a rental's `status` may now be `awaiting_verification` (the member says they have vacated; the spot stays
+held). DELETE /api/rentals/:id/cancel with vacated=true and POST /api/rentals/:id/mark_vacated by the rental's own
+member now set it, instead of cancelling. New POST /api/rentals/:id/verify_vacated lets a resource manager,
+board member or admin (not the rental's own member) confirm the space is empty: it cancels the rental. 422 unless
+the rental is awaiting verification; 403 for anyone else. POST run_job also accepts key=rental_vacating_check.
+Staff calling mark_vacated on another member's vacating rental still cancels it at once.

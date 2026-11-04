@@ -341,9 +341,11 @@ job wrapper records `job_status_<admin key>` with a completion time and
 | `card_expiration_check` | `card_on_file_expiration_check` | `RAILS_ENV=production bundle exec rake card_on_file_expiration_check` | Finds active subscribers whose Braintree cards expire in the current Eastern-time month, caches the affected count and card types in Redis until next month, DMs members who have Slack identities, and reports every affected member to Member Relations. Only the job wrapper records status. |
 | `reservation_canvas_rebuild` | `reservations:rebuild_slack_canvases` | `RAILS_ENV=production bundle exec rake reservations:rebuild_slack_canvases` | Processes every shop, but rebuilds today's and tomorrow's reservation canvases only when the shop already has either canvas or has a blocking reservation/blackout in that two-day window. Thus it does not provision empty reservation canvases for an inactive shop. It creates a missing daily canvas when the shop qualifies, refreshes agendas and owner access, and stores its ID. Slack does not attach a newly created canvas to the shop channel header; after its first build, a channel manager must manually attach each daily canvas to its respective shop channel with Slack's **+** button. For every shop, including shops skipped by the reservation path, the command calls volunteer-canvas synchronization with `create_if_needed: true` and owner-access synchronization. That call still leaves a shop unchanged when it has no Slack channel (or the channel cannot be resolved), and it creates a missing volunteer canvas only when the shop has at least one claimable top-level task or active event dated today or later. The command also rebuilds every recorded checkout canvas; it warns the interface-log Slack channel and writes an audit entry for a failed checkout canvas before continuing to the next shop. It retries reservation Slack rate limits and fails after collecting reservation/volunteer failures. Only the job wrapper records status. |
 | `membership_expiration_notice` | `membership_expiration_notice` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'MembershipExpirationNoticeJob.perform_now'`. | Finds active, non-landlord members with no Braintree subscription (`subscription` not true and `subscription_id` blank) and no active Earned Membership whose `expirationTime` falls exactly 3 days out, and emails each a renewal reminder; separately finds the same population whose `expirationTime` fell exactly 1 day ago and emails an expired notice. Each email is sent at most once per expiration -- the sent state is keyed to the exact `expirationTime` value, so it resets automatically once the member renews to a new date. Only the job wrapper records status. |
+| `member_reminders` | `member_reminders` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'MemberReminderJob.perform_now'`. | Sends the two member reminder emails, each only while its flag is on (`fob_reminder_enabled`, `signup_reminder_enabled`; both off by default, so nothing is sent until an admin enables them). The fob reminder goes to members who paid but have no fob; the signup reminder goes to `pending` members who signed up and have not paid or been issued a fob. Both send on day 8 (the `fob_reminder_days` / `signup_reminder_days` setting, default 7, plus one) and again 14 days later, never after 30 days, at most one per member per run, with a matching Slack DM when the member has a linked Slack account. Sent state is kept on the member (`fob_reminder_count`, `fob_reminder_last_sent_at`, `signup_reminder_count`, `signup_reminder_last_sent_at`). Each member is handled separately, so one failure is reported and the rest continue. Only the job wrapper records status. |
 | `volunteer_event_reminder` | `volunteer_event_reminder` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Sends/retries assigned shop RM review DMs for submitted tasks and dated open events ready for closure; posts or updates Members Relations Channel reminders after more than five days and retries saved final-outcome updates. See the volunteer approval reminder workflow below. Individual delivery failures do not fail the complete scan. |
 | `checkout_request_reminder` | `checkout_request_reminder` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'`. | Posts a "still waiting" reminder in the configured Resource Managers Slack channel (`slack_channel_rm`, default `resource_managers`) for every open checkout request that has been open for 5 days, then again at 10 and 15 days (three reminders in all, the third being the last); declines (as a system decision, audit-logged and DMed to the requester) a request still unrecorded 5 days after the third reminder; edits each posted reminder when its request is approved, declined, timed out or cancelled and retries any resolution edit that failed. Each reminder is recorded on the request, so a reminder is never posted twice. Individual failures are reported without stopping the scan. See the checkout request notifications section below. |
-| `checkout_request_digest` | `checkout_request_digest` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'`. | Sends each resource manager and assigned approver one Slack DM rolling up every open checkout request they can act on, grouped by requester with each tool, its shop, and its age in calendar days. A recipient is messaged only when there is a request new since their last digest, or an open request that is exactly 5, 10, 15, ... days old, and at most once a day; nothing is sent otherwise. Not sent to a requester about their own request, or to members without a linked Slack account or with suppressed notifications. Redis keys (`checkout_request_digest:MEMBER_ID:DATE`, `checkout_request_digest_last:MEMBER_ID`) prevent duplicates and track the last digest, and `checkout_request_digest_message:MEMBER_ID` remembers the last digest's Slack message so the next digest can edit it into a "replaced" stub; the daily key is released after a failed send. Individual failures are reported without stopping the run. |
+| `checkout_request_digest` | `checkout_request_digest` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'`. | Sends each resource manager and assigned approver one Slack DM rolling up every open checkout request they can act on, grouped by requester with each tool, its shop, and its age in calendar days. A recipient is messaged only when there is a request new since their last digest, or an open request that is exactly 5, 10, 15, ... days old, and at most once a day; nothing is sent otherwise. Not sent to a requester about their own request, or to members without a linked Slack account or with suppressed notifications. Redis keys (`checkout_request_digest:MEMBER_ID:DATE`, `checkout_request_digest_last:MEMBER_ID`) prevent duplicates and track the last digest, and `checkout_request_digest_message:MEMBER_ID` remembers the last digest's Slack message so the next digest can edit it into a "replaced" stub; the daily key is released after a failed send. Individual failures are reported without stopping the run. Also posts one daily list to Members Relations of open requests nobody would receive a digest for, until someone is assigned. |
+| `rental_vacating_check` | `rental_vacating_check` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'RentalVacatingCheckJob.perform_now'`. | Reminds staff, in one Members Relations post, about rentals still `vacating` after their end date and rentals a member says they have vacated (`awaiting_verification`). It never changes a rental and posts nothing when none are waiting. Records its run status. |
 
 ### Triggering through the admin API
 
@@ -381,6 +383,7 @@ values and would use the chosen scheduler's timezone.
 | At 08:00 on the first of each month | `CardExpirationCheckJob.perform_later` | `RAILS_ENV=production bundle exec rake card_on_file_expiration_check` | Runs the monthly card-expiration workflow described above. The Rake command performs the service but does not update the admin job status. |
 | Daily at 08:00 | `VolunteerEventReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'` | Sends/retries assigned shop RM review DMs for submitted tasks and dated open events ready for closure, then posts or updates Members Relations Channel reminders after more than five days and retries saved final-outcome updates. The job records success after the scan completes even if individual Slack deliveries fail; inspect error reporting to confirm delivery. Also exposed as `volunteer_event_reminder` in the admin jobs list. |
 | Daily at 09:00 | `MembershipExpirationNoticeJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'MembershipExpirationNoticeJob.perform_now'` | Runs the membership-expiration-notice workflow described above. |
+| Daily at 09:30 | `MemberReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'MemberReminderJob.perform_now'` | Runs the member-reminder workflow described above. |
 | Daily at 12:30 UTC | `CheckoutRequestReminderJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'` | Runs the checkout-request reminder scan described above. Also exposed as `checkout_request_reminder` in the admin jobs list. |
 | Daily at 14:30 UTC | `CheckoutRequestDigestJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Sends the checkout-request approver digests described above. Also exposed as `checkout_request_digest` in the admin jobs list. |
 
@@ -388,7 +391,7 @@ values and would use the chosen scheduler's timezone.
 
 Production work is scheduled in the **Heroku Scheduler** add-on of `makerspace-interface-prod`,
 not by Whenever. The dashboard is the source of truth; this table records it as of
-2026-10-24 (all times UTC, Basic dyno). Change the dashboard first, then update this table.
+2026-11-01 (all times UTC, Basic dyno). Change the dashboard first, then update this table.
 A job that is in this repository but not in this table is not running in production *yet*.
 That does not make it dead: recent work often lands before its schedule entry is added, so
 check the job's age and author (`git log -S<name>`) and ask whoever added it before treating
@@ -402,12 +405,35 @@ an unscheduled job as unused.
 | `bundle exec rake card_expiration_check` | Daily 03:00 | |
 | `bundle exec rake reservations:rebuild_slack_canvases` | Daily 05:30 | |
 | `rake invoice_review` | Daily 06:30 | Built-in production Sunday guard, so it only does work on Sundays. |
-| `bin/rails runner "SlackProfileSyncJob.perform_later"` | Daily 07:00 | |
-| `bin/rails runner "VolunteerEventReminderJob.perform_later"` | Daily 08:00 | |
+| `bin/rails runner "SlackProfileSyncJob.perform_now"` | Daily 07:00 | Only does work while `slack_profile_sync_enabled` is on. |
+| `bin/rails runner "VolunteerEventReminderJob.perform_now"` | Daily 08:00 | |
+| `bundle exec rake slack:sync_users` | Daily 05:00 | Only does work while `slack_sync_enabled` is on. |
 | `bundle exec rake slack:refresh_public_channel_cache` | Daily 08:30 | |
 | `bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'` | Daily 13:00 | |
 | `bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Daily 14:30 | |
+| `bundle exec rails runner 'MemberReminderJob.perform_now'` | Daily 15:00 | Sends the fob and signup reminder emails, each only while its switch is on in Portal Settings, Jobs. Added 2026-10-31. |
 | `bin/rails runner "MemberProvisioningReconciliationJob.perform_now"` | Hourly at :20 | |
+| `bundle exec rails runner "MembershipExpirationNoticeJob.perform_now"` | Daily 11:30 | |
+| `bundle exec rake fix_tickets:recover_deliveries` | Every 10 minutes | Runs `FixTicketDeliveryRecoveryJob`. |
+| `bundle exec rails runner "FixTicketAssigneeExpirationJob.perform_now"` | Daily 23:00 | |
+| `bundle exec rake checkout_expiration_notice` | Daily 23:00 | Runs `CheckoutExpirationNoticeJob`. |
+| `bundle exec rails runner "RentalVacatingCheckJob.perform_now"` | Daily 13:30 | The staff reminder about vacating and awaiting-verification rentals. It never changes a rental, but before the vacated-verification change was deployed this class cancelled expired vacating rentals itself. Added 2026-11-01. |
+
+Use `perform_now` in these commands, not `perform_later`: a Scheduler process exits when its script
+ends. `Service::JobDrain` (see "Scheduled processes wait for queued jobs") now keeps work a job queues
+from being lost, but `perform_now` also records the run and surfaces errors at the point they happen.
+The profile sync and the volunteer reminder used `perform_later` until 2026-11-01 and never ran
+unattended: their last recorded runs were manual.
+
+### Scheduled processes wait for queued jobs
+
+Scheduled work runs in short-lived `rails runner` and rake processes. Production uses Active Job's default
+in-process queue, so a job that calls `deliver_later` or `perform_later` only queues it on a thread pool, and the
+process could exit before it ran, silently dropping an email or follow-up job. `config/initializers/job_drain.rb`
+registers an `at_exit` hook (not in the test environment) that calls `Service::JobDrain.wait!`: for the in-process
+adapter it waits for the pool to finish, giving up after 25 seconds, and for any other adapter it does nothing.
+This also makes a web dyno finish queued jobs when it shuts down, within the same 25 seconds. Code that sends
+with a direct Slack post (the checkout digest and reminder, for example) was never affected.
 
 The retired `volunteering:*` tasks (the volunteer spreadsheet) were never in this schedule
 and have been removed from the repository.
@@ -424,13 +450,18 @@ scheduler only after choosing appropriate times and considering the side effects
 | `member_review` | `RAILS_ENV=production bundle exec rake member_review` | Scheduled daily in Heroku Scheduler (see above); its built-in production Sunday guard makes other days a no-op, so it acts weekly. See the admin-job table for notifications and effects. |
 | `invoice_review` | `RAILS_ENV=production bundle exec rake invoice_review` | Scheduled daily in Heroku Scheduler (see above); its built-in production Sunday guard makes other days a no-op, so it acts weekly. See the admin-job table for report effects. |
 
-`RentalVacatingCheckJob` also says it should run nightly, but it has no Rake
-task and no entry in `config/schedule.rb`. If production policy requires it,
-invoke it with `RAILS_ENV=production bundle exec rails runner
-'RentalVacatingCheckJob.perform_now'`. It changes expired `vacating` rentals to
-`cancelled`, DMs the member, posts the cancellation notice to the Member
-Relations channel, and queues an ended-rental email. It rescues errors per
-rental, so a run can finish even when some rentals were not changed.
+`RentalVacatingCheckJob` is a daily reminder to staff and never changes a rental. It used to cancel
+expired `vacating` rentals itself, which freed a spot without anyone checking the space was empty. A spot is now
+released only by a person. A rental the member marks vacated (their own **Mark Vacated** click, or "Yes, I Have
+Vacated" in the cancel dialog) becomes `awaiting_verification` and still holds the spot; staff (resource manager,
+board member or admin, never the rental's own member) then check the space and use **Verify Vacated**
+(`POST /api/rentals/:id/verify_vacated`), which cancels the rental, sends the member the rental-ended notice and
+writes a `rental_vacated_verified` audit entry. Staff marking another member's `vacating` rental vacated is the
+same verification and releases it at once. `vacating` and `awaiting_verification` rentals both keep their spot
+unavailable (`RentalSpot#available?`). The job posts one Members Relations message listing rentals awaiting
+verification (with how long each has waited, from `vacated_reported_at`) and vacating rentals past their end date,
+and repeats daily until someone acts. Invoke it with `RAILS_ENV=production bundle exec rails runner
+'RentalVacatingCheckJob.perform_now'`; it is also the `rental_vacating_check` admin job.
 
 ## Manual operator Rake tasks
 
@@ -439,7 +470,7 @@ has a built-in dry run. Run production commands only when the task's effect is w
 
 | Task | Manual command | Purpose and effect |
 | --- | --- | --- |
-| `member_access:revoke` | `RAILS_ENV=production bundle exec rake member_access:revoke EMAIL=user@example.com` (or `MEMBER_ID=` or `NAME='First Last'`) | Offboarding for one member. Calls `Service::MemberAccess.revoke`, which removes the member's Google Drive resource access and Drive transfer share and removes their Slack access, then prints a status line per system. It changes remote access immediately and aborts if the member is not found or no selector is given. |
+| `member_access:revoke` | `RAILS_ENV=production bundle exec rake member_access:revoke EMAIL=user@example.com` (or `MEMBER_ID=` or `NAME='First Last'`) | Offboarding for one member. Calls `Service::MemberAccess.revoke`, which removes the member's Google Drive resource access and Drive transfer share (including a share under their previous email address) and removes their Slack access, then prints a status line per system. It changes remote access immediately and aborts if the member is not found or no selector is given. |
 | `members:reconcile_provisioning` | `RAILS_ENV=production bundle exec rake members:reconcile_provisioning` | Calls `Service::MemberProvisioning.backfill!`, which backfills the local Slack and Google Drive provisioning state **without changing remote access**, then prints counts (Slack invited, Slack live, Drive resources, Drive transfer). Used after provisioning changes or when the local state has drifted. |
 | `reservations:normalize_cancelled_status` | `RAILS_ENV=production bundle exec rake reservations:normalize_cancelled_status` | One-time normalization of legacy spelling: sets reservations with status `canceled` to `cancelled` and prints the count. Safe to re-run; it can be removed once production has no `canceled` reservations. |
 | `documents:download` | `RAILS_ENV=production bundle exec rake documents:download` | Downloads the Member Contract and Code of Conduct Google Docs and overwrites their HTML template files in the repository. A developer task; it does not touch member data. |
@@ -476,6 +507,9 @@ synchronous diagnostic invocation where one is useful.
 | `Service::ReservationSlackCanvas.rebuild_all!` | `RAILS_ENV=production bundle exec rails runner 'Service::ReservationSlackCanvas.rebuild_all!'` | Rebuilds the two rolling reservation canvases only for shops with an existing daily canvas or relevant blocking reservation/blackout; it does not create empty canvases for other shops. It calls volunteer-canvas synchronization for every shop, but a shop needs a resolvable Slack channel, and a missing volunteer canvas is created only when a claimable top-level task or current/future active event exists. Newly created reservation canvases require manual attachment to their Slack shop-channel headers. Prefer the Rake task or job for the normal operational path. |
 | `Service::GoogleDrive.upload_backup` | Do not call alone; use `RAILS_ENV=production bundle exec rake backup`. | Uploads the archive created by the backup task to Google Drive. Calling it directly requires an existing archive filename and does not create a database dump. |
 | `Service::MembershipExpirationNotice.run!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::MembershipExpirationNotice.run!'` | Performs the daily membership-expiration-notice scan and email sends described above. Outside production, it logs each candidate date window and the comma-delimited names (or `nil`) in the expiring-soon and expired lists. Prefer the job if admin-visible status is required. |
+| `Service::MemberReminders.run!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::MemberReminders.run!'` | Performs the fob-reminder and signup-reminder scans and sends the emails and Slack DMs described above, returning the number sent for each (`{ fob: n, signup: n }`); a reminder whose flag is off is skipped. Prefer the job if admin-visible status is required. |
+| `Service::MemberSoftDelete.delete!` and `.restore!` | Request-time only (**Delete Account** / **Restore Account** on a member profile: `POST /api/admin/members/:id/soft_delete` and `/restore`); no manual command. | Soft-deletes a duplicate or abandoned account: sets `merged_at`, which hides it from ordinary member queries and frees its email. It refuses a member with an active unexpired membership or live subscription, and one with an open invoice (no settlement date and not refunded, which includes a paid payment held for a fob). It then calls `Service::MemberAccess.full_deprovision(member, alert: false)`, which cancels the subscription, removes the member from Slack (`users.admin.setInactive`) and from the Resources and Transfer Share Drive folders (including a share under `google_previous_email`), turns on `silence_emails` and rotates the session token. If a Slack or Drive removal errors, or was skipped for a member who has that access, the delete stops with HTTP 422 and `manual_removal_required: true`; the admin removes them by hand and repeats the request with `manual_removal_confirmed=true`, which is recorded in the audit entry. On success the status becomes `inactive` (`revoked` and `suspended` are kept) and a `member_soft_deleted` audit entry is written and posted to the logs channel. Restore clears `merged_at` only; it does not change the status or re-provision access. Mail to a soft-deleted member is dropped by `ApplicationMailer` (see `email.MD`). |
+| `Service::MemberAccess.revoke` and `.full_deprovision` | Used by the `member_access:revoke` task, by setting a member's status to `revoked`, and by the soft delete. | `revoke` removes Drive (Resources and Transfer Share, under the current and previous email) and Slack access and returns a status per system; `full_deprovision` also cancels the subscription, turns on `silence_emails` and rotates the session token, and returns the per-step results. A failed removal posts an `@channel` alert to the admin channel unless the caller passes `alert: false` (the soft delete does, because it reports the failure to the admin instead). |
 | `Service::VolunteerApprovalReminder` | Use `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Owns pending-approval Slack message content, saved delivery receipts, in-place age updates, final-outcome updates, retirement of rescheduled event reminders, and recovery of failed final updates. Task/event lifecycle methods invoke it after approval, rejection, event closure, or rescheduling; use the job for recurring scans and status tracking. |
 | `VolunteerApproverNotification` | Use the task completion flow or `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Delivers one review DM per shop resource manager per task completion submission, or per scheduled event date ready for closure. Stores per-recipient delivery state and retries failed/stale attempts. Direct links select the task claim or event on the authenticated React Volunteer page. |
 | `CheckoutRequestDigest` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Builds each approver's daily digest (recipients: the shop's resource managers and approvers assigned to the tool, shop, or group) and sends it with a per-recipient, per-day Redis key. |
@@ -530,13 +564,20 @@ contracts and [member field lifecycle](mongodb-collections.MD) for persistence.
 Approvers are told about open checkout requests by a roll-up DM, not per request.
 `CheckoutRequestDigestJob` runs daily at 14:30 UTC (about 10:30 am Eastern) and as the `checkout_request_digest` admin job.
 `CheckoutRequestDigest` rolls up (leaving out requests the approver could not act on, such as one from an expired member or with unmet prerequisites), for each resource manager assigned to a request's shop and
-each approver assigned to the tool, its shop, or the requested group (not every admin or board
-member, and never the requester), every open request they can act on, grouped by requester with
+each approver assigned to the tool, its shop, or the requested group (an admin or board member only
+when tagged to that request's shop as its resource manager, or assigned as an approver, so never every admin or
+board member, and never the requester), every open request they can act on, grouped by requester with
 the tool, shop and age in calendar days. It sends only when a request is new since that
 person's last digest, or when some open request is exactly 5, 10, 15, ... days old, and at
 most once a day. Recipients with no linked Slack account or suppressed direct notifications
 (`revoked` or `suspended`) receive nothing. The new digest is always a fresh message (Slack does not notify on edits); the recipient's previous digest, tracked by a Redis key holding its channel and `ts` (30-day expiry), is then edited into a "Replaced by a newer digest below." stub, best effort. Redis keys per recipient track the day's send
 (36-hour expiry) and the time of the last digest (90-day expiry). There is no email fallback.
+
+Each run also looks for open requests an approver could act on but that nobody would receive a digest for (the shop
+has no resource manager tagged, and no approver is assigned to the tool, shop or group, or those people have no
+Slack link). It posts one list of them (tool, shop and age, up to 10) to the Members Relations channel, at most once
+a day (Redis key `checkout_request_digest:unassigned:<date>`, 36-hour expiry), and repeats daily until somebody is
+assigned. A failed post releases the key, is reported, and is retried by the next run; it never stops the digests.
 The tool's announce-channel post for a new request is unchanged and immediate.
 
 `CheckoutRequestReminderJob` runs daily at 12:30 UTC (about 8:30 am Eastern) and as the
@@ -587,13 +628,33 @@ nothing, `unknown` when none did.
 `GET /api/admin/slack_identity_conflicts` (`Service::SlackUserSync.detect_conflicts_for_page`)
 lists the Slack accounts that cannot be linked because the member already has another. It combines
 a live scan of Slack's whole user directory with the conflicts saved earlier in
-`slack_identity_conflicts`. The scan pages through Slack inside the web request, so it is cached in
-Redis (`slack_identity_conflicts:live`, 5 minutes) and stops after 20 seconds. If it fails or runs
-out of time, the request still succeeds with the saved conflicts only and
-`live_check: "unavailable"` (`slack_identity_conflicts:live_failed`, 60 seconds, stops every reload
-from retrying a failing scan). `live_check` is otherwise `fresh` or `cached`. Reassigning or
-dismissing a conflict clears both keys. The scan itself does not write anything. Without this, a
-slow Slack response exceeded Heroku's 30 second limit and the page failed with a 503.
+`slack_identity_conflicts`. A whole scan does not fit in one web request (Heroku's limit is 30
+seconds and a large workspace took longer), so each request runs one **piece** and the page asks
+again until it is done:
+
+- A piece reads Slack's directory from where the last one stopped, for at most 12 seconds or
+  `slack_conflict_scan_size` accounts, whichever comes first (always at least one account). The setting
+  is an admin/board portal setting (10 to 500, default 200, edited on the page itself with
+  `PUT /api/admin/system_configs/update_setting`; anything else is a 422). It is also the page size asked
+  of Slack, fixed when a scan starts so the saved position stays valid if the setting changes mid-scan.
+  Saving it clears the scan in progress and the cached result so the next request starts over with the
+  new number. Lower it when pieces still time out.
+- Progress lives in Redis (`slack_identity_conflicts:scan`, 15 minutes): the Slack cursor, how many
+  accounts of that page are done, the conflicts found so far and a failure count. A Redis lock
+  (`slack_identity_conflicts:scan_lock`, 30 seconds) stops two requests from running the same piece.
+- A finished scan is cached (`slack_identity_conflicts:live`, 5 minutes) and its account count is kept
+  30 days (`slack_identity_conflicts:last_total`) as the estimated total for the progress display.
+- Slack answering "too many requests" is not a failure: the piece waits as long as Slack asked
+  (`progress.waiting_seconds`) and carries on. Three failed pieces in a row give up with
+  `live_check: "unavailable"` (`slack_identity_conflicts:live_failed`, 60 seconds, stops every reload
+  from retrying a failing scan) and the request still succeeds with the saved conflicts only.
+- The response is `{ conflicts, live_check, scan_size }` plus `progress` (`checked`, `estimated_total`,
+  `waiting_seconds`) while scanning. `live_check` is `fresh` (a scan just finished), `cached`,
+  `scanning` (conflicts found so far plus the saved ones) or `unavailable`.
+
+Reassigning or dismissing a conflict clears the cached result, the scan in progress and the lock. The
+scan itself does not write anything. Without the pieces, a slow Slack response exceeded Heroku's 30
+second limit and the page failed with a 503.
 
 ### Slack re-invite after an email change
 

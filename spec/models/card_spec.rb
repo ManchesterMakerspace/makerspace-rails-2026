@@ -82,6 +82,32 @@ RSpec.describe Card, type: :model do
           create(:card, member: member, uid: SecureRandom.hex(6))
         end.to have_enqueued_job(MemberProvisioningJob).with(member.id.to_s)
       end
+
+      describe "applying held payments on the member's first card" do
+        let(:holder) { create(:member, status: 'activeMember', expirationTime: nil) }
+
+        before { allow_any_instance_of(Member).to receive(:send_renewal_slack_message) }
+
+        it "applies a held payment once the first card is issued" do
+          held = create(:invoice, member: holder, transaction_id: "held_txn")
+
+          create(:card, member: holder, uid: SecureRandom.hex(6))
+
+          expect(held.reload.settled_at).to be_present
+          expect(Time.at(holder.reload.expirationTime / 1000)).to be_within(1.minute).of(1.month.from_now)
+        end
+
+        it "leaves a refunded held payment alone and still applies the others" do
+          refunded = create(:invoice, member: holder, transaction_id: "refunded_txn", refunded: true)
+          held = create(:invoice, member: holder, transaction_id: "held_txn")
+
+          create(:card, member: holder, uid: SecureRandom.hex(6))
+
+          expect(refunded.reload.settled_at).to be_nil
+          expect(held.reload.settled_at).to be_present
+          expect(Time.at(holder.reload.expirationTime / 1000)).to be_within(1.minute).of(1.month.from_now)
+        end
+      end
     end
 
     describe "on update" do
