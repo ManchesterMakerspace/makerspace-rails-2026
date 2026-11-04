@@ -241,3 +241,11 @@ admin/board_member role. The gateway computes reader-scoped managesTool; the
 firmware verifies the card and rechecks permission. A kick only ends the current
 session; operating the tool still requires its normal checkout. Out-of-service
 blocks new sessions but allows existing-session logoff and kicks.
+
+
+## Native fob enrollment
+
+Native enrollment preserves active admin/board registration/replacement and
+volunteer first-fob restrictions. Every request reauthorizes. Volunteers resume
+only their own issuer attempts; admin/board can recover another operator attempt,
+with the completing actor audited. Phones gain no reader identity.

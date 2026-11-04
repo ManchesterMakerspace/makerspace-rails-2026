@@ -1101,3 +1101,12 @@ Slack synchronization jobs handle terminal changes. A durable
 There is no refund, penalty, or separate no-show notification job. The new private
 service credential and coordinated rollout are documented in
 [reader reservations](reader-reservations.MD).
+
+
+## Native card enrollment
+
+`CardEnrollment` synchronously authorizes, stages/resumes and commits enrollment.
+`NfcCredentialCodec` encrypts/decrypts gateway-compatible material.
+`CardManagement.assign_in_transaction!` supports atomic native assignment;
+`assignment_effects!` runs after commit. `data:ensure_card_enrollment_indexes`
+creates indexes explicitly without deleting data. No recurring cleanup is added.

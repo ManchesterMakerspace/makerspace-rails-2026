@@ -190,6 +190,14 @@ Rails.application.routes.draw do
       post   '/volunteer/events/:id/checkin', to: 'volunteer#checkin_event'
       delete '/volunteer/events/:id/checkin', to: 'volunteer#remove_checkin'
 
+      %w[admin fob_issuance].each do |enrollment_scope|
+        scope enrollment_scope do
+          resources :card_enrollments, only: [:create, :show], controller: 'card_enrollments' do
+            post :commit, on: :member
+          end
+        end
+      end
+
       # Fob issuers (volunteers with a fob-issuer checkout): first-fob issuing only
       scope :fob_issuance, controller: :fob_issuance do
         get  'members',     action: :members

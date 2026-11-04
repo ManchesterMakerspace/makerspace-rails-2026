@@ -79,29 +79,41 @@ class CardManagement
     card = nil
     audit = nil
     transaction do
-      member = Member.find(attributes[:member_id])
-      raise Error::NotFound.new unless member
-      member.inc(card_operation_version: 1)
-      if initial_only && !member.reload.awaiting_first_fob?
-        raise Conflict, 'This member already has a key fob. Ask a board member to replace it.'
-      end
-      raise Conflict, 'This UID is already registered.' if Card.where(uid: attributes[:uid]).exists?
-      card = Card.new(attributes)
-      card.defer_assignment_effects = true
-      card.save!
-      member.access_cards.where(:id.ne => card.id, :validity.nin => %w[lost stolen]).each do |old|
-        old.skip_provisioning_enqueue = true
-        old.invalidate
-      end
-      card.finalize_assignment!
-      # Source describes the client workflow, never authorization or UID validity.
-      source_label = case uid_source
-      when 'nfc' then 'NFC scan (client-reported)'
-      when 'import' then 'Reader import (client-reported)'
-      else 'Unspecified'
-      end
-      audit = audit!(card, actor, 'card_assigned', message_details: "Card UID source: #{source_label}")
+      guard = NfcCardEnrollment.lock!(attributes[:uid])
+      raise Conflict, 'This UID has a pending phone enrollment. Resume that enrollment first.' if guard.state == 'pending'
+      card, audit = assign_in_transaction!(attributes, actor, uid_source: uid_source, initial_only: initial_only)
     end
+    assignment_effects!(card, audit)
+    card
+  end
+
+  def self.assign_in_transaction!(attributes, actor, uid_source: nil, initial_only: false)
+    member = Member.find(attributes[:member_id])
+    raise Error::NotFound.new unless member
+    member.inc(card_operation_version: 1)
+    if initial_only && !member.reload.awaiting_first_fob?
+      raise Conflict, 'This member already has a key fob. Ask a board member to replace it.'
+    end
+    raise Conflict, 'This UID is already registered.' if Card.where(uid: attributes[:uid]).exists?
+    card = Card.new(attributes)
+    card.defer_assignment_effects = true
+    card.save!
+    member.access_cards.where(:id.ne => card.id, :validity.nin => %w[lost stolen]).each do |old|
+      old.skip_provisioning_enqueue = true
+      old.invalidate
+    end
+    card.finalize_assignment!
+    # Source describes the client workflow, never authorization or UID validity.
+    source_label = case uid_source
+    when 'nfc' then 'NFC scan (client-reported)'
+    when 'import' then 'Reader import (client-reported)'
+    else 'Unspecified'
+    end
+    audit = audit!(card, actor, 'card_assigned', message_details: "Card UID source: #{source_label}")
+    [card, audit]
+  end
+
+  def self.assignment_effects!(card, audit)
     # External provisioning and invoice callbacks must not run in a retried transaction.
     card.perform_assignment_effects!
     channel = Service::SlackConnector.logs_channel

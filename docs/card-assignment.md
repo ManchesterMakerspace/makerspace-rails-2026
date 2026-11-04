@@ -61,3 +61,79 @@ The member payload (`GET /api/members/:id` and the sign-in and session responses
 After a successful issue, `FobIssuanceNotifier` sends the member a Slack direct
 message (when their Slack account is linked) and posts to the members relations
 channel. Failures there are logged and do not undo the card.
+
+
+## Phone enrollment and reader fallback
+
+Register/Replace Fob and volunteer Issue Fob share two paths. Chrome offers
+**Continue in Android app** and **Use enrollment reader instead**. The handoff
+contains only a member ID and workflow; the app restores its own login/TOTP session,
+reloads the member and requires a fresh identity-verification confirmation.
+Chrome Web NFC cannot program the protected Classic credential.
+
+Native Android enrollment supports MIFARE Classic 1K/4K with 4-/7-byte UIDs on
+phones exposing Android MifareClassic. Scan the UID, verify the member's ID, submit,
+tap to check compatibility, then tap and hold to program. Remove and retap to verify.
+Only the final Rails transaction assigns the card and invalidates the old fob.
+Cancellation/tag loss leaves encrypted pending material for a same-card retry.
+Unrelated nonblank sector data is never overwritten. A damaged trailer requires
+operator recovery or a replacement card; never discard pending material to retry.
+
+Reader fallback uses the existing assignment endpoints and either browser UID
+scanning or front-door scan/Import New Key. Assignment immediately invalidates the
+old usable fob and can activate a pending member, as before. The operator must then
+present the assigned card to an enrollment-enabled reader. The UI says:
+
+> Card UID assigned. To finish issuing or replacing this fob, present it to an enrollment-enabled reader. The fob is ready only after that reader completes enrollment.
+
+The UI does not observe station completion. Arrange station access before replacing
+a fob; ask an authorized operator if no enabled station is available. Reader begin
+creates/reuses encrypted pending material in nfc_card_credentials; reader commit
+activates it after readback. Native pending attempts block conflicting UID assignment.
+
+Admin/board operators must be fully active and unexpired. Volunteers must retain
+the fob-issuer checkout and may issue only to another non-revoked member without a
+usable fob. Lost/stolen cards retain the existing first-fob eligibility semantics.
+Native preparation/commit also require a signed contract and preparation requires
+an explicit ID-verification attestation. Neither UID nor readback digest proves
+identity or independently proves RF possession; programmers are authorized actors.
+
+Native APIs, under both /api/admin/card_enrollments and
+/api/fob_issuance/card_enrollments, are POST collection (memberId, uid, idVerified),
+GET /:id (secret-free status), and POST /:id/commit (revision, digest). Preparation
+returns id, uid, memberId, cardId, revision, state and transient material; status and
+commit omit material. Inputs accept existing JSON key transformation. Responses
+are direct hashes. Authentication, TOTP, CSRF and private/no-store remain enforced.
+Conflicts return 409, invalid preparation 422, unavailable storage/key 503.
+
+Deploy the same existing READER_KEY_ENCRYPTION_KEY into Rails, run
+`bundle exec rake data:ensure_card_enrollment_indexes`, then deploy Rails before
+web/native builds. Preserve the key and existing encrypted credentials. No automatic
+card reset, migration, pending TTL or orphan cleanup occurs. Deploying code is not
+physical acceptance: test actual phones, cards, tag loss and reader admission.
+
+
+### Validation and release checklist
+
+The implementation was checked with an isolated disposable MongoDB replica set,
+including staged replacement, readback rejection, rollback on audit failure,
+legacy-assignment conflicts, idempotent completion and volunteer revocation.
+External notification dependencies are stubbed in request tests.
+`ruby scripts/ci/verify-nfc-codec.rb` checks Ruby-to-Node and Node-to-Ruby AES-GCM
+interoperability and the firmware metadata/digest format using an ephemeral test key.
+
+Before release, provision the shared encryption key, create enrollment indexes,
+deploy Rails then the web/Android app, and physically verify phone/card compatibility,
+interrupted programming/recovery, Chrome-to-app login/TOTP, and ESP32 admission.
+No production data changes, key rotation, app distribution, flashing or wiki
+publication were performed. The operator text is held in
+[the phone enrollment draft](wiki-phone-enrollment-draft.md).
+
+
+Automated results: the assignment/enrollment run passed 35 examples. After adding
+error/recipient cases, the enrollment plus legacy volunteer run passed 48 of 49;
+the existing profile-flag example at `spec/requests/fob_issuance_spec.rb:184` failed
+because its profile serializer needs a reachable Redis service. New enrollment
+examples passed. The full Rails suite was not run. Re-run that legacy example with
+Redis available before release. Swagger generation is a dry-run artifact step and
+is not additional executed API coverage.

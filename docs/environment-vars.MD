@@ -159,3 +159,11 @@ executable code does not retrieve them.
 The companion API also needs `READER_RAILS_URL`, the private Rails origin. Use HTTPS
 across untrusted networks, restrict route ingress to the API, and rotate the shared
 secret on both services together. This does not replace reader certificate authentication.
+
+
+## Native card enrollment
+
+`READER_KEY_ENCRYPTION_KEY`: Base64 32-byte AES-256-GCM key, identical to the existing
+ts-data-api reader key. Required by Rails native enrollment; missing/invalid values
+fail closed. Preserve it; rotation needs an explicit decrypt/re-encrypt migration.
+No backend secret is compiled into the app.

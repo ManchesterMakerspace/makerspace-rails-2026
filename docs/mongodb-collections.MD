@@ -349,3 +349,24 @@ history. The indexed `checkend(deviceId, checkinId)` lookup supplies session end
 Reader reads project approved overlapping/next-four-hour records and paginate by
 start time then ID. Disposable MongoDB tests inspect executionStats against unrelated
 history. See [reader reservation lifecycle](reader-reservations.MD).
+
+
+## Phone NFC enrollment storage
+
+These are top-level MongoDB collections, not SQL tables or embedded documents.
+
+| Collection | Fields and lifecycle | Indexes |
+| --- | --- | --- |
+| `nfc_card_enrollments` | Rails `NfcCardEnrollment`: `_id` canonical UID String, `attempt_id` UUID String; actor/member/card IDs BSON ObjectIds; workflow/state Strings; revision/assignment_version/fence Integers; sealed Hash; created_at/completed_at BSON Dates. Idle guards serialize legacy assignment; pending reserves the UID and survives cancellation; completed retains recovery status. | Unique `_id`; unique partial String `attempt_id`; `(actor_id, member_id, state)` |
+| `nfc_card_credentials` | Gateway and Rails `NfcCardCredential`: `_id = cards._id`, `memberId` ObjectId, uid/state Strings, sealed Hash, createdAt/enrolledAt Dates. Native completion adds enrolledByMemberId ObjectId and enrollmentSource android; station records retain enrolledBy reader ObjectId. | Unique `_id` |
+| `cards`, `members`, `rejections` | Existing assignment, invalidation, activation and rejection claiming; native commit changes them atomically with credential activation/audit. Fallback assigns before RF enrollment. | Existing unique cards.uid and other indexes |
+| `audit_logs` | Sanitized preparation/completion and assignment events; no keys, material or sealed snapshots. | Existing audit indexes |
+| `tools`, `tool_checkouts` | Existing volunteer authority; nfc_authorization_fence Integer coordinates revocation. Members also use that fence and nfc_enrollment_fence. | Existing indexes |
+| `nfc_readers` | Gateway-owned enabled/enrollmentEnabled station configuration. Phones receive no station certificates. | Existing name/fingerprint indexes |
+
+`sealed` contains Base64 iv/tag/ciphertext: AES-256-GCM with a 12-byte IV,
+16-byte tag and the existing 32-byte reader encryption key. Plaintext JSON matches
+the gateway: keyA/keyB/contents/digest/version. Digest is SHA-256(raw UID + 48 data
+bytes). Deploy `data:ensure_card_enrollment_indexes` explicitly. No TTL or automatic
+pending/orphan deletion is added. Completion audits retain attempt identity when
+released UIDs receive another attempt; old credential records remain preserved.
