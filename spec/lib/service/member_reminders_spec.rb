@@ -223,6 +223,41 @@ RSpec.describe Service::MemberReminders do
       expect(member.reload.signup_reminder_count).to eq(1)
     end
 
+    it "leaves out a second adult who joined a household, who has no payment of their own and is waiting for a fob" do
+      primary = create(:member, address_street: '12 Main St', address_postal_code: '03101')
+      create(:invoice, member: primary, resource_id: primary.id.to_s, resource_class: 'member', plan_id: 'household-x', settled_at: Time.now)
+      primary.update_attributes!(groupName: primary.id.to_s)
+      group = Group.create!(groupName: primary.id.to_s, groupRep: primary.fullname, expiry: primary.expirationTime)
+      second = pending_member(signed_up_days_ago: 10, address_street: '12 Main St', address_postal_code: '03101')
+      group.add_subordinate(second)
+
+      expect(described_class.run!(at: at)[:signup]).to eq(0)
+
+      expect(MemberMailer).not_to have_received(:signup_reminder).with(second.id.as_json)
+    end
+
+    it "leaves out someone with an open household invitation, who still has to press Join" do
+      primary = create(:member)
+      allow(Service::AuditLogger).to receive(:log)
+      group = Group.new(groupName: primary.id.to_s, groupRep: primary.fullname).tap { |g| g.save!(validate: false) }
+      invited = pending_member(signed_up_days_ago: 10)
+      invitation = HouseholdInvitation.new(group_id: group.id, invited_email: invited.email, token_digest: 'x', expires_at: 1.day.ago)
+      invitation.save!
+      invitation.issue_token!
+
+      described_class.run!(at: at)
+
+      expect(MemberMailer).not_to have_received(:signup_reminder).with(invited.id.as_json)
+    end
+
+    it "still emails an ordinary pending member alongside them" do
+      other = pending_member(signed_up_days_ago: 10)
+
+      described_class.run!(at: at)
+
+      expect(MemberMailer).to have_received(:signup_reminder).with(other.id.as_json)
+    end
+
     it "does not email before day 8" do
       pending_member(signed_up_days_ago: 7)
 

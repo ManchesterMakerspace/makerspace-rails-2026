@@ -43,11 +43,20 @@ class Group
     Invoice.where(resource_class: "member", resource_id: primary.id.to_s, :plan_id => /household/i).order_by(created_at: :desc)
   end
 
-  # Whether the primary's household payment has been accepted: the most recent household-plan invoice that was settled is
-  # not refunded and has no open dispute, and the primary's paid time has not run out. A new household whose payment is held
-  # until the first fob has no expiry yet and counts. Gates the primary's own invitations only; an admin is never blocked by it.
+  # A payment that was taken: applied (settled), or held until the member's first fob (a transaction on the invoice that has
+  # not been applied yet) unless its settlement was declined.
+  def self.paid_invoice?(invoice)
+    return true if invoice.settled_at.present?
+
+    invoice.transaction_id.present? && invoice.last_failed_transaction_id != invoice.transaction_id
+  end
+
+  # Whether the primary's household payment has been accepted: the most recent household-plan invoice that was paid (applied,
+  # or held until the first fob) is not refunded and has no open dispute, and the primary's paid time has not run out. A new
+  # household whose payment is held until the first fob has no expiry yet and counts. Gates the primary's own invitations
+  # only; an admin is never blocked by it.
   def self.payment_accepted_for?(primary)
-    settled = household_invoices_for(primary).detect { |invoice| invoice.settled_at.present? }
+    settled = household_invoices_for(primary).detect { |invoice| paid_invoice?(invoice) }
     return false unless settled
     return false if settled.refunded
     return false if settled.dispute_requested.present? && !settled.dispute_settled

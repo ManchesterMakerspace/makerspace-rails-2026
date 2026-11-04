@@ -58,6 +58,22 @@ RSpec.describe Group, 'household size, payment and seats' do
       expect(accepted?(disputed)).to be(false)
     end
 
+    it 'counts a payment held until the first fob, which has a transaction but is not applied yet' do
+      held = create(:member, HOUSEHOLD_SPEC_ADDRESS)
+      create(:invoice, member: held, resource_id: held.id.to_s, resource_class: 'member', plan_id: HOUSEHOLD_SPEC_PLAN,
+                       transaction_id: 'tx-held', settled_at: nil)
+
+      expect(accepted?(held)).to be(true)
+    end
+
+    it 'does not count a held payment whose settlement was declined' do
+      declined = create(:member, HOUSEHOLD_SPEC_ADDRESS)
+      create(:invoice, member: declined, resource_id: declined.id.to_s, resource_class: 'member', plan_id: HOUSEHOLD_SPEC_PLAN,
+                       transaction_id: 'tx-bad', last_failed_transaction_id: 'tx-bad', settled_at: nil)
+
+      expect(accepted?(declined)).to be(false)
+    end
+
     it 'is true while the paid time runs and false once it has run out' do
       current = primary_on_plan(member_attrs: { expirationTime: (Time.now + 10.days).to_i * 1000 })
       lapsed = primary_on_plan(member_attrs: { expirationTime: (Time.now - 2.days).to_i * 1000 })

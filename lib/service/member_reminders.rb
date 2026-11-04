@@ -87,6 +87,10 @@ module Service
         candidates.each do |member|
           # Any invoice at all means they have started to pay, so this is no longer an unfinished signup.
           next if Invoice.where(resource_class: 'member', :resource_id.in => [member.id.to_s]).exists?
+          # A second adult who joined a household (or has an open invitation to join one) has no payment of their own and is
+          # waiting for the household and their fob, not walking away from a signup.
+          next if member.household_role.present?
+          next if HouseholdInvitation.open.where(invited_email: member.email.to_s.downcase).exists?
 
           signed_up_on = (member.startDate.presence || member.id.generation_time).in_time_zone(ZONE).to_date
           next unless due?(count: member.signup_reminder_count, last_sent_at: member.signup_reminder_last_sent_at,
