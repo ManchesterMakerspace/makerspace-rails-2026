@@ -49,6 +49,21 @@ RSpec.describe BraintreeService::Transaction, type: :model do
         expect(BraintreeService::Transaction).to receive(:enque_message).with(/refund .+ completed/i)
         BraintreeService::Transaction.refund(gateway, transaction_id)
       end
+
+      it "tells staff a refund does not change the membership expiration, so they check it" do
+        invoice = create(:invoice, transaction_id: transaction_id, refunded: false)
+
+        allow(gateway).to receive_message_chain(:transaction, refund: success_result)
+        allow(success_result).to receive(:transaction).and_return(fake_transaction)
+        allow(BraintreeService::Transaction).to receive(:normalize).with(gateway, fake_transaction).and_return(fake_transaction)
+        allow(fake_transaction).to receive(:invoice).and_return(invoice)
+        allow(BillingMailer).to receive_message_chain(:refund, :deliver_later)
+        expect(BraintreeService::Transaction).to receive(:enque_message)
+          .with(a_string_including("completed.", "check the member's expiration date", "a refund does not change it"))
+
+        BraintreeService::Transaction.refund(gateway, transaction_id)
+        expect(invoice.reload.refunded).to be(true)
+      end
     end
 
     describe "#invoice" do
