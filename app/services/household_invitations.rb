@@ -134,7 +134,7 @@ module HouseholdInvitations
       group.add_subordinate(member, invitation: invitation)
       invitation.update!(status: 'accepted', accepted_member_id: member.id, accepted_at: Time.current)
 
-      audit(group, member, 'household_member_added', "#{member.fullname} joined by invitation from #{primary.fullname}",
+      audit(group, member, 'household_member_added', "joined by invitation from #{primary.fullname}",
             subject: primary, slack: true, snapshot: { groupName: group.groupName, secondary_member_id: member.id.to_s, secondary_name: member.fullname, source: 'invitation' })
       MemberMailer.household_joined(member.id.to_s, primary.id.to_s).deliver_later
       MemberMailer.household_joined(primary.id.to_s, member.id.to_s).deliver_later
@@ -216,7 +216,7 @@ module HouseholdInvitations
     def create_household!(primary)
       group = Group.create!(groupName: primary.id.to_s, groupRep: primary.fullname, expiry: primary.expirationTime)
       primary.update_attributes!(groupName: primary.id.to_s)
-      audit(group, primary, 'household_created', "#{primary.fullname}'s household was created when they sent their first invitation",
+      audit(group, primary, 'household_created', "created the household by sending the first invitation",
             slack: true, snapshot: { groupName: group.groupName, groupRep: group.groupRep, primary_member_id: primary.id.to_s })
       group
     end

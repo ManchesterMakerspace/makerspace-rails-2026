@@ -220,6 +220,15 @@ RSpec.describe HouseholdInvitations do
         after_snapshot: hash_including(source: 'invitation')))
     end
 
+    it 'names the joining adult once in the audit message' do
+      described_class.accept!(member: second, token: raw)
+
+      expect(Service::AuditLogger).to have_received(:log).with(hash_including(
+        event_type: 'household_member_added',
+        message_details: "#{second.fullname} joined by invitation from #{primary.fullname}"
+      ))
+    end
+
     it 'requires the signed-in account to use the invited email, masking it' do
       other = invitee(email: 'someone.else@example.com')
 
