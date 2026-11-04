@@ -42,7 +42,7 @@ module HouseholdInvitations
         invite_blocked_reason: eligibility && !eligibility[:allowed] ? eligibility[:reason] : nil,
         plan_size: role == :secondary ? nil : (group ? group.size : (household_plan_current?(member) ? Group.size_for(member) : nil)),
         household: group && household_summary(group, member, role),
-        invited_to_a_household: role.nil? && HouseholdInvitation.open.where(invited_email: member.email.to_s.downcase).exists?
+        invited_to_a_household: role.nil? && HouseholdInvitation.outstanding.where(invited_email: member.email.to_s.downcase).exists?
       }
     end
 
@@ -52,7 +52,7 @@ module HouseholdInvitations
       raise ::Error::UnprocessableEntity.new('That is your own email address.') if email == primary.email.to_s.downcase
 
       existing_group = household_for(primary)
-      resending = !!(existing_group && group_invitations(existing_group).open.where(invited_email: email).exists?)
+      resending = !!(existing_group && group_invitations(existing_group).outstanding.where(invited_email: email).exists?)
       check = eligibility(primary, resending: resending)
       raise ::Error::UnprocessableEntity.new(check[:reason]) unless check[:allowed]
 
@@ -67,7 +67,7 @@ module HouseholdInvitations
       end
 
       group = household_for(primary) || create_household!(primary)
-      invitation = group_invitations(group).open.where(invited_email: email).first
+      invitation = group_invitations(group).outstanding.where(invited_email: email).first
       if invitation
         verb = 'resent'
       else

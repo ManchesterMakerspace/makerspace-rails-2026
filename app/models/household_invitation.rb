@@ -31,7 +31,7 @@ class HouseholdInvitation
   before_validation { self.invited_email = invited_email.to_s.strip.downcase }
 
   # Pending and not yet expired: these hold a seat and their link works.
-  scope :open, -> { where(status: 'pending', :expires_at.gt => Time.current) }
+  scope :outstanding, -> { where(status: 'pending', :expires_at.gt => Time.current) }
 
   def self.digest(raw_token)
     Digest::SHA256.hexdigest(raw_token.to_s)

@@ -105,7 +105,7 @@ class Group
 
   # Adults in the household plus the open invitations, each of which holds a seat until it is accepted, cancelled or expires.
   def seats_used
-    members_count + invitations.open.count
+    members_count + invitations.outstanding.count
   end
 
   # ignoring_invitation: the invitation being accepted, whose own seat becomes the new member's.
