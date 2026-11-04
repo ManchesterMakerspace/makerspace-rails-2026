@@ -10,7 +10,12 @@ class InvoiceOptionSerializer < ApplicationSerializer
              :discount_id,
              :operation,
              :is_promotion,
-             :promotion_end_date
+             :promotion_end_date,
+             :household_size
+
+  def household_size
+    object.effective_household_size
+  end
 
   def amount
     object.amount.truncate.to_s + '.' + sprintf('%02d', (BigDecimal(object.amount.to_s).frac * 100).truncate)
