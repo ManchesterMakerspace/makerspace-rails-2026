@@ -245,6 +245,8 @@ RSpec.configure do |config|
         disabled: { type: :boolean, 'x-nullable': true },
         promotionEndDate: { type: :string, 'x-nullable': true },
         isPromotion: { type: :boolean, 'x-nullable': true },
+        householdSize: { type: :integer, 'x-nullable': true,
+                         description: 'Adults a household plan covers (2 or more). A household plan with none set counts as 2; null for a plan that is not a household plan.' },
       },
       required: [
         :name,
@@ -252,6 +254,84 @@ RSpec.configure do |config|
         :resourceClass,
         :quantity
       ]
+    },
+
+    Group: {
+      type: :object,
+      description: 'A household: the primary member and the secondary adults linked to them.',
+      properties: {
+        id: { type: :string },
+        groupName: { type: :string, description: "The primary member's id." },
+        groupRep: { type: :string },
+        expiry: { type: :integer, 'x-nullable': true, description: 'Milliseconds. The primary expiry; secondaries and their cards always equal it.' },
+        size: { type: :integer, description: 'Adults the primary household plan covers.' },
+        seatsUsed: { type: :integer, description: 'The primary, the linked secondaries and the open invitations.' },
+        paymentAccepted: { type: :boolean, description: 'The most recent household-plan payment was taken (applied, or held until the first fob), is not refunded or disputed, and the paid time has not run out.' },
+        primaryMember: { type: :object, 'x-nullable': true },
+        secondaryMembers: { type: :array, items: { type: :object } },
+        invitations: { type: :array, items: { type: :object } },
+      },
+      required: [:id, :groupName, :size, :seatsUsed, :paymentAccepted]
+    },
+
+    HouseholdSummary: {
+      type: :object,
+      properties: {
+        id: { type: :string },
+        display_name: { type: :string },
+        size: { type: :integer },
+        seats_used: { type: :integer },
+        payment_accepted: { type: :boolean },
+        expiration_time: { type: :integer, 'x-nullable': true },
+        primary: { type: :object },
+        members: { type: :array, items: { type: :object } },
+        invitations: { type: :array, description: 'Only for the primary.', items: { type: :object } },
+      },
+      required: [:id, :size, :seats_used, :payment_accepted]
+    },
+
+    Household: {
+      type: :object,
+      description: "The signed-in member's household state. Keys are snake_case.",
+      properties: {
+        role: { type: :string, enum: %w[primary secondary], 'x-nullable': true },
+        household_plan: { type: :boolean },
+        can_invite: { type: :boolean },
+        invite_blocked_reason: { type: :string, 'x-nullable': true, description: 'Plain words for why the invite is not available.' },
+        plan_size: { type: :integer, 'x-nullable': true },
+        household: { '$ref' => '#/components/schemas/HouseholdSummary', 'x-nullable': true },
+        invited_to_a_household: { type: :boolean, description: 'An open invitation is waiting for this member\'s email.' },
+        invitation_id: { type: :string, description: 'Only in the response to creating an invitation.' },
+      },
+      required: [:household_plan, :can_invite, :invited_to_a_household]
+    },
+
+    HouseholdInvitationPublic: {
+      type: :object,
+      description: 'What the link page may show before signing in.',
+      properties: {
+        status: { type: :string, enum: %w[pending expired accepted revoked] },
+        inviter_name: { type: :string, 'x-nullable': true, description: 'First name and last initial.' },
+        invited_email: { type: :string },
+        expires_at: { type: :string },
+      },
+      required: [:status, :invited_email, :expires_at]
+    },
+
+    HouseholdInvitationPreview: {
+      type: :object,
+      description: 'What the signed-in invited person sees before joining, including the address that must match.',
+      properties: {
+        status: { type: :string },
+        primary_name: { type: :string, 'x-nullable': true },
+        household_address: { type: :string, 'x-nullable': true },
+        your_address: { type: :string },
+        address_matches: { type: :boolean },
+        payment_accepted: { type: :boolean },
+        blocked_reason: { type: :string, 'x-nullable': true },
+        expires_at: { type: :string },
+      },
+      required: [:status, :address_matches, :payment_accepted]
     },
 
     InvoiceOption: {

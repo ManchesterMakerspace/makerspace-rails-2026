@@ -63,6 +63,9 @@ Rails.application.routes.draw do
     post '/tools/:id/checkout_required_sheet', to: 'checkout_required_sheets#create', defaults: { kind: 'tool' }
     resources :locations, only: [:index]
 
+    # Public household invitation link: who invited you and until when, before signing in
+    get '/household_invitations/:token', to: 'household_invitations#show'
+
     # Public rental spot info — unauthenticated deep-link/QR landing
     get '/rental_spots/:id/public', to: 'rental_spots#public_show'
 
@@ -146,7 +149,6 @@ Rails.application.routes.draw do
       get    'household/invitations/preview',    to: 'households#preview'
       post   'household/invitations/:id/resend', to: 'households#resend'
       delete 'household/invitations/:id',        to: 'households#revoke'
-      get    'household_invitations/:token',     to: 'household_invitations#show'
 
       # Rentals — member self-service
       resources :rentals, only: [:show, :index, :update, :create] do

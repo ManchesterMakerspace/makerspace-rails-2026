@@ -656,6 +656,29 @@ Reassigning or dismissing a conflict clears the cached result, the scan in progr
 scan itself does not write anything. Without the pieces, a slow Slack response exceeded Heroku's 30
 second limit and the page failed with a 503.
 
+### Household invitations
+
+`HouseholdInvitations` (request-time only, no job; expiry is by time, 14 days from the last send) lets the primary of a household plan
+invite a second adult. There is no manual command or schedule. Rules, all enforced on the server: only the primary invites;
+the household payment must be accepted (`Group.payment_accepted_for?`: the most recent household-plan invoice that was applied or
+held until the first fob is not refunded or disputed and the paid time has not run out; a held payment whose settlement was
+declined does not count); an open invitation holds one of the plan's seats (`InvoiceOption#household_size`, blank counts as 2), so a
+household never exceeds its size, including when an admin uses Add Secondary; the invited person must be signed in with exactly the
+typed email; an active subscription or unexpired paid time blocks joining (the date is shown only to that person); the address must
+match (`Service::AddressMatch`: forgiving about case, punctuation, St/Street style words and a unit, strict about the street number,
+street name and postal code; an admin can override with a typed reason that goes in the audit log). The household is created when the
+first invitation is sent. A reversed payment blocks new invitations and acceptance, and secondaries keep following the primary's
+expiry: `Group#update_expiration` moves the household and every secondary card together.
+
+Two existing behaviors changed with it. `Group#update_expiration` no longer rewrites members' `groupName` as a String (that made Mongoid's
+household lookups, and so later renewals, miss secondaries); a household member's lookup now matches both forms. And a settlement
+declined for a payment that was held until the first fob (`Invoice#reverse_invoice_operation`) no longer subtracts months from an
+expiry that never existed, and `Card#settle_open_member_invoices` no longer applies it at the first fob. The member reminders skip a second
+adult who joined a household or has an open invitation, and the staff Slack message about a household plan with no household now says the
+primary can invite from the portal. Audit events: `household_invitation_sent`, `household_invitation_resent`,
+`household_invitation_revoked`, `household_created` (also when created by the first invitation) and `household_member_added` (with
+`source: invitation`).
+
 ### Slack re-invite after an email change
 
 When a member's email changes, `Member#handle_successful_email_change` resets their Slack tracking

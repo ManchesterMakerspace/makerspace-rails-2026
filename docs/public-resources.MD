@@ -126,6 +126,17 @@ identity conflicts check looks at. GET /api/admin/slack_identity_conflicts now r
 scan_size, live_check may be scanning, and a progress object accompanies it while a
 check is under way; see jobs-tasks-services.MD. Still admin and board only.
 
+Households: the primary of a household plan invites a second adult by email. Signed-in routes (snake_case JSON):
+GET /api/household (state, seats, open invitations, whether and why not they can invite), POST /api/household/invitations
+(`email`), POST /api/household/invitations/:id/resend, DELETE /api/household/invitations/:id (cancel, frees the seat),
+GET /api/household/invitations/preview?token= and POST /api/household/invitations/accept (`token`) for the invited person, who must be
+signed in with the invited email. One public route, GET /api/household_invitations/:token (no session), returns only the
+inviter's first name and last initial, the invited email, the status and the expiry; 404 for an unknown link. The page the
+emailed link opens is `/household/join?token=` (public: it asks the person to sign in or create a free account, then shows the
+address they must match and a Join button). GET /api/invoice_options and the admin option form carry `householdSize`.
+Admin POST /api/admin/groups and POST /api/admin/groups/:id/add_member return `size`, `seatsUsed`, `paymentAccepted` and invitations,
+and add_member accepts `addressOverrideReason` (admin only, recorded in the audit log with both addresses).
+
 Rentals: a rental's `status` may now be `awaiting_verification` (the member says they have vacated; the spot stays
 held). DELETE /api/rentals/:id/cancel with vacated=true and POST /api/rentals/:id/mark_vacated by the rental's own
 member now set it, instead of cancelling. New POST /api/rentals/:id/verify_vacated lets a resource manager,
