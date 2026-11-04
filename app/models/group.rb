@@ -90,12 +90,19 @@ class Group
     1 + secondary_members.count
   end
 
-  def seats_used
-    members_count
+  def invitations
+    HouseholdInvitation.where(group_id: id)
   end
 
+  # Adults in the household plus the open invitations, each of which holds a seat until it is accepted, cancelled or expires.
+  def seats_used
+    members_count + invitations.open.count
+  end
+
+  # ignoring_invitation: the invitation being accepted, whose own seat becomes the new member's.
   def full?(ignoring_invitation: nil)
-    seats_used >= size
+    held = ignoring_invitation&.open? ? 1 : 0
+    seats_used - held >= size
   end
 
   # Links a secondary. Refuses a full household and an address that does not match the primary's, unless an admin gives a
@@ -143,23 +150,23 @@ class Group
 
     Group.collection.find(_id: id).update_one("$set" => { expiry: new_expiration })
     self.expiry = new_expiration
-    Member.collection.find(_id: { "$in" => member_ids }).update_many(
-      "$set" => { expirationTime: new_expiration, groupName: household_key }
-    )
-    Card.where(:member_id.in => member_ids).update_all(expiry: new_expiration)
-    Service::ToolCheckoutSlackCanvas.enqueue_for_members(member_ids)
-
-    true
     # Only the expiry is written for everyone. The primary is also tagged with the household, in the form Mongoid itself
     # stores (an ObjectId): writing groupName here as a String is what made Mongoid's household queries stop finding the
     # secondaries after the first update.
-  end
-
-  # Emit to Member & Management channels on renewal. Matches the pattern
+    Member.collection.find(_id: { "$in" => member_ids }).update_many(
+      "$set" => { expirationTime: new_expiration }
+    )
     if member
       stored_key = BSON::ObjectId.legal?(groupName.to_s) ? BSON::ObjectId.from_string(groupName.to_s) : groupName.to_s
       Member.collection.find(_id: member.id).update_one("$set" => { groupName: stored_key })
     end
+    Card.where(:member_id.in => member_ids).update_all(expiry: new_expiration)
+    Service::ToolCheckoutSlackCanvas.enqueue_for_members(member_ids)
+
+    true
+  end
+
+  # Emit to Member & Management channels on renewal. Matches the pattern
   # used by Member/Rental — queued via enque_message with distinct
   # uniquifiers per recipient, not the synchronous send_slack_message this
   # codebase has been moving away from (see #91).

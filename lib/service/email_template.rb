@@ -66,7 +66,9 @@ module Service
       membership_expiring_soon:             'EMAIL_MEMBERSHIP_EXPIRING_SOON_ID',
       membership_expired:                   'EMAIL_MEMBERSHIP_EXPIRED_ID',
       fob_reminder:                         'EMAIL_FOB_REMINDER_ID',
-      signup_reminder:                      'EMAIL_SIGNUP_REMINDER_ID'
+      signup_reminder:                      'EMAIL_SIGNUP_REMINDER_ID',
+      household_invitation:                 'EMAIL_HOUSEHOLD_INVITATION_ID',
+      household_joined:                     'EMAIL_HOUSEHOLD_JOINED_ID'
     }.freeze
 
     TEMPLATE_DEFINITIONS = {
@@ -99,7 +101,9 @@ module Service
       membership_expiring_soon: { format: :html, placeholders: [], fallback: 'external_templates/membership_expiring_soon' },
       membership_expired: { format: :html, placeholders: [], fallback: 'external_templates/membership_expired' },
       fob_reminder: { format: :html, placeholders: %w[paid_date], fallback: 'external_templates/fob_reminder' },
-      signup_reminder: { format: :html, placeholders: [], fallback: 'external_templates/signup_reminder' }
+      signup_reminder: { format: :html, placeholders: [], fallback: 'external_templates/signup_reminder' },
+      household_invitation: { format: :html, placeholders: %w[primary_name invite_url expires_on], fallback: 'external_templates/household_invitation' },
+      household_joined: { format: :html, placeholders: %w[other_member_name], fallback: 'external_templates/household_joined' }
     }.freeze
 
     HTML_TAGS = %w[p div h1 h2 h3 h4 h5 h6 a strong b em i u ul ol li br blockquote table thead tbody tr th td].freeze

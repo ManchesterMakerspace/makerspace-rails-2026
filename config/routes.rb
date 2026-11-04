@@ -139,6 +139,15 @@ Rails.application.routes.draw do
         end
       end
 
+      # Household — the primary invites a second adult, who joins by link
+      get    'household',                        to: 'households#show'
+      post   'household/invitations',            to: 'households#invite'
+      post   'household/invitations/accept',     to: 'households#accept'
+      get    'household/invitations/preview',    to: 'households#preview'
+      post   'household/invitations/:id/resend', to: 'households#resend'
+      delete 'household/invitations/:id',        to: 'households#revoke'
+      get    'household_invitations/:token',     to: 'household_invitations#show'
+
       # Rentals — member self-service
       resources :rentals, only: [:show, :index, :update, :create] do
         member do
