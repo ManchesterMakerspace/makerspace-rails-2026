@@ -74,6 +74,57 @@ RSpec.describe Group, 'household size, payment and seats' do
     end
   end
 
+  describe 'secondaries keep following the primary' do
+    let(:primary) { primary_on_plan }
+    let(:group) { household_for(primary) }
+    let(:secondary) { create(:member, HOUSEHOLD_SPEC_ADDRESS) }
+
+    def raw_group_name_type(member)
+      Member.collection.find(_id: member.id).first['groupName'].class
+    end
+
+    it 'finds the household after an expiry update, and a second update still reaches the secondary' do
+      group.add_subordinate(secondary)
+      first = (Time.now + 10.days).to_i * 1000
+      second = (Time.now + 40.days).to_i * 1000
+
+      group.reload.update_expiration(first)
+      expect(secondary.reload.expirationTime).to eq(first)
+      expect(group.reload.secondary_members.map(&:id)).to eq([secondary.id])
+
+      group.reload.update_expiration(second)
+      expect(secondary.reload.expirationTime).to eq(second)
+      expect(primary.reload.expirationTime).to eq(second)
+    end
+
+    it 'does not change how groupName is stored' do
+      group.add_subordinate(secondary)
+      stored = raw_group_name_type(secondary)
+
+      group.reload.update_expiration((Time.now + 10.days).to_i * 1000)
+
+      expect(raw_group_name_type(secondary)).to eq(stored)
+    end
+
+    it 'still finds a secondary whose groupName was written as a String by the old update' do
+      group.add_subordinate(secondary)
+      Member.collection.find(_id: secondary.id).update_one('$set' => { groupName: primary.id.to_s })
+
+      expect(group.reload.secondary_members.map(&:id)).to eq([secondary.id])
+      expect(group.members_count).to eq(2)
+
+      group.update_expiration((Time.now + 5.days).to_i * 1000)
+      expect(secondary.reload.expirationTime).to eq(group.reload.expiry)
+    end
+
+    it 'leaves out a soft-deleted member' do
+      group.add_subordinate(secondary)
+      Member.unscoped.find(secondary.id).set(merged_at: Time.now)
+
+      expect(group.reload.secondary_members.to_a).to eq([])
+    end
+  end
+
   describe '#add_subordinate' do
     let(:primary) { primary_on_plan }
     let(:group) { household_for(primary) }

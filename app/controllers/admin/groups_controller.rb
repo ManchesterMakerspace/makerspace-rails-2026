@@ -143,7 +143,7 @@ class Admin::GroupsController < AdminController
     before = @group.attributes.dup
 
     # Revert all secondary members
-    @group.active_members.where(:id.ne => @group.groupName).each do |m|
+    @group.secondary_members.each do |m|
       @group.remove_subordinate(m)
     end
 

@@ -71,8 +71,18 @@ class Group
     self.class.size_for(member)
   end
 
+  # Ids of everyone in the household, primary included. Mongoid stores and queries groupName as an ObjectId, but a raw update
+  # (the old Group#update_expiration) wrote it as a String, which Mongoid's own queries then never match. Both forms are
+  # matched here so the household is always found; see console-scratch/scripts/repair_household_group_names.rb for the data.
+  def household_member_ids
+    keys = [groupName.to_s]
+    keys << BSON::ObjectId.from_string(groupName.to_s) if BSON::ObjectId.legal?(groupName.to_s)
+    Member.collection.find(groupName: { '$in' => keys }, merged_at: nil).projection(_id: 1).map { |doc| doc['_id'] }
+  end
+
   def secondary_members
-    active_members.where(:id.ne => groupName)
+    primary_id = BSON::ObjectId.legal?(groupName.to_s) ? BSON::ObjectId.from_string(groupName.to_s) : nil
+    Member.where(:id.in => household_member_ids - [primary_id])
   end
 
   # The primary and the linked secondaries.
@@ -129,8 +139,7 @@ class Group
   end
 
   def update_expiration(new_expiration)
-    household_key = groupName.to_s
-    member_ids = (Member.where(groupName: household_key).pluck(:id) + [member&.id]).compact.uniq
+    member_ids = (household_member_ids + [member&.id]).compact.uniq
 
     Group.collection.find(_id: id).update_one("$set" => { expiry: new_expiration })
     self.expiry = new_expiration
@@ -141,9 +150,16 @@ class Group
     Service::ToolCheckoutSlackCanvas.enqueue_for_members(member_ids)
 
     true
+    # Only the expiry is written for everyone. The primary is also tagged with the household, in the form Mongoid itself
+    # stores (an ObjectId): writing groupName here as a String is what made Mongoid's household queries stop finding the
+    # secondaries after the first update.
   end
 
   # Emit to Member & Management channels on renewal. Matches the pattern
+    if member
+      stored_key = BSON::ObjectId.legal?(groupName.to_s) ? BSON::ObjectId.from_string(groupName.to_s) : groupName.to_s
+      Member.collection.find(_id: member.id).update_one("$set" => { groupName: stored_key })
+    end
   # used by Member/Rental — queued via enque_message with distinct
   # uniquifiers per recipient, not the synchronous send_slack_message this
   # codebase has been moving away from (see #91).
@@ -210,7 +226,7 @@ class Group
   private
 
   def update_active_members
-    self.active_members.each { |m| m.verify_group_expiry }
+    Member.where(:id.in => household_member_ids).each { |m| m.verify_group_expiry }
     self.member.verify_group_expiry if self.member
   end
 
