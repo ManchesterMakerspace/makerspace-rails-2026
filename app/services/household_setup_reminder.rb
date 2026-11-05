@@ -18,8 +18,9 @@ class HouseholdSetupReminder
     base_url = Rails.configuration.x.app_base_url
     reason = TRIGGERS.fetch(trigger.to_sym, trigger.to_s)
     message = "🏠 *#{member.fullname}* is on a household membership plan but has no household yet " \
-              "(#{reason}). Open their profile, choose *Create Household*, then *Manage Household* and " \
-              "*Add Secondary Member* for the second adult: <#{base_url}/members/#{member.id}|Set up household>"
+              "(#{reason}). They can invite their second adult themselves from their household page in the portal, " \
+              "or you can open their profile, choose *Create Household*, then *Manage Household* and " \
+              "*Add Secondary Member*: <#{base_url}/members/#{member.id}|Set up household>"
     ::Service::SlackConnector.enque_message(
       message,
       ::Service::SlackConnector.members_relations_channel,

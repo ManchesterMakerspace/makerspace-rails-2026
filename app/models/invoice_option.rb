@@ -24,6 +24,9 @@ class InvoiceOption
 
   field :disabled, type: Boolean, default: false
   field :promotion_end_date, type: DateTime
+  # How many adults a household plan covers. The price is per plan, so the size is too. Blank on an existing household
+  # option means 2 (see #effective_household_size), so nothing changes until an admin sets it.
+  field :household_size, type: Integer
 
   search_in :name, :description
 
@@ -32,6 +35,7 @@ class InvoiceOption
   validates_numericality_of :amount, greater_than: 0
   validates_numericality_of :quantity, greater_than: 0
   validates_uniqueness_of :plan_id, unless: -> { plan_id.nil? }
+  validates_numericality_of :household_size, only_integer: true, greater_than_or_equal_to: 2, allow_nil: true
 
   def self.search(searchTerms, criteria = Mongoid::Criteria.new(InvoiceOption))
     criteria.full_text_search(searchTerms)
@@ -51,6 +55,15 @@ class InvoiceOption
         { promotion_end_date: nil },
         { :promotion_end_date.gte => promotion_cutoff }
       )
+  end
+
+  def household_plan?
+    plan_id.to_s.downcase.include?('household')
+  end
+
+  # nil for a plan that is not a household plan.
+  def effective_household_size
+    household_size || (household_plan? ? Group::DEFAULT_SIZE : nil)
   end
 
   def promotion_active?(at: Time.current)

@@ -139,6 +139,7 @@ fallback can use the repository template when retrieval fails.
 | `DOC_MEMBER_REVIEW_PAYPAL_ID` | `DOC_MEMBER_REVIEW_MISSING_CONTRACT_ID` | |
 | `EMAIL_MEMBERSHIP_EXPIRING_SOON_ID` | `EMAIL_MEMBERSHIP_EXPIRED_ID` | |
 | `EMAIL_FOB_REMINDER_ID` | `EMAIL_SIGNUP_REMINDER_ID` | |
+| `EMAIL_HOUSEHOLD_INVITATION_ID` | `EMAIL_HOUSEHOLD_JOINED_ID` | |
 
 Comment-only environment examples are intentionally excluded because
 executable code does not retrieve them.

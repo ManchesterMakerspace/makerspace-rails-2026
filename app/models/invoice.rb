@@ -477,8 +477,15 @@ class Invoice
     operation = OPERATION_FUNCTIONS.find{ |f| f == self.operation }
     raise ::Error::UnprocessableEntity.new("Unable to reverse invoice. Invalid operation for invoice #{self.id}") if operation.nil?
 
-    raise ::Error::UnprocessableEntity.new("Unable to reverse invoice. Operation failed for invoice #{self.id}") unless resource.reverse_operation(operation, self)
-    resource.send_renewal_reversal_slack_message() unless resource_class == "fee"
+    if settled_at.present?
+      raise ::Error::UnprocessableEntity.new("Unable to reverse invoice. Operation failed for invoice #{self.id}") unless resource.reverse_operation(operation, self)
+      resource.send_renewal_reversal_slack_message() unless resource_class == "fee"
+    elsif transaction_id.present?
+      # A payment held until the member's first fob was never applied, so there is nothing to take back, and subtracting
+      # months from a membership that never had them would set an expiry in the past. Record the decline so the first fob does
+      # not apply a declined payment later (Card#settle_open_member_invoices skips it).
+      update!(last_failed_transaction_id: transaction_id)
+    end
     self.settled = false
     self.save!
   end

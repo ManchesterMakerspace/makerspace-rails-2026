@@ -138,6 +138,44 @@ class MemberMailer < ApplicationMailer
          template_name: 'google_doc_email'
   end
 
+  # Sent to the address the primary typed, which may not belong to a member yet. The link carries the secret token; only its
+  # digest is stored, so the token is passed straight from the invitation service.
+  def household_invitation(invitation_id, token)
+    @invitation = HouseholdInvitation.find(invitation_id)
+    primary = @invitation.group&.member
+    base = Rails.configuration.x.try(:app_base_url).to_s.sub(%r{/$}, '')
+    variables = {
+      primary_name: primary&.fullname,
+      # The token is in the URL fragment, which the browser never sends to the server, so it stays out of request logs.
+      invite_url: "#{base}/household/join#token=#{token}",
+      expires_on: @invitation.expires_at.in_time_zone.strftime('%B %-d, %Y'),
+      portal_url: base,
+      base_url: base,
+      open_house_schedule: ENV['OPEN_HOUSE_SCHEDULE']
+    }
+    @google_doc_content = ::Service::EmailTemplate.render(:household_invitation, variables, fallback: true, format: :html)
+    mail to: @invitation.invited_email,
+         subject: "#{primary&.firstname || 'A member'} invited you to a Manchester Makerspace household membership",
+         template_path: 'shared',
+         template_name: 'google_doc_email'
+  end
+
+  # Sent to both adults when the second adult joins: member_id is who receives it, other_member_id the other adult.
+  def household_joined(member_id, other_member_id)
+    @member = Member.find(member_id)
+    other = Member.find(other_member_id)
+    @google_doc_content = ::Service::EmailTemplate.render(
+      :household_joined,
+      ::Service::EmailTemplate.common_variables(@member).merge(other_member_name: other.fullname),
+      fallback: true,
+      format: :html
+    )
+    mail to: @member.email,
+         subject: 'Your Manchester Makerspace household membership',
+         template_path: 'shared',
+         template_name: 'google_doc_email'
+  end
+
   def signup_reminder(member_id)
     @member = Member.find(member_id)
     @google_doc_content = ::Service::EmailTemplate.render(

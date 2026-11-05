@@ -63,6 +63,10 @@ Rails.application.routes.draw do
     post '/tools/:id/checkout_required_sheet', to: 'checkout_required_sheets#create', defaults: { kind: 'tool' }
     resources :locations, only: [:index]
 
+    # Public household invitation link: who invited you and until when, before signing in. The token is sent in the request
+    # body, never in the path or query string, so it does not end up in request logs.
+    post '/household_invitations/lookup', to: 'household_invitations#lookup'
+
     # Public rental spot info — unauthenticated deep-link/QR landing
     get '/rental_spots/:id/public', to: 'rental_spots#public_show'
 
@@ -138,6 +142,14 @@ Rails.application.routes.draw do
           post :preview, action: :preview_update
         end
       end
+
+      # Household — the primary invites a second adult, who joins by link
+      get    'household',                        to: 'households#show'
+      post   'household/invitations',            to: 'households#invite'
+      post   'household/invitations/accept',     to: 'households#accept'
+      post   'household/invitations/preview',    to: 'households#preview'
+      post   'household/invitations/:id/resend', to: 'households#resend'
+      delete 'household/invitations/:id',        to: 'households#revoke'
 
       # Rentals — member self-service
       resources :rentals, only: [:show, :index, :update, :create] do

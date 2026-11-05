@@ -21,7 +21,8 @@ class BraintreeService::Transaction < Braintree::Transaction
     else
       invoice.update!({ refunded: true })
       BillingMailer.refund(invoice.member.email, transaction_id, invoice.id.to_s).deliver_later
-      enque_message("#{invoice.member.fullname}'s refund of #{invoice.amount} for #{invoice.name} from #{invoice.settled_at} completed.")
+      enque_message("#{invoice.member.fullname}'s refund of #{invoice.amount} for #{invoice.name} from #{invoice.settled_at} completed. " \
+                    "If this was a membership payment, check the member's expiration date: a refund does not change it.")
     end
 
     transaction

@@ -128,7 +128,7 @@ class Admin::InvoiceOptionsController < AdminOrRmController
   end
 
   def invoice_params
-    params.permit(:description, :name, :resource_class, :amount, :quantity, :disabled, :plan_id, :discount_id, :promotion_end_date)
+    params.permit(:description, :name, :resource_class, :amount, :quantity, :disabled, :plan_id, :discount_id, :promotion_end_date, :household_size)
   end
 
   def find_invoice_option

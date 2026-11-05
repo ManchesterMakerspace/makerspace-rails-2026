@@ -109,7 +109,7 @@ RSpec.describe HouseholdSetupReminder do
       create(:card, member: pending_member)
 
       expect(::Service::SlackConnector).to have_received(:enque_message).with(
-        a_string_including("#{pending_member.fullname}", "has no household yet"), anything, a_string_including("household_setup_reminder")
+        a_string_including("#{pending_member.fullname}", "has no household yet", "invite their second adult themselves", "Create Household"), anything, a_string_including("household_setup_reminder")
       )
     end
 

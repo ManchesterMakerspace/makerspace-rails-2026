@@ -94,6 +94,8 @@ class Card
     if self == self.member.access_cards.first
       # A refunded payment must not grant membership time when it is finally applied.
       open_invoices = self.member.invoices.where(:transaction_id.nin => ["", nil], settled_at: nil, :refunded.ne => true)
+      # A held payment whose settlement was declined must not grant membership time (see Invoice#reverse_invoice_operation).
+      open_invoices = open_invoices.reject { |i| i.last_failed_transaction_id.present? && i.last_failed_transaction_id == i.transaction_id }
       open_invoices.each { |i| i.send(:execute_invoice_operation) }
     end
   end
