@@ -305,3 +305,69 @@ expiry scans. Deploy it with the repeatable
 index without changing documents. Existing member/tool lookup indexes remain.
 Expiration audits use existing audit logs; notice settings and run status use
 the existing SystemConfig storage.
+
+
+### Reader tool-session audit extension
+
+The companion ts-data-api writes the new singular checkend collection directly.
+It retains checkin identity/time fields and adds checkinId, kicked, kickedBy
+(memberId/uid/holder), reason, and shop/tool identity/name snapshots. The native
+_id index supports idempotent retries. No Rails Mongoid model, migration, UI, or
+API endpoint is added. Tool checkins remain in checkins; every session ending,
+including kicks and reboot recovery, is represented in checkend. Unknown reboot
+ending times are 0/timeOf=null rather than an estimated usage duration.
+
+
+The session-recovery review adds a gateway-owned unique partial index on
+checkend(deviceId, checkinId), named one_end_per_reader_checkin, for string
+checkinId values. Deploy with ts-data-api/scripts/reader-indexes.cjs before the
+reviewed gateway. The script fails on existing duplicates without modifying them.
+
+## Reader reservation attendance
+
+`reservations` also stores `reader_revision` (decision-relevant edits),
+`reader_state_version` (atomic lifecycle fence), `reader_scope_changed_at`
+(earliest attendance evidence valid after resource/start edits), `arrived_at`,
+`arrival_reader_id`, `arrival_tool_id`, `arrival_checkin_id`, `abandoned_at`,
+`abandonment_reason`, `reader_monitor_started_at`, frozen `reader_monitors`,
+bounded idempotency `reader_receipts`, and `reader_sync_pending`. Legacy records
+default to no attendance and revision zero. `abandoned` is terminal and does not
+block availability. Invoice and fee data are retained.
+
+Gateway-owned `nfc_readers` adds `reservationEnabled`,
+`reservationCoverageRevision`, and `previousToolIds`. Each frozen monitor records
+the tool, coverage revision, and synchronized interval. Configuration/capability
+changes invalidate prior coverage; operators changing these fields directly must
+also increment the coverage revision, including disable/re-enable cycles.
+The gateway configuration endpoint records former tools for authenticated replay.
+
+Deploy these additional gateway indexes with `scripts/reader-indexes.cjs`:
+`nfc_readers(enabled, role, reservationEnabled, toolId)`,
+`checkins(deviceId, validity, timeOf desc)`, and
+`checkins(deviceId, memberId, validity, timeOf)`. The script also ensures the existing
+reservation tool/status/start/end and shop/status/start/end indexes. It never drops
+history. The indexed `checkend(deviceId, checkinId)` lookup supplies session endings.
+Reader reads project approved overlapping/next-four-hour records and paginate by
+start time then ID. Disposable MongoDB tests inspect executionStats against unrelated
+history. See [reader reservation lifecycle](reader-reservations.MD).
+
+
+## Phone NFC enrollment storage
+
+These are top-level MongoDB collections, not SQL tables or embedded documents.
+
+| Collection | Fields and lifecycle | Indexes |
+| --- | --- | --- |
+| `nfc_card_enrollments` | Rails `NfcCardEnrollment`: `_id` canonical UID String, `attempt_id` UUID String; actor/member/card IDs BSON ObjectIds; workflow/state Strings; revision/assignment_version/fence Integers; sealed Hash; created_at/completed_at BSON Dates. Idle guards serialize legacy assignment; pending reserves the UID and survives cancellation; completed retains recovery status. | Unique `_id`; unique partial String `attempt_id`; `(actor_id, member_id, state)` |
+| `nfc_card_credentials` | Gateway and Rails `NfcCardCredential`: `_id = cards._id`, `memberId` ObjectId, uid/state Strings, sealed Hash, createdAt/enrolledAt Dates. Native completion adds enrolledByMemberId ObjectId and enrollmentSource android; station records retain enrolledBy reader ObjectId. | Unique `_id` |
+| `cards`, `members`, `rejections` | Existing assignment, invalidation, activation and rejection claiming; native commit changes them atomically with credential activation/audit. Fallback assigns before RF enrollment. | Existing unique cards.uid and other indexes |
+| `audit_logs` | Sanitized preparation/completion and assignment events; no keys, material or sealed snapshots. | Existing audit indexes |
+| `tools`, `tool_checkouts` | Existing volunteer authority; nfc_authorization_fence Integer coordinates revocation. Members also use that fence and nfc_enrollment_fence. | Existing indexes |
+| `nfc_readers` | Gateway-owned enabled/enrollmentEnabled station configuration. Phones receive no station certificates. | Existing name/fingerprint indexes |
+
+`sealed` contains Base64 iv/tag/ciphertext: AES-256-GCM with a 12-byte IV,
+16-byte tag and the existing 32-byte reader encryption key. Plaintext JSON matches
+the gateway: keyA/keyB/contents/digest/version. Digest is SHA-256(raw UID + 48 data
+bytes). Deploy `data:ensure_card_enrollment_indexes` explicitly. No TTL or automatic
+pending/orphan deletion is added. Completion audits retain attempt identity when
+released UIDs receive another attempt; old credential records remain preserved.

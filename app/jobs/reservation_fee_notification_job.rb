@@ -4,6 +4,7 @@ class ReservationFeeNotificationJob < ApplicationJob
   def perform(id)
     reservation = Reservation.where(id: id).first
     return unless reservation
+    return if reservation.abandoned? # No automatic no-show DM, including delayed queued jobs.
     user = SlackUser.find_by(member_id: reservation.member_id)
     return unless user && !reservation.member.direct_notifications_suppressed?
 

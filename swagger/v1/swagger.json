@@ -1915,8 +1915,26 @@
               "unpaid",
               "approved",
               "denied",
-              "cancelled"
+              "cancelled",
+              "abandoned"
             ]
+          },
+          "readerRevision": {
+            "type": "integer"
+          },
+          "arrivedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "abandonedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "abandonmentReason": {
+            "type": "string",
+            "nullable": true
           },
           "approvalReasons": {
             "type": "array",
@@ -18487,6 +18505,578 @@
           "422": {
             "description": "Unknown job"
           }
+        }
+      }
+    },
+    "/internal/reader_reservations/sync": {
+      "post": {
+        "summary": "Synchronize reader attendance (private ts-data-api ingress only)",
+        "tags": [
+          "Reader reservations (internal)"
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Dedicated server-to-server Bearer secret; not browser authentication"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operations synchronized; stale and blocked outcomes are explicit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "results",
+                    "serverTime"
+                  ],
+                  "properties": {
+                    "serverTime": {
+                      "type": "integer"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "reservationId": {
+                            "type": "string"
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "accepted",
+                              "stale",
+                              "gone",
+                              "blocked"
+                            ]
+                          },
+                          "revision": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "monitored": {
+                            "type": "boolean"
+                          },
+                          "arrivedAt": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid service credential"
+          },
+          "409": {
+            "description": "Session upload pending or conflicting replay/state"
+          },
+          "422": {
+            "description": "Invalid operation or scope"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "deviceId",
+                  "operations"
+                ],
+                "properties": {
+                  "deviceId": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{24}$"
+                  },
+                  "operations": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "reservationId",
+                        "revision"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "monitor",
+                            "claim",
+                            "release",
+                            "checkpoint"
+                          ]
+                        },
+                        "reservationId": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "checkinId": {
+                          "type": "string"
+                        },
+                        "checkendId": {
+                          "type": "string"
+                        },
+                        "observedAt": {
+                          "type": "integer"
+                        },
+                        "coveredFrom": {
+                          "type": "integer"
+                        },
+                        "through": {
+                          "type": "integer"
+                        },
+                        "uncertain": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/admin/card_enrollments": {
+      "post": {
+        "summary": "Prepare or resume protected card enrollment",
+        "tags": [
+          "Cards"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Durable pending material or completed retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "uid",
+                    "memberId",
+                    "cardId",
+                    "revision",
+                    "state"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "uid": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "cardId": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "completed"
+                      ]
+                    },
+                    "material": {
+                      "type": "object",
+                      "required": [
+                        "keyA",
+                        "keyB",
+                        "contents",
+                        "digest",
+                        "version"
+                      ],
+                      "properties": {
+                        "keyA": {
+                          "type": "string"
+                        },
+                        "keyB": {
+                          "type": "string"
+                        },
+                        "contents": {
+                          "type": "string"
+                        },
+                        "digest": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid identity attestation"
+          },
+          "409": {
+            "description": "Conflicting assignment"
+          },
+          "503": {
+            "description": "Enrollment storage or encryption unavailable"
+          },
+          "403": {
+            "description": "Operator lacks this workflow authority"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "memberId",
+                  "uid",
+                  "idVerified"
+                ],
+                "properties": {
+                  "memberId": {
+                    "type": "string"
+                  },
+                  "uid": {
+                    "type": "string",
+                    "pattern": "^(?:[0-9A-F]{8}|[0-9A-F]{14})$"
+                  },
+                  "idVerified": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/admin/card_enrollments/{id}": {
+      "get": {
+        "summary": "Read secret-free enrollment status",
+        "tags": [
+          "Cards"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enrollment status without keys"
+          },
+          "403": {
+            "description": "Operator lacks this workflow authority"
+          }
+        }
+      }
+    },
+    "/admin/card_enrollments/{id}/commit": {
+      "post": {
+        "summary": "Commit verified enrollment and assignment atomically",
+        "tags": [
+          "Cards"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verified assignment completed; exact retries are idempotent"
+          },
+          "403": {
+            "description": "Operator lacks this workflow authority"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "revision",
+                  "digest"
+                ],
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "digest": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/fob_issuance/card_enrollments": {
+      "post": {
+        "summary": "Prepare or resume protected card enrollment",
+        "tags": [
+          "Cards"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Durable pending material or completed retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "uid",
+                    "memberId",
+                    "cardId",
+                    "revision",
+                    "state"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "uid": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "cardId": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "completed"
+                      ]
+                    },
+                    "material": {
+                      "type": "object",
+                      "required": [
+                        "keyA",
+                        "keyB",
+                        "contents",
+                        "digest",
+                        "version"
+                      ],
+                      "properties": {
+                        "keyA": {
+                          "type": "string"
+                        },
+                        "keyB": {
+                          "type": "string"
+                        },
+                        "contents": {
+                          "type": "string"
+                        },
+                        "digest": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid identity attestation"
+          },
+          "409": {
+            "description": "Conflicting assignment"
+          },
+          "503": {
+            "description": "Enrollment storage or encryption unavailable"
+          },
+          "403": {
+            "description": "Operator lacks this workflow authority"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "memberId",
+                  "uid",
+                  "idVerified"
+                ],
+                "properties": {
+                  "memberId": {
+                    "type": "string"
+                  },
+                  "uid": {
+                    "type": "string",
+                    "pattern": "^(?:[0-9A-F]{8}|[0-9A-F]{14})$"
+                  },
+                  "idVerified": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/fob_issuance/card_enrollments/{id}": {
+      "get": {
+        "summary": "Read secret-free enrollment status",
+        "tags": [
+          "Cards"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enrollment status without keys"
+          },
+          "403": {
+            "description": "Operator lacks this workflow authority"
+          }
+        }
+      }
+    },
+    "/fob_issuance/card_enrollments/{id}/commit": {
+      "post": {
+        "summary": "Commit verified enrollment and assignment atomically",
+        "tags": [
+          "Cards"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verified assignment completed; exact retries are idempotent"
+          },
+          "403": {
+            "description": "Operator lacks this workflow authority"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "revision",
+                  "digest"
+                ],
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "digest": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     }

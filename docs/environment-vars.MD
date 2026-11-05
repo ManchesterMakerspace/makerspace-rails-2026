@@ -151,3 +151,21 @@ executable code does not retrieve them.
 | `SLACK_TICKETS_CHANNEL` | No | Optional; blank disables central publication | Initial channel ID or name, overridable under System settings → Slack (stored as `slack_channel_tickets`). A saved blank override disables publication even when this environment variable is set; no default channel is used. Channel for every new ticket and threaded updates, including full notes. Bounties broadcast replies. Independent of public visibility and per-ticket shop announcements. Bot must be able to post/read its messages. Existing `SLACK_ENV` development redirection applies. |
 
 `ticket_open_limit` is a positive-integer SystemConfig setting, default 10, editable only by admins; it is not an environment variable. /fix always requires SLACK_SIGNING_SECRET, including development.
+
+## Private reader reservation lifecycle
+
+| Variable | Secret | Required/default | Behavior |
+| --- | --- | --- | --- |
+| `READER_RESERVATION_SERVICE_SECRET` | Yes | Required to enable reader lifecycle; at least 32 characters, no default | Dedicated Bearer credential shared only between Rails and ts-data-api. The private `/api/internal/reader_reservations/sync` route fails closed without it. Never install it on readers or in browser configuration. |
+
+The companion API also needs `READER_RAILS_URL`, the private Rails origin. Use HTTPS
+across untrusted networks, restrict route ingress to the API, and rotate the shared
+secret on both services together. This does not replace reader certificate authentication.
+
+
+## Native card enrollment
+
+`READER_KEY_ENCRYPTION_KEY`: Base64 32-byte AES-256-GCM key, identical to the existing
+ts-data-api reader key. Required by Rails native enrollment; missing/invalid values
+fail closed. Preserve it; rotation needs an explicit decrypt/re-encrypt migration.
+No backend secret is compiled into the app.
