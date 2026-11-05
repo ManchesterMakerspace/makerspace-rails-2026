@@ -146,7 +146,8 @@ class MemberMailer < ApplicationMailer
     base = Rails.configuration.x.try(:app_base_url).to_s.sub(%r{/$}, '')
     variables = {
       primary_name: primary&.fullname,
-      invite_url: "#{base}/household/join?token=#{token}",
+      # The token is in the URL fragment, which the browser never sends to the server, so it stays out of request logs.
+      invite_url: "#{base}/household/join#token=#{token}",
       expires_on: @invitation.expires_at.in_time_zone.strftime('%B %-d, %Y'),
       portal_url: base,
       base_url: base,

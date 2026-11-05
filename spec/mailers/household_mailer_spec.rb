@@ -19,7 +19,7 @@ RSpec.describe MemberMailer, 'household emails' do
       expect(mail.to).to eq(['second@example.com'])
       expect(mail.subject).to match(/Pat invited you/)
       body = mail.body.encoded
-      expect(body).to include('/household/join?token=THE-TOKEN')
+      expect(body).to include('/household/join#token=THE-TOKEN')
       expect(body).to include('Pat Primary')
       expect(body).to match(/free/i)
       expect(body).to match(/photo ID/)

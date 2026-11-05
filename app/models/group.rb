@@ -51,12 +51,19 @@ class Group
     invoice.transaction_id.present? && invoice.last_failed_transaction_id != invoice.transaction_id
   end
 
+  # The household invoice that entitles the primary to the household: the most recent one that was paid (applied, or held
+  # until the first fob). Both the payment check and the plan size read this same invoice, so an invoice for a larger plan
+  # that has not been paid gives no extra seats and no extra payment standing.
+  def self.paid_household_invoice_for(primary)
+    household_invoices_for(primary).detect { |invoice| paid_invoice?(invoice) }
+  end
+
   # Whether the primary's household payment has been accepted: the most recent household-plan invoice that was paid (applied,
   # or held until the first fob) is not refunded and has no open dispute, and the primary's paid time has not run out. A new
   # household whose payment is held until the first fob has no expiry yet and counts. Gates the primary's own invitations
   # only; an admin is never blocked by it.
   def self.payment_accepted_for?(primary)
-    settled = household_invoices_for(primary).detect { |invoice| paid_invoice?(invoice) }
+    settled = paid_household_invoice_for(primary)
     return false unless settled
     return false if settled.refunded
     return false if settled.dispute_requested.present? && !settled.dispute_settled
@@ -65,9 +72,11 @@ class Group
     expiry.nil? || expiry > (Time.now.to_i * 1000)
   end
 
-  # How many adults the primary's household plan covers.
+  # How many adults the primary's household plan covers: the plan that was paid for. Before anything is paid (only for
+  # showing "covers up to N adults" next to the price) it is the newest household invoice's plan.
   def self.size_for(primary)
-    plan_id = household_invoices_for(primary).first&.plan_id
+    invoice = paid_household_invoice_for(primary) || household_invoices_for(primary).first
+    plan_id = invoice&.plan_id
     option = plan_id.present? ? InvoiceOption.where(plan_id: plan_id).first : nil
     option&.effective_household_size || DEFAULT_SIZE
   end

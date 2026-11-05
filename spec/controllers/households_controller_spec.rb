@@ -35,7 +35,7 @@ RSpec.describe HouseholdsController, type: :controller do
     end
 
     it 'invites, then shows the open invitation and no more room' do
-      expect { post :invite, params: { email: 'second@example.com' }, format: :json }.to have_enqueued_mail(MemberMailer, :household_invitation)
+      expect { post :invite, params: { email: 'second@example.com' }, format: :json }.to have_enqueued_job(HouseholdInvitationMailJob)
 
       expect(response).to have_http_status(201)
       expect(body['role']).to eq('primary')
@@ -66,11 +66,26 @@ RSpec.describe HouseholdsController, type: :controller do
     it 'resends an invitation' do
       post :invite, params: { email: 'second@example.com' }, format: :json
       id = body['invitation_id']
+      clear_household_invite_cooldown
 
-      expect { post :resend, params: { id: id }, format: :json }.to have_enqueued_mail(MemberMailer, :household_invitation)
+      expect { post :resend, params: { id: id }, format: :json }.to have_enqueued_job(HouseholdInvitationMailJob)
 
       expect(response).to have_http_status(200)
       expect(HouseholdInvitation.find(id).sent_count).to eq(2)
+    end
+
+    it 'answers 429 and keeps the existing link when an invitation is resent too soon' do
+      post :invite, params: { email: 'second@example.com' }, format: :json
+
+      expect(response).to have_http_status(201)
+      id = JSON.parse(response.body)['invitation_id']
+      digest = HouseholdInvitation.find(id).token_digest
+
+      post :resend, params: { id: id }, format: :json
+
+      expect(response).to have_http_status(429)
+      expect(JSON.parse(response.body).to_s).to match(/Wait a minute/)
+      expect(HouseholdInvitation.find(id).token_digest).to eq(digest)
     end
 
     it 'cannot touch another household\'s invitation' do
@@ -99,7 +114,7 @@ RSpec.describe HouseholdsController, type: :controller do
     before { sign_in second }
 
     it 'previews the household address, then joins' do
-      get :preview, params: { token: token }, format: :json
+      post :preview, params: { token: token }, format: :json
       expect(response).to have_http_status(200)
       expect(body).to include('household_address' => '12 Main St, 03101', 'address_matches' => true)
 
@@ -140,7 +155,7 @@ RSpec.describe HouseholdInvitationsController, type: :controller do
     create(:invoice, member: primary, resource_id: primary.id.to_s, resource_class: 'member', plan_id: plan, settled_at: Time.now)
     token = HouseholdInvitations.invite!(primary: primary, email: 'second@example.com').issue_token!
 
-    get :show, params: { token: token }, format: :json
+    post :lookup, params: { token: token }, format: :json
 
     expect(response).to have_http_status(200)
     body = JSON.parse(response.body)
@@ -150,8 +165,24 @@ RSpec.describe HouseholdInvitationsController, type: :controller do
   end
 
   it 'returns 404 for an unknown link' do
-    get :show, params: { token: 'nonsense' }, format: :json
+    post :lookup, params: { token: 'nonsense' }, format: :json
 
     expect(response).to have_http_status(404)
+  end
+
+  it 'returns only the status for a cancelled link, naming nobody' do
+    ActiveJob::Base.queue_adapter = :test
+    allow(Service::AuditLogger).to receive(:log)
+    allow(Service::SlackConnector).to receive(:enque_message)
+    primary = create(:member, address_street: '12 Main St', address_postal_code: '03101', firstname: 'Pat', lastname: 'Primary', expirationTime: nil)
+    create(:invoice, member: primary, resource_id: primary.id.to_s, resource_class: 'member', plan_id: plan, settled_at: Time.now)
+    invitation = HouseholdInvitations.invite!(primary: primary, email: 'second@example.com')
+    token = invitation.issue_token!
+    HouseholdInvitations.revoke!(invitation.reload, primary: primary)
+
+    post :lookup, params: { token: token }, format: :json
+
+    expect(response).to have_http_status(200)
+    expect(JSON.parse(response.body)).to include('status' => 'revoked', 'inviter_name' => nil, 'invited_email' => nil)
   end
 end

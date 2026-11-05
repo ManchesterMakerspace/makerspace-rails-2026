@@ -67,7 +67,7 @@ RSpec.describe HouseholdInvitations do
 
   describe '.invite!' do
     it 'creates the household on the first invitation, holds a seat for 14 days and emails the typed address' do
-      expect { invite('Second@Example.com') }.to have_enqueued_mail(MemberMailer, :household_invitation)
+      expect { invite('Second@Example.com') }.to have_enqueued_job(HouseholdInvitationMailJob)
 
       group = Group.find_by(groupName: primary.id.to_s)
       invitation = HouseholdInvitation.last
@@ -82,6 +82,24 @@ RSpec.describe HouseholdInvitations do
       expect(Service::AuditLogger).to have_received(:log).with(hash_including(event_type: 'household_invitation_sent'))
     end
 
+    it 'sends the email through a job that does not log its arguments, so the token stays out of the log' do
+      log = StringIO.new
+      original = ActiveJob::Base.logger
+      ActiveJob::Base.logger = Logger.new(log)
+      begin
+        invite
+        invitation_id, raw = ActiveJob::Base.queue_adapter.enqueued_jobs.last['arguments']
+        HouseholdInvitationMailJob.perform_now(invitation_id, raw)
+      ensure
+        ActiveJob::Base.logger = original
+      end
+
+      expect(raw).to match(/\A[\w-]{43}\z/)
+      expect(HouseholdInvitationMailJob.log_arguments).to be(false)
+      expect(log.string).to include('HouseholdInvitationMailJob')
+      expect(log.string).not_to include(raw)
+    end
+
     it 'does not store the token, only its digest' do
       invite
       invitation = HouseholdInvitation.last
@@ -92,8 +110,9 @@ RSpec.describe HouseholdInvitations do
 
     it 'inviting the same address again resends the same invitation without taking another seat' do
       first = invite
-      second = invite
       first_digest = first.token_digest
+      clear_household_invite_cooldown
+      second = invite
 
       expect(second.id).to eq(first.id)
       expect(HouseholdInvitation.count).to eq(1)
@@ -166,6 +185,7 @@ RSpec.describe HouseholdInvitations do
 
     it 'resending gives a new link and the old one stops working' do
       old = token_for(invitation)
+      clear_household_invite_cooldown
       new = described_class.resend!(invitation, primary: primary) && token_for(invitation)
 
       expect(HouseholdInvitation.find_by_token(old)).to be_nil
@@ -182,6 +202,7 @@ RSpec.describe HouseholdInvitations do
     it 'a resend after the 14 days refreshes the window' do
       invitation.update!(expires_at: 1.day.ago)
       expect(invitation.reload.expired?).to be(true)
+      clear_household_invite_cooldown
 
       described_class.resend!(invitation, primary: primary)
 
@@ -335,6 +356,72 @@ RSpec.describe HouseholdInvitations do
     end
   end
 
+  describe 'send limits' do
+    it 'refuses a second email to the same address within a minute, on both the invite and the resend path' do
+      invitation = invite('second@example.com')
+
+      expect { invite('second@example.com') }.to raise_error(::Error::TooManyRequests, /Wait a minute/)
+      expect { described_class.resend!(invitation, primary: primary) }.to raise_error(::Error::TooManyRequests, /Wait a minute/)
+      expect(invitation.reload.sent_count).to eq(1)
+    end
+
+    it 'a refused send leaves the existing link working' do
+      invitation = invite('second@example.com')
+      digest = invitation.reload.token_digest
+
+      expect { described_class.resend!(invitation, primary: primary) }.to raise_error(::Error::TooManyRequests)
+      expect(invitation.reload.token_digest).to eq(digest)
+    end
+
+    it 'allows another send once the cooldown has passed' do
+      invitation = invite('second@example.com')
+      clear_household_invite_cooldown
+
+      expect { described_class.resend!(invitation, primary: primary) }.not_to raise_error
+    end
+
+    it 'caps the emails one sender can send in a day, across recipients' do
+      stub_const('HouseholdInviteLimit::PER_SENDER_PER_DAY', 2)
+      2.times { |n| HouseholdInviteLimit.claim!(sender_id: primary.id, recipient_email: "r#{n}@example.com") }
+
+      expect { HouseholdInviteLimit.claim!(sender_id: primary.id, recipient_email: 'r9@example.com') }
+        .to raise_error(::Error::TooManyRequests, /today's limit/)
+    end
+
+    it 'caps the emails one address can receive in a day, across senders' do
+      stub_const('HouseholdInviteLimit::PER_RECIPIENT_PER_DAY', 2)
+      2.times { HouseholdInviteLimit.claim!(sender_id: BSON::ObjectId.new, recipient_email: 'Same@Example.com') }
+
+      expect { HouseholdInviteLimit.claim!(sender_id: BSON::ObjectId.new, recipient_email: 'same@example.com') }
+        .to raise_error(::Error::TooManyRequests, /that address today/)
+    end
+
+    it 'does not count a refused send, so a cooldown does not use up the daily cap' do
+      stub_const('HouseholdInviteLimit::PER_SENDER_PER_DAY', 2)
+      sender = BSON::ObjectId.new
+      HouseholdInviteLimit.claim!(sender_id: sender, recipient_email: 'a@example.com')
+      expect { HouseholdInviteLimit.claim!(sender_id: sender, recipient_email: 'a@example.com') }.to raise_error(::Error::TooManyRequests, /Wait a minute/)
+
+      expect { HouseholdInviteLimit.claim!(sender_id: sender, recipient_email: 'b@example.com') }.not_to raise_error
+    end
+
+    it 'keeps no email address in the Redis key names' do
+      HouseholdInviteLimit.claim!(sender_id: primary.id, recipient_email: 'private@example.com')
+
+      keys = REDIS.scan_each(match: 'household_invite_*').to_a
+      expect(keys).not_to be_empty
+      expect(keys.join).not_to include('private@example.com')
+    end
+
+    it 'does not create a household or an invitation when the send is refused' do
+      stub_const('HouseholdInviteLimit::PER_SENDER_PER_DAY', 0)
+
+      expect { invite('second@example.com') }.to raise_error(::Error::TooManyRequests)
+      expect(Group.where(groupName: primary.id.to_s).count).to eq(0)
+      expect(HouseholdInvitation.count).to eq(0)
+    end
+  end
+
   describe '.public_info and .preview' do
     let!(:invitation) { invite('second@example.com') }
     let(:raw) { token_for(invitation) }
@@ -356,6 +443,65 @@ RSpec.describe HouseholdInvitations do
 
     it 'does not show the address to a different signed-in account' do
       expect { described_class.preview(member: invitee(email: 'nobody@example.com'), token: raw) }.to raise_error(::Error::Forbidden)
+    end
+
+    context 'when the invitation can no longer be used' do
+      def preview_for(email = 'second@example.com')
+        described_class.preview(member: invitee(email: email), token: raw)
+      end
+
+      def expect_redacted(result, status)
+        expect(result).to include(status: status, primary_name: nil, household_address: nil, address_matches: false, payment_accepted: false)
+        expect(result.to_s).not_to include('12 Main St, 03101 ')
+        expect(result[:household_address]).to be_nil
+      end
+
+      it 'reveals no household details once it was cancelled, even after the primary changes address' do
+        raw
+        described_class.revoke!(invitation.reload, primary: primary)
+        primary.update_attributes!(address_street: '99 Moved Ave')
+
+        result = preview_for
+        expect_redacted(result, 'revoked')
+        expect(result.to_s).not_to include('99 Moved Ave')
+        expect(result.to_s).not_to include(primary.fullname)
+      end
+
+      it 'reveals no household details once it has expired' do
+        raw
+        invitation.update!(expires_at: 1.minute.ago)
+
+        expect_redacted(preview_for, 'expired')
+      end
+
+      it 'reveals no household details after it was used and the member was later removed' do
+        second = invitee(email: 'second@example.com')
+        described_class.accept!(member: second, token: raw)
+        group = Group.find_by(groupName: primary.id.to_s)
+        second.update_attributes!(groupName: nil)
+        group.reload
+
+        expect_redacted(described_class.preview(member: second.reload, token: raw), 'accepted')
+      end
+
+      it 'still tells the wrong signed-in account nothing but the masked email' do
+        raw
+        described_class.revoke!(invitation.reload, primary: primary)
+
+        expect { preview_for('nobody@example.com') }.to raise_error(::Error::Forbidden, /s\*+@example.com/)
+      end
+
+      it 'the public lookup of a cancelled, expired or used link names nobody and shows no email' do
+        raw
+        described_class.revoke!(invitation.reload, primary: primary)
+        revoked = described_class.public_info(raw)
+        invitation.update!(status: 'pending', expires_at: 1.minute.ago)
+        expired = described_class.public_info(raw)
+
+        expect(revoked).to include(status: 'revoked', inviter_name: nil, invited_email: nil)
+        expect(revoked.keys).to contain_exactly(:status, :inviter_name, :invited_email, :expires_at)
+        expect(expired).to include(status: 'expired', inviter_name: nil, invited_email: nil)
+      end
     end
   end
 

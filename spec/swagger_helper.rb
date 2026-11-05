@@ -311,11 +311,11 @@ RSpec.configure do |config|
       description: 'What the link page may show before signing in.',
       properties: {
         status: { type: :string, enum: %w[pending expired accepted revoked] },
-        inviter_name: { type: :string, 'x-nullable': true, description: 'First name and last initial.' },
-        invited_email: { type: :string },
+        inviter_name: { type: :string, 'x-nullable': true, description: 'First name and last initial. Null once the invitation was cancelled, expired or used.' },
+        invited_email: { type: :string, 'x-nullable': true, description: 'Null once the invitation was cancelled, expired or used.' },
         expires_at: { type: :string },
       },
-      required: [:status, :invited_email, :expires_at]
+      required: [:status, :expires_at]
     },
 
     HouseholdInvitationPreview: {

@@ -32,6 +32,64 @@ RSpec.describe Group, 'household size, payment and seats' do
 
       expect(described_class.size_for(primary_on_plan)).to eq(2)
     end
+
+    context 'when a newer invoice for a larger plan has not been paid' do
+      let(:larger_plan) { 'household-three-adults-recurring' }
+
+      before do
+        create(:invoice_option, plan_id: HOUSEHOLD_SPEC_PLAN, household_size: 2)
+        create(:invoice_option, plan_id: larger_plan, household_size: 3)
+      end
+
+      def with_unpaid_upgrade(settled: false, **invoice_attrs)
+        member = primary_on_plan
+        create(:invoice, member: member, resource_id: member.id.to_s, resource_class: 'member', plan_id: larger_plan,
+                         settled_at: settled ? Time.now : nil, **invoice_attrs)
+        member
+      end
+
+      it 'gives no extra seats: size and payment both come from the plan that was paid for' do
+        member = with_unpaid_upgrade
+
+        expect(described_class.size_for(member)).to eq(2)
+        expect(described_class.payment_accepted_for?(member.reload)).to be(true)
+      end
+
+      it 'the household is still full at the paid size, so no third invitation can be made' do
+        member = with_unpaid_upgrade
+        group = household_for(member)
+        group.add_subordinate(create(:member, HOUSEHOLD_SPEC_ADDRESS))
+
+        expect(group.reload.size).to eq(2)
+        expect(group).to be_full
+      end
+
+      it 'grows to the larger size once the upgrade is paid' do
+        member = with_unpaid_upgrade(settled: true)
+
+        expect(described_class.size_for(member)).to eq(3)
+      end
+
+      it 'counts a larger plan whose payment is held until the first fob, as long as it was not declined' do
+        member = with_unpaid_upgrade(transaction_id: 'held-1')
+
+        expect(described_class.size_for(member)).to eq(3)
+      end
+
+      it 'does not count a larger plan whose held payment was declined' do
+        member = with_unpaid_upgrade(transaction_id: 'held-1', last_failed_transaction_id: 'held-1')
+
+        expect(described_class.size_for(member)).to eq(2)
+      end
+
+      it 'shows the newest plan size when nothing has been paid yet, only for the price display' do
+        member = create(:member, HOUSEHOLD_SPEC_ADDRESS)
+        create(:invoice, member: member, resource_id: member.id.to_s, resource_class: 'member', plan_id: larger_plan, settled_at: nil)
+
+        expect(described_class.size_for(member)).to eq(3)
+        expect(described_class.payment_accepted_for?(member)).to be(false)
+      end
+    end
   end
 
   describe '.payment_accepted_for?' do

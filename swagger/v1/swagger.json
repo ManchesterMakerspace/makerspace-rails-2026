@@ -5396,10 +5396,12 @@
           "inviter_name": {
             "type": "string",
             "x-nullable": true,
-            "description": "First name and last initial."
+            "description": "First name and last initial. Null once the invitation was cancelled, expired or used."
           },
           "invited_email": {
-            "type": "string"
+            "type": "string",
+            "x-nullable": true,
+            "description": "Null once the invitation was cancelled, expired or used."
           },
           "expires_at": {
             "type": "string"
@@ -5407,7 +5409,6 @@
         },
         "required": [
           "status",
-          "invited_email",
           "expires_at"
         ]
       },
@@ -11733,6 +11734,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Sent to this address too recently, or the daily limit for this sender or address was reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -11784,6 +11795,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Household"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Sent again too soon, or the daily limit for this sender or address was reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
                 }
               }
             }
@@ -11848,8 +11869,8 @@
       }
     },
     "/household/invitations/preview": {
-      "get": {
-        "summary": "The invited person, signed in, sees the household address they must match before joining",
+      "post": {
+        "summary": "The invited person, signed in, sees the household address they must match before joining (token in the body, so it is not logged)",
         "tags": [
           "Household"
         ],
@@ -11859,15 +11880,7 @@
             "sessionAuth": []
           }
         ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "parameters": [],
         "responses": {
           "200": {
             "description": "Preview",
@@ -11885,6 +11898,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -11946,26 +11976,17 @@
         }
       }
     },
-    "/household_invitations/{token}": {
-      "get": {
-        "summary": "Public: who invited you and until when, from the emailed link",
+    "/household_invitations/lookup": {
+      "post": {
+        "summary": "Public: who invited you and until when, from the emailed link (token in the body, so it is not logged)",
         "tags": [
           "Household"
         ],
         "operationId": "getHouseholdInvitation",
-        "parameters": [
-          {
-            "name": "token",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "parameters": [],
         "responses": {
           "200": {
-            "description": "Invitation summary (no household details)",
+            "description": "Invitation summary (no household details; a cancelled, expired or used link shows only its status)",
             "content": {
               "application/json": {
                 "schema": {
@@ -11980,6 +12001,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
                 }
               }
             }

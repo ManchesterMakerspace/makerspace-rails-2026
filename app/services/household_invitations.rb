@@ -66,6 +66,9 @@ module HouseholdInvitations
         end
       end
 
+      # Counted before anything is created or the link is replaced, so a refused send changes nothing.
+      HouseholdInviteLimit.claim!(sender_id: primary.id, recipient_email: email)
+
       group = household_for(primary) || create_household!(primary)
       invitation = group_invitations(group).outstanding.where(invited_email: email).first
       if invitation
@@ -85,6 +88,7 @@ module HouseholdInvitations
       raise ::Error::UnprocessableEntity.new('That invitation was cancelled. Send a new one instead.') if invitation.status == 'revoked'
       raise ::Error::UnprocessableEntity.new('Your household payment has not been accepted yet.') unless group.payment_accepted?
 
+      HouseholdInviteLimit.claim!(sender_id: primary.id, recipient_email: invitation.invited_email)
       deliver(invitation, primary, 'household_invitation_resent', "sent a new link to #{invitation.invited_email}")
       invitation
     end
@@ -141,10 +145,12 @@ module HouseholdInvitations
       group
     end
 
-    # What the public link page may show, without signing in: nothing about the household beyond who invited them.
+    # What the public link page may show, without signing in: nothing about the household beyond who invited them, and only
+    # while the invitation can still be used. A cancelled, expired or used link says so and nothing else.
     def public_info(token)
       invitation = HouseholdInvitation.find_by_token(token)
       return nil unless invitation
+      return { status: invitation.display_status, inviter_name: nil, invited_email: nil, expires_at: invitation.expires_at } unless invitation.open?
 
       primary = invitation.group&.member
       {
@@ -155,12 +161,27 @@ module HouseholdInvitations
       }
     end
 
-    # What the signed-in invitee sees before pressing Join, including the address they must match.
+    # What the signed-in invitee sees before pressing Join, including the address they must match. Only an invitation that
+    # can still be used shows the household's name and address: a cancelled, expired or used link (the primary may have moved
+    # since, or removed them) gets its status and nothing about the household.
     def preview(member:, token:)
       invitation = HouseholdInvitation.find_by_token(token)
       raise ::Error::UnprocessableEntity.new('This invitation link is not valid.') unless invitation
       unless member.email.to_s.downcase == invitation.invited_email
         raise ::Error::Forbidden.new("Sign in with the email address the invitation was sent to (#{mask(invitation.invited_email)}).")
+      end
+
+      unless invitation.open?
+        return {
+          status: invitation.display_status,
+          primary_name: nil,
+          household_address: nil,
+          your_address: ::Service::AddressMatch.describe(member),
+          address_matches: false,
+          payment_accepted: false,
+          blocked_reason: nil,
+          expires_at: invitation.expires_at
+        }
       end
 
       group = invitation.group
@@ -232,7 +253,7 @@ module HouseholdInvitations
 
     def deliver(invitation, primary, event_type, details)
       raw = invitation.issue_token!
-      MemberMailer.household_invitation(invitation.id.to_s, raw).deliver_later
+      HouseholdInvitationMailJob.perform_later(invitation.id.to_s, raw)
       audit(invitation.group, primary, event_type, details, snapshot: { invited_email: invitation.invited_email, expires_at: invitation.expires_at })
     end
 

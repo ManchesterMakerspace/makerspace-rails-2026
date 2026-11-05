@@ -658,12 +658,14 @@ second limit and the page failed with a 503.
 
 ### Household invitations
 
-`HouseholdInvitations` (request-time only, no job; expiry is by time, 14 days from the last send) lets the primary of a household plan
+`HouseholdInvitations` (request-time; expiry is by time, 14 days from the last send) lets the primary of a household plan
 invite a second adult. There is no manual command or schedule. Rules, all enforced on the server: only the primary invites;
 the household payment must be accepted (`Group.payment_accepted_for?`: the most recent household-plan invoice that was applied or
 held until the first fob is not refunded or disputed and the paid time has not run out; a held payment whose settlement was
 declined does not count); an open invitation holds one of the plan's seats (`InvoiceOption#household_size`, blank counts as 2), so a
-household never exceeds its size, including when an admin uses Add Secondary; the invited person must be signed in with exactly the
+household never exceeds its size, including when an admin uses Add Secondary. The size comes from the same paid invoice the
+payment check uses (`Group.paid_household_invoice_for`), so an invoice for a larger plan that has not been paid adds no seats; the
+newest invoice's size is only used to show "covers up to N adults" before anything is paid; the invited person must be signed in with exactly the
 typed email; an active subscription or unexpired paid time blocks joining (the date is shown only to that person); the address must
 match (`Service::AddressMatch`: forgiving about case, punctuation, St/Street style words and a unit, strict about the street number,
 street name and postal code; an admin can override with a typed reason that goes in the audit log). The household is created when the
@@ -675,7 +677,21 @@ household lookups, and so later renewals, miss secondaries); a household member'
 declined for a payment that was held until the first fob (`Invoice#reverse_invoice_operation`) no longer subtracts months from an
 expiry that never existed, and `Card#settle_open_member_invoices` no longer applies it at the first fob. The member reminders skip a second
 adult who joined a household or has an open invitation, and the staff Slack message about a household plan with no household now says the
-primary can invite from the portal. Audit events: `household_invitation_sent`, `household_invitation_resent`,
+primary can invite from the portal.
+
+The invitation email is sent by `HouseholdInvitationMailJob` (queue `mailers`, enqueued with `perform_later`, it calls
+`MemberMailer#household_invitation` with `deliver_now`). The link's secret token is the job's argument because only its digest is
+stored, so the job sets `log_arguments = false`: Active Job would otherwise write the token to the log when the job is enqueued and
+again when it runs. The queue adapter is the in-process default, so the token is not persisted by the queue either. The token also
+never appears in a request path or query string: the link is `/household/join#token=...` (a URL fragment, which the browser does not
+send to the server) and the lookup and preview endpoints take it in a POST body.
+
+`HouseholdInviteLimit` limits sends, on both paths that send the email (inviting an address that already has an open invitation, and
+Resend), before the link is replaced, so a refused send changes nothing and does not invalidate the link already emailed. One Redis
+Lua script checks and counts atomically: a 60 second cooldown for the same sender and recipient, 10 emails per sender per day, and 5
+emails per recipient address per day (all senders). Keys are `household_invite_cooldown/...`, `household_invite_sender/...` and
+`household_invite_recipient/...`; the email address is hashed in the key. A refused send answers 429 (`Error::TooManyRequests`) with a
+plain message and is not counted. Audit events: `household_invitation_sent`, `household_invitation_resent`,
 `household_invitation_revoked`, `household_created` (also when created by the first invitation) and `household_member_added` (with
 `source: invitation`).
 

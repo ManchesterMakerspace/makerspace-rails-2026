@@ -24,7 +24,7 @@ class HouseholdsController < AuthenticationController
     render json: HouseholdInvitations.state_for(current_member), status: :ok
   end
 
-  # GET /api/household/invitations/preview?token=...
+  # POST /api/household/invitations/preview { token }  (a body, not a query string, so the token is not logged)
   def preview
     params.require(:token)
     render json: HouseholdInvitations.preview(member: current_member, token: params[:token]), status: :ok

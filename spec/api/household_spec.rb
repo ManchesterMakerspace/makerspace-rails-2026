@@ -61,6 +61,15 @@ describe 'Household API', type: :request do
         let(:invitation) { { email: 'not an email' } }
         run_test!
       end
+
+      response '429', 'Sent to this address too recently, or the daily limit for this sender or address was reached' do
+        before do
+          sign_in primary
+          invitation_for('second@example.com')
+        end
+        schema '$ref' => '#/components/schemas/error'
+        run_test!
+      end
     end
   end
 
@@ -74,8 +83,18 @@ describe 'Household API', type: :request do
       let(:id) { invitation_for.id.to_s }
 
       response '200', 'Resent' do
-        before { sign_in primary }
+        before do
+          sign_in primary
+          id
+          clear_household_invite_cooldown
+        end
         schema '$ref' => '#/components/schemas/Household'
+        run_test!
+      end
+
+      response '429', 'Sent again too soon, or the daily limit for this sender or address was reached' do
+        before { sign_in primary }
+        schema '$ref' => '#/components/schemas/error'
         run_test!
       end
 
@@ -112,14 +131,15 @@ describe 'Household API', type: :request do
   end
 
   path '/household/invitations/preview' do
-    get 'The invited person, signed in, sees the household address they must match before joining' do
+    post 'The invited person, signed in, sees the household address they must match before joining (token in the body, so it is not logged)' do
       tags 'Household'
       operationId 'previewHouseholdInvitation'
+      consumes 'application/json'
       produces 'application/json'
       security [sessionAuth: []]
-      parameter name: :token, in: :query, type: :string
+      parameter name: :preview, in: :body, schema: { type: :object, required: %w[token], properties: { token: { type: :string } } }
       let(:second) { create(:member, address.merge(email: 'second@example.com', expirationTime: nil)) }
-      let(:token) { invitation_for.issue_token! }
+      let(:preview) { { token: invitation_for.issue_token! } }
 
       response '200', 'Preview' do
         before { sign_in second }
@@ -160,22 +180,23 @@ describe 'Household API', type: :request do
     end
   end
 
-  path '/household_invitations/{token}' do
-    get 'Public: who invited you and until when, from the emailed link' do
+  path '/household_invitations/lookup' do
+    post 'Public: who invited you and until when, from the emailed link (token in the body, so it is not logged)' do
       tags 'Household'
       operationId 'getHouseholdInvitation'
+      consumes 'application/json'
       produces 'application/json'
-      parameter name: :token, in: :path, type: :string
-      let(:token) { invitation_for.issue_token! }
+      parameter name: :lookup, in: :body, schema: { type: :object, required: %w[token], properties: { token: { type: :string } } }
+      let(:lookup) { { token: invitation_for.issue_token! } }
 
-      response '200', 'Invitation summary (no household details)' do
+      response '200', 'Invitation summary (no household details; a cancelled, expired or used link shows only its status)' do
         schema '$ref' => '#/components/schemas/HouseholdInvitationPublic'
         run_test! { |response| expect(response.body).not_to match(/Main St|03101/) }
       end
 
       response '404', 'Unknown link' do
         schema '$ref' => '#/components/schemas/error'
-        let(:token) { 'nonsense' }
+        let(:lookup) { { token: 'nonsense' } }
         run_test!
       end
     end
