@@ -1,4 +1,5 @@
 Rails.application.routes.draw do
+  post '/api/internal/reader_reservations/sync', to: 'reader_reservations#sync', defaults: { format: :json }
 
   unless Rails.env.production?
     mount Rswag::Ui::Engine => '/api-docs'

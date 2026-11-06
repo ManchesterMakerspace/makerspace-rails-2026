@@ -1,5 +1,6 @@
 class ReservationSerializer < ActiveModel::Serializer
   attributes :selected_tool_ids, :tool_group_ids, :group_snapshots
+  attributes :reader_revision, :arrived_at, :abandoned_at, :abandonment_reason
   attribute :out_of_service_tool_names do
     tools.select(&:out_of_service).map(&:name)
   end

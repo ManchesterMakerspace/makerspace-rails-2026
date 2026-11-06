@@ -1164,3 +1164,40 @@ CheckoutCreation queues a full shop checkout canvas rebuild for renewals
 (renewed_from_id present). The rebuild renders current valid members once,
 replacing stale expired predecessor lines. Initial checkouts retain incremental
 adds. Neither path sends notices inside its approval transaction.
+
+
+### Companion reader session audit service
+
+The ESP32 tool-session journal delivers checkins and checkend events through
+POST /reader/v1/events on ts-data-api, with independent MQTT QoS 1 acknowledgments.
+The gateway's tool/shop change stream emits scoped refresh hints rather than
+stop-all invalidations. Deploy gateway/broker ACL updates before firmware. No new
+Rails job, recurring task, environment variable, or generated API client release
+is needed. Reader freshness defaults to a compile-time configurable 15 minutes.
+
+
+The companion reader-indexes.cjs deployment task now also enforces one checkend
+per reader/checkin. Run it before gateway rollout and resolve any reported
+historical duplicates manually; it never deletes audit records. Both companion
+repositories now have push/PR GitHub CI for their affected tests; firmware CI also
+builds the ESP32 image. No Rails jobs or environment variables changed.
+
+### Reader reservation lifecycle service
+
+`ReaderReservationsController` authenticates the private ts-data-api ingress.
+`ReaderReservationService` resolves immutable attendance events, claims/releases
+whole bookings, freezes equipped participants, and verifies no-show coverage under
+the existing reservation shop lock. Atomic revision/state comparisons prevent
+delayed operations from overwriting rescheduling or terminal transitions.
+
+The service also searches synchronized checkins/checkend before abandonment: an
+offline reader may have observed attendance before learning the booking. An unknown
+reboot ending cannot prove that an older session continued into its arrival window.
+
+No periodic abandonment job is added. Readers retry deferred verification; missing
+participants require ordinary administrative cancellation. Existing calendar and
+Slack synchronization jobs handle terminal changes. A durable
+`reader_sync_pending` marker retries enqueue failures on synchronization replay.
+There is no refund, penalty, or separate no-show notification job. The new private
+service credential and coordinated rollout are documented in
+[reader reservations](reader-reservations.MD).

@@ -305,3 +305,48 @@ expiry scans. Deploy it with the repeatable
 index without changing documents. Existing member/tool lookup indexes remain.
 Expiration audits use existing audit logs; notice settings and run status use
 the existing SystemConfig storage.
+
+
+### Reader tool-session audit extension
+
+The companion ts-data-api writes the new singular checkend collection directly.
+It retains checkin identity/time fields and adds checkinId, kicked, kickedBy
+(memberId/uid/holder), reason, and shop/tool identity/name snapshots. The native
+_id index supports idempotent retries. No Rails Mongoid model, migration, UI, or
+API endpoint is added. Tool checkins remain in checkins; every session ending,
+including kicks and reboot recovery, is represented in checkend. Unknown reboot
+ending times are 0/timeOf=null rather than an estimated usage duration.
+
+
+The session-recovery review adds a gateway-owned unique partial index on
+checkend(deviceId, checkinId), named one_end_per_reader_checkin, for string
+checkinId values. Deploy with ts-data-api/scripts/reader-indexes.cjs before the
+reviewed gateway. The script fails on existing duplicates without modifying them.
+
+## Reader reservation attendance
+
+`reservations` also stores `reader_revision` (decision-relevant edits),
+`reader_state_version` (atomic lifecycle fence), `reader_scope_changed_at`
+(earliest attendance evidence valid after resource/start edits), `arrived_at`,
+`arrival_reader_id`, `arrival_tool_id`, `arrival_checkin_id`, `abandoned_at`,
+`abandonment_reason`, `reader_monitor_started_at`, frozen `reader_monitors`,
+bounded idempotency `reader_receipts`, and `reader_sync_pending`. Legacy records
+default to no attendance and revision zero. `abandoned` is terminal and does not
+block availability. Invoice and fee data are retained.
+
+Gateway-owned `nfc_readers` adds `reservationEnabled`,
+`reservationCoverageRevision`, and `previousToolIds`. Each frozen monitor records
+the tool, coverage revision, and synchronized interval. Configuration/capability
+changes invalidate prior coverage; operators changing these fields directly must
+also increment the coverage revision, including disable/re-enable cycles.
+The gateway configuration endpoint records former tools for authenticated replay.
+
+Deploy these additional gateway indexes with `scripts/reader-indexes.cjs`:
+`nfc_readers(enabled, role, reservationEnabled, toolId)`,
+`checkins(deviceId, validity, timeOf desc)`, and
+`checkins(deviceId, memberId, validity, timeOf)`. The script also ensures the existing
+reservation tool/status/start/end and shop/status/start/end indexes. It never drops
+history. The indexed `checkend(deviceId, checkinId)` lookup supplies session endings.
+Reader reads project approved overlapping/next-four-hour records and paginate by
+start time then ID. Disposable MongoDB tests inspect executionStats against unrelated
+history. See [reader reservation lifecycle](reader-reservations.MD).
