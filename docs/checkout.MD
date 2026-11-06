@@ -501,7 +501,7 @@ tool (`CheckoutReadContext#internal_notes_visible?`). They are omitted for the
 member the checkout belongs to (My Checkouts, `/api/tool_checkouts`, even when that
 member is also an approver) and for every other member. The serializer is the
 single gate for all of its endpoints (`/api/tool_checkouts`,
-`/api/admin/tool_checkouts` index/create/update/delete/reinstate and group
+`/api/admin/tool_checkouts` index/create/delete/reinstate/expiration and group
 approval responses).
 
 **Derived `Reinstated` status.** A revoked row whose id is the `reinstated_from_id`

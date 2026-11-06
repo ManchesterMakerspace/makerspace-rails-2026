@@ -11,8 +11,7 @@ class CheckoutCreation
     tool = Tool.find_by(id: tool_id)
     create_checkout = -> do
       create_under_checkout_lock(actor_id: actor_id, member_id: member_id, tool_id: tool_id,
-        shop_id: shop_id, source: source, request_id: request_id,
-        defer_notifications: defer_notifications) { yield if block_given? }
+        shop_id: shop_id, source: source, request_id: request_id) { yield if block_given? }
     end
     checkout = CatalogMutationLock.with([tool&.shop_id]) do
       if additional_approver_authority_required?(actor, tool)
@@ -39,8 +38,7 @@ class CheckoutCreation
     checkout
   end
 
-  def self.create_under_checkout_lock(actor_id:, member_id:, tool_id:, shop_id:, source:, request_id:,
-    defer_notifications:)
+  def self.create_under_checkout_lock(actor_id:, member_id:, tool_id:, shop_id:, source:, request_id:)
     CheckoutMutationLock.with(member_id: member_id, tool_id: tool_id) do
       yield if block_given? # Recheck the initiating Slack identity under the same lock.
       actor = Member.find_by(id: actor_id)

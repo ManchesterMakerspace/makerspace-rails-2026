@@ -78,12 +78,6 @@ module Service
         fetch(name) || (refresh_until(name) if refresh_on_miss)
       end
 
-      def refresh_all!
-        count = scan_public_channels { |details| write(details) }
-        write_status(count) unless count.nil?
-        count
-      end
-
       def rebuild!
         channels = []
         count = scan_public_channels { |details| channels << details }
@@ -109,13 +103,6 @@ module Service
         raise
       ensure
         cleanup_staging_keys(staged_keys)
-      end
-
-      def clear!
-        keys = live_cache_keys
-        keys.each_slice(500) { |batch| REDIS.del(*batch) } if keys.present?
-        REDIS.del(STATUS_KEY)
-        keys.length
       end
 
       def status
@@ -224,14 +211,6 @@ module Service
           "error=#{error.class}: #{error.message}"
         )
         raise if raise_on_error
-      end
-
-      def write_status(count)
-        REDIS.set(
-          STATUS_KEY,
-          status_payload(count),
-          ex: CACHE_TTL_SECONDS
-        )
       end
 
       def promote_staged_cache!(staged_entries, live_keys, count)

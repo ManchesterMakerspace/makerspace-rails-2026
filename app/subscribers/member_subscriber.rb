@@ -1,6 +1,4 @@
 module MemberSubscriber
-  extend Service::GoogleDrive
-  extend Service::SlackConnector
   extend Service::BraintreeGateway
   extend self
 
@@ -80,17 +78,6 @@ module MemberSubscriber
         "[MemberSubscriber] Could not notify Honeybadger of Slack invite failure for " \
         "#{member.email}: #{honeybadger_error.class}: #{honeybadger_error.message}"
       )
-    end
-  end
-
-  def send_google_invite(member)
-    begin
-      invite_gdrive(member.email)
-      invite_gdrive_writer(member.email)
-    rescue Error::NotAllowed
-      # Google Drive invites disabled in this environment — silent skip
-    rescue Error::Google::Share, Error::Google::Upload => err
-      ::Service::SlackConnector.send_slack_message("Error sharing Member Resources folder with #{member.fullname}. Error: #{err}")
     end
   end
 

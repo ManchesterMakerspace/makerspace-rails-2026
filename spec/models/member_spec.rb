@@ -357,7 +357,7 @@ RSpec.describe Member, type: :model do
       it "schedules only the signup Slack invite" do
         member = build(:member)
         expect(Service::MemberProvisioning).to receive(:invite_slack).with(member)
-        expect(MemberSubscriber).not_to receive(:send_google_invite)
+        expect(Service::MemberProvisioning).not_to receive(:provision_google)
         member.save!
       end
     end
@@ -379,8 +379,8 @@ RSpec.describe Member, type: :model do
       it "Doesn't reinvite for normal changes" do
         # Mock this publish so Slack tracking only applies to update and not create
         allow(member).to receive(:publish_create)
-        expect_any_instance_of(Service::GoogleDrive).not_to receive(:invite_gdrive)
-        expect_any_instance_of(Service::SlackConnector).not_to receive(:invite_to_slack)
+        expect(Service::MemberProvisioning).not_to receive(:provision_google)
+        expect(Service::MemberProvisioning).not_to receive(:invite_slack)
         member.update!({ firstname: "foo_changed" })
       end
 
@@ -412,7 +412,7 @@ RSpec.describe Member, type: :model do
         )
         member.set(firebase_uid: "firebase-123", session_token: "old-token")
 
-        expect(MemberSubscriber).not_to receive(:send_google_invite)
+        expect(Service::MemberProvisioning).not_to receive(:provision_google)
         expect(MemberSubscriber).not_to receive(:send_slack_invite)
 
         expect do
