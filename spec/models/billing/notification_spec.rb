@@ -447,6 +447,90 @@ RSpec.describe BraintreeService::Notification, type: :model do
     end
   end
 
+  describe "failure reasons and Pay now" do
+    let(:declined) do
+      build(:transaction, id: "tx_declined", status: "processor_declined",
+            processor_response_type: "soft_declined", processor_response_code: "2001", processor_response_text: "Insufficient Funds")
+    end
+    let(:hard_declined) do
+      build(:transaction, id: "tx_hard", status: "processor_declined",
+            processor_response_type: "hard_declined", processor_response_code: "2004", processor_response_text: "Expired Card")
+    end
+    let(:mail) { double(deliver_later: true) }
+
+    before do
+      allow(BraintreeService::Notification).to receive(:enque_message)
+      allow(BillingMailer).to receive(:failed_payment).and_return(mail)
+      SlackUser.create!(member: member, slack_id: "UMEMBER")
+    end
+
+    it "stores why a charge failed on the invoice before any message is sent" do
+      BraintreeService::Notification.send(:process_subscription_charge_failure, invoice, declined)
+
+      invoice.reload
+      expect(invoice.last_failed_transaction_id).to eq("tx_declined")
+      expect(invoice.last_failure_type).to eq("soft_declined")
+      expect(invoice.last_failure_message).to eq("insufficient funds")
+    end
+
+    it "puts the reason in the email and the member's Slack message, with a way to pay right away" do
+      BraintreeService::Notification.send(:process_subscription_charge_failure, invoice, declined)
+
+      expect(BillingMailer).to have_received(:failed_payment).with(member.email, invoice.id.to_s, "processor_declined", "insufficient funds")
+      expect(BraintreeService::Notification).to have_received(:enque_message).with(
+        /was unsuccessful\..*Reason: insufficient funds\..*use Pay now/m, "UMEMBER", anything
+      )
+    end
+
+    it "gives staff the reason, the decline type and the bank's response code" do
+      BraintreeService::Notification.send(:process_subscription_charge_failure, invoice, declined)
+
+      expect(BraintreeService::Notification).to have_received(:enque_message).with(
+        /Reason: insufficient funds\. \[soft declined, response 2001 \(Insufficient Funds\)\]/, "members_relations", anything
+      )
+    end
+
+    it "keeps raw bank wording away from the member and tells them to change the card after a hard decline" do
+      BraintreeService::Notification.send(:process_subscription_charge_failure, invoice, hard_declined)
+
+      expect(BraintreeService::Notification).to have_received(:enque_message).with(
+        /Reason: the card has expired\..*update your payment method/m, "UMEMBER", anything
+      ) do |message, *_|
+        expect(message).not_to include("Expired Card")
+        expect(message).not_to include("2004")
+      end
+    end
+
+    it "shows no reason line when the reason is unknown" do
+      unknown = build(:transaction, id: "tx_unknown", status: "failed")
+
+      BraintreeService::Notification.send(:process_subscription_charge_failure, invoice, unknown)
+
+      expect(invoice.reload.last_failure_message).to be_nil
+      expect(BillingMailer).to have_received(:failed_payment).with(member.email, invoice.id.to_s, "failed", nil)
+      expect(BraintreeService::Notification).not_to have_received(:enque_message).with(/Reason:/, any_args)
+    end
+
+    it "uses the stored reason in the past-due notice" do
+      invoice.update!(last_failed_transaction_id: "tx_declined", last_failure_type: "soft_declined", last_failure_message: "insufficient funds")
+
+      BraintreeService::Notification.send(:process_subscription_past_due, invoice)
+
+      expect(BillingMailer).to have_received(:failed_payment).with(member.email, invoice.id.to_s, "past_due", "insufficient funds")
+      expect(BraintreeService::Notification).to have_received(:enque_message).with(/past due\. Reason: insufficient funds\./, "UMEMBER", anything)
+    end
+
+    it "does not carry a stored reason into the next billing cycle's invoice" do
+      invoice.update!(last_failed_transaction_id: "tx_declined", last_failure_type: "hard_declined", last_failure_message: "the card has expired", settled_at: Time.now)
+
+      invoice.build_next_invoice
+
+      next_invoice = Invoice.where(subscription_id: invoice.subscription_id, settled_at: nil).ne(id: invoice.id).first
+      expect(next_invoice&.last_failure_type).to be_nil
+      expect(next_invoice&.last_failure_message).to be_nil
+    end
+  end
+
   describe "#process_dispute" do
     let(:member) { create(:member) }
     let(:invoice) { create(:invoice, member: member, transaction_id: "foo") }

@@ -3,6 +3,7 @@ class Billing::SubscriptionsController < BillingController
 
   def show
     subscription = ::BraintreeService::Subscription.get_subscription(@gateway, params[:id])
+    ::PayNow.ensure_failure_reason(@gateway, subscription)
     render json: subscription, serializer: BraintreeService::SubscriptionSerializer, adapter: :attributes and return
   end
 
@@ -12,6 +13,8 @@ class Billing::SubscriptionsController < BillingController
       payment_method_token: subscription_params[:payment_method_token]
     }
     subscription = ::BraintreeService::Subscription.update(@gateway, subscription_update)
+    # A new payment method gives a hard-declined card's replacement a fresh start, so Pay now is available again.
+    ::PaymentFailure.clear!(::PayNow.invoice_for(params[:id]))
 
     ::Service::AuditLogger.log(
       log_type:       'member',
@@ -26,6 +29,36 @@ class Billing::SubscriptionsController < BillingController
     )
 
     render json: subscription, serializer: BraintreeService::SubscriptionSerializer, adapter: :attributes and return
+  end
+
+  # Pay now: charge the past-due balance of the member's own subscription right away (see PayNow). Expected refusals and
+  # declines answer with JSON directly rather than raising, so they do not post an alert to the logs channel.
+  def pay_now
+    outcome = ::PayNow.attempt!(@gateway, current_member, params[:id])
+    subscription = ::BraintreeService::Subscription.get_subscription(@gateway, params[:id])
+
+    if outcome.paid?
+      render json: subscription, serializer: BraintreeService::SubscriptionSerializer, adapter: :attributes and return
+    end
+
+    info = ::PayNow.info_for(subscription)
+    render json: {
+      status: 422,
+      error: 'payment_declined',
+      message: declined_message(outcome.failure),
+      failureType: outcome.failure[:type],
+      failureMessage: outcome.invoice.reload.last_failure_message,
+      canPayNow: info[:can_pay_now],
+      payNowBlockedReason: info[:blocked_reason],
+      nextPayNowAt: info[:next_at]&.iso8601
+    }, status: 422
+  rescue ::PayNow::Refused => refusal
+    render json: {
+      status: refusal.status,
+      error: refusal.reason,
+      message: refusal.message,
+      nextPayNowAt: refusal.retry_at&.iso8601
+    }, status: refusal.status
   end
 
   def cancellation_impact
@@ -66,6 +99,13 @@ class Billing::SubscriptionsController < BillingController
   def subscription_params
     params.require(:payment_method_token)
     params.permit(:payment_method_token)
+  end
+
+  def declined_message(failure)
+    reason = failure[:message]
+    message = reason ? "Your payment did not go through: #{reason}." : "Your payment did not go through."
+    message += " Update your payment method before trying again." if failure[:type] == ::PaymentFailure::HARD
+    message
   end
 
   def verify_own_subscription

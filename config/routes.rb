@@ -179,6 +179,7 @@ Rails.application.routes.draw do
         resources :subscriptions, only: [:show, :update, :destroy] do
           member do
             get :cancellation_impact
+            post :pay_now
           end
         end
         resources :transactions, only: [:create, :index, :destroy]

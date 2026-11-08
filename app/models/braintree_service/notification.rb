@@ -172,6 +172,9 @@ No automated actions have been taken at this time.")
   end
 
   def self.process_subscription_charge_success(invoice, last_transaction)
+    # Pay now already settled this charge, so Braintree's own notification for it has nothing left to do.
+    return if PayNow.handled?(last_transaction.id)
+
     if InvoiceHelper.get_lifecycle(invoice.id) == InvoiceHelper::LIFECYCLES[:InProgress]
       enque_message("Duplicate SubscriptionChargedSuccessfully notification for in-progress invoice #{invoice.id}. Skipping processing", ::Service::SlackConnector.treasurer_channel)
       return
@@ -200,28 +203,31 @@ No automated actions have been taken at this time.")
   end
 
   def self.process_subscription_charge_failure(invoice, last_transaction)
-    # Record which transaction this failed attempt was, so it can still be
-    # linked back to this invoice (member, plan, description) when viewed
-    # later -- a plain update, not Invoice.claim_for_transaction, since a
-    # failed attempt never settles anything and must not touch transaction_id
-    # itself (that would block a later successful attempt from claiming it).
-    invoice.update(last_failed_transaction_id: last_transaction.id)
+    # Record which transaction this failed attempt was, and why it failed, so it can still be
+    # linked back to this invoice (member, plan, description) when viewed later and the portal
+    # can offer "Pay now" (or not, after a hard decline) -- a plain update, not
+    # Invoice.claim_for_transaction, since a failed attempt never settles anything and must
+    # not touch transaction_id itself (that would block a later successful attempt from
+    # claiming it). The reason is stored first; the messages below are written from it.
+    details = PaymentFailure.record!(invoice, last_transaction)
+    hard_decline = details[:type] == PaymentFailure::HARD
 
     slack_member = SlackUser.find_by(member_id: invoice.member.id)
     member_notified = slack_member ? "The member has been notified via Slack and email as well." : "Unable to notify member via Slack. Reach out to member to resolve."
     unless slack_member.nil?
       enque_message(
-        "Your recurring payment for #{invoice.name} was unsuccessful. Error status: #{last_transaction.status}. Please <#{Rails.configuration.x.app_base_url}/#{invoice.member.id}/settings|review your payment settings> or contact an administrator for assistance.",
+        "Your recurring payment for #{invoice.name} was unsuccessful. Error status: #{last_transaction.status}.#{member_failure_sentence(invoice)} Please <#{Rails.configuration.x.app_base_url}/#{invoice.member.id}/settings|review your payment settings> or contact an administrator for assistance.#{pay_now_hint(hard_decline)}",
         slack_member.slack_id,
         ::Service::SlackConnector.request_caller_id("notification.process_subscription_charge_failure.member.#{invoice.id}")
       )
     end
+    summary = PaymentFailure.staff_summary(details)
     enque_message(
-      "Recurring payment from #{get_member_profile(invoice.member)} failed with status: #{last_transaction.status}. #{member_notified}",
+      "Recurring payment from #{get_member_profile(invoice.member)} failed with status: #{last_transaction.status}.#{invoice.last_failure_message ? " Reason: #{invoice.last_failure_message}." : ''}#{summary.present? ? " [#{summary}]" : ''} #{member_notified}",
       ::Service::SlackConnector.members_relations_channel,
       ::Service::SlackConnector.request_caller_id("notification.process_subscription_charge_failure.management.#{invoice.id}")
     )
-    BillingMailer.failed_payment(invoice.member.email, invoice.id.to_s, last_transaction.status).deliver_later
+    BillingMailer.failed_payment(invoice.member.email, invoice.id.to_s, last_transaction.status, invoice.last_failure_message).deliver_later
   end
 
   def self.process_subscription_past_due(invoice)
@@ -231,19 +237,19 @@ No automated actions have been taken at this time.")
 
     unless slack_member.nil?
       enque_message(
-        "Your recurring payment for #{invoice.name} is past due. Please <#{settings_url}|review your payment settings> or contact an administrator for assistance.",
+        "Your recurring payment for #{invoice.name} is past due.#{member_failure_sentence(invoice)} Please <#{settings_url}|review your payment settings> or contact an administrator for assistance.#{pay_now_hint(PaymentFailure.hard_decline?(invoice))}",
         slack_member.slack_id,
         ::Service::SlackConnector.request_caller_id("notification.process_subscription_past_due.member.#{invoice.id}")
       )
     end
 
     enque_message(
-      "Subscription for #{get_member_profile(invoice.member)} went past due for #{invoice.name}. #{member_notified}",
+      "Subscription for #{get_member_profile(invoice.member)} went past due for #{invoice.name}.#{invoice.last_failure_message ? " Reason: #{invoice.last_failure_message}." : ''} #{member_notified}",
       ::Service::SlackConnector.members_relations_channel,
       ::Service::SlackConnector.request_caller_id("notification.process_subscription_past_due.management.#{invoice.id}")
     )
 
-    BillingMailer.failed_payment(invoice.member.email, invoice.id.to_s, "past_due").deliver_later
+    BillingMailer.failed_payment(invoice.member.email, invoice.id.to_s, "past_due", invoice.last_failure_message).deliver_later
   end
 
   def self.process_subscription_cancellation(invoice)
@@ -450,7 +456,7 @@ No automated actions have been taken at this time.")
           ::Service::SlackConnector.members_relations_channel,
           ::Service::SlackConnector.request_caller_id("notification.process_transaction.management.#{processed_invoice.id}")
         )
-        BillingMailer.failed_payment(processed_invoice.member.email, processed_invoice.id.to_s, last_transaction.status).deliver_later
+        BillingMailer.failed_payment(processed_invoice.member.email, processed_invoice.id.to_s, last_transaction.status, nil).deliver_later
       ensure
         processed_invoice.update!(locked: false, locked_at: nil) if decline_claim_acquired
       end
@@ -682,6 +688,21 @@ No automated actions have been taken at this time.")
 
   def self.prior_sub_notification_for_resource(resource)
     BraintreeService::Notification.where(payload: /#{resource.id}/)
+  end
+
+  # " Reason: insufficient funds." for a member message, or nothing when the reason is not known.
+  def self.member_failure_sentence(invoice)
+    invoice.last_failure_message.present? ? " Reason: #{invoice.last_failure_message}." : ''
+  end
+
+  # Where to pay straight away (the banner on the portal home page), or what to do first after a hard decline.
+  def self.pay_now_hint(hard_decline)
+    home = "#{Rails.configuration.x.app_base_url}/"
+    if hard_decline
+      " This card cannot be tried again, so update your payment method in your settings first, then pay from the <#{home}|member portal>."
+    else
+      " To pay right away, open the <#{home}|member portal> and use Pay now."
+    end
   end
 
   def self.get_member_profile(member)
