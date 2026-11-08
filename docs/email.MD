@@ -50,8 +50,9 @@ Common member and portal placeholders, plus the per-template placeholders listed
 | --- | --- | --- |
 | A new Braintree subscription is successfully created for a membership or rental. A receipt is also queued for the initial transaction. | Member; **Subscription to Manchester Makerspace** | **Editable:** `EMAIL_NEW_SUBSCRIPTION_ID` (`new_subscription`), falling back to `billing_mailer/new_subscription`. |
 | A one-time transaction is submitted successfully, or a successful subscription-charge/settlement webhook is processed. | Member; **Receipt from Manchester Makerspace** | `billing_mailer/receipt`; not editable. Duplicate webhook handling is designed not to issue an additional receipt. |
-| Braintree reports `SubscriptionChargedUnsuccessfully`. This happens on the first failed recurring attempt and again for any later unsuccessful-attempt webhook Braintree sends. Rails does not select a different template based on “first” versus “second” failure. | Member; **Failed payment to Manchester Makerspace** | **Editable:** `EMAIL_FAILED_PAYMENT_ID` (`failed_payment`), falling back to `billing_mailer/failed_payment`. The Braintree transaction status is inserted as `error_status`. |
-| Braintree reports `SubscriptionWentPastDue`, commonly after unsuccessful retries. This is a separate event and sends another failed-payment message with `error_status` set to `past_due`. | Member; **Failed payment to Manchester Makerspace** | The same editable/fallback failed-payment template as above. |
+| Braintree reports `SubscriptionChargedUnsuccessfully`. This happens on the first failed recurring attempt and again for any later unsuccessful-attempt webhook Braintree sends. Rails does not select a different template based on “first” versus “second” failure. | Member; **Failed payment to Manchester Makerspace** | **Editable:** `EMAIL_FAILED_PAYMENT_ID` (`failed_payment`), falling back to `billing_mailer/failed_payment`. The Braintree transaction status is inserted as `error_status`, and the stored reason as `failure_reason` (see below). |
+| Braintree reports `SubscriptionWentPastDue`, commonly after unsuccessful retries. This is a separate event and sends another failed-payment message with `error_status` set to `past_due` and the reason stored from the failed charge. | Member; **Failed payment to Manchester Makerspace** | The same editable/fallback failed-payment template as above. |
+| A member presses **Pay now** (`POST /api/billing/subscriptions/:id/pay_now`). | Nothing is emailed or direct-messaged for a decline or a refusal: the member sees the answer on the screen. A successful charge goes through the normal success handling, so the member gets the usual receipt (`billing_mailer/receipt`) and the Slack "payment successful" note. | See "Failed-payment wording and Pay now" below. Braintree may also send its own `SubscriptionChargedUnsuccessfully` for a declined manual retry, which then sends the failed-payment email above; the sandbox cannot show whether it does. |
 | Braintree reports `TransactionSettlementDeclined` for a transaction attached to an invoice. Rails reverses the invoice operation and emails the failure status. | Member; **Failed payment to Manchester Makerspace** | The same editable/fallback failed-payment template as above. |
 | Braintree cancels/expires a subscription, including cancellation after repeated payment failures, or application cancellation processing otherwise completes. Rails infers failure-driven cancellation when a last failed transaction was recorded and adds “after repeated failed payment attempts” to the message. | Member; **Canceled Manchester Makerspace Subscription** | **Editable:** `EMAIL_CANCELED_SUBSCRIPTION_ID` (`canceled_subscription`), falling back to `billing_mailer/canceled_subscription`. There is no special cancellation template solely for payment failures. |
 | A non-subscription rental invoice is created, or a one-off fee/shop-charge invoice is created. Recurring membership invoices do not send this message. | Member; **Makerspace dues require your attention** | `billing_mailer/new_invoice`; not editable. |
@@ -68,6 +69,32 @@ There is no Rails counter that maps attempt one and attempt two to different ema
 3. A later canceled/expired notification sends the canceled-subscription email. If an unsuccessful attempt was previously recorded on the invoice, the cancellation text identifies repeated failed attempts as the reason.
 
 The exact number of emails before cancellation therefore depends on which webhook events Braintree emits and delivers, rather than on an application rule such as “first failure template / second failure template.”
+
+
+### Failed-payment wording and Pay now
+
+When a recurring charge fails, `BraintreeService::Notification.process_subscription_charge_failure` first stores why on the invoice
+(`last_failure_type`, `last_failure_message`; see `mongodb-collections.MD`) and then writes the messages from it:
+
+- **Member email** (`failed_payment`): the new placeholder `failure_reason` is a complete sentence such as `Reason: insufficient funds.`, or an
+  empty string when the reason is not known, so the template can place it anywhere without leaving a dangling label. The fallback
+  template (`billing_mailer/failed_payment`) and the default document text (`external_templates/failed_payment_default`) show it and tell the
+  member to sign in to the portal and use **Pay now** (the banner at the top of the home page), or to update the payment method first after a
+  card was declined for good. The link goes to the portal home page (`portal_url`). **The Google Doc `EMAIL_FAILED_PAYMENT_ID` is owned by
+  whoever edits the templates: until they add `{{failure_reason}}` and the Pay now text it keeps working as before, without either.**
+  `BillingMailer.failed_payment` takes the reason as an optional fourth argument; the settlement-declined path passes none, because a stored
+  charge-failure reason does not describe a declined settlement.
+- **Member Slack DM** ("Your recurring payment for ... was unsuccessful" and the past-due notice): adds `Reason: ...` when known, and either
+  "open the member portal and use Pay now" or, after a hard decline, "this card cannot be tried again, so update your payment method in your
+  settings first".
+- **Members relations channel (staff)**: adds the reason, then the decline type and the bank's response in brackets, for example
+  `[soft declined, response 2001 (Insufficient Funds)]`. The raw response goes only to staff; member-facing text uses plain wording
+  (`PaymentFailure::MESSAGES_BY_CODE`) and never repeats the bank's own words. A failure whose reason cannot be worked out shows no reason
+  line rather than a guess.
+- **Pay now itself** (`PayNow`): a declined attempt posts the same kind of staff note to the members relations channel and writes a
+  `subscription_pay_now` audit entry, and sends the member nothing; a successful attempt posts a staff note, writes the audit entry and runs the
+  existing success handling (receipt, Slack note). Braintree's own "charged successfully" notification for that charge is then ignored
+  quietly (no "duplicate, skipping" note to the treasurer channel).
 
 ## Rental workflow email
 

@@ -695,6 +695,43 @@ plain message and is not counted. Audit events: `household_invitation_sent`, `ho
 `household_invitation_revoked`, `household_created` (also when created by the first invitation) and `household_member_added` (with
 `source: invitation`).
 
+### Pay now (past-due membership payments)
+
+`PayNow`, `PayNowLimit` and `PaymentFailure` are request-time services behind `POST /api/billing/subscriptions/:id/pay_now`
+(`Billing::SubscriptionsController#pay_now`); there is no job, schedule or Rake task. A failed recurring charge does not extend the
+membership, so a member whose card fails would otherwise wait for Braintree's own retry while their access can lapse. Pay now charges the
+past-due balance at once.
+
+- `PayNow.attempt!` reads the live subscription from Braintree and refuses unless it is Past Due (422), finds the subscription's oldest unpaid
+  invoice, makes sure the reason for the last failure is known, refuses a hard decline (422, "update your payment method first"), claims an
+  attempt from `PayNowLimit`, then calls `BraintreeService::Subscription.retry_charge`, which is Braintree's retry-charge with **no amount**
+  and `submit_for_settlement` true (Braintree charges what is owed and sets the balance to $0 on success whatever amount a retry names). Only the
+  subscription's owner can use it: the controller's `verify_own_subscription` allows the member's own subscription and a household
+  primary's household subscription, never a secondary's, and staff have no endpoint for other members. Any Braintree subscription of the
+  member (membership, rental, shop) works while Past Due.
+- **Success** hands the transaction to the existing `BraintreeService::Notification.process_subscription_charge_success`, so the invoice is
+  paid and the expiration moves forward at once; it then marks the transaction in Redis (`pay_now_handled/<transaction id>`, one day) so
+  Braintree's own "charged successfully" notification for it returns early and quietly. The invoice claim and lifecycle make that path
+  idempotent in any case, so a late webhook cannot extend the membership twice.
+- **A decline** is stored on the invoice (`PaymentFailure.record!`); Braintree's `processor_response_type` of `hard_declined` disables the
+  button until `Billing::SubscriptionsController#update` changes the payment method (`PaymentFailure.clear!`), while `soft_declined` keeps it.
+  The member sees the reason in the response (422 `payment_declined`); staff get a members-relations Slack note with the type and the bank's
+  response; the audit event is `subscription_pay_now` (`outcome` paid or declined). No email or direct message goes to the member.
+- `PayNowLimit` (one atomic Redis Lua script, like `HouseholdInviteLimit`): a **1 hour cooldown** and **3 attempts a day** per
+  subscription (the day counts from the first attempt, 24 hours). Keys `pay_now_cooldown/<subscription id>` and `pay_now_day/<subscription
+  id>`. A refused attempt never reaches Braintree and answers 429 with `nextPayNowAt`. An attempt Braintree never decided (the call raised) is
+  given back with `PayNowLimit.release`.
+- `PaymentFailure` keeps why a charge failed (see `mongodb-collections.MD`). `process_subscription_charge_failure` stores it from the
+  Braintree transaction already in hand. A failure from before this existed has only `last_failed_transaction_id`, so the first time the member's
+  screen (`GET /api/billing/subscriptions/:id`) or Pay now needs a reason, the transaction is read from Braintree once and saved
+  (`PaymentFailure.ensure_recorded`; a look-up that fails is not saved and is tried again; a transaction Braintree no longer has is saved
+  as `unknown`).
+- `BraintreeService::SubscriptionSerializer` adds `canPayNow`, `payNowBlockedReason` (`hard_decline`, `cooldown`, `daily_cap`,
+  `unavailable`), `lastFailureMessage` and `nextPayNowAt`, computed read-only by `PayNow.info_for` (a lookup only for Past Due subscriptions).
+- Failure behavior: a Braintree error before an answer raises to the caller and gives the attempt back; if success handling cannot
+  settle the invoice (for example a held payment before the first fob) the charge still went through and the audit/Slack note say so, and
+  Braintree's notification, which is then not marked handled, processes it as usual.
+
 ### Slack re-invite after an email change
 
 When a member's email changes, `Member#handle_successful_email_change` resets their Slack tracking
