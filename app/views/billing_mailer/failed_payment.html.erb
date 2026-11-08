@@ -7,11 +7,13 @@
   <div>
     <p>Hi <%=@member.fullname%>!</p>
     <p>Your recent <%= friendly_type %> payment Manchester Makerspace was unsuccessful. The payment processor reported the following error status: <%= @error_status %>.
+      <% if @failure_reason %>Reason: <%= @failure_reason %>.<% end %>
     
       <% if isMembership %>
         Your key fob will continue working until the end of your current membership term.
       <% end %>
     <p>
+    <p>To pay right away, <%= link_to 'sign in to the member portal', Rails.configuration.x.app_base_url %> and use the Pay now button at the top of the page. If your card was declined for good, update your payment method in your settings first.</p>
     <p>Please view your payment settings or contact an administrator for assistance, <%= link_to 'view your account', @url + "/settings", id: "profile-link"%></p>
       <% unless @invoice.plan_id.nil? %>
         The initial recurring subscription payment will automatically retry after 2 days and then 5 days. Failures after this timeframe will need administrator support to reactivate.

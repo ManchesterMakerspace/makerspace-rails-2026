@@ -1,4 +1,5 @@
 <h3>Failed <%= friendly_type %> payment to Manchester Makerspace</h3>
 <p>Hi <%= member_name %>,</p>
-<p>Your recent payment was unsuccessful. The payment processor reported: <%= error_status %>.</p>
+<p>Your recent payment was unsuccessful. The payment processor reported: <%= error_status %>. <%= failure_reason %></p>
+<p>To pay right away, sign in to the member portal and use the Pay now button at the top of the page: <%= portal_url %>. If your card was declined for good, update your payment method in your settings first.</p>
 <p>Review your payment settings or contact an administrator for assistance: <%= url %></p>
