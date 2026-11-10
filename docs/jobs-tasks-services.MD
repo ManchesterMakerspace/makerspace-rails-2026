@@ -707,7 +707,7 @@ past-due balance at once.
   attempt from `PayNowLimit`, then calls `BraintreeService::Subscription.retry_charge`, which is Braintree's retry-charge with **no amount**
   and `submit_for_settlement` true (Braintree charges what is owed and sets the balance to $0 on success whatever amount a retry names). Only the
   subscription's owner can use it: the controller's `verify_own_subscription` allows the member's own subscription and a household
-  primary's household subscription, never a secondary's, and staff have no endpoint for other members. Any Braintree subscription of the
+  primary's household subscription, never a secondary's, and board members have no endpoint for paying another member's subscription. Any Braintree subscription of the
   member (membership, rental, shop) works while Past Due.
 - **Success** hands the transaction to the existing `BraintreeService::Notification.process_subscription_charge_success`, so the invoice is
   paid and the expiration moves forward at once; it then marks the transaction in Redis (`pay_now_handled/<transaction id>`, one day) so
@@ -715,7 +715,7 @@ past-due balance at once.
   idempotent in any case, so a late webhook cannot extend the membership twice.
 - **A decline** is stored on the invoice (`PaymentFailure.record!`); Braintree's `processor_response_type` of `hard_declined` disables the
   button until `Billing::SubscriptionsController#update` changes the payment method (`PaymentFailure.clear!`), while `soft_declined` keeps it.
-  The member sees the reason in the response (422 `payment_declined`); staff get a members-relations Slack note with the type and the bank's
+  The member sees the reason in the response (422 `payment_declined`); board members get a members-relations Slack note with the type and the bank's
   response; the audit event is `subscription_pay_now` (`outcome` paid or declined). No email or direct message goes to the member.
 - `PayNowLimit` (one atomic Redis Lua script, like `HouseholdInviteLimit`): a **1 hour cooldown** and **3 attempts a day** per
   subscription (the day counts from the first attempt, 24 hours). Keys `pay_now_cooldown/<subscription id>` and `pay_now_day/<subscription

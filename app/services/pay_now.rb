@@ -125,17 +125,17 @@ module PayNow
       REDIS.set("pay_now_handled/#{transaction.id}", '1', ex: HANDLED_TTL_SECONDS) if target.reload.settled
 
       audit(member, target, 'paid', transaction, "Paid the past-due #{target.name} payment of $#{format('%.2f', transaction.amount.to_d)} with Pay now.")
-      note_staff(member, target, "paid their past-due #{target.name} payment of $#{format('%.2f', transaction.amount.to_d)} with Pay now.")
+      note_board(member, target, "paid their past-due #{target.name} payment of $#{format('%.2f', transaction.amount.to_d)} with Pay now.")
       Outcome.new(paid: true, transaction: transaction, invoice: target)
     end
 
     def decline(invoice, transaction, member)
       details = PaymentFailure.record!(invoice, transaction)
       reason = details[:message] ? " (#{details[:message]})" : ''
-      summary = PaymentFailure.staff_summary(details)
+      summary = PaymentFailure.board_summary(details)
 
       audit(member, invoice, 'declined', transaction, "Pay now was declined for #{invoice.name}#{summary.present? ? ": #{summary}" : ''}.")
-      note_staff(member, invoice, "tried to pay their past-due #{invoice.name} payment with Pay now and it was declined#{reason}#{summary.present? ? " [#{summary}]" : ''}.#{details[:type] == PaymentFailure::HARD ? ' It will not retry until the member changes their payment method.' : ''}")
+      note_board(member, invoice, "tried to pay their past-due #{invoice.name} payment with Pay now and it was declined#{reason}#{summary.present? ? " [#{summary}]" : ''}.#{details[:type] == PaymentFailure::HARD ? ' It will not retry until the member changes their payment method.' : ''}")
       Outcome.new(paid: false, transaction: transaction, invoice: invoice, failure: details)
     end
 
@@ -157,7 +157,7 @@ module PayNow
       )
     end
 
-    def note_staff(member, invoice, text)
+    def note_board(member, invoice, text)
       ::Service::SlackConnector.enque_message(
         "#{BraintreeService::Notification.get_member_profile(member)} #{text}",
         ::Service::SlackConnector.members_relations_channel,

@@ -59,7 +59,7 @@ module PayNowLimit
 
     def refusal_message(state)
       if state == :daily_cap
-        "You have reached today's limit of #{PER_DAY} payment attempts. Try again tomorrow, or ask staff for help."
+        "You have reached today's limit of #{PER_DAY} payment attempts. Try again tomorrow, or ask a board member for help."
       else
         "A payment was just attempted. Wait an hour before trying again."
       end

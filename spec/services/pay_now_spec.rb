@@ -69,7 +69,7 @@ RSpec.describe PayNow do
         BraintreeService::Notification.send(:process_subscription_charge_success, invoice.reload, paid)
       end
 
-      it 'writes an audit entry and tells staff' do
+      it 'writes an audit entry and tells board members' do
         described_class.attempt!(gateway, member, subscription_id)
 
         log = AuditLog.where(event_type: 'subscription_pay_now').first
@@ -108,7 +108,7 @@ RSpec.describe PayNow do
         expect(invoice.last_failure_message).to eq('insufficient funds')
       end
 
-      it 'tells staff the reason, the decline type and the bank response, and writes an audit entry' do
+      it 'tells board members the reason, the decline type and the bank response, and writes an audit entry' do
         described_class.attempt!(gateway, member, subscription_id)
 
         expect(::Service::SlackConnector).to have_received(:enque_message).with(

@@ -10,7 +10,7 @@
 #   last_failure_type    "soft_declined", "hard_declined", the transaction status for other failures, "unknown" when a
 #                        look-up found nothing useful, or "cleared" once the member changed the payment method
 #   last_failure_message plain wording safe to show the member ("insufficient funds"); nil when we cannot say why.
-#                        It never holds a raw bank response; staff get that from the transaction in the Slack note.
+#                        It never holds a raw bank response; board members get that from the transaction in the Slack note.
 module PaymentFailure
   SOFT = ::Braintree::ProcessorResponseTypes::SoftDeclined
   HARD = ::Braintree::ProcessorResponseTypes::HardDeclined
@@ -42,7 +42,7 @@ module PaymentFailure
 
   class << self
     # What can be said about a failed transaction: { type:, message:, code:, text: }. +message+ is for the member;
-    # +code+ and +text+ are the processor's own response, for staff only.
+    # +code+ and +text+ are the processor's own response, for board members only.
     def describe(transaction)
       return { type: nil, message: nil, code: nil, text: nil } if transaction.nil?
 
@@ -104,8 +104,8 @@ module PaymentFailure
       invoice
     end
 
-    # How staff are told about a failure: "soft declined, response 2001 (Insufficient Funds)".
-    def staff_summary(details)
+    # How board members are told about a failure: "soft declined, response 2001 (Insufficient Funds)".
+    def board_summary(details)
       parts = []
       parts << details[:type].to_s.tr('_', ' ') if details[:type].present?
       response = [details[:code], details[:text] && "(#{details[:text]})"].compact.join(' ')

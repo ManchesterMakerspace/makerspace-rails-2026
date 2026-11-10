@@ -87,12 +87,12 @@ When a recurring charge fails, `BraintreeService::Notification.process_subscript
 - **Member Slack DM** ("Your recurring payment for ... was unsuccessful" and the past-due notice): adds `Reason: ...` when known, and either
   "open the member portal and use Pay now" or, after a hard decline, "this card cannot be tried again, so update your payment method in your
   settings first".
-- **Members relations channel (staff)**: adds the reason, then the decline type and the bank's response in brackets, for example
-  `[soft declined, response 2001 (Insufficient Funds)]`. The raw response goes only to staff; member-facing text uses plain wording
+- **Members relations channel (board members)**: adds the reason, then the decline type and the bank's response in brackets, for example
+  `[soft declined, response 2001 (Insufficient Funds)]`. The raw response goes only to board members; member-facing text uses plain wording
   (`PaymentFailure::MESSAGES_BY_CODE`) and never repeats the bank's own words. A failure whose reason cannot be worked out shows no reason
   line rather than a guess.
-- **Pay now itself** (`PayNow`): a declined attempt posts the same kind of staff note to the members relations channel and writes a
-  `subscription_pay_now` audit entry, and sends the member nothing; a successful attempt posts a staff note, writes the audit entry and runs the
+- **Pay now itself** (`PayNow`): a declined attempt posts the same kind of board member note to the members relations channel and writes a
+  `subscription_pay_now` audit entry, and sends the member nothing; a successful attempt posts a board member note, writes the audit entry and runs the
   existing success handling (receipt, Slack note). Braintree's own "charged successfully" notification for that charge is then ignored
   quietly (no "duplicate, skipping" note to the treasurer channel).
 

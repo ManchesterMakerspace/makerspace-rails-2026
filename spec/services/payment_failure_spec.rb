@@ -16,7 +16,7 @@ RSpec.describe PaymentFailure do
   end
 
   describe '.describe' do
-    it 'says insufficient funds in plain words and keeps the raw response for staff' do
+    it 'says insufficient funds in plain words and keeps the raw response for board members' do
       details = described_class.describe(failed_transaction)
 
       expect(details).to eq(type: 'soft_declined', message: 'insufficient funds', code: '2001', text: 'Insufficient Funds')
@@ -131,9 +131,9 @@ RSpec.describe PaymentFailure do
     end
   end
 
-  describe '.staff_summary' do
+  describe '.board_summary' do
     it 'shows the decline type and the bank response' do
-      summary = described_class.staff_summary(described_class.describe(failed_transaction))
+      summary = described_class.board_summary(described_class.describe(failed_transaction))
 
       expect(summary).to eq('soft declined, response 2001 (Insufficient Funds)')
     end

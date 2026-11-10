@@ -482,7 +482,7 @@ RSpec.describe BraintreeService::Notification, type: :model do
       )
     end
 
-    it "gives staff the reason, the decline type and the bank's response code" do
+    it "gives board members the reason, the decline type and the bank's response code" do
       BraintreeService::Notification.send(:process_subscription_charge_failure, invoice, declined)
 
       expect(BraintreeService::Notification).to have_received(:enque_message).with(

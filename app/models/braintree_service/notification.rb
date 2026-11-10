@@ -221,7 +221,7 @@ No automated actions have been taken at this time.")
         ::Service::SlackConnector.request_caller_id("notification.process_subscription_charge_failure.member.#{invoice.id}")
       )
     end
-    summary = PaymentFailure.staff_summary(details)
+    summary = PaymentFailure.board_summary(details)
     enque_message(
       "Recurring payment from #{get_member_profile(invoice.member)} failed with status: #{last_transaction.status}.#{invoice.last_failure_message ? " Reason: #{invoice.last_failure_message}." : ''}#{summary.present? ? " [#{summary}]" : ''} #{member_notified}",
       ::Service::SlackConnector.members_relations_channel,
