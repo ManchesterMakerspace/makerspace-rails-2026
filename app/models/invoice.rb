@@ -61,6 +61,9 @@ class Invoice
   # Invoice.claim_for_transaction's nil-or-matching guard and block a later
   # successful attempt from ever claiming/settling the invoice.
   field :last_failed_transaction_id, type: String
+  # Why that charge failed (see PaymentFailure): Braintree's soft/hard decline type, and plain wording safe to show the member.
+  field :last_failure_type, type: String
+  field :last_failure_message, type: String
 
   index(
     { transaction_id: 1 },
@@ -197,6 +200,8 @@ class Invoice
     # unrelated cancellation of the next cycle's invoice as payment-related
     # (see #send_cancellation_notification's auto_cancelled detection).
     next_invoice.last_failed_transaction_id = nil
+    next_invoice.last_failure_type = nil
+    next_invoice.last_failure_message = nil
     next_invoice.due_date = self.due_date + self.quantity.months
 
     if next_invoice.subscription_id && gateway

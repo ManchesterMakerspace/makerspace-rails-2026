@@ -57,6 +57,19 @@ class BraintreeService::Subscription < Braintree::Subscription
     normalize_subscription(gateway, result.subscription)
   end
 
+  # Charges the balance of a Past Due subscription right now and submits it for settlement. No amount is passed: Braintree
+  # then charges what is owed, and on success sets the balance to zero whatever amount a retry names. Braintree only allows
+  # it while the subscription is Past Due. Returns Braintree's result, which carries the transaction whether the charge went
+  # through or was declined; raises when Braintree refused to attempt a charge at all (nothing was charged).
+  def self.retry_charge(gateway, id)
+    result = gateway.subscription.retry_charge(id, nil, true)
+    if result.transaction.nil?
+      raise ::Error::UnprocessableEntity.new(result.message.presence || "Braintree could not retry this payment.")
+    end
+
+    result
+  end
+
   def self.create(gateway, invoice)
     # Don't create a new subscription if already on subscription
     if invoice.plan_id &&

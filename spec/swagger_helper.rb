@@ -1155,6 +1155,22 @@ RSpec.configure do |config|
       ]
     },
 
+    PayNowRefusal: {
+      type: :object,
+      description: 'A Pay now request that was declined by the bank or not allowed (hard decline, not past due, cooldown, daily limit)',
+      properties: {
+        status: { type: :number },
+        error: { type: :string, description: 'payment_declined, hard_decline, cooldown or daily_cap' },
+        message: { type: :string },
+        failureType: { type: :string, 'x-nullable': true, description: "Braintree's soft_declined or hard_declined, or the transaction status, for a declined payment" },
+        failureMessage: { type: :string, 'x-nullable': true },
+        canPayNow: { type: :boolean },
+        payNowBlockedReason: { type: :string, 'x-nullable': true },
+        nextPayNowAt: { type: :string, 'x-nullable': true }
+      },
+      required: [:status, :error, :message]
+    },
+
     Subscription: {
       type: :object,
       properties: {
@@ -1180,7 +1196,16 @@ RSpec.configure do |config|
         memberName: { type: :string },
         resourceClass: { type: :string },
         resourceId: { type: :string },
-        paymentMethodToken: { type: :string }
+        paymentMethodToken: { type: :string },
+        canPayNow: { type: :boolean, description: 'Whether the member can press Pay now for this past-due subscription right now' },
+        payNowBlockedReason: {
+          type: :string,
+          'x-nullable': true,
+          enum: ['hard_decline', 'cooldown', 'daily_cap', 'unavailable'],
+          description: 'Why Pay now is unavailable: hard_decline (change the payment method first), cooldown, daily_cap, unavailable (no unpaid invoice); null when available or not past due'
+        },
+        lastFailureMessage: { type: :string, 'x-nullable': true, description: 'Plain wording for why the last charge failed, for example insufficient funds; null when unknown' },
+        nextPayNowAt: { type: :string, 'x-nullable': true, description: 'When Pay now can be tried again after a cooldown or the daily cap (ISO 8601); null otherwise' }
       },
       required: [
         :id,

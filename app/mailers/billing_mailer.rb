@@ -96,20 +96,24 @@ class BillingMailer < ApplicationMailer
     send_mail(member.email, "Canceled Manchester Makerspace Subscription", __method__.to_s)
   end
 
-  def failed_payment(email, invoice_id, error_status)
+  # failure_reason is plain wording for why the charge failed (PaymentFailure), or nil when it is not known. The email template
+  # placeholder {{failure_reason}} receives it as a sentence ("Reason: insufficient funds."), or nothing.
+  def failed_payment(email, invoice_id, error_status, failure_reason = nil)
     member = Member.find_by(email: email.to_s.downcase)
     invoice = Invoice.find(invoice_id)
-    _failed_payment(member, invoice, error_status)
+    _failed_payment(member, invoice, error_status, failure_reason)
   end
 
-  def _failed_payment(member, invoice, error_status)
+  def _failed_payment(member, invoice, error_status, failure_reason = nil)
     @error_status = error_status
+    @failure_reason = failure_reason.presence
     @member = member
     @invoice = invoice
     @google_doc_content = ::Service::EmailTemplate.render(:failed_payment, ::Service::EmailTemplate.common_variables(member).merge(
       member_name: member.fullname,
       friendly_type: invoice.resource_class == "member" ? "membership" : "rental",
       error_status: error_status.to_s,
+      failure_reason: @failure_reason ? "Reason: #{@failure_reason}." : "",
       url: get_profile_url_string(member)
     ))
     send_mail(member.email, "Failed payment to Manchester Makerspace", __method__.to_s)

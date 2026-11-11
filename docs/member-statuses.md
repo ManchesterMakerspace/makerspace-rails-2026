@@ -76,6 +76,11 @@ The authenticated `PATCH /api/members/:id` and `PUT /api/members/:id`
 member-profile endpoints are **not** status-changing paths: their permitted
 fields do not include `status`.
 
+`POST /api/billing/subscriptions/:id/pay_now` (`Billing::SubscriptionsController#pay_now`) is a member-triggered payment path rather than a
+status writer of its own: when the charge succeeds it runs the same invoice processing as the Braintree webhook (see "Membership payments"
+below), so `Member#reactivate_for_payment!` can move an `inactive` or `nonMember` member to `activeMember`. A declined or refused attempt
+changes no status.
+
 ### Webhook callbacks
 
 No webhook callback writes `Member#status` itself, but one reaches it indirectly:

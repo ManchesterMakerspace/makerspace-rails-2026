@@ -2720,6 +2720,47 @@
           }
         ]
       },
+      "PayNowRefusal": {
+        "type": "object",
+        "description": "A Pay now request that was declined by the bank or not allowed (hard decline, not past due, cooldown, daily limit)",
+        "properties": {
+          "status": {
+            "type": "number"
+          },
+          "error": {
+            "type": "string",
+            "description": "payment_declined, hard_decline, cooldown or daily_cap"
+          },
+          "message": {
+            "type": "string"
+          },
+          "failureType": {
+            "type": "string",
+            "x-nullable": true,
+            "description": "Braintree's soft_declined or hard_declined, or the transaction status, for a declined payment"
+          },
+          "failureMessage": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "canPayNow": {
+            "type": "boolean"
+          },
+          "payNowBlockedReason": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "nextPayNowAt": {
+            "type": "string",
+            "x-nullable": true
+          }
+        },
+        "required": [
+          "status",
+          "error",
+          "message"
+        ]
+      },
       "Subscription": {
         "type": "object",
         "properties": {
@@ -2771,6 +2812,31 @@
           },
           "paymentMethodToken": {
             "type": "string"
+          },
+          "canPayNow": {
+            "type": "boolean",
+            "description": "Whether the member can press Pay now for this past-due subscription right now"
+          },
+          "payNowBlockedReason": {
+            "type": "string",
+            "x-nullable": true,
+            "enum": [
+              "hard_decline",
+              "cooldown",
+              "daily_cap",
+              "unavailable"
+            ],
+            "description": "Why Pay now is unavailable: hard_decline (change the payment method first), cooldown, daily_cap, unavailable (no unpaid invoice); null when available or not past due"
+          },
+          "lastFailureMessage": {
+            "type": "string",
+            "x-nullable": true,
+            "description": "Plain wording for why the last charge failed, for example insufficient funds; null when unknown"
+          },
+          "nextPayNowAt": {
+            "type": "string",
+            "x-nullable": true,
+            "description": "When Pay now can be tried again after a cooldown or the daily cap (ISO 8601); null otherwise"
           }
         },
         "required": [
@@ -8449,6 +8515,88 @@
           },
           "404": {
             "description": "secondary household member cannot cancel household subscription"
+          }
+        }
+      }
+    },
+    "/billing/subscriptions/{id}/pay_now": {
+      "post": {
+        "summary": "Pays the past-due balance of a subscription now",
+        "tags": [
+          "Subscriptions"
+        ],
+        "operationId": "payNowSubscription",
+        "description": "Charges the past-due balance of the member's own Braintree subscription right away, instead of waiting for Braintree's retry. Only for a Past Due subscription. A hard decline blocks it until the payment method is changed; attempts are limited to one an hour and three a day per subscription.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "payment went through; the refreshed subscription",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscription"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "hard decline blocks Pay now until the payment method is changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayNowRefusal"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "cooldown between attempts, or the daily limit, reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayNowRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "User not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "User not authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "secondary household member cannot pay the household subscription",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
           }
         }
       }
