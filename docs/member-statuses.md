@@ -123,3 +123,10 @@ are skipped when held payments are applied at the first fob.
   supported values. Mongoid atomic/raw-database writes can bypass normal model
   validation and should be treated as an exceptional data-repair mechanism,
   not an application workflow.
+
+
+### Native enrollment activation path
+
+POST /api/{admin,fob_issuance}/card_enrollments/:id/commit invokes shared transactional
+assignment/finalization and activates pending members. Preparation/programming do
+not change status. Existing reader-fallback routes still activate on assignment.

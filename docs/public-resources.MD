@@ -113,6 +113,14 @@ POST /api/admin/system_configs/run_job accepts key=checkout_expiration_notice
 or public configuration secret is added. Portal renewal links use the existing
 /tool-checkouts?mode=self-service route.
 
+## Reader reservation lifecycle is private
+
+`POST /api/internal/reader_reservations/sync` is not a public/member endpoint.
+It requires a dedicated server-to-server secret and restricted ts-data-api ingress.
+The existing public reservation agenda still shows approved bookings only;
+abandoned records release availability without exposing attendance journals.
+Authenticated reservation serialization includes revision, arrival timestamp,
+abandonment timestamp/reason. See [the private contract](reader-reservations.MD).
 GET /api/admin/system_configs also returns the flags fob_reminder_enabled and
 signup_reminder_enabled and a reminders group (fob_reminder_days,
 signup_reminder_days, strings). PUT update_flag accepts the two flags, PUT

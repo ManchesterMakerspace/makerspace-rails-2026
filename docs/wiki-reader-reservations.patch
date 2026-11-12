@@ -1,0 +1,130 @@
+diff --git a/digital-makerspace/reservations/tool-readers.md b/digital-makerspace/reservations/tool-readers.md
+new file mode 100644
+--- /dev/null
++++ b/digital-makerspace/reservations/tool-readers.md
+@@ -0,0 +1,35 @@
++---
++title: Reservations at tool readers
++description: Check in, countdown reminders, and reservation release
++published: false
++date: 2026-11-02T00:00:00.000Z
++tags: portal, reservations, tools
++editor: markdown
++dateCreated: 2026-11-02T00:00:00.000Z
++---
++
++# Reservations at tool readers
++
++HOLD FOR DEPLOYMENT: apply and publish only after the coordinated Rails, API,
++portal, and reader release has passed hardware acceptance.
++
++At an equipped tool, your normal successful check-in can claim your approved
++reservation from one hour before it starts through fifteen minutes after it starts.
++An earlier active reservation must finish first. Checking in at one equipped tool
++claims the entire tool/group/shop booking. If you are already using the tool, an
++eligible reservation can be associated automatically.
++
++The display alternates normal idle information with the current or next booking.
++During use it shows the earlier of your reservation end or another member's start.
++Reminders flash red; the fifteen- and five-minute reminders play a tune.
++These reminders do not change tool authorization or switch off power.
++
++Logging off voluntarily releases the rest of your whole booking. Being kicked off,
++a reader reboot, or authorization expiry does not count as voluntary release.
++A booking with no qualifying arrival can be marked **Abandoned** after fifteen
++minutes, once all participating readers have synchronized attendance. An offline
++reader can delay this decision. Abandoned bookings release availability and appear
++in history; reservation fees and invoices remain unchanged.
++
++Contact a shop manager if a reader remains unavailable or a booking needs ordinary
++administrative cancellation. Do not clear reader attendance records to force release.
+
+diff --git a/digital-makerspace/members/reserve-a-shop-or-tool.md b/digital-makerspace/members/reserve-a-shop-or-tool.md
+--- a/digital-makerspace/members/reserve-a-shop-or-tool.md
++++ b/digital-makerspace/members/reserve-a-shop-or-tool.md
+@@ -59,7 +59,8 @@
+ | **pending** | A Resource Manager, admin or board member must approve it first. The message tells you why. The time is held for you while it waits. |
+ | **unpaid** | It is waiting for the reservation fee to be paid. |
+ | **denied** | It was not approved. The time is free again. |
+-| **cancelled** | It was cancelled. The time is free again. |
++| **cancelled** | It was cancelled, including an owner's voluntary early logoff. The time is free again. |
++| **Abandoned** | No qualifying check-in was recorded within fifteen minutes after the start, and all participating readers synchronized attendance. The time is free again; fees are unchanged. |
+ 
+ A booking is **pending** when the shop or tool requires approval, when it falls in a recurring blackout period, or when it overlaps another reservation you already hold. When it is approved or denied, you get a Slack message if your Slack account is linked.
+ 
+@@ -69,7 +70,7 @@
+ 
+ ## See and change your reservations
+ 
+-Open the **My Reservations** tab. Your bookings are grouped as **Upcoming**, **Pending Approval** and **Cancelled**. Choose **Edit** to change a booking, or **Cancel** to cancel it. A change can send an approved booking back to pending. Past bookings are on the **History** tab.
++Open the **My Reservations** tab. Your bookings are grouped as **Upcoming**, **Pending Approval** and **Cancelled or abandoned**. Choose **Edit** or **Cancel** for an active booking. A change can send an approved booking back to pending. Past bookings and abandoned bookings are on **History**; abandoned bookings appear there immediately, even before their original end. Terminal bookings have no edit or cancel actions.
+ 
+ ![My Reservations](/images/reservations/member-my-reservations.png){width=700px}
+ 
+@@ -75,7 +76,11 @@
+ 
+ Please cancel a booking you will not use so someone else can have the time. If your membership expires or is revoked, new and edited bookings are not allowed, but you can still see and cancel the ones you have.
+ 
+-## Reserve from Slack
++## Check in at an equipped tool
++
++A successful check-in can claim your approved booking from one hour before start through fifteen minutes after start. One equipped tool claims the whole booking. Voluntary logoff releases its remaining time; kicks and reboots do not. The display and sounds provide reminders without switching off the tool. See [Reservations at Tool Readers](/digital-makerspace/reservations/tool-readers).
++
++## Reserve from Slack
+ 
+ 1. In the shop's Slack channel, type **/reserve**. It only works in a channel that is linked to a shop.
+ 2. A box opens. Fill in the title, choose the whole shop or tools, and set the date, start time and duration.
+
+diff --git a/digital-makerspace/resource-managers/reservations.md b/digital-makerspace/resource-managers/reservations.md
+--- a/digital-makerspace/resource-managers/reservations.md
++++ b/digital-makerspace/resource-managers/reservations.md
+@@ -19,7 +19,7 @@
+ | Tab | What it is for |
+ | --- | --- |
+ | **New Reservation** | Also offers **Create on behalf of another member**. |
+-| **In My Shops** | The approval queue and every upcoming and cancelled booking in the shops you manage. |
++| **In My Shops** | The approval queue and upcoming, cancelled and abandoned bookings in the shops you manage. |
+ | **Reservation Blackouts** | Recurring times when bookings need approval. |
+ | **Manage Shops** | The shop list, with each shop's reservation settings. |
+ | **Manage Tools** | The tool list, with each tool's reservation settings. |
+@@ -71,7 +71,13 @@
+ 
+ ![Reservation Blackouts](/images/reservations/manager-blackouts.png){width=700px}
+ 
+-## Slack and calendar
++## Reader attendance and released bookings
++
++**Cancelled or abandoned** includes an **Abandoned** booking immediately after no-show verification. It releases availability while retaining fees and invoices. It cannot be edited, approved or cancelled again. Voluntary owner logoff appears as **cancelled**, with its release explanation, and releases the whole booking.
++
++Only equipped reservation-enabled readers participate in automatic no-show verification. Every participating reader must synchronize its attendance, so an offline reader can delay release. If a reader remains unavailable, use ordinary cancellation for a still-active booking. Do not clear attendance records to force abandonment. See [Reservations at Tool Readers](/digital-makerspace/reservations/tool-readers).
++
++## Slack and calendar
+ 
+ - **/reserve** works in each shop's linked Slack channel.
+ - The portal keeps two read-only canvases per shop, **Today's … Reservations** and **Tomorrow's … Reservations**. A channel manager adds each one to the channel header once, with the **+** button in Slack. After that they update on their own.
+
+diff --git a/digital-makerspace/troubleshooting.md b/digital-makerspace/troubleshooting.md
+--- a/digital-makerspace/troubleshooting.md
++++ b/digital-makerspace/troubleshooting.md
+@@ -68,6 +68,20 @@
+ 
+ If an email to you could not be delivered, for example because the address has a typo or the mailbox no longer exists, and your Slack account is linked, you get a Slack message saying so. The board is told as well. Update the email address on your profile, or ask a board member to correct it.
+ 
+-## Tools
++## Reservations at tool readers
++
++### My reservation says Abandoned
++
++The booking was released after no qualifying check-in within fifteen minutes of its start, once all participating readers synchronized. It appears in **History** immediately. Fees and invoices are unchanged. Contact the shop's Resource Manager if you believe attendance is missing.
++
++### My booking was cancelled when I logged off
++
++Voluntary owner logoff releases the remaining whole booking, including other tools in the same booking. A kick or reader reboot does not count as voluntary release.
++
++### A no-show booking has not been released
++
++An offline participating reader can delay verification while attendance is uncertain. Ask the shop's Resource Manager about ordinary cancellation. See [Reservations at Tool Readers](/digital-makerspace/reservations/tool-readers).
++
++## Tools
+ 
+ ### I cannot request a checkout, or my request has not been approved

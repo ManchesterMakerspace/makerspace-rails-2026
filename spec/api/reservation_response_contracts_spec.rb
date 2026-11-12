@@ -1,6 +1,14 @@
 require 'swagger_helper'
 
 RSpec.describe 'Reservation response contracts', type: :request do
+  it 'serializes abandoned attendance metadata and keeps it out of blocking scopes' do
+    booking.update!(status:'abandoned',abandoned_at:Time.current,abandonment_reason:'no_checkin_within_15_minutes')
+    get '/api/reservations',params:{mine:true}
+    row=JSON.parse(response.body).find { |entry| entry['id']==booking.id.to_s }
+    expect(row).to include('status'=>'abandoned','abandonmentReason'=>'no_checkin_within_15_minutes')
+    expect(row['abandonedAt']).to be_present
+    expect(Reservation.blocking.where(id:booking.id)).not_to exist
+  end
   let(:member) { create(:member, :admin, :current) }
   let(:shop) { create(:shop) }
   let(:tool) { create(:tool, shop: shop, reservable: true) }
