@@ -1915,8 +1915,26 @@
               "unpaid",
               "approved",
               "denied",
-              "cancelled"
+              "cancelled",
+              "abandoned"
             ]
+          },
+          "readerRevision": {
+            "type": "integer"
+          },
+          "arrivedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "abandonedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "abandonmentReason": {
+            "type": "string",
+            "nullable": true
           },
           "approvalReasons": {
             "type": "array",
@@ -18635,6 +18653,156 @@
           "422": {
             "description": "Unknown job"
           }
+        }
+      }
+    },
+    "/internal/reader_reservations/sync": {
+      "post": {
+        "summary": "Synchronize reader attendance (private ts-data-api ingress only)",
+        "tags": [
+          "Reader reservations (internal)"
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Dedicated server-to-server Bearer secret; not browser authentication"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operations synchronized; stale and blocked outcomes are explicit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "results",
+                    "serverTime"
+                  ],
+                  "properties": {
+                    "serverTime": {
+                      "type": "integer"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "reservationId": {
+                            "type": "string"
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "accepted",
+                              "stale",
+                              "gone",
+                              "blocked"
+                            ]
+                          },
+                          "revision": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "monitored": {
+                            "type": "boolean"
+                          },
+                          "arrivedAt": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid service credential"
+          },
+          "409": {
+            "description": "Session upload pending or conflicting replay/state"
+          },
+          "422": {
+            "description": "Invalid operation or scope"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "deviceId",
+                  "operations"
+                ],
+                "properties": {
+                  "deviceId": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{24}$"
+                  },
+                  "operations": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "reservationId",
+                        "revision"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "monitor",
+                            "claim",
+                            "release",
+                            "checkpoint"
+                          ]
+                        },
+                        "reservationId": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "checkinId": {
+                          "type": "string"
+                        },
+                        "checkendId": {
+                          "type": "string"
+                        },
+                        "observedAt": {
+                          "type": "integer"
+                        },
+                        "coveredFrom": {
+                          "type": "integer"
+                        },
+                        "through": {
+                          "type": "integer"
+                        },
+                        "uncertain": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
         }
       }
     }

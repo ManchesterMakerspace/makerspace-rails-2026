@@ -163,6 +163,10 @@ class ReservationService
       end
 
       with_shop_lock(reservation.shop_id) do
+        reservation.reload
+        unless reservation.blocking? && reservation.end_at > Time.current
+          raise ::Error::UnprocessableEntity.new("Only current or future active reservations can be cancelled")
+        end
         reservation.update!(
           status: "cancelled",
           decision_note: reason,
@@ -791,7 +795,7 @@ class ReservationService
     end
 
     def enqueue_external_syncs(reservation, previous_canvas_targets: [])
-      if reservation.invoice.present? || (reservation.decided_at.present? && reservation.status.in?(%w[approved denied]))
+      if !reservation.abandoned? && (reservation.invoice.present? || (reservation.decided_at.present? && reservation.status.in?(%w[approved denied])))
         ReservationFeeNotificationJob.perform_later(reservation.id.to_s)
       end
       ReservationCalendarSyncJob.perform_later(reservation.id.to_s)

@@ -230,3 +230,14 @@ and active-canvas eligibility. Expiration does not remove independent approver
 assignments or manager permissions, revoke records, or change member status.
 An eligible owner may request renewal; unresolved revoked checkouts still need
 admin/board reinstatement. Superseded history grants no checkout-derived rights.
+
+
+### Tool-reader kick permission
+
+Session-capable ESP32 readers allow an authenticated, active, unexpired member to
+confirm a kick by scanning the same card twice within 15 seconds when they hold a
+current checkout for that tool, manage its shop as a resource_manager, or have
+admin/board_member role. The gateway computes reader-scoped managesTool; the
+firmware verifies the card and rechecks permission. A kick only ends the current
+session; operating the tool still requires its normal checkout. Out-of-service
+blocks new sessions but allows existing-session logoff and kicks.
