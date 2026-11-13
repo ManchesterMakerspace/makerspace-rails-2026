@@ -55,6 +55,7 @@ class FirebaseAuthController < ApplicationController
         lastname:     lastname,
         firebase_uid: firebase_uid,
         status:       'inactive',
+        signup_source_prompt_pending: true,
         role:         'member',
       )
       # Generate a random password so Devise is happy (member won't use it)

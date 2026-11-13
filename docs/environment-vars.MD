@@ -151,3 +151,16 @@ executable code does not retrieve them.
 | `SLACK_TICKETS_CHANNEL` | No | Optional; blank disables central publication | Initial channel ID or name, overridable under System settings → Slack (stored as `slack_channel_tickets`). A saved blank override disables publication even when this environment variable is set; no default channel is used. Channel for every new ticket and threaded updates, including full notes. Bounties broadcast replies. Independent of public visibility and per-ticket shop announcements. Bot must be able to post/read its messages. Existing `SLACK_ENV` development redirection applies. |
 
 `ticket_open_limit` is a positive-integer SystemConfig setting, default 10, editable only by admins; it is not an environment variable. /fix always requires SLACK_SIGNING_SECRET, including development.
+
+## Eventbrite integration
+
+`EVENTBRITE_WEBHOOK_PATH` is an optional private receiver path (blank disables it),
+ending in at least 32 random URL-safe characters. A configured path requires
+`EVENTBRITE_API_KEY` (private OAuth bearer token) and `EVENTBRITE_ORGANIZATION_IDS`
+(comma-separated organization allowlist). No credential or receiver URL is public
+runtime configuration. Restart Rails for route changes and redact upstream access
+logs. API/backfill use requires the token and allowlist even with webhooks disabled.
+Manual task inputs: `NAME_INCLUDE`/`NAME_EXCLUDE` are optional case-insensitive
+literal event-name substrings for Events/Orders; `CHANGED_SINCE` is an optional UTC
+ISO8601 timestamp or `last` for Attendees (omitted means full); `RESUME_RUN_ID`
+resumes persisted criteria. See [Eventbrite operations](eventbrite.md).

@@ -305,3 +305,21 @@ expiry scans. Deploy it with the repeatable
 index without changing documents. Existing member/tool lookup indexes remain.
 Expiration audits use existing audit logs; notice settings and run status use
 the existing SystemConfig storage.
+
+## Eventbrite collections
+
+All six are top-level Mongoid collections. `eventbrite_events`, `eventbrite_orders`,
+`eventbrite_attendees`, and `eventbrite_ticket_classes` have unique
+`(organization_id, eventbrite_id)` indexes; IDs remain strings. Event date/public
+eligibility and order/ticket/attendee parent lookups are indexed. Attendees index
+email/member and member/organization/order lookups. Only attendees store member
+links; orders derive their potentially multiple members through attendees.
+Invalidated events, refunded orders, and deleted ticket classes retain history.
+`eventbrite_webhook_deliveries` indexes completion/failure/due/lease state; its
+`expires_at` TTL is set only after completion, for 30 days. `eventbrite_sync_runs`
+indexes kind/completion and persists criteria, page progress and success watermarks.
+Member indexes pending reconciliation time and adds source event ID/snapshot,
+provider prompt state, and pending local email-link reconciliation. No new
+embedded documents become separate collections.
+Apply model indexes through `data:ensure_unique_indexes` before ingestion; see
+[Eventbrite lifecycle and rollout](eventbrite.md).

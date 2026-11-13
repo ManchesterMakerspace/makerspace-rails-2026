@@ -1,4 +1,9 @@
 Rails.application.routes.draw do
+  EventbriteIntegration::Configuration.validate_path!
+  if EventbriteIntegration::Configuration.webhook_path.present?
+    post '/__eventbrite_receiver__', to: 'eventbrite_webhooks#create',
+      constraints: ->(request) { request.env['eventbrite.private_receiver'] == true }
+  end
 
   unless Rails.env.production?
     mount Rswag::Ui::Engine => '/api-docs'
@@ -52,6 +57,7 @@ Rails.application.routes.draw do
        post '/send_registration', to: 'registrations#new'
     end
     get '/signup_status', to: 'registrations#status'
+    get '/signup_events', to: 'signup_sources#events'
     get '/invoice_options/signup', to: 'invoice_options#signup'
     resources :invoice_options, only: [:index, :show]
     resources :client_error_handler, only: [:create]
@@ -86,6 +92,12 @@ Rails.application.routes.draw do
     end
 
     authenticate :member do
+      put '/signup_source', to: 'signup_sources#update'
+      namespace :admin do
+        get 'eventbrite/:kind', to: 'eventbrite#index', constraints: { kind: /events|orders|attendees/ }
+        get 'eventbrite/:kind/:id', to: 'eventbrite#show', constraints: { kind: /events|orders|attendees/ }
+        get 'members/:member_id/eventbrite/:kind', to: 'eventbrite#index', constraints: { kind: /orders|attendees/ }
+      end
       put "/members/change_password", to: "members/passwords#update"
 
       # TOTP self-service

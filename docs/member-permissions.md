@@ -230,3 +230,14 @@ and active-canvas eligibility. Expiration does not remove independent approver
 assignments or manager permissions, revoke records, or change member status.
 An eligible owner may request renewal; unresolved revoked checkouts still need
 admin/board reinstatement. Superseded history grants no checkout-derived rights.
+
+## Eventbrite history
+
+Resource Managers, Board and Admins can read imported Eventbrite events, orders,
+attendees and ticket classes across configured organizations in the staff browser
+and member profiles. Ordinary members, including the linked member, cannot read
+order/attendee records. API authorization is enforced by AdminOrRmController;
+React uses `canViewEventbriteHistory`. Survey correction retains existing admin/
+board permissions; public signup never exposes a member directory. Email matching
+does not grant membership, checkout, billing or access permissions. See
+[Eventbrite](eventbrite.md).

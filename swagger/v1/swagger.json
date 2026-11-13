@@ -96,6 +96,132 @@
           "rental"
         ]
       },
+      "EventbriteRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "eventbriteId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "eventId": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "ticketClassId": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberId": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ticketClassName": {
+            "type": "string",
+            "nullable": true
+          },
+          "refunded": {
+            "type": "boolean"
+          },
+          "event": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "nullable": true
+              },
+              "startsAt": {
+                "type": "string",
+                "nullable": true
+              },
+              "timezone": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "costs": {
+            "type": "object"
+          },
+          "cost": {
+            "type": "object"
+          },
+          "free": {
+            "type": "boolean"
+          },
+          "quantityTotal": {
+            "type": "integer",
+            "nullable": true
+          },
+          "linkConflict": {
+            "type": "boolean"
+          },
+          "startsAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "timezone": {
+            "type": "string",
+            "nullable": true
+          },
+          "invalidatedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "invalidationReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "refundedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "attendees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventbriteRecord"
+            }
+          },
+          "ticketClasses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventbriteRecord"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "eventbriteId"
+        ]
+      },
       "Card": {
         "type": "object",
         "properties": {
@@ -524,6 +650,224 @@
           "quantity"
         ]
       },
+      "Group": {
+        "type": "object",
+        "description": "A household: the primary member and the secondary adults linked to them.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "groupName": {
+            "type": "string",
+            "description": "The primary member's id."
+          },
+          "groupRep": {
+            "type": "string"
+          },
+          "expiry": {
+            "type": "integer",
+            "x-nullable": true,
+            "description": "Milliseconds. The primary expiry; secondaries and their cards always equal it."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Adults the primary household plan covers."
+          },
+          "seatsUsed": {
+            "type": "integer",
+            "description": "The primary, the linked secondaries and the open invitations."
+          },
+          "paymentAccepted": {
+            "type": "boolean",
+            "description": "The most recent household-plan payment was taken (applied, or held until the first fob), is not refunded or disputed, and the paid time has not run out."
+          },
+          "primaryMember": {
+            "type": "object",
+            "x-nullable": true
+          },
+          "secondaryMembers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "invitations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "groupName",
+          "size",
+          "seatsUsed",
+          "paymentAccepted"
+        ]
+      },
+      "HouseholdSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "seats_used": {
+            "type": "integer"
+          },
+          "payment_accepted": {
+            "type": "boolean"
+          },
+          "expiration_time": {
+            "type": "integer",
+            "x-nullable": true
+          },
+          "primary": {
+            "type": "object"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "invitations": {
+            "type": "array",
+            "description": "Only for the primary.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "size",
+          "seats_used",
+          "payment_accepted"
+        ]
+      },
+      "Household": {
+        "type": "object",
+        "description": "The signed-in member's household state. Keys are snake_case.",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "secondary"
+            ],
+            "x-nullable": true
+          },
+          "household_plan": {
+            "type": "boolean"
+          },
+          "can_invite": {
+            "type": "boolean"
+          },
+          "invite_blocked_reason": {
+            "type": "string",
+            "x-nullable": true,
+            "description": "Plain words for why the invite is not available."
+          },
+          "plan_size": {
+            "type": "integer",
+            "x-nullable": true
+          },
+          "household": {
+            "$ref": "#/components/schemas/HouseholdSummary",
+            "x-nullable": true
+          },
+          "invited_to_a_household": {
+            "type": "boolean",
+            "description": "An open invitation is waiting for this member's email."
+          },
+          "invitation_id": {
+            "type": "string",
+            "description": "Only in the response to creating an invitation."
+          }
+        },
+        "required": [
+          "household_plan",
+          "can_invite",
+          "invited_to_a_household"
+        ]
+      },
+      "HouseholdInvitationPublic": {
+        "type": "object",
+        "description": "What the link page may show before signing in.",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "expired",
+              "accepted",
+              "revoked"
+            ]
+          },
+          "inviter_name": {
+            "type": "string",
+            "x-nullable": true,
+            "description": "First name and last initial. Null once the invitation was cancelled, expired or used."
+          },
+          "invited_email": {
+            "type": "string",
+            "x-nullable": true,
+            "description": "Null once the invitation was cancelled, expired or used."
+          },
+          "expires_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "expires_at"
+        ]
+      },
+      "HouseholdInvitationPreview": {
+        "type": "object",
+        "description": "What the signed-in invited person sees before joining, including the address that must match.",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "primary_name": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "household_address": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "your_address": {
+            "type": "string"
+          },
+          "address_matches": {
+            "type": "boolean"
+          },
+          "payment_accepted": {
+            "type": "boolean"
+          },
+          "blocked_reason": {
+            "type": "string",
+            "x-nullable": true
+          },
+          "expires_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "address_matches",
+          "payment_accepted"
+        ]
+      },
       "InvoiceOption": {
         "allOf": [
           {
@@ -791,12 +1135,37 @@
               "signupSource": {
                 "type": "string",
                 "x-nullable": true,
-                "description": "How the member first heard of the makerspace: class, walk_in, friend, website, social or other"
+                "description": "Optional source: class, walk_in, friend, website, social, other, eventbrite or declined"
               },
               "signupSourceDetail": {
                 "type": "string",
                 "x-nullable": true,
-                "description": "Free text: the class name when signupSource is class, the referrer's name when it is friend"
+                "maxLength": 100,
+                "description": "Free text for class, friend or other"
+              },
+              "signupEventbriteEventId": {
+                "type": "string",
+                "x-nullable": true,
+                "description": "Local Eventbrite event document ID selected at signup"
+              },
+              "signupEventbriteEventSnapshot": {
+                "type": "object",
+                "x-nullable": true,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "startsAt": {
+                    "type": "string"
+                  },
+                  "timezone": {
+                    "type": "string"
+                  }
+                }
+              },
+              "signupSourcePromptPending": {
+                "type": "boolean",
+                "description": "New provider account should be offered the optional source question"
               },
               "referredByMemberId": {
                 "type": "string",
@@ -971,11 +1340,16 @@
           },
           "signupSource": {
             "type": "string",
-            "description": "How the member first heard of the makerspace: class, walk_in, friend, website, social or other"
+            "description": "Optional source: class, walk_in, friend, website, social, other, eventbrite or declined"
           },
           "signupSourceDetail": {
             "type": "string",
-            "description": "Free text: the class name when signupSource is class, the referrer's name when it is friend"
+            "maxLength": 100,
+            "description": "Free text for class, friend or other"
+          },
+          "signupEventbriteEventId": {
+            "type": "string",
+            "description": "Local eligible Eventbrite event document ID"
           },
           "referredByMemberId": {
             "type": "string",
@@ -1198,6 +1572,23 @@
         "type": "object",
         "description": "Editable tool settings for owning-shop managers, admins and board members. Omitted fields retain their values on update. Operational notes are saved with the other settings; additional approvers use the dedicated notes or annotation endpoints.",
         "properties": {
+          "checkout_training_plan_url": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2048
+          },
+          "checkout_expiration_years": {
+            "type": "integer",
+            "nullable": true,
+            "enum": [
+              null,
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
           "name": {
             "type": "string",
             "description": "Unique within the shop, ignoring case."
@@ -1312,23 +1703,6 @@
                 }
               }
             }
-          },
-          "checkout_training_plan_url": {
-            "type": "string",
-            "nullable": true,
-            "maxLength": 2048
-          },
-          "checkout_expiration_years": {
-            "type": "integer",
-            "nullable": true,
-            "enum": [
-              null,
-              1,
-              2,
-              3,
-              4,
-              5
-            ]
           }
         }
       },
@@ -1340,6 +1714,17 @@
           {
             "type": "object",
             "properties": {
+              "checkoutTrainingPlanUrl": {
+                "type": "string",
+                "nullable": true
+              },
+              "checkoutExpirationYears": {
+                "type": "integer",
+                "nullable": true
+              },
+              "canManageCheckoutExpiration": {
+                "type": "boolean"
+              },
               "canGenerateCheckoutRequiredSheet": {
                 "type": "boolean",
                 "readOnly": true,
@@ -1461,25 +1846,6 @@
               "requestable": {
                 "type": "boolean",
                 "description": "Present when availability is evaluated for a signed-in member."
-              },
-              "checkoutTrainingPlanUrl": {
-                "type": "string",
-                "nullable": true
-              },
-              "checkoutExpirationYears": {
-                "type": "integer",
-                "nullable": true,
-                "enum": [
-                  null,
-                  1,
-                  2,
-                  3,
-                  4,
-                  5
-                ]
-              },
-              "canManageCheckoutExpiration": {
-                "type": "boolean"
               }
             },
             "required": [
@@ -3599,6 +3965,10 @@
       "ToolGroup": {
         "type": "object",
         "properties": {
+          "checkoutTrainingPlanUrl": {
+            "type": "string",
+            "nullable": true
+          },
           "id": {
             "type": "string"
           },
@@ -3663,10 +4033,6 @@
           },
           "canRequest": {
             "type": "boolean"
-          },
-          "checkoutTrainingPlanUrl": {
-            "type": "string",
-            "nullable": true
           }
         },
         "required": [
@@ -3811,6 +4177,41 @@
       "ToolCheckout": {
         "type": "object",
         "properties": {
+          "expiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expirationRevision": {
+            "type": "integer"
+          },
+          "expirationStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "expired",
+              "revoked",
+              "history"
+            ]
+          },
+          "checkoutTrainingPlanUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "renewedFromId": {
+            "type": "string",
+            "nullable": true
+          },
+          "supersededById": {
+            "type": "string",
+            "nullable": true
+          },
+          "canManageExpiration": {
+            "type": "boolean"
+          },
+          "canRenew": {
+            "type": "boolean"
+          },
           "id": {
             "type": "string"
           },
@@ -3944,41 +4345,6 @@
           "toolNotes": {
             "type": "string",
             "nullable": true
-          },
-          "expiresOn": {
-            "type": "string",
-            "format": "date",
-            "nullable": true
-          },
-          "expirationRevision": {
-            "type": "integer"
-          },
-          "expirationStatus": {
-            "type": "string",
-            "enum": [
-              "active",
-              "expired",
-              "revoked",
-              "history"
-            ]
-          },
-          "checkoutTrainingPlanUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "renewedFromId": {
-            "type": "string",
-            "nullable": true
-          },
-          "supersededById": {
-            "type": "string",
-            "nullable": true
-          },
-          "canManageExpiration": {
-            "type": "boolean"
-          },
-          "canRenew": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -3992,6 +4358,10 @@
       "ToolCheckoutRequest": {
         "type": "object",
         "properties": {
+          "checkoutTrainingPlanUrl": {
+            "type": "string",
+            "nullable": true
+          },
           "id": {
             "type": "string"
           },
@@ -4087,10 +4457,6 @@
             "nullable": true
           },
           "decidedByName": {
-            "type": "string",
-            "nullable": true
-          },
-          "checkoutTrainingPlanUrl": {
             "type": "string",
             "nullable": true
           }
@@ -5185,6 +5551,28 @@
             "type": "string",
             "nullable": true
           },
+          "signupEventbriteEventId": {
+            "type": "string",
+            "nullable": true
+          },
+          "signupEventbriteEventSnapshot": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "startsAt": {
+                "type": "string"
+              },
+              "timezone": {
+                "type": "string"
+              }
+            }
+          },
+          "signupSourcePromptPending": {
+            "type": "boolean"
+          },
           "silenceEmails": {
             "type": "boolean",
             "nullable": true
@@ -5241,6 +5629,9 @@
           "phone",
           "signupSource",
           "signupSourceDetail",
+          "signupEventbriteEventId",
+          "signupEventbriteEventSnapshot",
+          "signupSourcePromptPending",
           "silenceEmails",
           "groupName",
           "householdRole",
@@ -5296,224 +5687,6 @@
             "title": "TotpVerificationRequired",
             "description": "The signed-in member must complete the pending TOTP challenge."
           }
-        ]
-      },
-      "Group": {
-        "type": "object",
-        "description": "A household: the primary member and the secondary adults linked to them.",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "groupName": {
-            "type": "string",
-            "description": "The primary member's id."
-          },
-          "groupRep": {
-            "type": "string"
-          },
-          "expiry": {
-            "type": "integer",
-            "x-nullable": true,
-            "description": "Milliseconds. The primary expiry; secondaries and their cards always equal it."
-          },
-          "size": {
-            "type": "integer",
-            "description": "Adults the primary household plan covers."
-          },
-          "seatsUsed": {
-            "type": "integer",
-            "description": "The primary, the linked secondaries and the open invitations."
-          },
-          "paymentAccepted": {
-            "type": "boolean",
-            "description": "The most recent household-plan payment was taken (applied, or held until the first fob), is not refunded or disputed, and the paid time has not run out."
-          },
-          "primaryMember": {
-            "type": "object",
-            "x-nullable": true
-          },
-          "secondaryMembers": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            }
-          },
-          "invitations": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            }
-          }
-        },
-        "required": [
-          "id",
-          "groupName",
-          "size",
-          "seatsUsed",
-          "paymentAccepted"
-        ]
-      },
-      "HouseholdSummary": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "display_name": {
-            "type": "string"
-          },
-          "size": {
-            "type": "integer"
-          },
-          "seats_used": {
-            "type": "integer"
-          },
-          "payment_accepted": {
-            "type": "boolean"
-          },
-          "expiration_time": {
-            "type": "integer",
-            "x-nullable": true
-          },
-          "primary": {
-            "type": "object"
-          },
-          "members": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            }
-          },
-          "invitations": {
-            "type": "array",
-            "description": "Only for the primary.",
-            "items": {
-              "type": "object"
-            }
-          }
-        },
-        "required": [
-          "id",
-          "size",
-          "seats_used",
-          "payment_accepted"
-        ]
-      },
-      "Household": {
-        "type": "object",
-        "description": "The signed-in member's household state. Keys are snake_case.",
-        "properties": {
-          "role": {
-            "type": "string",
-            "enum": [
-              "primary",
-              "secondary"
-            ],
-            "x-nullable": true
-          },
-          "household_plan": {
-            "type": "boolean"
-          },
-          "can_invite": {
-            "type": "boolean"
-          },
-          "invite_blocked_reason": {
-            "type": "string",
-            "x-nullable": true,
-            "description": "Plain words for why the invite is not available."
-          },
-          "plan_size": {
-            "type": "integer",
-            "x-nullable": true
-          },
-          "household": {
-            "$ref": "#/components/schemas/HouseholdSummary",
-            "x-nullable": true
-          },
-          "invited_to_a_household": {
-            "type": "boolean",
-            "description": "An open invitation is waiting for this member's email."
-          },
-          "invitation_id": {
-            "type": "string",
-            "description": "Only in the response to creating an invitation."
-          }
-        },
-        "required": [
-          "household_plan",
-          "can_invite",
-          "invited_to_a_household"
-        ]
-      },
-      "HouseholdInvitationPublic": {
-        "type": "object",
-        "description": "What the link page may show before signing in.",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "expired",
-              "accepted",
-              "revoked"
-            ]
-          },
-          "inviter_name": {
-            "type": "string",
-            "x-nullable": true,
-            "description": "First name and last initial. Null once the invitation was cancelled, expired or used."
-          },
-          "invited_email": {
-            "type": "string",
-            "x-nullable": true,
-            "description": "Null once the invitation was cancelled, expired or used."
-          },
-          "expires_at": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "expires_at"
-        ]
-      },
-      "HouseholdInvitationPreview": {
-        "type": "object",
-        "description": "What the signed-in invited person sees before joining, including the address that must match.",
-        "properties": {
-          "status": {
-            "type": "string"
-          },
-          "primary_name": {
-            "type": "string",
-            "x-nullable": true
-          },
-          "household_address": {
-            "type": "string",
-            "x-nullable": true
-          },
-          "your_address": {
-            "type": "string"
-          },
-          "address_matches": {
-            "type": "boolean"
-          },
-          "payment_accepted": {
-            "type": "boolean"
-          },
-          "blocked_reason": {
-            "type": "string",
-            "x-nullable": true
-          },
-          "expires_at": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "address_matches",
-          "payment_accepted"
         ]
       }
     }
@@ -7272,140 +7445,6 @@
         }
       }
     },
-    "/admin/members/{id}/soft_delete": {
-      "post": {
-        "summary": "Soft-delete a duplicate or abandoned account (admin or board)",
-        "tags": [
-          "Members"
-        ],
-        "description": "Hides the account from ordinary member lists and search, frees its email for reuse, removes the member from Slack and the managed Google Drive folders, cancels any subscription, sets the status to inactive (revoked and suspended are kept) and writes an audit entry. The member is never notified, and mail addressed to a soft-deleted member is dropped. Refused with 422 when the member has an active unexpired membership or live subscription, or an open invoice (not settled and not refunded, which includes a paid payment held for a fob). If a Slack or Drive removal fails, or was skipped for a member who has that access, it is refused with 422 and manual_removal_required: true; remove them by hand and repeat with manual_removal_confirmed=true.",
-        "security": [
-          {
-            "sessionAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Member id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "manual_removal_confirmed",
-            "in": "query",
-            "required": false,
-            "description": "Set to true after removing the member from Slack and Drive by hand, to finish a delete that stopped with manual_removal_required.",
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The account was soft-deleted and the member is returned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The delete was refused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "message"
-                  ],
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    },
-                    "open_invoices": {
-                      "type": "integer",
-                      "description": "Present when the refusal is because of open invoices."
-                    },
-                    "manual_removal_required": {
-                      "type": "boolean",
-                      "description": "True when a Slack or Drive removal still has to be done by hand."
-                    },
-                    "problems": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "What could not be removed automatically; present with manual_removal_required."
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/admin/members/{id}/restore": {
-      "post": {
-        "summary": "Restore a soft-deleted account (admin or board)",
-        "tags": [
-          "Members"
-        ],
-        "description": "Makes the account appear in member lists and search again. It does not change the status (an account deleted through the portal stays inactive until an admin reactivates it) and does not re-grant Slack or Drive access.",
-        "security": [
-          {
-            "sessionAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Member id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The account was restored and the member is returned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The account is not deleted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "message"
-                  ],
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/admin/cards/lookup": {
       "get": {
         "summary": "Look up an NFC or exact assigned legacy UID (active admin or board)",
@@ -9140,6 +9179,221 @@
         }
       }
     },
+    "/admin/tool_checkouts/{id}/expiration": {
+      "patch": {
+        "summary": "Change a current checkout expiration (admin, board or owning-shop RM)",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "operationId": "updateCheckoutExpiration",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated checkout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCheckout"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a manager of this tool"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Checkout not found"
+          },
+          "409": {
+            "description": "Stale revision or historical checkout"
+          },
+          "422": {
+            "description": "Invalid expiration"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expires_on",
+                  "expiration_revision"
+                ],
+                "properties": {
+                  "expires_on": {
+                    "type": "string",
+                    "format": "date",
+                    "nullable": true,
+                    "description": "Valid through this Eastern calendar date; null means Never."
+                  },
+                  "expiration_revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tools/{id}/checkout_expirations": {
+      "post": {
+        "summary": "Set a future expiration on every current non-revoked checkout for a tool",
+        "tags": [
+          "Tool checkouts"
+        ],
+        "operationId": "bulkUpdateCheckoutExpirations",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated count, excluding revoked and superseded history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "affectedCount"
+                  ],
+                  "properties": {
+                    "affectedCount": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a manager of this tool"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Tool not found"
+          },
+          "422": {
+            "description": "A future date is required"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expires_on"
+                ],
+                "properties": {
+                  "expires_on": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Strictly later than today in America/New_York."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/system_configs/run_job": {
+      "post": {
+        "summary": "Run a registered portal job; checkout expiration notices require an admin",
+        "tags": [
+          "System configuration"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Job queued"
+          },
+          "403": {
+            "description": "Checkout expiration notices are admin-only"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "422": {
+            "description": "Unknown job"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "key"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "enum": [
+                      "checkout_expiration_notice",
+                      "slack_sync",
+                      "slack_profile_sync",
+                      "slack_channel_cache",
+                      "member_review",
+                      "invoice_review",
+                      "garbage_collect",
+                      "db_backup",
+                      "card_expiration_check",
+                      "reservation_canvas_rebuild",
+                      "member_provisioning_reconciliation",
+                      "volunteer_event_reminder",
+                      "membership_expiration_notice",
+                      "member_reminders",
+                      "checkout_request_reminder",
+                      "checkout_request_digest",
+                      "rental_vacating_check"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/shops/{id}/checkout_required_sheet": {
       "post": {
         "summary": "Generate a printable Letter landscape Checkout Required SVG sheet",
@@ -9495,6 +9749,23 @@
             "sessionAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "enum": [
+              "active",
+              "expired",
+              "revoked",
+              "history"
+            ],
+            "schema": {
+              "type": "string"
+            },
+            "description": ":\n * `active` \n * `expired` \n * `revoked` \n * `history` \n "
+          }
+        ],
         "responses": {
           "200": {
             "description": "Authorized records",
@@ -9509,24 +9780,7 @@
               }
             }
           }
-        },
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "active",
-                "expired",
-                "revoked",
-                "history"
-              ]
-            },
-            "description": "Explicit expiration/history filter; active=false remains revoked-only."
-          }
-        ]
+        }
       }
     },
     "/admin/tool_checkouts": {
@@ -9541,6 +9795,21 @@
           }
         ],
         "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "enum": [
+              "active",
+              "expired",
+              "revoked",
+              "history"
+            ],
+            "schema": {
+              "type": "string"
+            },
+            "description": ":\n * `active` \n * `expired` \n * `revoked` \n * `history` \n "
+          },
           {
             "name": "member_id",
             "in": "query",
@@ -9573,7 +9842,7 @@
               "true",
               "false"
             ],
-            "description": "true: valid current checkouts; false: revoked checkouts only",
+            "description": "true: only current non-revoked unexpired checkouts; false: only revoked ones",
             "schema": {
               "type": "string"
             }
@@ -9602,21 +9871,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "active",
-                "expired",
-                "revoked",
-                "history"
-              ]
-            },
-            "description": "Explicit expiration/history filter; active=false remains revoked-only."
           }
         ],
         "responses": {
@@ -10505,6 +10759,578 @@
           },
           "401": {
             "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/signup_events": {
+      "get": {
+        "summary": "Lists public events eligible for signup attribution",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "listSignupEvents",
+        "responses": {
+          "200": {
+            "description": "Eligible event summaries; no attendee data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "name",
+                      "startsAt",
+                      "timezone"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "startsAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signup_source": {
+      "put": {
+        "summary": "Completes the optional provider-onboarding source question for the signed-in member",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "saveSignupSource",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Saved or already answered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "422": {
+            "description": "Selected event unavailable; choose another answer or skip"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "signupSource": {
+                    "type": "string"
+                  },
+                  "signupSourceDetail": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "signupEventbriteEventId": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/eventbrite/events": {
+      "get": {
+        "summary": "Lists restricted Eventbrite events",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "listEventbriteEvents",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "linked",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageNum",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff records with total-items pagination header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventbriteRecord"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ordinary members cannot access imported records"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/admin/eventbrite/orders": {
+      "get": {
+        "summary": "Lists restricted Eventbrite orders",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "listEventbriteOrders",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "linked",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageNum",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff records with total-items pagination header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventbriteRecord"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ordinary members cannot access imported records"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/admin/eventbrite/attendees": {
+      "get": {
+        "summary": "Lists restricted Eventbrite attendees",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "listEventbriteAttendees",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "linked",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageNum",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff records with total-items pagination header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventbriteRecord"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ordinary members cannot access imported records"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/admin/eventbrite/events/{id}": {
+      "get": {
+        "summary": "Retrieves restricted Eventbrite events details",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "getEventbriteEvents",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventbriteRecord"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/admin/eventbrite/orders/{id}": {
+      "get": {
+        "summary": "Retrieves restricted Eventbrite orders details",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "getEventbriteOrders",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventbriteRecord"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/admin/eventbrite/attendees/{id}": {
+      "get": {
+        "summary": "Retrieves restricted Eventbrite attendees details",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "getEventbriteAttendees",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventbriteRecord"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/admin/members/{member_id}/eventbrite/orders": {
+      "get": {
+        "summary": "Lists a member's linked Eventbrite orders",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "listMemberEventbriteOrders",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageNum",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff member history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventbriteRecord"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ordinary members cannot read own history"
+          }
+        }
+      }
+    },
+    "/admin/members/{member_id}/eventbrite/attendees": {
+      "get": {
+        "summary": "Lists a member's linked Eventbrite attendees",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "listMemberEventbriteAttendees",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageNum",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff member history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventbriteRecord"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ordinary members cannot read own history"
+          }
+        }
+      }
+    },
+    "/eventbrite-example/00000000000000000000000000000000": {
+      "post": {
+        "summary": "Accepts Eventbrite notifications at the configured private URL (this is a nonsecret example only)",
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "receiveEventbriteWebhook",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "Persisted before acknowledgement"
+          },
+          "200": {
+            "description": "Dashboard test acknowledged"
+          },
+          "400": {
+            "description": "Invalid resource pointer"
+          },
+          "503": {
+            "description": "Storage unavailable; Eventbrite should retry"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "api_url": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -12672,6 +13498,140 @@
         }
       }
     },
+    "/admin/members/{id}/soft_delete": {
+      "post": {
+        "summary": "Soft-delete a duplicate or abandoned account (admin or board)",
+        "tags": [
+          "Members"
+        ],
+        "description": "Hides the account from ordinary member lists and search, frees its email for reuse, removes the member from Slack and the managed Google Drive folders, cancels any subscription, sets the status to inactive (revoked and suspended are kept) and writes an audit entry. The member is never notified, and mail addressed to a soft-deleted member is dropped. Refused with 422 when the member has an active unexpired membership or live subscription, or an open invoice (not settled and not refunded, which includes a paid payment held for a fob). If a Slack or Drive removal fails, or was skipped for a member who has that access, it is refused with 422 and manual_removal_required: true; remove them by hand and repeat with manual_removal_confirmed=true.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Member id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "manual_removal_confirmed",
+            "in": "query",
+            "required": false,
+            "description": "Set to true after removing the member from Slack and Drive by hand, to finish a delete that stopped with manual_removal_required.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account was soft-deleted and the member is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The delete was refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "open_invoices": {
+                      "type": "integer",
+                      "description": "Present when the refusal is because of open invoices."
+                    },
+                    "manual_removal_required": {
+                      "type": "boolean",
+                      "description": "True when a Slack or Drive removal still has to be done by hand."
+                    },
+                    "problems": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "What could not be removed automatically; present with manual_removal_required."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/members/{id}/restore": {
+      "post": {
+        "summary": "Restore a soft-deleted account (admin or board)",
+        "tags": [
+          "Members"
+        ],
+        "description": "Makes the account appear in member lists and search again. It does not change the status (an account deleted through the portal stays inactive until an admin reactivates it) and does not re-grant Slack or Drive access.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Member id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account was restored and the member is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The account is not deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/members/{id}/permissions": {
       "get": {
         "summary": "Gets a member's permissions",
@@ -12840,6 +13800,10 @@
                   "signupSourceDetail": {
                     "type": "string",
                     "description": "Optional free text: the class name for class, the referrer's name for friend"
+                  },
+                  "signupEventbriteEventId": {
+                    "type": "string",
+                    "description": "Local eligible event ID when signupSource is eventbrite; other and declined are also accepted sources"
                   },
                   "cf-turnstile-response": {
                     "type": "string",
@@ -16724,6 +17688,19 @@
                     "job_schedule"
                   ],
                   "properties": {
+                    "checkout": {
+                      "type": "object",
+                      "properties": {
+                        "checkout_expiration_notice_days": {
+                          "type": "integer",
+                          "minimum": 4,
+                          "default": 14
+                        },
+                        "can_manage": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
                     "flags": {
                       "type": "object"
                     },
@@ -16813,19 +17790,6 @@
                         },
                         "devise_timeout_minutes": {
                           "type": "string"
-                        }
-                      }
-                    },
-                    "checkout": {
-                      "type": "object",
-                      "properties": {
-                        "checkout_expiration_notice_days": {
-                          "type": "integer",
-                          "minimum": 4,
-                          "default": 14
-                        },
-                        "can_manage": {
-                          "type": "boolean"
                         }
                       }
                     }
@@ -17313,6 +18277,11 @@
                   "included_tool_ids"
                 ],
                 "properties": {
+                  "checkout_training_plan_url": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 2048
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -17349,11 +18318,6 @@
                   },
                   "announce_channel": {
                     "type": "string"
-                  },
-                  "checkout_training_plan_url": {
-                    "type": "string",
-                    "nullable": true,
-                    "maxLength": 2048
                   }
                 }
               }
@@ -17434,6 +18398,11 @@
                   "revision": {
                     "type": "integer"
                   },
+                  "checkout_training_plan_url": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 2048
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -17464,11 +18433,6 @@
                   },
                   "announce_channel": {
                     "type": "string"
-                  },
-                  "checkout_training_plan_url": {
-                    "type": "string",
-                    "nullable": true,
-                    "maxLength": 2048
                   }
                 }
               }
@@ -18420,220 +19384,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/admin/tool_checkouts/{id}/expiration": {
-      "patch": {
-        "tags": [
-          "Tool checkouts"
-        ],
-        "security": [
-          {
-            "sessionAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "summary": "Change a current checkout expiration (admin, board or owning-shop RM)",
-        "operationId": "updateCheckoutExpiration",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "expires_on",
-                  "expiration_revision"
-                ],
-                "properties": {
-                  "expires_on": {
-                    "type": "string",
-                    "format": "date",
-                    "nullable": true,
-                    "description": "Valid through this Eastern calendar date; null means Never."
-                  },
-                  "expiration_revision": {
-                    "type": "integer",
-                    "minimum": 0
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated checkout",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ToolCheckout"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Not a manager of this tool"
-          },
-          "404": {
-            "description": "Checkout not found"
-          },
-          "409": {
-            "description": "Stale revision or historical checkout"
-          },
-          "422": {
-            "description": "Invalid expiration"
-          }
-        }
-      }
-    },
-    "/admin/tools/{id}/checkout_expirations": {
-      "post": {
-        "tags": [
-          "Tool checkouts"
-        ],
-        "security": [
-          {
-            "sessionAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "summary": "Set a future expiration on every current non-revoked checkout for a tool",
-        "operationId": "bulkUpdateCheckoutExpirations",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "expires_on"
-                ],
-                "properties": {
-                  "expires_on": {
-                    "type": "string",
-                    "format": "date",
-                    "description": "Strictly later than today in America/New_York."
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated count, excluding revoked and superseded history",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "affectedCount"
-                  ],
-                  "properties": {
-                    "affectedCount": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Not a manager of this tool"
-          },
-          "404": {
-            "description": "Tool not found"
-          },
-          "422": {
-            "description": "A future date is required"
-          }
-        }
-      }
-    },
-    "/admin/system_configs/run_job": {
-      "post": {
-        "tags": [
-          "System configuration"
-        ],
-        "security": [
-          {
-            "sessionAuth": []
-          }
-        ],
-        "summary": "Run a registered portal job; checkout expiration notices require an admin",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "key"
-                ],
-                "properties": {
-                  "key": {
-                    "type": "string",
-                    "enum": [
-                      "checkout_expiration_notice",
-                      "slack_sync",
-                      "slack_profile_sync",
-                      "slack_channel_cache",
-                      "member_review",
-                      "invoice_review",
-                      "garbage_collect",
-                      "db_backup",
-                      "card_expiration_check",
-                      "reservation_canvas_rebuild",
-                      "member_provisioning_reconciliation",
-                      "volunteer_event_reminder",
-                      "membership_expiration_notice",
-                      "member_reminders",
-                      "checkout_request_reminder",
-                      "checkout_request_digest",
-                      "rental_vacating_check"
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Job queued"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Checkout expiration notices are admin-only"
-          },
-          "422": {
-            "description": "Unknown job"
           }
         }
       }

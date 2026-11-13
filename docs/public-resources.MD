@@ -146,3 +146,24 @@ member now set it, instead of cancelling. New POST /api/rentals/:id/verify_vacat
 board member or admin (not the rental's own member) confirm the space is empty: it cancels the rental. 422 unless
 the rental is awaiting verification; 403 for anyone else. POST run_job also accepts key=rental_vacating_check.
 Staff calling mark_vacated on another member's vacating rental still cancels it at once.
+
+## Eventbrite resources
+
+`POST <EVENTBRITE_WEBHOOK_PATH>` receives private-URL Eventbrite JSON pointers,
+outside session/CSRF authentication; only this receiver bypasses CSRF. It returns
+202 after persistence, 200 for test, 204 for unsupported actions, 400 for malformed
+payloads, 415 for non-JSON, 413 for oversized bodies and 503 for storage failure.
+The real path is never published in API artifacts. `GET /api/signup_events` is
+public JSON containing only eligible event IDs/names/start/timezone. Its Eastern
+date window is -2/+1 calendar months, excludes private/invalid/series-parent events
+and event names containing Open House. `PUT /api/signup_source` requires a completed
+member session/TOTP and normal CSRF; it completes the current provider account's
+optional prompt, accepting signupSource/signupSourceDetail/signupEventbriteEventId.
+
+Staff-only JSON index/show routes: `/api/admin/eventbrite/events`, `/orders`, and
+`/attendees`, with `/:id` for details. Member history uses
+`/api/admin/members/:member_id/eventbrite/orders` and `/attendees`. All require
+Resource Manager, Board, or Admin, including self-history. They support zero-based
+pageNum, organization_id/event_id/status/linked/search and total-items pagination.
+The React `/admin/eventbrite` browser and member Eventbrite tab use these routes.
+See [Eventbrite](eventbrite.md).
