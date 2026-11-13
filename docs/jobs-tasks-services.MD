@@ -1,5 +1,36 @@
 # Production jobs, tasks, and services
 
+## Service entry points after unused-code cleanup
+
+The [unused-code cleanup record](unused-code-cleanup.md) identifies removed
+implementations and the evidence for each removal. Current service entry points
+and their behavior are:
+
+- Google Drive member access is managed by `Service::MemberProvisioning`, including
+  `provision_google` for the admin invite action and provisioning/reconciliation
+  jobs. Eligibility, environment gates, permission tracking, retries, and failure
+  reporting remain in that service. The old direct subscriber invitations have
+  been removed. `Service::GoogleDrive` still supplies the Drive client, document
+  upload/retrieval, and backup upload; its class-method entry points remain live.
+- `Service::SlackChannelCache.rebuild!` is the full-cache refresh implementation
+  used by `SlackChannelCacheRefreshJob` and the documented operator task. It
+  stages channel entries and atomically replaces the live cache and status.
+  Slack scan or staging failures leave the live cache unchanged; promotion
+  validates staging keys before replacing live entries. The unused full refresh and
+  clear-before-rebuild methods have been removed. Request-time lookup and
+  refresh-on-miss behavior are unchanged.
+- `Service::Analytics::Members.summary_counts`, `active_members_by_month`, and
+  `lost_members_by_month`, together with `Invoices.summary_counts`, serve the
+  admin dashboard. Member/rental eligibility queries and invoice review queries
+  remain used by the existing operational tasks. The disconnected legacy
+  payment/invoice category reports, CSV exporters, and superseded member-counter
+  wrappers have been removed. No scheduled report, database write, or delivery
+  behavior changes.
+- `CheckoutCreation.create!` still selects immediate or deferred notification
+  delivery after checkout persistence. Its private locked helper no longer
+  accepts the unused notification-selection keyword; lock order, transaction
+  boundaries, and notification failure handling are unchanged.
+
 ## Checkout Required sheet services
 
 `CheckoutRequiredSheetsController#create` synchronously authorizes a shop/tool
