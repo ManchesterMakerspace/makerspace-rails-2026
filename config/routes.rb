@@ -1,6 +1,5 @@
 Rails.application.routes.draw do
-  EventbriteIntegration::Configuration.validate_path!
-  if EventbriteIntegration::Configuration.webhook_path.present?
+  if EventbriteIntegration::Configuration.validate_path!
     post '/__eventbrite_receiver__', to: 'eventbrite_webhooks#create',
       constraints: ->(request) { request.env['eventbrite.private_receiver'] == true }
   end

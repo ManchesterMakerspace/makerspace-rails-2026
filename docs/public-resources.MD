@@ -153,6 +153,9 @@ Staff calling mark_vacated on another member's vacating rental still cancels it 
 outside session/CSRF authentication; only this receiver bypasses CSRF. It returns
 202 after persistence, 200 for test, 204 for unsupported actions, 400 for malformed
 payloads, 415 for non-JSON, 413 for oversized bodies and 503 for storage failure.
+The receiver route is absent when the setting is blank or invalid; invalid paths
+produce a nonfatal boot warning without the configured value. See the
+[path requirements](eventbrite.md#configuration-and-receiver).
 The real path is never published in API artifacts. `GET /api/signup_events` is
 public JSON containing only eligible event IDs/names/start/timezone. Its Eastern
 date window is -2/+1 calendar months, excludes private/invalid/series-parent events

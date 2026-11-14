@@ -9,9 +9,17 @@ staff history. Deploy this feature before publishing its wiki instructions.
 Set `EVENTBRITE_API_KEY` to an Eventbrite **private OAuth token**, not the public
 application client ID. Set `EVENTBRITE_ORGANIZATION_IDS` to a comma-separated list
 of organizations the token can read. Set `EVENTBRITE_WEBHOOK_PATH` to a private
-path ending in at least 32 cryptographically random URL-safe characters. An empty
-path disables the receiver. Configured paths require both other settings and
-cannot use reserved application prefixes. Restart Rails after changing the path.
+path ending in at least 32 cryptographically random URL-safe characters (letters,
+digits, `_` or `-`). Supply only the path, with a leading `/` and no trailing `/`,
+hostname or query string: `/eventbrite/<random-secret>` is the shape, with the
+placeholder replaced by a freshly generated secret. Prefixes `/api`, `/assets`,
+`/billing`, `/slack`, `/members` and `/rails` are reserved.
+An empty path silently disables the receiver. An invalid path also disables it,
+logging an `Eventbrite webhook disabled` warning without the configured value;
+Rails and scheduled tasks continue booting. Valid paths still require both other
+settings. Correct the path and restart Rails to enable the listener, then update
+the full URL in Eventbrite and send a dashboard test. Restart Rails after any path
+change. API/backfill credentials are validated separately even with webhooks disabled.
 
 Register the full HTTPS origin plus this path in Eventbrite. Subscribe to Event
 Publish/Unpublish/Create/Update, Order Place/Update/Refund, Attendee Update, and

@@ -155,7 +155,11 @@ executable code does not retrieve them.
 ## Eventbrite integration
 
 `EVENTBRITE_WEBHOOK_PATH` is an optional private receiver path (blank disables it),
-ending in at least 32 random URL-safe characters. A configured path requires
+with a leading `/`, no trailing `/`, hostname or query string, and a final segment
+of at least 32 random letters, digits, `_` or `-`. Reserved prefixes are `/api`,
+`/assets`, `/billing`, `/slack`, `/members` and `/rails`. Invalid paths disable the
+receiver with a nonfatal warning that omits the value; Rails and scheduled tasks
+continue booting. A valid configured path requires
 `EVENTBRITE_API_KEY` (private OAuth bearer token) and `EVENTBRITE_ORGANIZATION_IDS`
 (comma-separated organization allowlist). No credential or receiver URL is public
 runtime configuration. Restart Rails for route changes and redact upstream access

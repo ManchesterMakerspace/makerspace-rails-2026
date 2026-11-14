@@ -1213,11 +1213,14 @@ their state; completed notifications expire after 30 days. Rate-limit waits are
 persisted deadlines; retryable errors have eight attempts. No mail/Slack is sent.
 
 Supporting synchronous modules under `EventbriteIntegration`: `Configuration`
-validates server settings; `Resource` parses pointer URLs; `Client` performs bounded,
+validates server settings, disabling the webhook route with a nonfatal, value-free
+warning for invalid receiver paths so Rails and scheduled tasks can boot (valid
+paths and API/backfill use still require credentials); `Resource` parses pointer URLs; `Client` performs bounded,
 token-throttled requests; `Lease` coordinates workers; `Synchronizer` updates
 events/orders/attendees/tickets; `MemberLinker` preserves member ownership;
 `Presenter` allowlists staff output; `Backfill` checkpoints manual imports.
-`EventbriteWebhookPrivacy` rewrites the secret ingress path before Rails logging.
+`EventbriteWebhookPrivacy` rewrites valid secret ingress paths before Rails logging;
+invalid configured paths cannot intercept existing application routes.
 Member save hooks persist pending reconciliation; signup validation snapshots
 eligible event metadata without external calls. Receiver, signup, and staff
 controllers are described in [public resources](public-resources.MD).
