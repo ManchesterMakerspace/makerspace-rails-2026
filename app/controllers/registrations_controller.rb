@@ -42,6 +42,7 @@ class RegistrationsController < ApplicationController
 
     @member = Member.new(member_params)
     @member.status = 'pending'
+    @member.signup_source_asked_at = Time.current
     @member.save!
     @member.reload
     sign_in(@member)
@@ -90,7 +91,7 @@ class RegistrationsController < ApplicationController
   def member_params
     params.require([:firstname, :lastname, :email, :password])
     params.permit(:firstname, :lastname, :email, :password,
-      :phone, :signup_source, :signup_source_detail,
+      :phone, :signup_source, :signup_source_detail, :signup_eventbrite_event_id,
       address: [:street, :unit, :city, :state, :postal_code])
   end
 end
