@@ -141,6 +141,10 @@ matching never transfers it. The browser is read-only, including mismatch record
 
 ## Staff, release and operations
 
+Member-scoped order history is always restricted to orders containing an attendee
+linked to that member. Link filters narrow that history; `linked=unlinked` therefore
+returns no orders. The global unlinked filter lists orders with no linked attendees.
+
 Resource Managers, Board and Admins can view imported organizations permitted by
 the optional allowlist (all imported organizations when blank) in the
 Eventbrite menu and member-profile Eventbrite tab. Ordinary members cannot read

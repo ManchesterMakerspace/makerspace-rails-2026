@@ -11206,6 +11206,7 @@
     "/admin/members/{member_id}/eventbrite/orders": {
       "get": {
         "summary": "Lists a member's linked Eventbrite orders",
+        "description": "Filters cannot widen member history. Member-scoped orders with linked=unlinked return an empty list because history derives from linked attendees.",
         "tags": [
           "Eventbrite"
         ],

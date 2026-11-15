@@ -118,6 +118,7 @@ describe 'Eventbrite API', type: :request do
   %w[orders attendees].each do |kind|
     path "/admin/members/{member_id}/eventbrite/#{kind}" do
       get "Lists a member's linked Eventbrite #{kind}" do
+        description 'Filters cannot widen member history. Member-scoped orders with linked=unlinked return an empty list because history derives from linked attendees.' if kind == 'orders'
         tags 'Eventbrite'
         operationId "listMemberEventbrite#{kind.capitalize}"
         produces 'application/json'
@@ -126,8 +127,23 @@ describe 'Eventbrite API', type: :request do
         let(:member_id) { create(:member).id.to_s }
         response '200', 'Staff member history' do
           schema type: :array, items: { '$ref' => '#/components/schemas/EventbriteRecord' }
-          before { sign_in create(:member, role: 'board_member') }
-          run_test!
+          before do
+            sign_in create(:member, role: 'board_member')
+            if kind == 'orders'
+              EventbriteOrder.create!(organization_id: 'org-1', eventbrite_id: 'own')
+              EventbriteOrder.create!(organization_id: 'org-1', eventbrite_id: 'unrelated')
+              EventbriteAttendee.create!(organization_id: 'org-1', eventbrite_id: 'attendee', order_id: 'own', member_id: member_id)
+            end
+          end
+          run_test! do |response|
+            if kind == 'orders'
+              expect(JSON.parse(response.body).map { |record| record['eventbriteId'] }).to eq(['own'])
+              get "/api/admin/members/#{member_id}/eventbrite/orders", params: { linked: 'unlinked' }
+              expect(self.response).to have_http_status(:ok)
+              expect(JSON.parse(self.response.body)).to eq([])
+              expect(self.response.headers['total-items'].to_s).to eq('0')
+            end
+          end
         end
         response '403', 'Ordinary members cannot read own history' do
           before { sign_in Member.find(member_id) }

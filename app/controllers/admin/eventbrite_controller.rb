@@ -42,16 +42,22 @@ class Admin::EventbriteController < AdminOrRmController
       scope = scope.where(link_conflict: true) if params[:linked] == 'conflict'
     elsif params[:kind] == 'orders' && (member_id || params[:linked].present?)
       attendees = EventbriteIntegration::Configuration.scope_organizations(EventbriteAttendee.all)
-      attendees = attendees.where(member_id: member_id) if member_id
+      # Member history is always an intersection, even when a later filter
+      # excludes linked orders. Never negate the member's own order IDs.
+      if member_id
+        attendees = attendees.where(member_id: member_id)
+        scope = orders_for_attendees(scope, attendees)
+      end
       attendees = attendees.where(:member_id.ne => nil) unless params[:linked] == 'conflict'
       attendees = attendees.where(link_conflict: true) if params[:linked] == 'conflict'
-      pairs = attendees.pluck(:organization_id, :order_id).uniq.map { |org, id| { organization_id: org, eventbrite_id: id } }
-      scope = if params[:linked] == 'unlinked'
-        pairs.empty? ? scope : scope.where('$nor' => pairs)
-      else
-        pairs.empty? ? scope.none : scope.where('$and' => [{ '$or' => pairs }])
-      end
+      scope = orders_for_attendees(scope, attendees, exclude: params[:linked] == 'unlinked') if params[:linked].present?
     end
     scope
+  end
+
+  def orders_for_attendees(scope, attendees, exclude: false)
+    pairs = attendees.pluck(:organization_id, :order_id).uniq.map { |org, id| { organization_id: org, eventbrite_id: id } }
+    return exclude ? scope : scope.none if pairs.empty?
+    scope.where('$and' => [{ (exclude ? '$nor' : '$or') => pairs }])
   end
 end

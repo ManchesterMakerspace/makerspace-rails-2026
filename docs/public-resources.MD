@@ -177,5 +177,9 @@ Staff-only JSON index/show routes: `/api/admin/eventbrite/events`, `/orders`, an
 `/api/admin/members/:member_id/eventbrite/orders` and `/attendees`. All require
 Resource Manager, Board, or Admin, including self-history. They support zero-based
 pageNum, organization_id/event_id/status/linked/search and total-items pagination.
+Order filters always intersect the selected member's attendee-derived history.
+Consequently, member-scoped `linked=unlinked` returns an empty list with a zero
+total, including when that member has no imported attendees. The global unlinked
+order browser still lists orders without any linked attendees.
 The React `/admin/eventbrite` browser and member Eventbrite tab use these routes.
 See [Eventbrite](eventbrite.md).
