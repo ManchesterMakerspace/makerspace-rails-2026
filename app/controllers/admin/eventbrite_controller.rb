@@ -18,11 +18,11 @@ class Admin::EventbriteController < AdminOrRmController
   end
   private
   def base
-    MODELS.fetch(params[:kind]).where(:organization_id.in => EventbriteIntegration::Configuration.organization_ids)
+    EventbriteIntegration::Configuration.scope_organizations(MODELS.fetch(params[:kind]).all)
   end
   def filtered
     scope = base
-    if params[:organization_id].present? && !EventbriteIntegration::Configuration.organization_ids.include?(params[:organization_id])
+    if params[:organization_id].present? && !EventbriteIntegration::Configuration.organization_allowed?(params[:organization_id])
       raise Error::Forbidden.new
     end
     %w[organization_id event_id status].each do |key|
@@ -41,7 +41,7 @@ class Admin::EventbriteController < AdminOrRmController
       scope = scope.where(:member_id.ne => nil) if params[:linked] == 'linked'
       scope = scope.where(link_conflict: true) if params[:linked] == 'conflict'
     elsif params[:kind] == 'orders' && (member_id || params[:linked].present?)
-      attendees = EventbriteAttendee.where(:organization_id.in => EventbriteIntegration::Configuration.organization_ids)
+      attendees = EventbriteIntegration::Configuration.scope_organizations(EventbriteAttendee.all)
       attendees = attendees.where(member_id: member_id) if member_id
       attendees = attendees.where(:member_id.ne => nil) unless params[:linked] == 'conflict'
       attendees = attendees.where(link_conflict: true) if params[:linked] == 'conflict'

@@ -28,7 +28,7 @@ module EventbriteIntegration
     end
 
     def event(id)
-      known = EventbriteEvent.where(eventbrite_id: id.to_s, :organization_id.in => Configuration.organization_ids).first
+      known = Configuration.scope_organizations(EventbriteEvent.where(eventbrite_id: id.to_s)).first
       known || import_event(@client.get("events/#{id}/"))
     end
 
@@ -108,7 +108,7 @@ module EventbriteIntegration
     end
 
     def authorize!(org)
-      raise Client::ApiError.new(403, 'ORGANIZATION_NOT_ALLOWED') unless Configuration.organization_ids.include?(org)
+      raise Client::ApiError.new(403, 'ORGANIZATION_NOT_ALLOWED') unless Configuration.organization_allowed?(org)
     end
     def upsert(model, org, data, attributes, refund: false, refund_evidence: [])
       authorize!(org)

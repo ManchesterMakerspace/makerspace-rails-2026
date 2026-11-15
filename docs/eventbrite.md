@@ -7,8 +7,10 @@ staff history. Deploy this feature before publishing its wiki instructions.
 ## Configuration and receiver
 
 Set `EVENTBRITE_API_KEY` to an Eventbrite **private OAuth token**, not the public
-application client ID. Set `EVENTBRITE_ORGANIZATION_IDS` to a comma-separated list
-of organizations the token can read. Set `EVENTBRITE_WEBHOOK_PATH` to a private
+application client ID. `EVENTBRITE_ORGANIZATION_IDS` is an optional comma-separated
+allowlist: blank or unset accepts any organization accessible through the token;
+a nonempty list restricts imports, signup choices and staff history to those IDs.
+Set `EVENTBRITE_WEBHOOK_PATH` to a private
 path ending in at least 32 cryptographically random URL-safe characters (letters,
 digits, `_` or `-`). Supply only the path, with a leading `/` and no trailing `/`,
 hostname or query string: `/eventbrite/<random-secret>` is the shape, with the
@@ -16,8 +18,8 @@ placeholder replaced by a freshly generated secret. Prefixes `/api`, `/assets`,
 `/billing`, `/slack`, `/members` and `/rails` are reserved.
 An empty path silently disables the receiver. An invalid path also disables it,
 logging an `Eventbrite webhook disabled` warning without the configured value;
-Rails and scheduled tasks continue booting. Valid paths still require both other
-settings. Correct the path and restart Rails to enable the listener, then update
+Rails and scheduled tasks continue booting. Valid paths still require the API
+token. Correct the path and restart Rails to enable the listener, then update
 the full URL in Eventbrite and send a dashboard test. Restart Rails after any path
 change. API/backfill credentials are validated separately even with webhooks disabled.
 
@@ -32,6 +34,9 @@ authenticated fetch of organization-owned resources are the boundary. Only exact
 HTTPS `www.eventbriteapi.com` resource URLs are accepted, redirects are not
 followed, and provider IDs are opaque strings. The API token is needed for live
 webhooks as well as backfills. Never expose it in `/api/config` or React builds.
+The optional organization allowlist adds a local restriction; it does not grant
+access to organizations the token cannot read. With no allowlist, imported records
+from all organizations are eligible for staff history and signup filtering.
 
 The privacy middleware rewrites the private path before Rails request logging;
 its internal route additionally requires the middleware marker. Configure the
@@ -93,9 +98,15 @@ Name filters are literal case-insensitive substrings, combined as include AND
 not-exclude. They apply only to Events/Orders backfill runs, not later webhooks
 or existing records. Each task discovers upstream records independently. Events
 include ticket classes; Orders request all statuses and attendee/refund expansions.
+When the organization allowlist is blank, each new run discovers organizations
+through the paginated `users/me/organizations/` API using the same throttled client.
+With an allowlist, new runs use those configured IDs instead.
 
 Runs persist their kind, organization list, filters, progress, counters and errors
-in `eventbrite_sync_runs`. Resume retains those original criteria. Expired tokens
+in `eventbrite_sync_runs`. Resume retains those original criteria and organization
+snapshot without rediscovery. A nonempty current allowlist must still permit every
+organization in the resumed run; a blank allowlist permits the saved snapshot.
+Expired tokens
 restart the relevant listing once per invocation. Replayed pages are idempotent; counters measure
 processed work and can include replayed records. Errors exit nonzero. For attendee
 increments, `last` uses the previous fully successful run's start minus one second
@@ -109,7 +120,8 @@ an in-memory queue on exit. Leases permit overlapping runners safely.
 
 The question stays optional. Existing class/walk-in/web/social/referral answers
 remain supported; Other has free text, and decline is explicit. Event choices are
-public, valid concrete occurrences from configured organizations, starting within
+public, valid concrete occurrences from imported organizations permitted by the
+optional allowlist (all imported organizations when blank), starting within
 two calendar months before today through one month ahead (Eastern calendar dates,
 inclusive). Only the **event name** is checked for `Open House`, case-insensitively.
 Ticket names do not exclude the event. Signup stores a server-derived name/date
@@ -129,7 +141,8 @@ matching never transfers it. The browser is read-only, including mismatch record
 
 ## Staff, release and operations
 
-Resource Managers, Board and Admins can view all configured organizations in the
+Resource Managers, Board and Admins can view imported organizations permitted by
+the optional allowlist (all imported organizations when blank) in the
 Eventbrite menu and member-profile Eventbrite tab. Ordinary members cannot read
 their own imported history. The public signup listing and Member serializers
 never include attendee/order data. Staff APIs use zero-based `pageNum`, 50 rows,

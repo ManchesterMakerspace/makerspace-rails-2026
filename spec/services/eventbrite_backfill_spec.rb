@@ -61,4 +61,52 @@ RSpec.describe EventbriteIntegration::Backfill do
     expect(EventbriteSyncRun.first.completed_at).to be_nil
     expect(EventbriteSyncRun.first.failed).to eq(1)
   end
+
+  it 'discovers all organizations across pages when no allowlist is configured' do
+    allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([])
+    expect(client).to receive(:each_page).with('users/me/organizations/').and_yield(
+      { 'organizations' => [{ 'id' => 'org' }] }, 'more-organizations'
+    ).and_yield({ 'organizations' => [{ 'id' => 'another-org' }, { 'id' => 'org' }] }, nil)
+    %w[org another-org].each do |org|
+      expect(client).to receive(:each_page).with("organizations/#{org}/events/", anything, continuation: nil)
+        .and_yield({ 'events' => [] }, nil)
+    end
+
+    run = described_class.new('events', {}).call
+    expect(run.organizations).to match_array(%w[org another-org])
+    expect(run.completed_at).to be_present
+  end
+
+  it 'resumes the snapshotted organizations without rediscovery when unrestricted' do
+    allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([])
+    run = EventbriteSyncRun.create!(kind: 'events', organizations: ['past-org'],
+      progress: { 'past-org' => { 'cursor' => 'next-page' } })
+    expect(client).not_to receive(:each_page).with('users/me/organizations/')
+    expect(client).to receive(:each_page).with('organizations/past-org/events/', anything, continuation: 'next-page')
+      .and_yield({ 'events' => [] }, nil)
+
+    described_class.new('events', { 'RESUME_RUN_ID' => run.id.to_s }).call
+    expect(run.reload.organizations).to eq(['past-org'])
+    expect(run.completed_at).to be_present
+  end
+
+  it 'refuses to resume a run containing organizations removed from a narrowed allowlist' do
+    run = EventbriteSyncRun.create!(kind: 'events', organizations: %w[org another-org])
+    expect(client).not_to receive(:each_page)
+    expect { described_class.new('events', { 'RESUME_RUN_ID' => run.id.to_s }).call }
+      .to raise_error(ArgumentError, 'Resume kind or organization configuration mismatch')
+    expect(run.reload.completed_at).to be_nil
+    expect(run.failed).to eq(1)
+  end
+
+  it 'does not import any organization when discovery fails before completing' do
+    allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([])
+    expect(client).to receive(:each_page).with('users/me/organizations/') do |_, &block|
+      block.call({ 'organizations' => [{ 'id' => 'org' }] }, 'more-organizations')
+      raise EventbriteIntegration::Client::ApiError.new(503, 'ERROR')
+    end
+    expect(sync).not_to receive(:import_event)
+    expect { described_class.new('events', {}).call }.to raise_error(EventbriteIntegration::Client::ApiError)
+    expect(EventbriteSyncRun.where(:completed_at.ne => nil).count).to eq(0)
+  end
 end

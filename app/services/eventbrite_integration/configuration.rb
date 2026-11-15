@@ -5,8 +5,14 @@ module EventbriteIntegration
     def self.token = ENV['EVENTBRITE_API_KEY'].to_s.strip
     def self.webhook_path = ENV['EVENTBRITE_WEBHOOK_PATH'].to_s.strip
     def self.validate!
-      raise ArgumentError, 'Eventbrite API token and organization IDs are required' if token.empty? || organization_ids.empty?
+      raise ArgumentError, 'Eventbrite API token is required' if token.empty?
       raise ArgumentError, 'Invalid Eventbrite organization ID' unless organization_ids.all? { |id| id.match?(/\A[a-zA-Z0-9_-]+\z/) }
+    end
+    def self.organization_allowed?(id)
+      id.present? && (organization_ids.empty? || organization_ids.include?(id))
+    end
+    def self.scope_organizations(scope)
+      organization_ids.empty? ? scope : scope.where(:organization_id.in => organization_ids)
     end
     def self.validate_path!
       return false if webhook_path.empty?

@@ -64,7 +64,25 @@ RSpec.describe 'Eventbrite webhook configuration', type: :request do
     ENV['EVENTBRITE_WEBHOOK_PATH'] = private_path
     ENV.delete('EVENTBRITE_API_KEY')
     expect { EventbriteIntegration::Configuration.validate_path! }.to raise_error(
-      ArgumentError, 'Eventbrite API token and organization IDs are required'
+      ArgumentError, 'Eventbrite API token is required'
     )
+  end
+
+  it 'enables a valid receiver with only an API token and no organization allowlist' do
+    ENV['EVENTBRITE_WEBHOOK_PATH'] = private_path
+    ENV.delete('EVENTBRITE_ORGANIZATION_IDS')
+    Rails.application.reload_routes!
+    expect(receiver_routes.size).to eq(1)
+    post private_path, params: { config: { action: 'test' } }, as: :json
+    expect(response).to have_http_status(:ok)
+  end
+
+  it 'treats a blank organization setting as unrestricted without weakening token validation' do
+    ENV['EVENTBRITE_ORGANIZATION_IDS'] = ' , , '
+    expect { EventbriteIntegration::Configuration.validate! }.not_to raise_error
+    expect(EventbriteIntegration::Configuration.organization_ids).to eq([])
+    expect(EventbriteIntegration::Configuration.organization_allowed?('another-org')).to be(true)
+    ENV.delete('EVENTBRITE_API_KEY')
+    expect { EventbriteIntegration::Configuration.validate! }.to raise_error(ArgumentError, 'Eventbrite API token is required')
   end
 end

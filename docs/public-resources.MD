@@ -159,7 +159,9 @@ produce a nonfatal boot warning without the configured value. See the
 The real path is never published in API artifacts. `GET /api/signup_events` is
 public JSON containing only eligible event IDs/names/start/timezone. Its Eastern
 date window is -2/+1 calendar months, excludes private/invalid/series-parent events
-and event names containing Open House. `PUT /api/signup_source` requires a completed
+and event names containing Open House. The optional organization allowlist applies
+to signup choices and staff history; blank/unset includes all imported organizations.
+`PUT /api/signup_source` requires a completed
 member session/TOTP and normal CSRF; it completes the current provider account's
 optional prompt, accepting signupSource/signupSourceDetail/signupEventbriteEventId.
 

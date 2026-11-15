@@ -14,6 +14,13 @@ RSpec.describe EventbriteIntegration::Client do
     client.each_page('organizations/org/events/', { 'name_filter' => 'Weld' }) { |_, token| pages << token }
     expect(pages).to eq(['opaque+/', nil])
   end
+  it 'allows the fixed current-user organization discovery endpoint without an allowlist' do
+    allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([])
+    allow(http).to receive(:get).with('users/me/organizations/', {}).and_return(
+      double(status: 200, headers: {}, body: '{"organizations":[]}')
+    )
+    expect(described_class.new.get('users/me/organizations/')).to eq('organizations' => [])
+  end
   it 'fails rather than looping on an unusable continuation' do
     client = described_class.new
     allow(client).to receive(:get).and_return({ 'pagination' => { 'has_more_items' => true } })
@@ -55,7 +62,7 @@ RSpec.describe EventbriteIntegration::Client do
     described_class.new.get('orders/1/')
     expect(calls.last - calls.first).to be >= 0.5
   end
-  [302, 401, 503].each do |status|
+  [302, 401, 403, 503].each do |status|
     it "surfaces #{status} without automatic retries or redirects" do
       allow(http).to receive(:get).and_return(double(status: status, headers: { 'location' => 'https://example.com' }, body: '{}'))
       expect { described_class.new.get('orders/1/') }.to raise_error(described_class::ApiError) { |e| expect(e.status).to eq(status) }

@@ -318,6 +318,8 @@ Invalidated events, refunded orders, and deleted ticket classes retain history.
 `eventbrite_webhook_deliveries` indexes completion/failure/due/lease state; its
 `expires_at` TTL is set only after completion, for 30 days. `eventbrite_sync_runs`
 indexes kind/completion and persists criteria, page progress and success watermarks.
+Its organization snapshot comes from the configured optional allowlist or, when
+blank, the token's paginated organization discovery; resumed runs retain that snapshot.
 Member indexes pending reconciliation time and adds source event ID/snapshot,
 provider prompt state, and pending local email-link reconciliation. No new
 embedded documents become separate collections.

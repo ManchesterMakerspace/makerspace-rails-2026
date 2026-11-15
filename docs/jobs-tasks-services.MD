@@ -1204,8 +1204,10 @@ adds. Neither path sends notices inside its approval transaction.
 
 ## Eventbrite ingestion and manual imports
 
-`EventbriteDeliveryJob` hydrates persisted receiver pointers, checks organization
-ownership, and idempotently synchronizes domain records. `EventbriteRecoveryJob`
+`EventbriteDeliveryJob` hydrates persisted receiver pointers through the API token,
+enforces the optional organization allowlist when nonempty, and idempotently
+synchronizes domain records. A blank/unset allowlist accepts any organization the
+token can read. `EventbriteRecoveryJob`
 runs every minute (`perform_now` in the production schedule): it reconciles pending
 member email links and processes due/abandoned deliveries synchronously, avoiding
 loss of an async queue when the cron runner exits. Failures retain
@@ -1218,7 +1220,11 @@ warning for invalid receiver paths so Rails and scheduled tasks can boot (valid
 paths and API/backfill use still require credentials); `Resource` parses pointer URLs; `Client` performs bounded,
 token-throttled requests; `Lease` coordinates workers; `Synchronizer` updates
 events/orders/attendees/tickets; `MemberLinker` preserves member ownership;
-`Presenter` allowlists staff output; `Backfill` checkpoints manual imports.
+`Presenter` allowlists staff output; `Backfill` checkpoints manual imports. New
+backfills use configured organization IDs when present, otherwise discover them
+through paginated `users/me/organizations/` calls with the shared throttled client.
+Resume retains the run's organization snapshot without rediscovery and checks it
+against the current allowlist only when that allowlist is nonempty.
 `EventbriteWebhookPrivacy` rewrites valid secret ingress paths before Rails logging;
 invalid configured paths cannot intercept existing application routes.
 Member save hooks persist pending reconciliation; signup validation snapshots

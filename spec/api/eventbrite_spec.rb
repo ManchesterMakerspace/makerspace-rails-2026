@@ -3,6 +3,7 @@ describe 'Eventbrite API', type: :request do
   before { allow(Service::MemberProvisioning).to receive(:invite_slack) }
   path '/signup_events' do
     get 'Lists public events eligible for signup attribution' do
+      description 'Returns eligible imported events from every organization when EVENTBRITE_ORGANIZATION_IDS is blank; a configured allowlist restricts the results.'
       tags 'Eventbrite'
       operationId 'listSignupEvents'
       produces 'application/json'
@@ -10,7 +11,20 @@ describe 'Eventbrite API', type: :request do
         schema type: :array, items: { type: :object, required: %w[id name startsAt timezone], properties: {
           id: { type: :string }, name: { type: :string }, startsAt: { type: :string, format: 'date-time' }, timezone: { type: :string }
         } }
-        run_test!
+        before do
+          %w[org-1 org-2].each do |org|
+            EventbriteEvent.create!(organization_id: org, eventbrite_id: org, name: 'Workshop',
+              starts_at: Time.current, timezone: 'America/New_York', status: 'live', listed: true)
+          end
+        end
+        context 'without an organization allowlist' do
+          before { allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([]) }
+          run_test! { |response| expect(JSON.parse(response.body).size).to eq(2) }
+        end
+        context 'with an organization allowlist' do
+          before { allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return(['org-1']) }
+          run_test! { |response| expect(JSON.parse(response.body).size).to eq(1) }
+        end
       end
     end
   end
@@ -45,13 +59,27 @@ describe 'Eventbrite API', type: :request do
         tags 'Eventbrite'
         operationId "listEventbrite#{kind.capitalize}"
         produces 'application/json'
-        %w[organization_id event_id status linked search pageNum].each do |name|
+        parameter name: :organization_id, in: :query, required: false,
+          description: 'Filter by imported organization ID. A configured EVENTBRITE_ORGANIZATION_IDS allowlist restricts access; blank allows all imported organizations.',
+          schema: { type: :string }
+        %w[event_id status linked search pageNum].each do |name|
           parameter name: name.to_sym, in: :query, required: false, schema: { type: :string }
         end
         response '200', 'Staff records with total-items pagination header' do
           schema type: :array, items: { '$ref' => '#/components/schemas/EventbriteRecord' }
-          before { sign_in create(:member, role: 'resource_manager') }
-          run_test!
+          before do
+            sign_in create(:member, role: 'resource_manager')
+            model = { 'events' => EventbriteEvent, 'orders' => EventbriteOrder, 'attendees' => EventbriteAttendee }.fetch(kind)
+            %w[org-1 org-2].each { |org| model.create!(organization_id: org, eventbrite_id: '1') }
+          end
+          context 'without an organization allowlist' do
+            before { allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([]) }
+            run_test! { |response| expect(JSON.parse(response.body).size).to eq(2) }
+          end
+          context 'with an organization allowlist' do
+            before { allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return(['org-1']) }
+            run_test! { |response| expect(JSON.parse(response.body).size).to eq(1) }
+          end
         end
         response '403', 'Ordinary members cannot access imported records' do
           before { sign_in create(:member) }

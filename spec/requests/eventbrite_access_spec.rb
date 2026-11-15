@@ -33,4 +33,23 @@ RSpec.describe 'Eventbrite staff visibility', type: :request do
     get '/api/admin/eventbrite/orders', params: { organization_id: 'outside' }
     expect(response).to have_http_status(:forbidden)
   end
+
+  it 'lets authorized staff browse and filter all imported organizations when unrestricted' do
+    allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([])
+    order = EventbriteOrder.create!(organization_id: 'another-org', eventbrite_id: '1', name: 'Workshop buyer')
+    EventbriteOrder.create!(organization_id: 'org', eventbrite_id: '2', name: 'Other buyer')
+    sign_in create(:member, role: 'admin')
+    get '/api/admin/eventbrite/orders', params: { organization_id: 'another-org', search: 'Workshop' }
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).map { |row| row['id'] }).to eq([order.id.to_s])
+    get "/api/admin/eventbrite/orders/#{order.id}"
+    expect(response).to have_http_status(:ok)
+  end
+
+  it 'still denies ordinary members when organization filtering is disabled' do
+    allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([])
+    sign_in create(:member)
+    get '/api/admin/eventbrite/orders'
+    expect(response).to have_http_status(:forbidden)
+  end
 end

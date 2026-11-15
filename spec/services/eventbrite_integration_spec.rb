@@ -25,6 +25,19 @@ RSpec.describe EventbriteIntegration::Synchronizer do
     expect(EventbriteEvent.count).to eq(0)
   end
 
+  it 'accepts token-accessible organizations when the allowlist is empty' do
+    allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([])
+    record = sync.import_event(event_data.merge('organization_id' => 'another-org'))
+    expect(record.organization_id).to eq('another-org')
+    expect(sync.event(record.eventbrite_id)).to eq(record)
+  end
+
+  it 'still rejects missing organization IDs when unrestricted' do
+    allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([])
+    expect { sync.import_event(event_data.merge('organization_id' => '')) }.to raise_error(EventbriteIntegration::Client::ApiError)
+    expect(EventbriteEvent.count).to eq(0)
+  end
+
   it 'retains partial-refund invalidation after later placed updates' do
     sync.import_event(event_data)
     data = { 'id' => 'order-1', 'event_id' => 'event-1', 'status' => 'placed', 'refund_requests' => [{ 'items' => [{ 'status' => 'processed', 'item_type' => 'attendee' }] }] }

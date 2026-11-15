@@ -160,10 +160,14 @@ of at least 32 random letters, digits, `_` or `-`. Reserved prefixes are `/api`,
 `/assets`, `/billing`, `/slack`, `/members` and `/rails`. Invalid paths disable the
 receiver with a nonfatal warning that omits the value; Rails and scheduled tasks
 continue booting. A valid configured path requires
-`EVENTBRITE_API_KEY` (private OAuth bearer token) and `EVENTBRITE_ORGANIZATION_IDS`
-(comma-separated organization allowlist). No credential or receiver URL is public
+`EVENTBRITE_API_KEY` (private OAuth bearer token). `EVENTBRITE_ORGANIZATION_IDS`
+is an optional comma-separated organization allowlist: blank/unset allows any
+organization accessible through the token; a nonempty value restricts imports,
+signup choices and staff history to those IDs. Backfills discover organizations
+through the API when the allowlist is blank and snapshot the IDs for that run.
+No credential or receiver URL is public
 runtime configuration. Restart Rails for route changes and redact upstream access
-logs. API/backfill use requires the token and allowlist even with webhooks disabled.
+logs. API/backfill use requires the token even with webhooks disabled.
 Manual task inputs: `NAME_INCLUDE`/`NAME_EXCLUDE` are optional case-insensitive
 literal event-name substrings for Events/Orders; `CHANGED_SINCE` is an optional UTC
 ISO8601 timestamp or `last` for Attendees (omitted means full); `RESUME_RUN_ID`

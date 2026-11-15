@@ -16,9 +16,9 @@ class EventbriteEvent
     first = zone.local((today << 2).year, (today << 2).month, (today << 2).day)
     last = today >> 1
     finish = zone.local(last.year, last.month, last.day) + 1.day
-    where(:organization_id.in => EventbriteIntegration::Configuration.organization_ids,
+    EventbriteIntegration::Configuration.scope_organizations(where(
           listed: true, series_parent: false, invalidated_at: nil,
           :status.in => %w[live started ended completed], :starts_at.gte => first, :starts_at.lt => finish,
-          :name.not => /open house/i).order_by(starts_at: :asc, eventbrite_id: :asc)
+          :name.not => /open house/i)).order_by(starts_at: :asc, eventbrite_id: :asc)
   end
 end

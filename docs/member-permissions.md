@@ -234,8 +234,9 @@ admin/board reinstatement. Superseded history grants no checkout-derived rights.
 ## Eventbrite history
 
 Resource Managers, Board and Admins can read imported Eventbrite events, orders,
-attendees and ticket classes across configured organizations in the staff browser
-and member profiles. Ordinary members, including the linked member, cannot read
+attendees and ticket classes across imported organizations permitted by the optional
+organization allowlist in the staff browser and member profiles. A blank/unset
+allowlist includes all imported organizations. Ordinary members, including the linked member, cannot read
 order/attendee records. API authorization is enforced by AdminOrRmController;
 React uses `canViewEventbriteHistory`. Survey correction retains existing admin/
 board permissions; public signup never exposes a member directory. Email matching

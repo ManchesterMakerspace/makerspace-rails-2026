@@ -28,10 +28,10 @@ module EventbriteIntegration
       @run = if @options['RESUME_RUN_ID'].present?
         EventbriteSyncRun.find(@options['RESUME_RUN_ID'])
       else
-        EventbriteSyncRun.create!(kind: @kind, organizations: Configuration.organization_ids,
+        EventbriteSyncRun.create!(kind: @kind, organizations: organizations,
           filters: @options.to_h.slice('NAME_INCLUDE', 'NAME_EXCLUDE', 'CHANGED_SINCE'))
       end
-      raise ArgumentError, 'Resume kind or organization configuration mismatch' unless @run.kind == @kind && (@run.organizations - Configuration.organization_ids).empty?
+      raise ArgumentError, 'Resume kind or organization configuration mismatch' unless @run.kind == @kind && @run.organizations.all? { |org| Configuration.organization_allowed?(org) }
       return @run if @run.completed_at
       Lease.with("backfill:#{@run.id}") do |check|
         @run.organizations.each do |org|
@@ -105,6 +105,18 @@ module EventbriteIntegration
       raise
     end
     private
+    def organizations
+      return Configuration.organization_ids if Configuration.organization_ids.any?
+      ids = []
+      @client.each_page('users/me/organizations/') do |body, _|
+        body.fetch('organizations').each do |organization|
+          id = organization.fetch('id').to_s
+          raise ArgumentError, 'Invalid Eventbrite organization ID' unless id.match?(/\A[a-zA-Z0-9_-]+\z/)
+          ids << id
+        end
+      end
+      ids.uniq
+    end
     def checkpoint(org, state)
       @run.progress = @run.progress.merge(org => state.dup)
       @run.save!

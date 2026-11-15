@@ -10766,6 +10766,7 @@
     "/signup_events": {
       "get": {
         "summary": "Lists public events eligible for signup attribution",
+        "description": "Returns eligible imported events from every organization when EVENTBRITE_ORGANIZATION_IDS is blank; a configured allowlist restricts the results.",
         "tags": [
           "Eventbrite"
         ],
@@ -10869,6 +10870,7 @@
             "name": "organization_id",
             "in": "query",
             "required": false,
+            "description": "Filter by imported organization ID. A configured EVENTBRITE_ORGANIZATION_IDS allowlist restricts access; blank allows all imported organizations.",
             "schema": {
               "type": "string"
             }
@@ -10949,6 +10951,7 @@
             "name": "organization_id",
             "in": "query",
             "required": false,
+            "description": "Filter by imported organization ID. A configured EVENTBRITE_ORGANIZATION_IDS allowlist restricts access; blank allows all imported organizations.",
             "schema": {
               "type": "string"
             }
@@ -11029,6 +11032,7 @@
             "name": "organization_id",
             "in": "query",
             "required": false,
+            "description": "Filter by imported organization ID. A configured EVENTBRITE_ORGANIZATION_IDS allowlist restricts access; blank allows all imported organizations.",
             "schema": {
               "type": "string"
             }

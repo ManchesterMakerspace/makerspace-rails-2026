@@ -26,4 +26,10 @@ RSpec.describe EventbriteEvent do
     expect(member.signup_eventbrite_event_snapshot['name']).to eq('Workshop')
     expect(build(:member, signup_source: 'eventbrite', signup_eventbrite_event_id: source.id)).not_to be_valid
   end
+
+  it 'offers eligible imported events from every organization when unrestricted' do
+    allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([])
+    events = [event('1'), event('2', organization_id: 'another-org')]
+    expect(described_class.signup_choices.pluck(:id)).to match_array(events.map(&:id))
+  end
 end
