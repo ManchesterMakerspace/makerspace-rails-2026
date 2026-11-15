@@ -37,10 +37,16 @@ describe 'Analytics API', type: :request do
       operationId 'adminVolunteerSummary'
       produces 'application/json'
       parameter name: :year, in: :query, type: :integer, required: false,
-        description: 'Calendar year applied to approved credits and completed tasks; pending credit count remains global'
+        description: 'UTC calendar year applied to approved credits and completed tasks, matching UTC month grouping; pending credit count remains global'
 
       response '200', 'volunteer summary read' do
-        before { sign_in admin }
+        before do
+          sign_in admin
+          VolunteerCredit.collection.insert_many([
+            { member_id: admin.id, status: 'approved', credit_value: 2.0, created_at: Time.utc(2024, 12, 31, 23, 59, 59) },
+            { member_id: admin.id, status: 'approved', credit_value: 4.0, created_at: Time.utc(2025, 1, 1) }
+          ])
+        end
         let(:year) { 2024 }
 
         schema type: :object,
@@ -87,7 +93,11 @@ describe 'Analytics API', type: :request do
             pending_credits: { type: :integer }
           }
 
-        run_test!
+        run_test! do |response|
+          expect(JSON.parse(response.body)['credits_by_month']).to eq([
+            { 'month' => '2024-12', 'count' => 1, 'total_value' => 2.0 }
+          ])
+        end
       end
 
       response '401', 'User unauthenticated' do

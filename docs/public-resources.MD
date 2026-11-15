@@ -147,6 +147,13 @@ board member or admin (not the rental's own member) confirm the space is empty: 
 the rental is awaiting verification; 403 for anyone else. POST run_job also accepts key=rental_vacating_check.
 Staff calling mark_vacated on another member's vacating rental still cancels it at once.
 
+## Volunteer analytics timezone
+
+`GET /api/admin/analytics/volunteer_summary` requires an admin or board session.
+Its optional `year` filters approved credits and completed tasks using UTC calendar
+year boundaries, matching the UTC month grouping regardless of the server timezone.
+The pending-credit count remains global. Omitting `year` returns all-time activity.
+
 ## Eventbrite resources
 
 `POST <EVENTBRITE_WEBHOOK_PATH>` receives private-URL Eventbrite JSON pointers,

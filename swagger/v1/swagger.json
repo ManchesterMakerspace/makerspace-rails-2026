@@ -5718,7 +5718,7 @@
             "name": "year",
             "in": "query",
             "required": false,
-            "description": "Calendar year applied to approved credits and completed tasks; pending credit count remains global",
+            "description": "UTC calendar year applied to approved credits and completed tasks, matching UTC month grouping; pending credit count remains global",
             "schema": {
               "type": "integer"
             }

@@ -6,11 +6,12 @@ RSpec.describe EarnedMembership::Term, type: :model do
 
   describe "public methods" do
     it "calculates term end date" do
-      time_now = Time.now
+      # Mongoid stores Time fields in UTC. Use a fixed instant near Eastern
+      # midnight and compare instants rather than differently zoned date strings.
+      time_now = Time.utc(2026, 11, 15, 2, 30)
       requirement = create(:requirement, term_length: 3)
       term = build(:term, start_date: time_now, requirement: requirement)
-      expected_end_date = time_now + 3.months
-      expect(term.end_date.strftime("%m/%d/%Y")).to eq(expected_end_date.strftime("%m/%d/%Y"))
+      expect(term.end_date).to eq(Time.utc(2027, 2, 15, 2, 30))
     end
   end
 
