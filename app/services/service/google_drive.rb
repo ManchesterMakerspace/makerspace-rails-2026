@@ -33,10 +33,6 @@ module Service
       }
     end
 
-    def load_gdrive
-      ::Service::GoogleDrive.load_gdrive
-    end
-
     def self.load_gdrive
       google = Google::Apis::DriveV3::DriveService.new
       google.authorization = Google::Auth::UserRefreshCredentials.new({
@@ -46,32 +42,6 @@ module Service
         scope: ["https://www.googleapis.com/auth/drive"]
       })
       google
-    end
-
-    def invite_gdrive(email_address)
-      unless ENV['GDRIVE_INVITES_ENABLED'] == 'true'
-        raise Error::NotAllowed.new('Google Drive invites are not enabled in this environment')
-      end
-      permission = Google::Apis::DriveV3::Permission.new(type: :user,
-          email_address: email_address,
-          role: :reader)
-      load_gdrive.create_permission(ENV['RESOURCES_FOLDER'], permission) do |result, err|
-        report_google_error(err, "drive.permissions.create") if err
-        raise Error::Google::Share.new(err) unless err.nil?
-      end
-    end
-
-    def invite_gdrive_writer(email_address)
-      unless ENV['GDRIVE_INVITES_ENABLED'] == 'true'
-        raise Error::NotAllowed.new('Google Drive invites are not enabled in this environment')
-      end
-      permission = Google::Apis::DriveV3::Permission.new(type: :user,
-          email_address: email_address,
-          role: :writer)
-      load_gdrive.create_permission(ENV['GOOGLE_TRANSFER_SHARE'], permission) do |result, err|
-        report_google_error(err, "drive.permissions.create_writer") if err
-        raise Error::Google::Share.new(err) unless err.nil?
-      end
     end
 
     def self.upload_document(document_name, member, locals, base64_signature, upload_attempt_id: nil)
@@ -235,10 +205,6 @@ module Service
         operation: operation,
         resource_type: "GoogleDrive"
       )
-    end
-
-    def report_google_error(error, operation)
-      Service::GoogleDrive.report_google_error(error, operation)
     end
 
     def self.report_google_exceptions(operation)

@@ -1,11 +1,8 @@
-require "csv"
-
 module Service
   module Analytics
     module Members
       # Compute all dashboard member counters in one pass over the collection.
-      # The predicates mirror the public query helpers below while sharing one
-      # timestamp, so all counters describe the same instant.
+      # All predicates share one timestamp, so the counters describe the same instant.
       def self.summary_counts(now: Time.now)
         base = query_not_landlord
         timeframe_start = now - 1.month
@@ -15,6 +12,9 @@ module Service
         facets = {
           "total_members" => count_facet(active_status.merge("expirationTime" => { "$gte" => now_ms })),
           "new_members" => count_facet(active_status.merge("startDate" => { "$gte" => timeframe_start })),
+          # Count elapsed expirations regardless of current status. An early
+          # revocation retaining a future paid-through date appears only once
+          # that date passes, matching the monthly lost-members report.
           "lost_members" => [
             { "$match" => {
               "expirationTime" => { "$gte" => timeframe_start.to_i * 1000, "$lt" => now_ms }
@@ -45,27 +45,6 @@ module Service
       # All members current and in good standing
       def self.query_total_members(base = query_good_standing_members)
         base.where(:expirationTime.gte => (Time.now.to_i * 1000))
-      end
-
-      # Members that signed up within the timeframe
-      def self.query_new_members(timeframe = 1.month, base = query_good_standing_members)
-        base.where(:startDate.gte => (Time.now - timeframe))
-      end
-
-      # Members whose membership actually lapsed within the timeframe -- i.e.
-      # expirationTime has already passed (not merely scheduled to expire
-      # later this window). Deliberately not scoped to query_good_standing_members:
-      # a lost member may already have been flipped to inactive/revoked/nonMember
-      # by the time this runs, and that shouldn't hide them from this count.
-      # Known gap: a member revoked early (before their paid-through date)
-      # keeps their original future expirationTime, so they won't show up here
-      # until that stale date arrives -- accepted as rare enough not to matter.
-      def self.query_lost_members(timeframe = 1.month, base = query_not_landlord)
-        now_ms = Time.now.to_i * 1000
-        base.where(
-          :expirationTime.gte => ((Time.now - timeframe).to_i * 1000),
-          :expirationTime.lt  => now_ms
-        )
       end
 
       # Members that are in good standing, do not have an expiration date, and have invoices pending settlement
@@ -102,12 +81,6 @@ module Service
 
       def self.query_good_standing_members(base = query_not_landlord)
         base.where(:status.in => Member::ACTIVE_MEMBERSHIP_STATUSES)
-      end
-
-      def self.get_membership_per_month(base = query_not_landlord, start_date = Date.parse("08/01/2016"))
-        active_members_by_month(start_date: start_date, end_date: Date.today, base: base, boundary: :start).map do |row|
-          [Date.strptime(row[:date], "%Y-%m"), row[:count]]
-        end
       end
 
       # Counts memberships at each month-end boundary with one database round-trip.
@@ -152,7 +125,7 @@ module Service
       # "active as of Sep 30" gets checked on Sep 12, wrongly excluding members
       # who are active today but happen to expire before month-end.
       # Members lost per calendar month, symmetric with New Members per Month
-      # (get_membership_per_month/member_growth) but keyed off expirationTime
+      # (the member_growth endpoint) but keyed off expirationTime
       # instead of startDate. Filters strictly on expirationTime < now (not
       # just "falls within the month"), so a member who hasn't actually
       # expired yet is never counted -- including for the current, still-in-
@@ -259,19 +232,6 @@ module Service
       end
       private_class_method :query_past_due_conditions
 
-      RENTAL_CATEGORIES = {
-        "Shelf" => ["Rental-Monthly-Small-back-shop-shelf-subscription", "rental-quarterly-recurring-back-shop-shelf-subscription", "rental-monthly-non-recurring-back-shop-shelf"],
-        "Locker" => ["rental-quarterly-recurring-locker-subscription"],
-        "Plot" => ["rental-monthly-2-2-plot", "rental-monthly-4-4-plot", "rental-monthly-5-10-plot", "rental-monthly-5-5-plot", "rental-monthly-5-7-plot", "rental-monthly-6-6-plot"]
-      }.freeze
-
-      MEMBERSHIP_CATEGORIES = {
-        "Monthly" => ["membership-one-month-recurring"],
-        "Quarterly" => ["membership-three-month-recurring-covid", "membership-three-month-recurring"],
-        "Semi Annually" => ["membership-six-month-recurring"],
-        "Yearly" => ["membership-twelve-month-recurring"]
-      }.freeze
-
       def self.query_created(timeframe = 1.month, base = Mongoid::Criteria.new(Invoice)) #Invoice review
         base.where(:created_at.gt => Time.now - timeframe)
       end
@@ -290,204 +250,6 @@ module Service
 
       def self.query_settlement_pending(base = Mongoid::Criteria.new(Invoice)) # invoice review
         base.where(settled_at: nil, :transaction_id.ne => nil)
-      end
-
-      def self.query_all_settled(base = Mongoid::Criteria.new(Invoice))
-        base.where(:settled_at.ne => nil)
-      end
-
-      def self.get_rentals(base = query_all_settled)
-        aggregate_categories(base, RENTAL_CATEGORIES)
-      end
-
-      def self.get_rental_count(base = query_all_settled)
-        get_rentals(base).transform_values { |values| values[:count] }
-      end
-
-      def self.get_rental_dollars(base = query_all_settled)
-        get_rentals(base).transform_values { |values| values[:total_amount] }
-      end
-
-      def self.get_membership_subscriptions(base = query_all_settled)
-        categories = MEMBERSHIP_CATEGORIES.flat_map do |name, plan_ids|
-          [[name, plan_ids], ["#{name} (Discounted)", plan_ids]]
-        end.to_h
-        aggregate_categories(base, categories, discounted: true)
-      end
-
-      def self.get_membership_subscription_count(base = query_all_settled)
-        get_membership_subscriptions(base).transform_values { |values| values[:count] }
-      end
-
-      def self.get_membership_subscription_dollars(base = query_all_settled)
-        get_membership_subscriptions(base).transform_values { |values| values[:total_amount] }
-      end
-
-      def self.aggregate_categories(base, categories, discounted: false)
-        branches = categories.map do |name, plan_ids|
-          conditions = [{ "$in" => ["$plan_id", plan_ids] }]
-          if discounted
-            has_discount = { "$ne" => [{ "$ifNull" => ["$discount_id", nil] }, nil] }
-            conditions << (name.end_with?(" (Discounted)") ? has_discount : { "$not" => [has_discount] })
-          end
-          { "case" => { "$and" => conditions }, "then" => name }
-        end
-
-        rows = Invoice.collection.aggregate([
-          { "$match" => base.selector },
-          { "$set" => { "analytics_category" => { "$switch" => { "branches" => branches, "default" => nil } } } },
-          { "$match" => { "analytics_category" => { "$ne" => nil } } },
-          { "$group" => {
-            "_id" => "$analytics_category",
-            "count" => { "$sum" => 1 },
-            "total_amount" => { "$sum" => { "$ifNull" => ["$amount", 0] } },
-            "dates" => { "$push" => "$settled_at" }
-          } }
-        ]).to_a
-
-        normalize(rows, categories.keys)
-      end
-
-      def self.normalize(rows, category_names)
-        values = category_names.to_h { |name| [name, { count: 0, total_amount: 0.0, dates: [] }] }
-        rows.each do |row|
-          values[row["_id"]] = { count: row["count"], total_amount: row["total_amount"].to_f, dates: row["dates"] }
-        end
-        values
-      end
-      private_class_method :aggregate_categories, :normalize
-
-      def self.csv_by_date(query, csv_path)
-        data = query.map do |name, q|
-          dates = q.is_a?(Hash) ? q.fetch(:dates) : q.pluck(:settled_at)
-          [name, *dates.compact.map { |d| d.strftime("%m/%d/%Y") }]
-        end
-        query_to_csv(data, csv_path)
-      end
-
-      def self.query_to_csv(data, csv_path)
-        max_row_size = data.max { |r1, r2| r1.size <=> r2.size }.size
-        data.each { |r| r[max_row_size - 1] ||=nil }
-        CSV.open(csv_path, "wb") do |csv|
-          data.transpose.each { |r| csv << r }
-        end
-      end
-    end
-
-    module Payments
-      DONATION_CATEGORIES = {
-        "5" => ["5-donation"], "10" => ["10-donation"], "20" => ["20-donation"],
-        "100" => ["100-donation"], "Custom" => ["custom-donation"]
-      }.freeze
-      MEMBERSHIP_CATEGORIES = {
-        "Single Month" => ["1-month Individual Membership 1mo-Stnd"],
-        "Monthly" => ["1-month Subscription", "Subscription Membership Sub-Stnd-Membership", "1-month Subscription Sub-Stnd-Membership", "1mo-Sub"],
-        "Monthly (Discounted)" => ["1-month Discount Subscription", "1mo-Sub-SMS", "1mo-Stnd-SMS"],
-        "Quarterly" => ["3-month Subscription", "3mo-Sub"],
-        "Quarterly (Discounted)" => ["3-month Discount Subscription", "3mo-Sub-SMS"],
-        "Semi Annually" => ["6mo-Sub"], "Semi Annually (Discounted)" => ["6mo-Sub-SMS"],
-        "Yearly" => ["12mo-Sub"], "Yearly (Discounted)" => ["12mo-Sub-SMS"]
-      }.freeze
-      RENTAL_CATEGORIES = { "Plot" => "Plot", "Shelf" => "Shelf", "Locker" => "Locker" }.freeze
-
-      def self.not_categorized(base = query_completed)
-        Payment.collection.aggregate([
-          { "$match" => base.selector },
-          category_stage,
-          { "$match" => { "analytics_category" => nil, "product" => { "$ne" => " " } } },
-          { "$project" => { "_id" => 0, "product" => 1 } }
-        ]).map { |row| row["product"] }
-      end
-
-      def self.query_completed(base = Mongoid::Criteria.new(Payment))
-        base.where(:status => "Completed")
-      end
-
-      def self.get_donations(base = query_completed)
-        aggregate_categories(base, "donation", DONATION_CATEGORIES.keys)
-      end
-
-      def self.get_donation_count(base = query_completed)
-        get_donations(base).transform_values { |values| values[:count] }
-      end
-
-      def self.get_membership_subscriptions(base = query_completed)
-        aggregate_categories(base, "membership", MEMBERSHIP_CATEGORIES.keys)
-      end
-
-      def self.get_membership_subscription_count(base = query_completed)
-        get_membership_subscriptions(base).transform_values { |values| values[:count] }
-      end
-
-      def self.get_membership_subscription_dollars(base = query_completed)
-        get_membership_subscriptions(base).transform_values { |values| values[:total_amount] }
-      end
-
-      def self.get_rentals(base = query_completed)
-        aggregate_categories(base, "rental", RENTAL_CATEGORIES.keys)
-      end
-
-      def self.get_rental_count(base = query_completed)
-        get_rentals(base).transform_values { |values| values[:count] }
-      end
-
-      def self.get_rental_dollars(base = query_completed)
-        get_rentals(base).transform_values { |values| values[:total_amount] }
-      end
-
-      def self.aggregate_categories(base, type, names)
-        rows = Payment.collection.aggregate([
-          { "$match" => base.selector }, category_stage,
-          { "$match" => { "analytics_category" => /^#{Regexp.escape(type)}:/ } },
-          { "$group" => {
-            "_id" => "$analytics_category",
-            "count" => { "$sum" => 1 },
-            "total_amount" => { "$sum" => { "$ifNull" => ["$amount", 0] } },
-            "dates" => { "$push" => "$payment_date" }
-          } }
-        ]).to_a
-        values = names.to_h { |name| [name, { count: 0, total_amount: 0.0, dates: [] }] }
-        rows.each do |row|
-          name = row["_id"].delete_prefix("#{type}:")
-          values[name] = { count: row["count"], total_amount: row["total_amount"].to_f, dates: row["dates"] }
-        end
-        values
-      end
-
-      def self.category_stage
-        branches = []
-        # Membership wins over rentals and donations when legacy product names overlap.
-        MEMBERSHIP_CATEGORIES.each do |name, keys|
-          branches << regex_branch("membership:#{name}", "(#{keys.map { |key| Regexp.escape(key) }.join('|')})$")
-        end
-        RENTAL_CATEGORIES.each do |name, key|
-          branches << regex_branch("rental:#{name}", "^#{Regexp.escape(key)}")
-        end
-        DONATION_CATEGORIES.each do |name, keys|
-          branches << regex_branch("donation:#{name}", "(#{keys.map { |key| Regexp.escape(key) }.join('|')})$")
-        end
-        { "$set" => { "analytics_category" => { "$switch" => { "branches" => branches, "default" => nil } } } }
-      end
-
-      def self.regex_branch(category, regex)
-        { "case" => { "$regexMatch" => { "input" => { "$ifNull" => ["$product", ""] }, "regex" => regex, "options" => "i" } }, "then" => category }
-      end
-      private_class_method :aggregate_categories, :category_stage, :regex_branch
-
-      def self.csv_by_date(query, csv_path)
-        data = query.map do |name, q|
-          dates = q.is_a?(Hash) ? q.fetch(:dates) : q.pluck(:payment_date)
-          [name, *dates.compact.map { |d| (d.kind_of?(Time) ? d : Time.parse(d.sub(/(\d+:)+\d+\s/, ""))).strftime("%m/%d/%Y") }]
-        end
-        query_to_csv(data, csv_path)
-      end
-
-      def self.query_to_csv(data, csv_path)
-        max_row_size = data.max { |r1, r2| r1.size <=> r2.size }.size
-        data.each { |r| r[max_row_size - 1] ||=nil }
-        CSV.open(csv_path, "wb") do |csv|
-          data.transpose.each { |r| csv << r }
-        end
       end
     end
   end

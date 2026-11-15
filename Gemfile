@@ -1,11 +1,9 @@
 source 'https://rubygems.org'
 ruby '~> 3.4.0'
 
-# Explicit for Ruby 3.4 forward-compatibility — these become bundled
-# gems (not default) in Ruby 3.4, and are used directly in
-# firebase_auth_controller.rb, totp_service.rb, and lib/service/analytics.rb.
+# Explicit for Ruby 3.4 forward-compatibility: base64 is a bundled gem, used
+# directly by firebase_auth_controller.rb and totp_service.rb.
 gem 'base64'
-gem 'csv'
 
 gem "rails", "~> 8.0.5.1"
 
