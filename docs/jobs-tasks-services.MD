@@ -1236,3 +1236,20 @@ Manual operator Rake tasks: `eventbrite:backfill_events`, `eventbrite:backfill_o
 data only and share Redis throttles with live ingestion. None is exposed through
 the admin run-job API. Invocation, filters, resume, errors, credentials and
 deployment requirements: [Eventbrite operator guide](eventbrite.md).
+
+## Eventbrite Slack announcements
+
+EventbriteDeliveryJob invokes EventbriteIntegration::Announcements after resource
+synchronization and before completing its durable inbox entry. The service hydrates
+public event details, resolves series, refreshes admission inventory, and records
+publication/update intent. Backfills do not invoke it. AnnouncementMessage produces
+escaped accessible Block Kit and fallback text without attendee or buyer data.
+EventbriteSlackDeliveryJob posts or edits durable outbox records, saves receipts on
+events, and repairs interrupted receipt mirroring. It preserves actual destinations
+and SLACK_ENV isolation; ambiguous sends require operator reconciliation.
+EventbriteInventoryRefreshJob processes five-minute post-order reconciliation.
+EventbriteRecoveryJob now processes both kinds of pending work every minute.
+Manual task eventbrite:announce_upcoming[days] defaults to 24 hours, groups series,
+updates same-day reminders, and exits nonzero on incomplete delivery. It is not
+registered in Portal Jobs or automatically scheduled. See eventbrite.md for retry,
+expiry, count semantics and console repair instructions.

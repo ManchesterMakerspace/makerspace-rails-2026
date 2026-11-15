@@ -183,3 +183,12 @@ total, including when that member has no imported attendees. The global unlinked
 order browser still lists orders without any linked attendees.
 The React `/admin/eventbrite` browser and member Eventbrite tab use these routes.
 See [Eventbrite](eventbrite.md).
+
+### Eventbrite announcements configuration
+
+The existing authenticated GET /api/admin/system_configs response adds
+slack.slack_channel_upcoming_events. PUT /api/admin/system_configs/update_setting
+accepts that key under the existing admin/board authorization and CSRF rules.
+Blank uses upcoming-events. No public route or public /api/config field is added.
+The private Eventbrite receiver's response contract is unchanged; publish/unpublish
+and order notifications now also drive durable Slack announcement work.

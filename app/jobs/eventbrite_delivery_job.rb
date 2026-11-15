@@ -11,6 +11,7 @@ class EventbriteDeliveryJob < ApplicationJob
     renew = -> { EventbriteWebhookDelivery.where(id: id, lease_token: token).update_all(lease_until: Time.current + 120) == 1 }
     EventbriteIntegration::Lease.with("delivery:#{id}", renew: renew) do |check|
       EventbriteIntegration::Synchronizer.new.refresh(delivery.resource, action: delivery.action, received_at: delivery.created_at)
+      EventbriteIntegration::Announcements.new.webhook(delivery.resource, delivery.action) if delivery.action.present?
       check.call
       finish(id, token, completed_at: Time.current, expires_at: 30.days.from_now, last_error: nil)
     end

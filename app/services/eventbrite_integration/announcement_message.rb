@@ -1,0 +1,45 @@
+module EventbriteIntegration
+  class AnnouncementMessage
+    def self.build(delivery, events, series_url: nil)
+      events = events.sort_by { |event| [event.starts_at || Time.at(0), event.eventbrite_id] }
+      first = events.first
+      title = "#{delivery.kind == 'publication' ? 'New event' : 'Upcoming'}: #{first.name}"
+      blocks = [{ type: 'header', text: { type: 'plain_text', text: title.first(150) } }]
+      summary = ActionController::Base.helpers.strip_tags(first.summary.to_s).first(500)
+      blocks << section(summary) if summary.present? && first.announcement_public?
+      events.first(20).each do |event|
+        zone = ActiveSupport::TimeZone[event.timezone.presence || 'America/New_York'] || ActiveSupport::TimeZone['America/New_York']
+        date = event.starts_at&.in_time_zone(zone)&.strftime('%a, %b %-d at %-I:%M %p %Z') || 'Date unavailable'
+        tickets = if event.tickets_sold.nil? || event.tickets_remaining.nil?
+          'Ticket availability unavailable'
+        else
+          "#{event.tickets_sold} sold · #{event.tickets_remaining} remaining"
+        end
+        content = event.announcement_public? ? [date, event.venue_label, tickets].reject(&:blank?).join("\n") : "#{date}\nNo longer published — registration unavailable"
+        blocks << section(content)
+        if event.announcement_public? && safe_url(event.public_url)
+          blocks << { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'View event / Register' }, url: event.public_url }] }
+        end
+      end
+      blocks << section("#{events.size - 20} additional dates; view the series on Eventbrite.") if events.size > 20
+      if events.size > 20 && safe_url(series_url)
+        blocks << { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'View all series dates' }, url: series_url }] }
+      end
+      if first.announcement_public? && safe_url(first.image_url)
+        blocks[1][:accessory] = { type: 'image', image_url: first.image_url, alt_text: first.name.to_s.first(200) } if blocks[1]&.dig(:type) == 'section'
+      end
+      updated = events.filter_map(&:inventory_updated_at).min
+      blocks << { type: 'context', elements: [{ type: 'plain_text', text: "Inventory refreshed #{updated.utc.iso8601}" }] } if updated
+      fallback = ([title] + blocks.filter_map { |block| block[:text].is_a?(Hash) ? block[:text][:text] : nil }).join("\n").first(4000)
+      { text: fallback.gsub('&', '&amp;').gsub('<', '&lt;').gsub('>', '&gt;'), blocks: blocks }
+    end
+
+    def self.section(text) = { type: 'section', text: { type: 'plain_text', text: text.to_s.first(2900) } }
+    def self.safe_url(value)
+      uri = URI.parse(value.to_s)
+      %w[http https].include?(uri.scheme) && uri.host.present? && !uri.userinfo
+    rescue URI::InvalidURIError
+      false
+    end
+  end
+end

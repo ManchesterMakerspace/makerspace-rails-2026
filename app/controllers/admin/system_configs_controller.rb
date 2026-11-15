@@ -24,6 +24,7 @@ class Admin::SystemConfigsController < AdminController
     'slack_channel_logs',
     'slack_channel_tickets',
     'slack_channel_new_members',
+    'slack_channel_upcoming_events',
     'volunteer_pending_slack_channel',
     # Volunteer settings
     'volunteer_credits_per_discount',
@@ -76,6 +77,7 @@ class Admin::SystemConfigsController < AdminController
     end
 
     slack = {
+      slack_channel_upcoming_events: SystemConfig.get('slack_channel_upcoming_events').presence || 'upcoming-events',
       slack_channel_treasurer:          SystemConfig.get('slack_channel_treasurer')          || 'treasurer',
       slack_channel_rm:                 Service::SlackConnector.resource_managers_channel,
       slack_channel_admin:              Service::SlackConnector.members_relations_channel,

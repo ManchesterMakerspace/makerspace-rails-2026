@@ -24,7 +24,7 @@ module EventbriteIntegration
       end
     end
     def get(path, params = {})
-      raise ArgumentError, 'Invalid API path' unless path == 'users/me/organizations/' ||
+      raise ArgumentError, 'Invalid API path' unless path.match?(%r{\Aseries/[A-Za-z0-9_-]+/events/\z}) || path == 'users/me/organizations/' ||
         (path.match?(%r{\A(?:events|orders|attendees|organizations)/[A-Za-z0-9_/-]+/\z}) && !path.include?('//'))
       Lease.with(@key) do |check|
         now = Time.now.to_f

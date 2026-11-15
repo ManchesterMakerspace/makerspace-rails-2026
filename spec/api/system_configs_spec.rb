@@ -22,6 +22,7 @@ RSpec.describe 'System configuration', type: :request do
           checkout: { type: :object, properties: { checkout_expiration_notice_days: { type: :integer, minimum: 4, default: 14 }, can_manage: { type: :boolean } } },
           flags: { type: :object }, jobs: { type: :array, items: { type: :object } },
           slack: { type: :object, required: %w[slack_channel_rm slack_channel_admin slack_channel_tickets], properties: {
+            slack_channel_upcoming_events: { type: :string, default: 'upcoming-events', description: 'Eventbrite announcement channel. Unset or blank uses upcoming-events. Existing messages retain their saved channel.' },
             slack_channel_rm: { type: :string, default: 'resource_managers', description: 'Resource Managers channel. Unset or blank values use resource_managers. Membership and billing notices use slack_channel_admin instead.' },
             slack_channel_admin: { type: :string, default: 'members_relations', description: 'Members Relations channel, stored under the legacy slack_channel_admin key. Unset or blank values use members_relations.' },
             slack_channel_tickets: { type: :string, description: 'Effective ticket announcement channel. Saved override (including blank) takes precedence over SLACK_TICKETS_CHANNEL; no default channel. Blank disables central publication.' }
@@ -42,7 +43,8 @@ RSpec.describe 'System configuration', type: :request do
         context 'with default staff channels' do
           run_test! do |response|
             expect(JSON.parse(response.body).fetch('slack')).to include(
-              'slack_channel_rm' => 'resource_managers', 'slack_channel_admin' => 'members_relations')
+              'slack_channel_rm' => 'resource_managers', 'slack_channel_admin' => 'members_relations',
+              'slack_channel_upcoming_events' => 'upcoming-events')
           end
         end
         context 'with independently configured staff channels' do
@@ -125,6 +127,12 @@ RSpec.describe 'System configuration', type: :request do
       let(:setting) { { key: 'ticket_open_limit', value: '12' } }
       response '200', 'Saved setting as a string' do
         schema type: :object, required: %w[key value], properties: { key: { type: :string }, value: { type: :string } }
+        context 'upcoming event channel' do
+          let(:setting) { { key: 'slack_channel_upcoming_events', value: '#classes' } }
+          run_test! do |response|
+            expect(JSON.parse(response.body)).to include('key' => 'slack_channel_upcoming_events', 'value' => '#classes')
+          end
+        end
         context 'open ticket limit' do
           run_test! do |response|
             expect(JSON.parse(response.body)).to include('key' => 'ticket_open_limit', 'value' => '12')

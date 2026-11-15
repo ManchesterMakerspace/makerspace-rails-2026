@@ -36,13 +36,24 @@ module EventbriteIntegration
       org = data.fetch('organization_id').to_s
       authorize!(org)
       published = PUBLISHED.include?(data['status'])
-      upsert(EventbriteEvent, org, data, {
+      attributes = {
         name: data.dig('name', 'text'), starts_at: time(data.dig('start', 'utc')),
         ends_at: time(data.dig('end', 'utc')), timezone: data.dig('start', 'timezone'),
-        listed: data['listed'] == true, series_parent: data['is_series'] == true,
+        listed: data['listed'] == true,
+        series_parent: data.key?('is_series_parent') ? data['is_series_parent'] == true : data['is_series'] == true && data['series_id'].blank?,
+        series_id: data['series_id']&.to_s,
+        public_url: data['url'], summary: data['summary'].presence || data.dig('description', 'text'),
+        capacity: data['capacity'],
+        restricted: data['invite_only'] == true || data['password'].present?,
         status: data['status'], invalidated_at: published ? nil : Time.current,
         invalidation_reason: published ? nil : data['status']
-      })
+      }
+      # Listings and webhook refreshes may omit expansions. Omission is not removal.
+      attributes[:image_url] = data.dig('logo', 'url') if data.key?('logo')
+      if data['online_event'] || data.key?('venue')
+        attributes[:venue_label] = data['online_event'] ? 'Online' : [data.dig('venue', 'name'), data.dig('venue', 'address', 'localized_address_display')].compact.join(' — ')
+      end
+      upsert(EventbriteEvent, org, data, attributes)
     end
 
     def import_order(data, action: nil)

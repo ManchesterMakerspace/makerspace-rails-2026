@@ -172,3 +172,48 @@ API behavior references: [webhooks](https://www.eventbrite.com/platform/docs/web
 [orders and all-status filters](https://www.eventbrite.com/platform/docs/orders),
 [pagination, attendee and refund fields](https://www.eventbrite.co.uk/platform/new/api),
 and [rate limits](https://www.eventbrite.com/platform/docs/rate-limits).
+
+## Slack announcements and upcoming reminders
+
+Public listed events (including Open House) are announced after successful
+authenticated hydration. Private, invite-only and password-protected events are
+excluded. Publish notifications create one initial announcement per event or
+series; series publication represents the earliest upcoming occurrence. Duplicate
+notifications and republication edit the saved message. Unpublishing marks
+existing announcements and reminder rows unavailable and removes registration links.
+
+Portal Settings → Slack → **Upcoming Events Channel** overrides `upcoming-events`.
+Blank restores that default. Existing messages keep their actual Slack channel ID
+and timestamp, including development redirection through SLACK_ENV.
+
+Run `bundle exec rake eventbrite:announce_upcoming` for the next 24 hours, or
+`bundle exec rake "eventbrite:announce_upcoming[7]"` for seven rolling 24-hour periods.
+Only positive whole numbers are accepted. No automatic reminder schedule is installed.
+The task discovers upcoming events using the configured organizations, groups series
+dates, and refreshes inventory. There is one reminder per event/series per Eastern
+calendar day. Repeating with a wider window expands today's post; narrower windows
+do not remove prior dates. Up to 20 dates are displayed with an overflow notice.
+Initial announcements and reminders are separate. Unsent reminders expire at midnight
+Eastern and past-only messages are suppressed. Counts print to stdout; incomplete
+delivery raises an error while durable work remains recoverable.
+
+Sold/remaining counts use provider inventory, include free admission tickets, exclude
+add-ons, respect shared pools/custom event capacity, and never count local orders.
+Partial refunds therefore do not invalidate all tickets in an order for these totals.
+Unknown numeric inventory is labeled unavailable. Order changes refresh all messages
+containing the occurrence and request another inventory refresh after five minutes.
+Ticket-class and attendee changes also refresh inventory. Backfills never announce.
+
+Slack work is stored in eventbrite_slack_deliveries. Minute recovery handles due work.
+Successful receipts are mirrored into each represented event's slack_receipts.
+Rate limits defer; other transient failures retry up to eight attempts. Terminal
+errors retain last_error and failed_at. An interrupted/ambiguous initial send is
+not blindly reposted. Operators must inspect Slack before resetting it: attach the
+verified ts/channel to the delivery if it exists, or clear sending_at only after
+confirming no message was posted. Then clear failed_at, reset attempts to zero and
+set due_at to Time.current through the Rails console. Deleted/inaccessible messages
+are not automatically replaced. Never edit a receipt across production/test modes.
+
+Deploy Rails and run data:ensure_unique_indexes before enabling publication.
+Refresh existing metadata with the silent events backfill, then deploy the complete
+React build. Keep wiki instructions on the existing draft until deployment.

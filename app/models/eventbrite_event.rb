@@ -8,6 +8,24 @@ class EventbriteEvent
   field :listed, type: Boolean, default: false
   field :series_parent, type: Boolean, default: false
   field :status, type: String
+  field :series_id, type: String
+  field :public_url, type: String
+  field :summary, type: String
+  field :image_url, type: String
+  field :venue_label, type: String
+  field :restricted, type: Boolean, default: false
+  field :capacity, type: Integer
+  field :tickets_sold, type: Integer
+  field :tickets_remaining, type: Integer
+  field :inventory_updated_at, type: Time
+  field :inventory_refresh_at, type: Time
+  field :slack_receipts, type: Hash, default: {}
+  index({ organization_id: 1, series_id: 1 })
+  index({ inventory_refresh_at: 1 })
+
+  def announcement_public? = listed && !restricted && invalidated_at.nil? && %w[live started ended completed].include?(status)
+  def announcement_upcoming? = announcement_public? && !series_parent && starts_at && starts_at > Time.current
+  def announcement_scope = series_id.presence || eventbrite_id
   index({ organization_id: 1, listed: 1, invalidated_at: 1, starts_at: 1 })
 
   def self.signup_choices
