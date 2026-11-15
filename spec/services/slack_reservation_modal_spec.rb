@@ -342,19 +342,23 @@ end
 
 RSpec.describe 'Slack reservation picker availability' do
   it 'hides tools after their checkout expires, but keeps them available through the expiration date' do
-    shop = create(:shop, reservable: true)
-    member = create(:member, :current)
-    tool = create(:tool, shop: shop, reservable: true, open: false)
-    checkout = ToolCheckout.create!(member: member, tool: tool, defer_users_channel_invitation: true)
-    today = Time.current.in_time_zone(CheckoutExpiration::ZONE).to_date
-    checkout.set(expires_on: today)
+    # The default reservation must end today; near midnight it correctly crosses
+    # into tomorrow and requires a checkout valid through that later date.
+    travel_to Time.find_zone!(CheckoutExpiration::ZONE).local(2026, 11, 14, 12) do
+      shop = create(:shop, reservable: true)
+      member = create(:member, :current)
+      tool = create(:tool, shop: shop, reservable: true, open: false)
+      checkout = ToolCheckout.create!(member: member, tool: tool, defer_users_channel_invitation: true)
+      today = Time.current.in_time_zone(CheckoutExpiration::ZONE).to_date
+      checkout.set(expires_on: today)
 
-    view = SlackReservationModal.build(shop, member)
-    options = view[:blocks].find { |block| block[:block_id] == 'tools' }[:element][:options]
-    expect(options.pluck(:value)).to include(tool.id.to_s)
+      view = SlackReservationModal.build(shop, member)
+      options = view[:blocks].find { |block| block[:block_id] == 'tools' }[:element][:options]
+      expect(options.pluck(:value)).to include(tool.id.to_s)
 
-    checkout.set(expires_on: today - 1)
-    expect(SlackReservationModal.build(shop, member)[:blocks].pluck(:block_id)).not_to include('tools')
+      checkout.set(expires_on: today - 1)
+      expect(SlackReservationModal.build(shop, member)[:blocks].pluck(:block_id)).not_to include('tools')
+    end
   end
 
   it 'excludes hidden and unavailable tools, including when all tools are unavailable' do
