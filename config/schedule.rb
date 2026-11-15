@@ -23,6 +23,10 @@ every 10.minutes do
   runner 'FixTicketDeliveryRecoveryJob.perform_later'
 end
 
+every 1.minute do
+  runner 'EventbriteRecoveryJob.perform_now'
+end
+
 every :day, at: '2am' do
   rake "db:backup"
 end

@@ -101,8 +101,16 @@ class Member
   # for "friend". For "friend", staff can also link the actual referring member
   # (referred_by_member_id) from the profile; it is never offered on the public
   # signup form, which must not expose the member list.
-  SIGNUP_SOURCES = %w[class walk_in friend website social other].freeze
-  SIGNUP_SOURCES_WITH_DETAIL = %w[class friend].freeze
+  SIGNUP_SOURCES = %w[class walk_in friend website social other eventbrite declined].freeze
+  SIGNUP_SOURCES_WITH_DETAIL = %w[class friend other].freeze
+  field :signup_eventbrite_event_id, type: BSON::ObjectId
+  field :signup_eventbrite_event_snapshot, type: Hash
+  field :signup_source_prompt_pending, type: Boolean, default: false
+  field :signup_source_asked_at, type: Time
+  field :eventbrite_link_pending_at, type: Time
+  index({ eventbrite_link_pending_at: 1 })
+  before_save :mark_eventbrite_link_pending
+  validate :validate_signup_eventbrite_event
   field :signup_source, type: String
   field :signup_source_detail, type: String
   field :referred_by_member_id, type: BSON::ObjectId
@@ -795,6 +803,25 @@ class Member
     self.signup_source_detail = signup_source_detail.presence
     self.signup_source_detail = nil unless SIGNUP_SOURCES_WITH_DETAIL.include?(signup_source)
     self.referred_by_member_id = nil unless signup_source == "friend"
+  end
+
+  def mark_eventbrite_link_pending
+    self.eventbrite_link_pending_at = Time.current if new_record? || email_changed? || merged_at_changed?
+  end
+
+  def validate_signup_eventbrite_event
+    if signup_source != 'eventbrite'
+      self.signup_eventbrite_event_id = nil
+      self.signup_eventbrite_event_snapshot = nil
+      return
+    end
+    return unless new_record? || signup_source_changed? || signup_eventbrite_event_id_changed?
+    event = EventbriteEvent.signup_choices.where(id: signup_eventbrite_event_id).first
+    unless event
+      errors.add(:signup_eventbrite_event_id, 'is no longer available. Choose another answer or skip this question.')
+      return
+    end
+    self.signup_eventbrite_event_snapshot = { 'name' => event.name, 'startsAt' => event.starts_at.iso8601, 'timezone' => event.timezone }
   end
 
   def referrer_is_another_member

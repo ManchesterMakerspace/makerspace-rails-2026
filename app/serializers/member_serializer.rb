@@ -12,6 +12,7 @@ class MemberSerializer < MemberSummarySerializer
              :silence_emails,
              :signup_source,
              :signup_source_detail,
+             :signup_eventbrite_event_id, :signup_eventbrite_event_snapshot, :signup_source_prompt_pending,
              :member_contract_on_file,
              :group_name,
              :household_role,

@@ -1,6 +1,9 @@
 namespace :data do
   desc "Verify and create core unique, lookup, repair ticket, and volunteer reminder indexes"
   task ensure_unique_indexes: :environment do
+    [EventbriteEvent, EventbriteOrder, EventbriteAttendee, EventbriteTicketClass,
+     EventbriteWebhookDelivery, EventbriteSyncRun].each(&:create_indexes)
+    Member.collection.indexes.create_one({ eventbrite_link_pending_at: 1 })
     member_index_collections = %w[
       permissions
       earned_memberships

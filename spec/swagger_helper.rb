@@ -16,6 +16,21 @@ RSpec.configure do |config|
   # the root example_group in your specs, e.g. describe '...', swagger_doc: 'v2/swagger.json'
 
   definitions = {
+    EventbriteRecord: {
+      type: :object, properties: {
+        id: { type: :string }, organizationId: { type: :string }, eventbriteId: { type: :string },
+        name: { type: :string, nullable: true }, email: { type: :string, nullable: true }, status: { type: :string, nullable: true },
+        eventId: { type: :string, nullable: true }, orderId: { type: :string, nullable: true }, ticketClassId: { type: :string, nullable: true },
+        memberId: { type: :string, nullable: true }, memberIds: { type: :array, items: { type: :string } },
+        ticketClassName: { type: :string, nullable: true }, refunded: { type: :boolean },
+        event: { type: :object, nullable: true, properties: { name: { type: :string, nullable: true }, startsAt: { type: :string, nullable: true }, timezone: { type: :string, nullable: true } } },
+        costs: { type: :object }, cost: { type: :object }, free: { type: :boolean }, quantityTotal: { type: :integer, nullable: true },
+        linkConflict: { type: :boolean }, startsAt: { type: :string, nullable: true }, timezone: { type: :string, nullable: true },
+        invalidatedAt: { type: :string, nullable: true }, invalidationReason: { type: :string, nullable: true }, refundedAt: { type: :string, nullable: true },
+        attendees: { type: :array, items: { '$ref' => '#/components/schemas/EventbriteRecord' } },
+        ticketClasses: { type: :array, items: { '$ref' => '#/components/schemas/EventbriteRecord' } }
+      }, required: %w[id organizationId eventbriteId]
+    },
     Card: {
       type: :object,
       properties: {
@@ -442,8 +457,11 @@ RSpec.configure do |config|
           type: :object,
           properties: {
             phone: { type: :string, 'x-nullable': true },
-            signupSource: { type: :string, 'x-nullable': true, description: 'How the member first heard of the makerspace: class, walk_in, friend, website, social or other' },
-            signupSourceDetail: { type: :string, 'x-nullable': true, description: 'Free text: the class name when signupSource is class, the referrer\'s name when it is friend' },
+            signupSource: { type: :string, 'x-nullable': true, description: 'Optional source: class, walk_in, friend, website, social, other, eventbrite or declined' },
+            signupSourceDetail: { type: :string, 'x-nullable': true, maxLength: 100, description: 'Free text for class, friend or other' },
+            signupEventbriteEventId: { type: :string, 'x-nullable': true, description: 'Local Eventbrite event document ID selected at signup' },
+            signupEventbriteEventSnapshot: { type: :object, 'x-nullable': true, properties: { name: { type: :string }, startsAt: { type: :string }, timezone: { type: :string } } },
+            signupSourcePromptPending: { type: :boolean, description: 'New provider account should be offered the optional source question' },
             referredByMemberId: { type: :string, 'x-nullable': true, description: 'Staff-linked member who referred this one; kept only when signupSource is friend. Returned to admin and board only.' },
             address: {
               type: :object,
@@ -512,8 +530,9 @@ RSpec.configure do |config|
         silenceEmails: { type: :boolean },
         resourceManagerShopIds: { type: :array, items: { type: :string } },
         phone: { type: :string },
-        signupSource: { type: :string, description: 'How the member first heard of the makerspace: class, walk_in, friend, website, social or other' },
-        signupSourceDetail: { type: :string, description: 'Free text: the class name when signupSource is class, the referrer\'s name when it is friend' },
+        signupSource: { type: :string, description: 'Optional source: class, walk_in, friend, website, social, other, eventbrite or declined' },
+        signupSourceDetail: { type: :string, maxLength: 100, description: 'Free text for class, friend or other' },
+        signupEventbriteEventId: { type: :string, description: 'Local eligible Eventbrite event document ID' },
         referredByMemberId: { type: :string, description: 'Member who referred this one; kept only when signupSource is friend' },
         address: {
           type: :object,

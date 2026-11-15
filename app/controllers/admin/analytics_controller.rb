@@ -148,8 +148,9 @@ class Admin::AnalyticsController < AdminController
 
     if params[:year].present?
       year       = params[:year].to_i
-      start_time = Time.new(year, 1, 1)
-      end_time   = Time.new(year + 1, 1, 1)
+      # MongoDB's year/month groups use UTC, so filter in that same timezone.
+      start_time = Time.utc(year, 1, 1)
+      end_time   = Time.utc(year + 1, 1, 1)
       credits = credits.where(:created_at.gte => start_time, :created_at.lt => end_time)
       tasks   = tasks.where(:completed_at.gte => start_time, :completed_at.lt => end_time)
     end

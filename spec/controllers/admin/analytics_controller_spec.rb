@@ -69,23 +69,29 @@ RSpec.describe Admin::AnalyticsController, type: :controller do
     expect(JSON.parse(response.body, symbolize_names: true)).to eq(rows)
   end
 
-  it 'uses exclusive next-year cutoffs and keeps pending credits globally scoped' do
-    VolunteerCredit.collection.insert_many([
-      { member_id: admin.id, status: 'approved', credit_value: 2.0, created_at: Time.utc(2024, 12, 31, 23, 59, 59, 500_000) },
-      { member_id: admin.id, status: 'approved', credit_value: 4.0, created_at: Time.utc(2025, 1, 1) },
-      { member_id: admin.id, status: 'pending', credit_value: 1.0, created_at: Time.utc(2023, 1, 1) }
-    ])
-    VolunteerTask.collection.insert_many([
-      { status: 'completed', completed_at: Time.utc(2024, 12, 31, 23, 59, 59, 500_000) },
-      { status: 'completed', completed_at: Time.utc(2025, 1, 1) }
-    ])
+  %w[UTC America/New_York].each do |timezone|
+    it "uses UTC year cutoffs and keeps pending credits globally scoped with host TZ=#{timezone}" do
+      previous_timezone = ENV['TZ']
+      ENV['TZ'] = timezone
+      VolunteerCredit.collection.insert_many([
+        { member_id: admin.id, status: 'approved', credit_value: 2.0, created_at: Time.utc(2024, 12, 31, 23, 59, 59, 500_000) },
+        { member_id: admin.id, status: 'approved', credit_value: 4.0, created_at: Time.utc(2025, 1, 1) },
+        { member_id: admin.id, status: 'pending', credit_value: 1.0, created_at: Time.utc(2023, 1, 1) }
+      ])
+      VolunteerTask.collection.insert_many([
+        { status: 'completed', completed_at: Time.utc(2024, 12, 31, 23, 59, 59, 500_000) },
+        { status: 'completed', completed_at: Time.utc(2025, 1, 1) }
+      ])
 
-    get :volunteer_summary, params: { year: 2024 }, format: :json
+      get :volunteer_summary, params: { year: 2024 }, format: :json
 
-    body = JSON.parse(response.body)
-    expect(response).to have_http_status(:ok)
-    expect(body['credits_by_month']).to eq([{ 'month' => '2024-12', 'count' => 1, 'total_value' => 2.0 }])
-    expect(body['tasks_by_month']).to eq([{ 'month' => '2024-12', 'count' => 1 }])
-    expect(body).to include('total_credits' => 1, 'total_credit_value' => 2.0, 'pending_credits' => 1)
+      body = JSON.parse(response.body)
+      expect(response).to have_http_status(:ok)
+      expect(body['credits_by_month']).to eq([{ 'month' => '2024-12', 'count' => 1, 'total_value' => 2.0 }])
+      expect(body['tasks_by_month']).to eq([{ 'month' => '2024-12', 'count' => 1 }])
+      expect(body).to include('total_credits' => 1, 'total_credit_value' => 2.0, 'pending_credits' => 1)
+    ensure
+      previous_timezone ? ENV['TZ'] = previous_timezone : ENV.delete('TZ')
+    end
   end
 end
