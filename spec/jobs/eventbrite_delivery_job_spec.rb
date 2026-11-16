@@ -28,6 +28,15 @@ RSpec.describe EventbriteDeliveryJob do
     expect(delivery.expires_at).to be_nil
     expect(delivery.lease_token).to be_nil
   end
+  it 'persists sanitized API descriptions without exposing provider data' do
+    error = EventbriteIntegration::Client::ApiError.new(400, 'ARGUMENTS_ERROR',
+      description: "Invalid status for 'Private Person' at https://example.com/private")
+    allow(sync).to receive(:refresh).and_raise(error)
+    described_class.perform_now(delivery.id.to_s)
+    expect(delivery.reload.last_error).to include('ARGUMENTS_ERROR', 'Invalid status')
+    expect(delivery.last_error).not_to include('Private Person', 'https://example.com/private')
+    expect(delivery.failed_at).to be_present
+  end
 
   it 'retains reconciliation for the old occurrence when an order is transferred' do
     allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return(['org'])

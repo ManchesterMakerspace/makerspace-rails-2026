@@ -1219,7 +1219,9 @@ Supporting synchronous modules under `EventbriteIntegration`: `Configuration`
 validates server settings, disabling the webhook route with a nonfatal, value-free
 warning for invalid receiver paths so Rails and scheduled tasks can boot (valid
 paths and API/backfill use still require credentials); `Resource` parses pointer URLs; `Client` performs bounded,
-token-throttled requests; `Lease` coordinates workers; `Synchronizer` updates
+token-throttled requests and captures only bounded, redacted provider error
+descriptions in API exceptions (persisted by backfills/webhook jobs as `last_error`;
+see the [redaction and retry guide](eventbrite.md#manual-tasks)); `Lease` coordinates workers; `Synchronizer` updates
 events/orders/attendees/tickets; `MemberLinker` preserves member ownership;
 `Presenter` allowlists staff output; `Backfill` checkpoints manual imports. New
 backfills use configured organization IDs when present, otherwise discover them

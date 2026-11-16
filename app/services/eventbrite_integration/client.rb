@@ -1,13 +1,45 @@
 require 'faraday'
 require 'digest'
 require 'time'
+require 'cgi'
 module EventbriteIntegration
   class Client
     class ApiError < StandardError
-      attr_reader :status, :code
-      def initialize(status, code)
+      DESCRIPTION_LIMIT = 512
+      # Only fixed API vocabulary may survive quoted-value redaction.
+      SAFE_VALUES = %w[status expand event_id changed_since continuation time_filter show_series_parent
+        refund_request_statuses active inactive both all_not_deleted attendees refund_requests
+        attendees,refund_requests all past current_future true false].freeze
+      attr_reader :status, :code, :description
+      def initialize(status, code, description: nil, sensitive_values: [])
         @status, @code = status, code.to_s
-        super("Eventbrite API returned #{status} (#{@code.gsub(/[^A-Z_]/, '')})")
+        @description = sanitize_description(description, sensitive_values)
+        message = "Eventbrite API returned #{status} (#{@code.gsub(/[^A-Z_]/, '')})"
+        message += ": #{@description}" if @description.present?
+        super(message)
+      end
+
+      private
+      def sanitize_description(value, sensitive_values)
+        return unless value.is_a?(String) && value.present?
+        return '[OMITTED: oversized error description]' if value.bytesize > 16_384
+        text = value.encode('UTF-8', invalid: :replace, undef: :replace).gsub(/[\p{Cf}]/, '')
+        text.gsub!(/\bBearer\s+[^\s"'<>]+/i, 'Bearer [REDACTED]')
+        text.gsub!(%r{https?://[^\s<>"']+}i, '[REDACTED_URL]')
+        text.gsub!(/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i, '[REDACTED_EMAIL]')
+        inputs = sensitive_values.reject { |v| SAFE_VALUES.include?(v) }
+        secrets = [Configuration.token, Configuration.webhook_path, *inputs].select { |v| v.is_a?(String) && v.present? }
+        secrets.flat_map { |v| [v, CGI.escape(v), CGI.escapeHTML(v)] }.uniq.sort_by { |v| -v.length }.each do |secret|
+          text.gsub!(/#{Regexp.escape(secret)}/i, '[REDACTED]')
+        end
+        return '[REDACTED: sensitive validation details]' if text.match?(/\b(?:email|e-mail|name|address|phone|profile|buyer|payer|password|token|secret|cookie|authorization)\b/i)
+        # Provider validation errors can echo arbitrary input, including names.
+        text.gsub!(/(["'`])([^"'`]*)\1/) { SAFE_VALUES.include?($2) ? $& : '[REDACTED]' }
+        text.gsub!(/[A-Za-z0-9_\-]{24,}/, '[REDACTED]')
+        text.gsub!(/[[:cntrl:]\p{Zl}\p{Zp}]/, ' ')
+        text = text.split.join(' ')
+        return if text.empty?
+        text.length > DESCRIPTION_LIMIT ? "#{text[0, DESCRIPTION_LIMIT - 3]}..." : text
       end
     end
     class Deferred < StandardError
@@ -61,7 +93,10 @@ module EventbriteIntegration
             REDIS.set("#{@key}:cooldown", Time.now.to_f + [delay, 0.5].max, ex: [delay.ceil + 1, 1].max)
             raise Deferred.new(delay)
           end
-          raise ApiError.new(response.status, body['error']) unless response.status.between?(200, 299)
+          unless response.status.between?(200, 299)
+            raise ApiError.new(response.status, body['error'], description: body['error_description'],
+              sensitive_values: params.values.flatten)
+          end
           raise ApiError.new(502, 'INVALID_RESPONSE') unless body.is_a?(Hash) && body.present?
           REDIS.del("#{@key}:429")
           body

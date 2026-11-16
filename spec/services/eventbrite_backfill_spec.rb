@@ -27,6 +27,18 @@ RSpec.describe EventbriteIntegration::Backfill do
     expect(run.reload.completed_at).to be_present
     expect(sync).to have_received(:import_attendee).exactly(2).times
   end
+  it 'persists sanitized provider diagnostics in the failed run without advancing progress' do
+    error = EventbriteIntegration::Client::ApiError.new(400, 'ARGUMENTS_ERROR',
+      description: "Invalid 'status': 'both'. https://example.com/private")
+    allow(client).to receive(:each_page).and_raise(error)
+    expect { described_class.new('orders', {}).call }.to raise_error(error)
+    run = EventbriteSyncRun.first
+    expect(run.last_error).to include('ARGUMENTS_ERROR', "Invalid 'status': 'both'.")
+    expect(run.last_error).not_to include('https://example.com/private')
+    expect(run.completed_at).to be_nil
+    expect(run.progress).to eq({})
+    expect(run.failed).to eq(1)
+  end
   it 'combines literal positive/negative case-insensitive name filters' do
     allow(client).to receive(:each_page).and_yield({ 'events' => [
       { 'id' => '1', 'name' => { 'text' => 'WELDING Basics' } },

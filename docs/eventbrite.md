@@ -77,6 +77,21 @@ available; there is no unthrottled fallback.
 
 ## Manual tasks
 
+API failures include a sanitized `error_description` in the exception message and
+the run's `last_error` (or the webhook delivery's `last_error`). Only that string
+field is captured, never the complete provider response. Details are limited to
+512 characters on one line. The client redacts configured credentials and the
+private receiver path, echoed request values except fixed API vocabulary, URLs,
+email addresses, long opaque values, and unknown quoted values. Descriptions naming
+sensitive identity/authentication fields are omitted conservatively; malformed or
+missing descriptions leave the original status/code-only error intact.
+
+To diagnose a failed run after deploying this change, resume it in the same
+environment with `RESUME_RUN_ID=<run ID> bundle exec rake eventbrite:backfill_orders`
+and inspect its refreshed `last_error`. Existing stored errors are not rewritten,
+and capturing a description does not itself fix a rejected argument. Do not share
+credentials, receiver URLs, or full response payloads when reporting failures.
+
 Run tasks with the intended Rails environment and database selected. They write
 local collections but never place orders, refund payments, or modify Eventbrite.
 They can run while webhooks are enabled and share the same API quota.

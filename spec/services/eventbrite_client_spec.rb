@@ -76,4 +76,68 @@ RSpec.describe EventbriteIntegration::Client do
       expect { described_class.new.get('orders/1/') }.to raise_error(described_class::Deferred)
     end
   end
+
+  it 'captures only the sanitized error description in the exception message' do
+    description = "There are errors with your arguments: 'status' - Invalid choice 'both'."
+    allow(http).to receive(:get).and_return(double(status: 400, headers: {}, body: {
+      error: 'ARGUMENTS_ERROR', error_description: description,
+      attendees: [{ profile: { name: 'Private Person', email: 'person@example.com' } }]
+    }.to_json))
+    expect { described_class.new.get('events/1/orders/') }.to raise_error(described_class::ApiError) do |error|
+      expect(error.status).to eq(400)
+      expect(error.code).to eq('ARGUMENTS_ERROR')
+      expect(error.description).to eq(description)
+      expect(error.message).to eq("Eventbrite API returned 400 (ARGUMENTS_ERROR): #{description}")
+      expect(error.message).not_to include('Private Person', 'person@example.com', 'attendees')
+    end
+  end
+
+  it 'redacts credentials, private receiver paths, echoed inputs and arbitrary quoted values before capture' do
+    credential = 'private+/credential='
+    allow(EventbriteIntegration::Configuration).to receive(:token).and_return(credential)
+    private_path = "/receiver/#{'s' * 32}"
+    allow(EventbriteIntegration::Configuration).to receive(:webhook_path).and_return(private_path)
+    description = "Invalid status; #{credential}; #{CGI.escape(credential)}; #{private_path}; #{CGI.escape(private_path)}; " \
+      "Bearer hidden-auth-value; https://example.com/private?x=1; person@example.com; 'Private Person'; " \
+      "`Multiple\nLines`; opaque-cursor-value"
+    allow(http).to receive(:get).and_return(double(status: 400, headers: {}, body: {
+      error: 'ARGUMENTS_ERROR', error_description: description
+    }.to_json))
+    expect { described_class.new.get('events/1/orders/', { 'continuation' => 'opaque-cursor-value' }) }
+      .to raise_error(described_class::ApiError) do |error|
+        expect(error.message).to include('Invalid status')
+        [credential, CGI.escape(credential), private_path, CGI.escape(private_path), 'hidden-auth-value',
+         'https://example.com', 'person@example.com', 'Private Person', 'Multiple', 'opaque-cursor-value'].each do |value|
+          expect(error.message).not_to include(value)
+        end
+      end
+  end
+
+  it 'omits descriptions containing sensitive field details, including unquoted names' do
+    error = described_class::ApiError.new(400, 'ARGUMENTS_ERROR', description: 'Invalid buyer name: Private Person')
+    expect(error.description).to eq('[REDACTED: sensitive validation details]')
+    expect(error.message).not_to include('Private Person')
+  end
+
+  it 'bounds descriptions and removes control characters and bidi formatting' do
+    error = described_class::ApiError.new(400, 'ARGUMENTS_ERROR', description: "Invalid status\r\n\e[31m\u202e\u2028\u2029 " * 100)
+    expect(error.description.length).to be <= 512
+    expect(error.description).to end_with('...')
+    expect(error.description).not_to match(/[[:cntrl:]\p{Cf}\p{Zl}\p{Zp}]/)
+    huge = described_class::ApiError.new(400, 'ARGUMENTS_ERROR', description: 'x' * 16_385)
+    expect(huge.description).to eq('[OMITTED: oversized error description]')
+  end
+
+  [nil, '', [], { 'private' => 'data' }].each do |description|
+    it "keeps the original error format for a missing or malformed description #{description.class}" do
+      error = described_class::ApiError.new(400, 'ARGUMENTS_ERROR', description: description)
+      expect(error.message).to eq('Eventbrite API returned 400 (ARGUMENTS_ERROR)')
+    end
+  end
+
+  it 'redacts configured secrets even when they happen to match safe API vocabulary' do
+    allow(EventbriteIntegration::Configuration).to receive(:token).and_return('both')
+    error = described_class::ApiError.new(400, 'ARGUMENTS_ERROR', description: "status invalid: 'both'")
+    expect(error.message).not_to include('both')
+  end
 end
