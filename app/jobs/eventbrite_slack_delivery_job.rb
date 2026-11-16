@@ -38,9 +38,9 @@ class EventbriteSlackDeliveryJob < ApplicationJob
             raise 'Missing Slack receipt' if response['ts'].blank? || response['channel'].blank?
             delivery.set(ts: response['ts'].to_s, channel: response['channel'], sending_at: nil)
             Service::SlackMessageLog.record(channel: destination, message: payload[:blocks], source: self.class.name, response: response)
-          rescue Slack::Web::Api::Errors::SlackError => error
+          rescue Slack::Web::Api::Errors::SlackError, Slack::Web::Api::Errors::TooManyRequestsError => error
             # A provider server failure may have happened after accepting a post.
-            rejected = error.respond_to?(:retry_after) || %w[channel_not_found not_in_channel is_archived invalid_auth token_revoked missing_scope invalid_blocks invalid_arguments no_permission].include?(error.message.to_s)
+            rejected = error.respond_to?(:retry_after) || %w[channel_not_found not_in_channel is_archived invalid_auth token_revoked missing_scope invalid_blocks invalid_blocks_format invalid_arguments invalid_arg_name msg_too_long no_permission].include?(error.message.to_s)
             delivery.set(sending_at: nil) if rejected
             Service::SlackMessageLog.record(channel: destination, message: payload[:blocks], source: self.class.name, error: error)
             raise
@@ -66,10 +66,14 @@ class EventbriteSlackDeliveryJob < ApplicationJob
       ambiguous = delivery.sending_at.present? && delivery.ts.blank?
       transient = error.message.to_s.match?(/internal_error|fatal_error|request_timeout|service_unavailable/)
       permanent = error.is_a?(Slack::Web::Api::Errors::SlackError) && !rate_limited && !transient
-      delivery.set(attempts: attempts, last_error: ambiguous ? 'AMBIGUOUS_SEND' : error.class.name,
+      detail = Service::SlackConnector.filter_log_data(
+        'error' => Service::SlackConnector.format_api_error(error)
+      ).fetch('error').first(4000)
+      detail = "AMBIGUOUS_SEND: #{detail}" if ambiguous
+      delivery.set(attempts: attempts, last_error: detail,
         failed_at: ambiguous || permanent || attempts >= 8 ? Time.current : nil,
         due_at: Time.current + (rate_limited ? [error.retry_after.to_f, 1].max : [2**attempts, 600].min))
-      Rails.logger.error("Eventbrite Slack delivery #{id}: #{error.class.name}")
+      Rails.logger.error("Eventbrite Slack delivery #{id}: #{detail}")
     end
   rescue EventbriteIntegration::Client::Deferred
     # Another worker owns the delivery; the durable due marker remains.

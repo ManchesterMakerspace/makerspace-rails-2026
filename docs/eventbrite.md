@@ -270,6 +270,47 @@ confirming no message was posted. Then clear failed_at, reset attempts to zero a
 set due_at to Time.current through the Rails console. Deleted/inaccessible messages
 are not automatically replaced. Never edit a receipt across production/test modes.
 
+If `announce_upcoming` reports failed deliveries, it prints each delivery ID,
+represented event IDs, mode, attempts, due/failure times, send marker, receipt and
+stored error to stderr. `previously_failed=true` means this invocation found an
+existing terminal failure; the job intentionally makes no new Slack request.
+Repeating the announcement command alone does not clear it. New failures retain
+bounded, filtered exception details including Slack error codes and validation
+messages. Slack HTTP 429 defers until Retry-After without consuming an attempt or
+marking the send ambiguous. Explicit invalid-block-format rejections are known
+failures; network timeouts and interrupted posts remain ambiguous.
+
+On an older deployment without these diagnostics, inspect only the delivery state:
+
+```sh
+bundle exec rails runner 'puts EventbriteSlackDelivery.where(:failed_at.ne => nil).map { |d| d.attributes.slice("_id", "last_error", "failed_at", "attempts", "sending_at", "ts", "mode") }.to_json'
+```
+
+For `not_in_channel` or `channel_not_found`, check the configured destination and
+the posting bot's access. The task prints current routing before processing:
+`configured_channel` is the Portal Settings value (or default), while
+`effective_channel` includes the test-mode redirect. Unless `SLACK_ENV` is exactly
+`production`, every new post goes to `test_channel`, even when configured as
+`general` or a channel ID. `RAILS_ENV=production` alone does not change this.
+For a test deployment, ensure `test_channel` exists and the posting bot can access
+it. For intended real-channel delivery, configure `SLACK_ENV=production` consistently
+for the web process, workers and tasks; this affects all Slack integrations.
+Production and test receipts remain separate; do not relabel old deliveries.
+
+Every shared-client `ChannelNotFound` response also writes `[SlackChannelNotFound]`
+to stderr and Rails logs with the operation, mode and actual channel argument:
+null, a name, or an ID. APIs using `channel_id`, `channels` or `channel_ids` include
+those fields too. This records attempted requests only; stopped deliveries make
+no request and therefore have no new channel-error log.
+For `missing_scope` or `invalid_auth`, correct the Slack app/token configuration.
+For invalid blocks, inspect the validation details before retrying. After correcting
+a **known rejection** (no outstanding send marker), run
+`bundle exec rake eventbrite:retry_failed`, then `bundle exec rake eventbrite:announce_upcoming`.
+The retry task resets failed webhook work as well as known Slack failures; do not
+use it as a replacement for diagnosing the cause. For an ambiguous failure, follow
+the receipt reconciliation procedure above instead. A missing Honeybadger API key
+only prevents reporting the Rake exception; it is not the Slack delivery error.
+
 Deploy Rails and run data:ensure_unique_indexes before enabling publication.
 Refresh existing metadata with the silent events backfill, then deploy the complete
 React build. Keep wiki instructions on the existing draft until deployment.

@@ -341,6 +341,10 @@ organization_id/scope_id/kind/day/mode. It retains represented event IDs, revisi
 actual channel/ts, stable client message ID, attempts, due/failure state and ambiguous
 send markers. Lookup indexes cover due work and represented occurrences.
 No TTL removes message history. Apply indexes with data:ensure_unique_indexes.
+`last_error` includes bounded, filtered error details and Slack response validation
+messages for new failures. Existing class-only or ambiguous errors are retained;
+rerunning a reminder does not erase terminal state. HTTP 429 retains due work
+without a failed_at or sending_at marker. No additional fields or indexes are needed.
 Duplicate notifications preserve pending retry deadlines and serialized publication
 selection keeps receipts anchored to the occurrence actually sent. An order update
 marks its previous occurrence for inventory reconciliation before replacing the

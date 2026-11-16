@@ -478,6 +478,19 @@ has a built-in dry run. Run production commands only when the task's effect is w
 
 ## Supporting services
 
+`Service::SlackConnector::ChannelErrorLogging` wraps the shared request boundary
+of every client returned by `SlackConnector.client` and `admin_client`, including
+direct SDK calls. Each `ChannelNotFound` response writes a `[SlackChannelNotFound]`
+JSON diagnostic to stderr and Rails logs with the API operation, destination mode,
+and actual channel arguments (`channel`, `channel_id`, `channels`, `channel_ids`).
+The `channel` field is explicitly null when absent or nil; names and IDs remain
+as submitted after any test-mode redirection. Other request fields are omitted
+and provider error details are filtered for credentials. This local handler makes
+no Slack or Honeybadger call and re-raises the original exception even if logging
+fails. Existing caller-specific fallback, notification and retry behavior remains;
+each rejected request is logged even if a later fallback succeeds. This is
+request/job-time diagnostics only, with no schedule or persisted state.
+
 Repair ticket delivery jobs accept integer sequence IDs (including their string
 form in queued arguments) and legacy ObjectId ticket IDs. Their persisted queue
 reservation and recovery behavior is unchanged.
@@ -1265,6 +1278,17 @@ Manual task eventbrite:announce_upcoming[days] defaults to 24 hours, groups seri
 updates same-day reminders, and exits nonzero on incomplete delivery. It is not
 registered in Portal Jobs or automatically scheduled. See eventbrite.md for retry,
 expiry, count semantics and console repair instructions.
+
+`eventbrite:announce_upcoming` prints per-delivery failure/deferral details to stderr,
+including whether the record was already terminally failed before the invocation.
+It first prints the current mode, configured channel and effective channel for new
+posts without contacting Slack; existing messages retain their saved destinations.
+Terminal failures remain stopped until corrected and explicitly reset by
+`eventbrite:retry_failed`; ambiguous sends still require receipt reconciliation.
+EventbriteSlackDeliveryJob handles the SDK's separate TooManyRequestsError class
+as Retry-After deferral (no attempt consumed), clears send markers for definite
+invalid-block-format rejections, and stores/logs bounded, filtered error diagnostics
+with Slack validation details instead of only the exception class.
 
 Publication selection and Slack sending share a lease, and duplicate notifications
 do not bypass existing Slack retry deadlines. Fresh publications with no visible

@@ -63,4 +63,46 @@ RSpec.describe EventbriteSlackDeliveryJob do
     expect(delivery.reload.due_at).to be_nil
     expect(slack).to have_received(:chat_update).with(hash_including(text: include('2 sold · 8 remaining')))
   end
+
+  it 'retries the SDK rate-limit exception without marking the post ambiguous' do
+    response = Faraday::Response.new(status: 429, response_headers: { 'retry-after' => '90' }, body: { 'ok' => false, 'error' => 'ratelimited' })
+    error = Slack::Web::Api::Errors::TooManyRequestsError.new(response)
+    allow(slack).to receive(:chat_postMessage).and_raise(error)
+    described_class.perform_now(delivery.id.to_s)
+    expect(delivery.reload.failed_at).to be_nil
+    expect(delivery.sending_at).to be_nil
+    expect(delivery.attempts).to eq(0)
+    expect(delivery.due_at).to be_within(3.seconds).of(90.seconds.from_now)
+    expect(delivery.last_error).to include('TooManyRequestsError', 'Retry after 90')
+    travel 91.seconds do
+      allow(slack).to receive(:chat_postMessage).and_return({ 'channel' => 'CTEST', 'ts' => '123.456' })
+      described_class.perform_now(delivery.id.to_s)
+    end
+    expect(delivery.reload.ts).to eq('123.456')
+    expect(delivery.last_error).to be_nil
+  end
+
+  it 'records actionable, filtered Slack diagnostics for a definite rejection' do
+    response = Faraday::Response.new(status: 200, body: {
+      'ok' => false, 'error' => 'invalid_blocks_format', 'token' => 'secret-value',
+      'response_metadata' => { 'messages' => ['Invalid blocks at /blocks/1; received xoxb-secret-value'] }
+    })
+    allow(slack).to receive(:chat_postMessage).and_raise(Slack::Web::Api::Errors::SlackError.new('invalid_blocks_format', response))
+    described_class.perform_now(delivery.id.to_s)
+    expect(delivery.reload.failed_at).to be_present
+    expect(delivery.sending_at).to be_nil
+    expect(delivery.last_error).to include('invalid_blocks_format', '/blocks/1')
+    expect(delivery.last_error).not_to include('secret-value', 'AMBIGUOUS_SEND')
+  end
+
+  it 'preserves ambiguity and the cause after a timeout while posting' do
+    allow(slack).to receive(:chat_postMessage).and_raise(Faraday::TimeoutError.new('execution expired for xoxb-sensitive-token'))
+    described_class.perform_now(delivery.id.to_s)
+    expect(delivery.reload.failed_at).to be_present
+    expect(delivery.sending_at).to be_present
+    expect(delivery.last_error).to include('AMBIGUOUS_SEND', 'Faraday::TimeoutError', 'execution expired')
+    expect(delivery.last_error).not_to include('xoxb-sensitive-token')
+    described_class.perform_now(delivery.id.to_s)
+    expect(slack).to have_received(:chat_postMessage).once
+  end
 end

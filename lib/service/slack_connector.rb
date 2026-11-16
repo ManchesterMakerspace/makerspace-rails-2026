@@ -5,6 +5,20 @@ module Service
     mattr_accessor :slack_team_id
     SLACK_RATE_LIMIT_MAX_RETRIES = 5
 
+    # Wrap the SDK's shared request boundary, including direct client calls and
+    # admin APIs. Capture channel arguments before the SDK compacts nil values.
+    module ChannelErrorLogging
+      private
+
+      def request(method, path, options)
+        channels = options.stringify_keys.slice('channel', 'channel_id', 'channels', 'channel_ids')
+        super
+      rescue Slack::Web::Api::Errors::ChannelNotFound => error
+        Service::SlackConnector.log_channel_not_found(error, operation: path, channels: channels)
+        raise
+      end
+    end
+
     def enque_message(
         message,
         channel = ::Service::SlackConnector.members_relations_channel,
@@ -340,6 +354,20 @@ module Service
     end
     private_class_method :redact_secret_strings
 
+    # Local logging only: reporting this through Slack would risk recursion when
+    # the logs channel is itself inaccessible. Never replace the provider error.
+    def self.log_channel_not_found(error, operation:, channels:)
+      context = filter_log_data({ 'channel' => nil }.merge(channels).merge(
+        'operation' => operation, 'mode' => message_destination_mode,
+        'error' => format_api_error(error)
+      ))
+      message = "[SlackChannelNotFound] #{JSON.generate(context)}"
+      $stderr.puts(message)
+      Rails.logger.error(message)
+    rescue StandardError
+      nil
+    end
+
     def self.report_channel_not_found(channel, error, operation:)
       response = error.respond_to?(:response) ? error.response : nil
       context = {
@@ -537,13 +565,13 @@ module Service
     # admin token remains the fallback when no separate bot token is present.
     def self.client
       token = ENV['SLACK_BOT_TOKEN'].presence || ENV['SLACK_ADMIN_TOKEN'].presence
-      Slack::Web::Client.new(token: token)
+      Slack::Web::Client.new(token: token).extend(ChannelErrorLogging)
     end
 
     # Admin-only calls must never fall back to the bot token.
     def self.admin_client(operation)
       token = ENV['SLACK_ADMIN_TOKEN'].presence
-      return Slack::Web::Client.new(token: token) if token
+      return Slack::Web::Client.new(token: token).extend(ChannelErrorLogging) if token
 
       message = "[SlackAdminTokenRequired] operation=#{operation} " \
         "SLACK_ADMIN_TOKEN is required; SLACK_BOT_TOKEN cannot authorize this API call"
