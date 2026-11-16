@@ -37,6 +37,14 @@ RSpec.describe EventbriteDeliveryJob do
     expect(delivery.last_error).not_to include('Private Person', 'https://example.com/private')
     expect(delivery.failed_at).to be_present
   end
+  it 'retains safe rejected-path diagnostics in delivery errors' do
+    error = EventbriteIntegration::Client::InvalidPathError.new('events/private value/orders/')
+    allow(sync).to receive(:refresh).and_raise(error)
+    described_class.perform_now(delivery.id.to_s)
+    expect(delivery.reload.last_error).to include('Invalid API path:', 'shape=events/<invalid bytes=13>/orders/')
+    expect(delivery.last_error).not_to include('private value')
+    expect(delivery.completed_at).to be_nil
+  end
 
   it 'retains reconciliation for the old occurrence when an order is transferred' do
     allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return(['org'])

@@ -109,7 +109,8 @@ module EventbriteIntegration
       end
       @run
     rescue StandardError => e
-      @run&.update!(last_error: e.is_a?(Client::ApiError) ? e.message : e.class.name, failed: 1)
+      safe_error = e.is_a?(Client::ApiError) || e.is_a?(Client::InvalidPathError)
+      @run&.update!(last_error: safe_error ? e.message : e.class.name, failed: 1)
       raise
     end
     private

@@ -86,6 +86,21 @@ email addresses, long opaque values, and unknown quoted values. Descriptions nam
 sensitive identity/authentication fields are omitted conservatively; malformed or
 missing descriptions leave the original status/code-only error intact.
 
+Locally rejected API paths raise `Client::InvalidPathError` (an `ArgumentError`)
+before taking the API lease or sending a request. Its message is retained in the
+run or webhook delivery's `last_error`. The diagnostic shows fixed API path words,
+redacted ID/invalid-segment byte lengths, total bytes, and structural flags such as
+`leading_slash`, `version_prefix`, `missing_trailing_slash`, `repeated_slash`,
+`whitespace`, `query`, or `absolute_url`. For example, `shape=events//orders/` with
+`repeated_slash` identifies a missing path segment without exposing an ID.
+It never includes raw dynamic segments, URL authorities, query/fragment contents,
+headers or parameter values. A path containing a configured credential or receiver
+path has its whole shape suppressed. Shapes show at most eight segments and
+diagnostics at most 512 characters plus the error prefix; inputs over 4096 bytes
+report their size only. Non-string inputs and invalid encodings also produce safe
+diagnostics. Validation is unchanged: paths remain relative, ASCII, supported
+Eventbrite paths with trailing slashes; diagnostics do not normalize or allow them.
+
 To diagnose a failed run after deploying this change, resume it in the same
 environment with `RESUME_RUN_ID=<run ID> bundle exec rake eventbrite:backfill_orders`
 and inspect its refreshed `last_error`. Existing stored errors are not rewritten,

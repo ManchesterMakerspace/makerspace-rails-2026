@@ -37,7 +37,8 @@ class EventbriteDeliveryJob < ApplicationJob
     attempts = delivery.attempts + 1
     permanent = error.is_a?(EventbriteIntegration::Client::ApiError) && error.status.between?(400, 499)
     failed = permanent || attempts >= 8
-    detail = error.is_a?(EventbriteIntegration::Client::ApiError) ? error.message : error.class.name
+    safe_error = error.is_a?(EventbriteIntegration::Client::ApiError) || error.is_a?(EventbriteIntegration::Client::InvalidPathError)
+    detail = safe_error ? error.message : error.class.name
     finish(id, token, attempts: attempts, last_error: detail,
       due_at: Time.current + [5 * 2**attempts, 600].min, failed_at: failed ? Time.current : nil)
     Rails.logger.error("Eventbrite delivery #{id}: #{error.class.name}; failed=#{failed}")

@@ -1234,6 +1234,10 @@ Member save hooks persist pending reconciliation; signup validation snapshots
 eligible event metadata without external calls. Receiver, signup, and staff
 controllers are described in [public resources](public-resources.MD).
 
+`Client::InvalidPathError` retains only bounded structural path diagnostics in the
+exception and in backfill/webhook `last_error`; it never sends a rejected request
+or exposes raw IDs, authorities, query values, credentials, or private receiver paths.
+
 Manual operator Rake tasks: `eventbrite:backfill_events`, `eventbrite:backfill_orders`,
 `eventbrite:backfill_attendees`, `eventbrite:retry_failed`. They modify local MongoDB
 data only and share Redis throttles with live ingestion. None is exposed through

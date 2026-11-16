@@ -39,6 +39,17 @@ RSpec.describe EventbriteIntegration::Backfill do
     expect(run.progress).to eq({})
     expect(run.failed).to eq(1)
   end
+  it 'persists rejected-path structure without leaking raw app-generated values' do
+    error = EventbriteIntegration::Client::InvalidPathError.new('events/private value/orders/')
+    allow(client).to receive(:each_page).and_raise(error)
+    expect { described_class.new('orders', {}).call }.to raise_error(error)
+    run = EventbriteSyncRun.first
+    expect(run.last_error).to include('Invalid API path:', 'shape=events/<invalid bytes=13>/orders/', 'whitespace')
+    expect(run.last_error).not_to include('private value')
+    expect(run.processed).to eq(0)
+    expect(run.completed_at).to be_nil
+    expect(run.failed).to eq(1)
+  end
   it 'combines literal positive/negative case-insensitive name filters' do
     allow(client).to receive(:each_page).and_yield({ 'events' => [
       { 'id' => '1', 'name' => { 'text' => 'WELDING Basics' } },

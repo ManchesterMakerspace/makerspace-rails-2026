@@ -21,6 +21,78 @@ RSpec.describe EventbriteIntegration::Client do
     )
     expect(described_class.new.get('users/me/organizations/')).to eq('organizations' => [])
   end
+
+  it 'continues to admit app-generated event, order, attendee, inventory and series paths' do
+    allow(http).to receive(:get).and_return(double(status: 200, headers: {}, body: '{"id":"1"}'))
+    client = described_class.new
+    %w[organizations/org/events/ events/e/orders/ orders/o/ events/e/attendees/a/
+       events/e/ticket_classes/ events/e/inventory_tiers/ series/s/events/].each do |path|
+      expect(client.get(path)).to eq('id' => '1')
+      expect(http).to have_received(:get).with(path, {}).once
+    end
+  end
+
+  {
+    'events//orders/' => ['shape=events//orders/', 'repeated_slash'],
+    '/v3/events/123/orders/' => ['shape=/v3/events/<id bytes=3>/orders/', 'leading_slash', 'version_prefix'],
+    'events/123/orders' => ['shape=events/<id bytes=3>/orders', 'missing_trailing_slash'],
+    'events/bad value/orders/' => ['shape=events/<invalid bytes=9>/orders/', 'whitespace'],
+    'events/../orders/' => ['shape=events/<invalid bytes=2>/orders/', 'other_characters'],
+    'payments/private-person/' => ['shape=<id bytes=8>/<id bytes=14>/', 'unsupported_namespace']
+  }.each do |path, details|
+    it "reports only structural diagnostics and makes no request for #{details.last}" do
+      expect(http).not_to receive(:get)
+      expect(EventbriteIntegration::Lease).not_to receive(:with)
+      expect { described_class.new.get(path) }.to raise_error(described_class::InvalidPathError) do |error|
+        expect(error).to be_a(ArgumentError)
+        details.each { |detail| expect(error.message).to include(detail) }
+        expect(error.message).not_to include('123', 'bad value', 'private-person')
+      end
+    end
+  end
+
+  it 'omits URL authorities, dynamic segments, query values and fragments from rejected-path diagnostics' do
+    path = "https://person:credential@private.example/v3/events/person@example.com/orders/?name=PrivatePerson#private-fragment"
+    expect(http).not_to receive(:get)
+    expect { described_class.new.get(path, { 'private-key' => 'private-value' }) }
+      .to raise_error(described_class::InvalidPathError) do |error|
+        expect(error.message).to include('absolute_url', 'query', 'fragment', 'shape=/v3/events/<invalid bytes=18>/orders/')
+        %w[person credential private.example person@example.com name= PrivatePerson private-fragment private-key private-value].each do |value|
+          expect(error.message).not_to include(value)
+        end
+      end
+  end
+
+  it 'suppresses the entire shape when configured credentials or private paths appear in raw or encoded input' do
+    expect(http).not_to receive(:get)
+    allow(EventbriteIntegration::Configuration).to receive(:token).and_return('private+/credential=')
+    allow(EventbriteIntegration::Configuration).to receive(:webhook_path).and_return('/events')
+    ['/events?x=1', "events/#{CGI.escape('private+/credential=')}/orders/", 'events/x/orders/?key=private+/credential='].each do |path|
+      expect { described_class.new.get(path) }.to raise_error(described_class::InvalidPathError) do |error|
+        expect(error.message).to include('shape=[REDACTED]', 'sensitive_value')
+        expect(error.message).not_to include('/events', 'private', 'credential', 'events/')
+      end
+    end
+  end
+
+  it 'redacts an identifier even when its value matches fixed API vocabulary' do
+    expect(http).not_to receive(:get)
+    expect { described_class.new.get('events/orders/orders/?extra=private') }
+      .to raise_error(described_class::InvalidPathError, /shape=events\/<id bytes=6>\/orders\//)
+  end
+
+  it 'bounds malformed, non-string, control-character and invalid-encoding diagnostics without echoing input' do
+    expect(http).not_to receive(:get)
+    paths = [nil, { 'private' => 'data' }, '', "events/PrivatePerson\n\e\u202e/orders/",
+      "events/\xff/orders/".b, "events/#{'private' * 1000}/orders?x=1"]
+    paths.each do |path|
+      expect { described_class.new.get(path) }.to raise_error(described_class::InvalidPathError) do |error|
+        expect(error.message.length).to be <= 530
+        expect(error.message).not_to include('PrivatePerson', 'private', 'data')
+        expect(error.message).not_to match(/[[:cntrl:]\p{Cf}\p{Zl}\p{Zp}]/)
+      end
+    end
+  end
   it 'fails rather than looping on an unusable continuation' do
     client = described_class.new
     allow(client).to receive(:get).and_return({ 'pagination' => { 'has_more_items' => true } })
