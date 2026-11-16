@@ -85,4 +85,12 @@ RSpec.describe EventbriteIntegration::Announcements do
     expect(payload[:text]).to include('No longer published')
     expect(payload[:blocks].first[:text][:type]).to eq('plain_text')
   end
+
+  it 'shows a known sold count when remaining capacity is unavailable' do
+    event.set(tickets_sold: 3, tickets_remaining: nil)
+    publication = service.request(event, 'publication', ['one'])
+    payload = EventbriteIntegration::AnnouncementMessage.build(publication, [event])
+    expect(payload[:text]).to include('3 sold · Remaining count unavailable')
+    expect(payload[:text].scan('New event: Welding').size).to eq(1)
+  end
 end

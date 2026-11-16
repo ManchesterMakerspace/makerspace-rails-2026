@@ -12,7 +12,7 @@ module EventbriteIntegration
       event
     end
 
-    def webhook(resource, action)
+    def webhook(resource, action, received_at: nil)
       return if action.blank?
       id = if resource['type'] == 'event'
         resource['id']
@@ -29,7 +29,14 @@ module EventbriteIntegration
       end
       return unless event.announcement_public?
       occurrences = event.series_parent || (action == 'event.published' && event.series_id.present?) ? series(event) : [event]
-      first = occurrences.select(&:announcement_upcoming?).min_by { |item| [item.starts_at, item.eventbrite_id] } if action == 'event.published'
+      first = first_upcoming(occurrences) if action == 'event.published'
+      if action == 'event.published' && first.nil? && received_at && Time.current < received_at + 300
+        # Publishing a series can precede visibility of its occurrences in the API.
+        raise Client::Deferred.new(30)
+      end
+      # Full event details are sufficient for the initial announcement. Persist
+      # it before inventory requests so a ticket endpoint outage cannot lose it.
+      request(first, 'publication', [first.eventbrite_id]) if first
       # A long-running series can contain years of historical occurrences. Only
       # inventory represented by our messages (or the new announcement) is needed.
       targets = if event.series_parent
@@ -38,14 +45,7 @@ module EventbriteIntegration
       else
         [event]
       end
-      targets = (targets + [first]).compact.uniq(&:id)
-      refreshed = targets.to_h { |item| [item.eventbrite_id, refresh(item)] }
-      if action == 'event.published'
-        first = refreshed[first&.eventbrite_id]
-        if first&.announcement_upcoming?
-          request(first, 'publication', [first.eventbrite_id])
-        end
-      end
+      ([first] + targets).compact.uniq(&:id).each { |item| refresh(item) }
     end
 
     def series(event)
@@ -90,7 +90,7 @@ module EventbriteIntegration
       by_id = tiers.index_by { |tier| tier['id'].to_s }
       return [nil, nil] if classes.any? { |ticket| ticket['inventory_tier_id'].present? && !by_id.key?(ticket['inventory_tier_id'].to_s) }
       admission = classes.reject { |ticket| ticket['inventory_tier_id'].present? && by_id.fetch(ticket['inventory_tier_id'].to_s)['count_against_event_capacity'] == false }
-      return [nil, nil] if admission.empty? || admission.any? { |ticket| !ticket['quantity_sold'].is_a?(Integer) }
+      return [nil, nil] if admission.empty? || admission.any? { |ticket| !ticket['quantity_sold'].is_a?(Integer) || ticket['quantity_sold'] < 0 }
       sold = admission.sum { |ticket| ticket['quantity_sold'] }
       pending = 0
       pools = admission.group_by { |ticket| ticket['inventory_tier_id'].presence || "class:#{ticket.fetch('id')}" }.map do |key, tickets|
@@ -165,6 +165,24 @@ module EventbriteIntegration
     end
 
     private
+    def first_upcoming(occurrences)
+      candidates = occurrences.select(&:announcement_upcoming?).index_by(&:id)
+      hydrated = {}
+      loop do
+        first = candidates.values.min_by { |item| [item.starts_at, item.eventbrite_id] }
+        return first if first.nil? || hydrated[first.id]
+        fresh = hydrate(first.eventbrite_id)
+        hydrated[first.id] = true
+        # Re-sort after hydration; the earliest listed date may now be canceled
+        # or rescheduled behind another occurrence.
+        if fresh.announcement_upcoming?
+          candidates[first.id] = fresh
+        else
+          candidates.delete(first.id)
+        end
+      end
+    end
+
     def deliveries(event) = EventbriteSlackDelivery.where(organization_id: event.organization_id, scope_id: event.announcement_scope)
     def dirty_event(event)
       scope = event.series_parent ? deliveries(event) : EventbriteSlackDelivery.where(organization_id: event.organization_id, event_ids: event.eventbrite_id)

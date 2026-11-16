@@ -10,8 +10,23 @@ class EventbriteDeliveryJob < ApplicationJob
     delivery = EventbriteWebhookDelivery.find(id)
     renew = -> { EventbriteWebhookDelivery.where(id: id, lease_token: token).update_all(lease_until: Time.current + 120) == 1 }
     EventbriteIntegration::Lease.with("delivery:#{id}", renew: renew) do |check|
+      # Refresh the previous occurrence too when an updated order moves events.
+      # Persist this before synchronization replaces the order's event_id, so a
+      # retry after a crash cannot lose the old occurrence's reconciliation work.
+      if delivery.resource['type'] == 'order' && delivery.action.present?
+        previous = EventbriteIntegration::Configuration.scope_organizations(
+          EventbriteOrder.where(eventbrite_id: delivery.resource['id'])).first
+        if previous
+          previous_event = EventbriteEvent.where(organization_id: previous.organization_id, eventbrite_id: previous.event_id).first
+          previous_event&.set(inventory_refresh_at: 5.minutes.from_now)
+        end
+      end
       EventbriteIntegration::Synchronizer.new.refresh(delivery.resource, action: delivery.action, received_at: delivery.created_at)
-      EventbriteIntegration::Announcements.new.webhook(delivery.resource, delivery.action) if delivery.action.present?
+      if delivery.action.present?
+        announcements = EventbriteIntegration::Announcements.new
+        announcements.webhook(delivery.resource, delivery.action, received_at: delivery.created_at)
+        announcements.refresh(previous_event) if previous_event && previous.reload.event_id != previous_event.eventbrite_id
+      end
       check.call
       finish(id, token, completed_at: Time.current, expires_at: 30.days.from_now, last_error: nil)
     end

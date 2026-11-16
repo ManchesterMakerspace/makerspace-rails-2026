@@ -181,6 +181,12 @@ excluded. Publish notifications create one initial announcement per event or
 series; series publication represents the earliest upcoming occurrence. Duplicate
 notifications and republication edit the saved message. Unpublishing marks
 existing announcements and reminder rows unavailable and removes registration links.
+This update does not wait for ticket inventory or a series listing to succeed.
+Fresh publication webhooks retry for up to five minutes if occurrences have not
+appeared yet. Historical occurrences without saved messages do not block publication.
+Initial publication is queued after successful detail hydration even if ticket
+inventory subsequently fails; unknown counts are labeled unavailable. A canceled
+or rescheduled first occurrence is rechecked before selecting the series announcement.
 
 Portal Settings → Slack → **Upcoming Events Channel** overrides `upcoming-events`.
 Blank restores that default. Existing messages keep their actual Slack channel ID
@@ -196,19 +202,29 @@ do not remove prior dates. Up to 20 dates are displayed with an overflow notice.
 Initial announcements and reminders are separate. Unsent reminders expire at midnight
 Eastern and past-only messages are suppressed. Counts print to stdout; incomplete
 delivery raises an error while durable work remains recoverable.
+The date window is checked again after fetching event details, so an event moved
+outside the requested window is not added from a stale listing.
 
 Sold/remaining counts use provider inventory, include free admission tickets, exclude
 add-ons, respect shared pools/custom event capacity, and never count local orders.
+Pending purchases reduce both pool and event capacity; shared pools also respect
+smaller ticket-class limits. These rules follow the provider's
+[inventory and capacity model](https://www.eventbrite.com/platform/new/api).
 Partial refunds therefore do not invalidate all tickets in an order for these totals.
-Unknown numeric inventory is labeled unavailable. Order changes refresh all messages
+Unknown numeric inventory is labeled unavailable; a known sold count is still shown
+when remaining capacity is unknown. Order changes refresh all messages
 containing the occurrence and request another inventory refresh after five minutes.
+Moving an order between occurrences refreshes both dates. The previous date's
+delayed reconciliation is saved before importing the transfer, so retries retain it.
 Ticket-class and attendee changes also refresh inventory. Backfills never announce.
 
 Slack work is stored in eventbrite_slack_deliveries. Minute recovery handles due work.
 Successful receipts are mirrored into each represented event's slack_receipts.
-Rate limits defer; other transient failures retry up to eight attempts. Terminal
-errors retain last_error and failed_at. An interrupted/ambiguous initial send is
-not blindly reposted. Operators must inspect Slack before resetting it: attach the
+Rate limits defer; other transient failures retry up to eight attempts.
+Duplicate notifications preserve existing retry deadlines. Publication selection
+and sending share a lease so a concurrent webhook cannot retarget an in-flight post.
+Terminal errors retain last_error and failed_at. An interrupted/ambiguous initial
+send is not blindly reposted. Operators must inspect Slack before resetting it: attach the
 verified ts/channel to the delivery if it exists, or clear sending_at only after
 confirming no message was posted. Then clear failed_at, reset attempts to zero and
 set due_at to Time.current through the Rails console. Deleted/inaccessible messages

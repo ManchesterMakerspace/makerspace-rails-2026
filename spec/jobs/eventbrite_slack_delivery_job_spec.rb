@@ -46,4 +46,21 @@ RSpec.describe EventbriteSlackDeliveryJob do
     expect(event.reload.slack_receipts.fetch(delivery.id.to_s)['channel']).to eq('CTEST')
     expect(delivery.reload.due_at).to be_nil
   end
+
+  it 'keeps a concurrent ticket update queued until the new counts are sent' do
+    delivery.set(ts: '123.456', channel: 'CTEST')
+    event.set(tickets_sold: 1, tickets_remaining: 9)
+    allow(slack).to receive(:chat_update) do
+      event.set(tickets_sold: 2, tickets_remaining: 8)
+      EventbriteSlackDelivery.find(delivery.id).inc(revision: 1)
+      { 'ok' => true }
+    end
+    described_class.perform_now(delivery.id.to_s)
+    expect(delivery.reload.due_at).to be_present
+    expect(delivery.delivered_revision).to be < delivery.revision
+    allow(slack).to receive(:chat_update).and_return({ 'ok' => true })
+    described_class.perform_now(delivery.id.to_s)
+    expect(delivery.reload.due_at).to be_nil
+    expect(slack).to have_received(:chat_update).with(hash_including(text: include('2 sold · 8 remaining')))
+  end
 end

@@ -1212,7 +1212,8 @@ runs every minute (`perform_now` in the production schedule): it reconciles pend
 member email links and processes due/abandoned deliveries synchronously, avoiding
 loss of an async queue when the cron runner exits. Failures retain
 their state; completed notifications expire after 30 days. Rate-limit waits are
-persisted deadlines; retryable errors have eight attempts. No mail/Slack is sent.
+persisted deadlines; retryable errors have eight attempts. No mail is sent;
+Slack announcements are described below.
 
 Supporting synchronous modules under `EventbriteIntegration`: `Configuration`
 validates server settings, disabling the webhook route with a nonfatal, value-free
@@ -1253,3 +1254,19 @@ Manual task eventbrite:announce_upcoming[days] defaults to 24 hours, groups seri
 updates same-day reminders, and exits nonzero on incomplete delivery. It is not
 registered in Portal Jobs or automatically scheduled. See eventbrite.md for retry,
 expiry, count semantics and console repair instructions.
+
+Publication selection and Slack sending share a lease, and duplicate notifications
+do not bypass existing Slack retry deadlines. Fresh publications with no visible
+occurrences defer within the five-minute consistency window. Series inventory work
+is limited to represented occurrences and the first new announcement. Hydrated
+series candidates are rechecked and re-sorted before selecting the first date;
+publication intent is persisted before inventory requests so a ticket endpoint
+failure cannot discard a successfully hydrated announcement. Hydrated
+availability changes dirty saved messages before inventory work; unpublishing
+therefore removes registration actions even when inventory or series APIs fail.
+Listings preserve omitted venue/logo expansions. Reminder windows are rechecked
+after hydration. Inventory subtracts pending purchases from event and pool capacity,
+honors ticket-class limits, and displays known sold counts when capacity is unknown.
+Order processing persists reconciliation for the previous occurrence before an
+import can replace its event ID; transfers refresh both dates and reconcile again
+after five minutes. No API contract or environment-variable changes accompany these fixes.

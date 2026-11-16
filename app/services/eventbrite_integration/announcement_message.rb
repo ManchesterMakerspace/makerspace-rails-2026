@@ -10,10 +10,11 @@ module EventbriteIntegration
       events.first(20).each do |event|
         zone = ActiveSupport::TimeZone[event.timezone.presence || 'America/New_York'] || ActiveSupport::TimeZone['America/New_York']
         date = event.starts_at&.in_time_zone(zone)&.strftime('%a, %b %-d at %-I:%M %p %Z') || 'Date unavailable'
-        tickets = if event.tickets_sold.nil? || event.tickets_remaining.nil?
+        tickets = if event.tickets_sold.nil? && event.tickets_remaining.nil?
           'Ticket availability unavailable'
         else
-          "#{event.tickets_sold} sold · #{event.tickets_remaining} remaining"
+          [event.tickets_sold.nil? ? 'Sold count unavailable' : "#{event.tickets_sold} sold",
+            event.tickets_remaining.nil? ? 'Remaining count unavailable' : "#{event.tickets_remaining} remaining"].join(' · ')
         end
         content = event.announcement_public? ? [date, event.venue_label, tickets].reject(&:blank?).join("\n") : "#{date}\nNo longer published — registration unavailable"
         blocks << section(content)
@@ -30,7 +31,7 @@ module EventbriteIntegration
       end
       updated = events.filter_map(&:inventory_updated_at).min
       blocks << { type: 'context', elements: [{ type: 'plain_text', text: "Inventory refreshed #{updated.utc.iso8601}" }] } if updated
-      fallback = ([title] + blocks.filter_map { |block| block[:text].is_a?(Hash) ? block[:text][:text] : nil }).join("\n").first(4000)
+      fallback = blocks.filter_map { |block| block[:text].is_a?(Hash) ? block[:text][:text] : nil }.join("\n").first(4000)
       { text: fallback.gsub('&', '&amp;').gsub('<', '&lt;').gsub('>', '&gt;'), blocks: blocks }
     end
 

@@ -338,3 +338,8 @@ organization_id/scope_id/kind/day/mode. It retains represented event IDs, revisi
 actual channel/ts, stable client message ID, attempts, due/failure state and ambiguous
 send markers. Lookup indexes cover due work and represented occurrences.
 No TTL removes message history. Apply indexes with data:ensure_unique_indexes.
+Duplicate notifications preserve pending retry deadlines and serialized publication
+selection keeps receipts anchored to the occurrence actually sent. An order update
+marks its previous occurrence for inventory reconciliation before replacing the
+order's event ID, preserving both sides of a transfer across interrupted deliveries.
+These lifecycle fixes add no fields or indexes.
