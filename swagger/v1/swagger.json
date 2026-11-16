@@ -17723,6 +17723,11 @@
                         "slack_channel_tickets"
                       ],
                       "properties": {
+                        "slack_channel_upcoming_events": {
+                          "type": "string",
+                          "default": "upcoming-events",
+                          "description": "Eventbrite announcement channel. Unset or blank uses upcoming-events. Existing messages retain their saved channel."
+                        },
                         "slack_channel_rm": {
                           "type": "string",
                           "default": "resource_managers",
@@ -17869,6 +17874,7 @@
                       "slack_channel_logs",
                       "slack_channel_tickets",
                       "slack_channel_new_members",
+                      "slack_channel_upcoming_events",
                       "volunteer_pending_slack_channel",
                       "volunteer_credits_per_discount",
                       "volunteer_max_discounts_per_year",
@@ -17918,6 +17924,7 @@
                           "slack_channel_logs",
                           "slack_channel_tickets",
                           "slack_channel_new_members",
+                          "slack_channel_upcoming_events",
                           "volunteer_pending_slack_channel",
                           "volunteer_credits_per_discount",
                           "volunteer_max_discounts_per_year",

@@ -77,6 +77,36 @@ available; there is no unthrottled fallback.
 
 ## Manual tasks
 
+API failures include a sanitized `error_description` in the exception message and
+the run's `last_error` (or the webhook delivery's `last_error`). Only that string
+field is captured, never the complete provider response. Details are limited to
+512 characters on one line. The client redacts configured credentials and the
+private receiver path, echoed request values except fixed API vocabulary, URLs,
+email addresses, long opaque values, and unknown quoted values. Descriptions naming
+sensitive identity/authentication fields are omitted conservatively; malformed or
+missing descriptions leave the original status/code-only error intact.
+
+Locally rejected API paths raise `Client::InvalidPathError` (an `ArgumentError`)
+before taking the API lease or sending a request. Its message is retained in the
+run or webhook delivery's `last_error`. The diagnostic shows fixed API path words,
+redacted ID/invalid-segment byte lengths, total bytes, and structural flags such as
+`leading_slash`, `version_prefix`, `missing_trailing_slash`, `repeated_slash`,
+`whitespace`, `query`, or `absolute_url`. For example, `shape=events//orders/` with
+`repeated_slash` identifies a missing path segment without exposing an ID.
+It never includes raw dynamic segments, URL authorities, query/fragment contents,
+headers or parameter values. A path containing a configured credential or receiver
+path has its whole shape suppressed. Shapes show at most eight segments and
+diagnostics at most 512 characters plus the error prefix; inputs over 4096 bytes
+report their size only. Non-string inputs and invalid encodings also produce safe
+diagnostics. Validation is unchanged: paths remain relative, ASCII, supported
+Eventbrite paths with trailing slashes; diagnostics do not normalize or allow them.
+
+To diagnose a failed run after deploying this change, resume it in the same
+environment with `RESUME_RUN_ID=<run ID> bundle exec rake eventbrite:backfill_orders`
+and inspect its refreshed `last_error`. Existing stored errors are not rewritten,
+and capturing a description does not itself fix a rejected argument. Do not share
+credentials, receiver URLs, or full response payloads when reporting failures.
+
 Run tasks with the intended Rails environment and database selected. They write
 local collections but never place orders, refund payments, or modify Eventbrite.
 They can run while webhooks are enabled and share the same API quota.
@@ -97,7 +127,12 @@ Rake command and remove it afterwards with `Remove-Item Env:NAME_EXCLUDE`.
 Name filters are literal case-insensitive substrings, combined as include AND
 not-exclude. They apply only to Events/Orders backfill runs, not later webhooks
 or existing records. Each task discovers upstream records independently. Events
-include ticket classes; Orders request all statuses and attendee/refund expansions.
+include ticket classes; Orders omit the status filter and retain attendee/refund
+expansions. The live endpoint rejects the documented `status=both` value; do not
+replace it with an active-only filter, which could hide refunded history. The
+backfill imports every order returned by the unfiltered listing. Verify known
+refunded orders against the live response before relying on historical completeness;
+provider-side default exclusions cannot be established by mocked tests.
 When the organization allowlist is blank, each new run discovers organizations
 through the paginated `users/me/organizations/` API using the same throttled client.
 With an allowlist, new runs use those configured IDs instead.
@@ -106,6 +141,11 @@ Runs persist their kind, organization list, filters, progress, counters and erro
 in `eventbrite_sync_runs`. Resume retains those original criteria and organization
 snapshot without rediscovery. A nonempty current allowlist must still permit every
 organization in the resumed run; a blank allowlist permits the saved snapshot.
+Order-list progress carries a query version. On the first resume after the removal
+of `status=both`, any legacy order cursor is cleared and that event's order listing
+restarts. Event-page checkpoints, completed-event markers and saved name filters
+remain intact. Replayed orders use the existing idempotent synchronization path;
+processed counts may include replays.
 Expired tokens
 restart the relevant listing once per invocation. Replayed pages are idempotent; counters measure
 processed work and can include replayed records. Errors exit nonzero. For attendee
@@ -172,3 +212,105 @@ API behavior references: [webhooks](https://www.eventbrite.com/platform/docs/web
 [orders and all-status filters](https://www.eventbrite.com/platform/docs/orders),
 [pagination, attendee and refund fields](https://www.eventbrite.co.uk/platform/new/api),
 and [rate limits](https://www.eventbrite.com/platform/docs/rate-limits).
+
+## Slack announcements and upcoming reminders
+
+Public listed events (including Open House) are announced after successful
+authenticated hydration. Private, invite-only and password-protected events are
+excluded. Publish notifications create one initial announcement per event or
+series; series publication represents the earliest upcoming occurrence. Duplicate
+notifications and republication edit the saved message. Unpublishing marks
+existing announcements and reminder rows unavailable and removes registration links.
+This update does not wait for ticket inventory or a series listing to succeed.
+Fresh publication webhooks retry for up to five minutes if occurrences have not
+appeared yet. Historical occurrences without saved messages do not block publication.
+Initial publication is queued after successful detail hydration even if ticket
+inventory subsequently fails; unknown counts are labeled unavailable. A canceled
+or rescheduled first occurrence is rechecked before selecting the series announcement.
+
+Portal Settings → Slack → **Upcoming Events Channel** overrides `upcoming-events`.
+Blank restores that default. Existing messages keep their actual Slack channel ID
+and timestamp, including development redirection through SLACK_ENV.
+
+Run `bundle exec rake eventbrite:announce_upcoming` for the next 24 hours, or
+`bundle exec rake "eventbrite:announce_upcoming[7]"` for seven rolling 24-hour periods.
+Only positive whole numbers are accepted. No automatic reminder schedule is installed.
+The task discovers upcoming events using the configured organizations, groups series
+dates, and refreshes inventory. There is one reminder per event/series per Eastern
+calendar day. Repeating with a wider window expands today's post; narrower windows
+do not remove prior dates. Up to 20 dates are displayed with an overflow notice.
+Initial announcements and reminders are separate. Unsent reminders expire at midnight
+Eastern and past-only messages are suppressed. Counts print to stdout; incomplete
+delivery raises an error while durable work remains recoverable.
+The date window is checked again after fetching event details, so an event moved
+outside the requested window is not added from a stale listing.
+
+Sold/remaining counts use provider inventory, include free admission tickets, exclude
+add-ons, respect shared pools/custom event capacity, and never count local orders.
+Pending purchases reduce both pool and event capacity; shared pools also respect
+smaller ticket-class limits. These rules follow the provider's
+[inventory and capacity model](https://www.eventbrite.com/platform/new/api).
+Partial refunds therefore do not invalidate all tickets in an order for these totals.
+Unknown numeric inventory is labeled unavailable; a known sold count is still shown
+when remaining capacity is unknown. Order changes refresh all messages
+containing the occurrence and request another inventory refresh after five minutes.
+Moving an order between occurrences refreshes both dates. The previous date's
+delayed reconciliation is saved before importing the transfer, so retries retain it.
+Ticket-class and attendee changes also refresh inventory. Backfills never announce.
+
+Slack work is stored in eventbrite_slack_deliveries. Minute recovery handles due work.
+Successful receipts are mirrored into each represented event's slack_receipts.
+Rate limits defer; other transient failures retry up to eight attempts.
+Duplicate notifications preserve existing retry deadlines. Publication selection
+and sending share a lease so a concurrent webhook cannot retarget an in-flight post.
+Terminal errors retain last_error and failed_at. An interrupted/ambiguous initial
+send is not blindly reposted. Operators must inspect Slack before resetting it: attach the
+verified ts/channel to the delivery if it exists, or clear sending_at only after
+confirming no message was posted. Then clear failed_at, reset attempts to zero and
+set due_at to Time.current through the Rails console. Deleted/inaccessible messages
+are not automatically replaced. Never edit a receipt across production/test modes.
+
+If `announce_upcoming` reports failed deliveries, it prints each delivery ID,
+represented event IDs, mode, attempts, due/failure times, send marker, receipt and
+stored error to stderr. `previously_failed=true` means this invocation found an
+existing terminal failure; the job intentionally makes no new Slack request.
+Repeating the announcement command alone does not clear it. New failures retain
+bounded, filtered exception details including Slack error codes and validation
+messages. Slack HTTP 429 defers until Retry-After without consuming an attempt or
+marking the send ambiguous. Explicit invalid-block-format rejections are known
+failures; network timeouts and interrupted posts remain ambiguous.
+
+On an older deployment without these diagnostics, inspect only the delivery state:
+
+```sh
+bundle exec rails runner 'puts EventbriteSlackDelivery.where(:failed_at.ne => nil).map { |d| d.attributes.slice("_id", "last_error", "failed_at", "attempts", "sending_at", "ts", "mode") }.to_json'
+```
+
+For `not_in_channel` or `channel_not_found`, check the configured destination and
+the posting bot's access. The task prints current routing before processing:
+`configured_channel` is the Portal Settings value (or default), while
+`effective_channel` includes the test-mode redirect. Unless `SLACK_ENV` is exactly
+`production`, every new post goes to `test_channel`, even when configured as
+`general` or a channel ID. `RAILS_ENV=production` alone does not change this.
+For a test deployment, ensure `test_channel` exists and the posting bot can access
+it. For intended real-channel delivery, configure `SLACK_ENV=production` consistently
+for the web process, workers and tasks; this affects all Slack integrations.
+Production and test receipts remain separate; do not relabel old deliveries.
+
+Every shared-client `ChannelNotFound` response also writes `[SlackChannelNotFound]`
+to stderr and Rails logs with the operation, mode and actual channel argument:
+null, a name, or an ID. APIs using `channel_id`, `channels` or `channel_ids` include
+those fields too. This records attempted requests only; stopped deliveries make
+no request and therefore have no new channel-error log.
+For `missing_scope` or `invalid_auth`, correct the Slack app/token configuration.
+For invalid blocks, inspect the validation details before retrying. After correcting
+a **known rejection** (no outstanding send marker), run
+`bundle exec rake eventbrite:retry_failed`, then `bundle exec rake eventbrite:announce_upcoming`.
+The retry task resets failed webhook work as well as known Slack failures; do not
+use it as a replacement for diagnosing the cause. For an ambiguous failure, follow
+the receipt reconciliation procedure above instead. A missing Honeybadger API key
+only prevents reporting the Rake exception; it is not the Slack delivery error.
+
+Deploy Rails and run data:ensure_unique_indexes before enabling publication.
+Refresh existing metadata with the silent events backfill, then deploy the complete
+React build. Keep wiki instructions on the existing draft until deployment.

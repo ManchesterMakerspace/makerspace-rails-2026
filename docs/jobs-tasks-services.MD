@@ -478,6 +478,19 @@ has a built-in dry run. Run production commands only when the task's effect is w
 
 ## Supporting services
 
+`Service::SlackConnector::ChannelErrorLogging` wraps the shared request boundary
+of every client returned by `SlackConnector.client` and `admin_client`, including
+direct SDK calls. Each `ChannelNotFound` response writes a `[SlackChannelNotFound]`
+JSON diagnostic to stderr and Rails logs with the API operation, destination mode,
+and actual channel arguments (`channel`, `channel_id`, `channels`, `channel_ids`).
+The `channel` field is explicitly null when absent or nil; names and IDs remain
+as submitted after any test-mode redirection. Other request fields are omitted
+and provider error details are filtered for credentials. This local handler makes
+no Slack or Honeybadger call and re-raises the original exception even if logging
+fails. Existing caller-specific fallback, notification and retry behavior remains;
+each rejected request is logged even if a later fallback succeeds. This is
+request/job-time diagnostics only, with no schedule or persisted state.
+
 Repair ticket delivery jobs accept integer sequence IDs (including their string
 form in queued arguments) and legacy ObjectId ticket IDs. Their persisted queue
 reservation and recovery behavior is unchanged.
@@ -1212,13 +1225,16 @@ runs every minute (`perform_now` in the production schedule): it reconciles pend
 member email links and processes due/abandoned deliveries synchronously, avoiding
 loss of an async queue when the cron runner exits. Failures retain
 their state; completed notifications expire after 30 days. Rate-limit waits are
-persisted deadlines; retryable errors have eight attempts. No mail/Slack is sent.
+persisted deadlines; retryable errors have eight attempts. No mail is sent;
+Slack announcements are described below.
 
 Supporting synchronous modules under `EventbriteIntegration`: `Configuration`
 validates server settings, disabling the webhook route with a nonfatal, value-free
 warning for invalid receiver paths so Rails and scheduled tasks can boot (valid
 paths and API/backfill use still require credentials); `Resource` parses pointer URLs; `Client` performs bounded,
-token-throttled requests; `Lease` coordinates workers; `Synchronizer` updates
+token-throttled requests and captures only bounded, redacted provider error
+descriptions in API exceptions (persisted by backfills/webhook jobs as `last_error`;
+see the [redaction and retry guide](eventbrite.md#manual-tasks)); `Lease` coordinates workers; `Synchronizer` updates
 events/orders/attendees/tickets; `MemberLinker` preserves member ownership;
 `Presenter` allowlists staff output; `Backfill` checkpoints manual imports. New
 backfills use configured organization IDs when present, otherwise discover them
@@ -1231,8 +1247,61 @@ Member save hooks persist pending reconciliation; signup validation snapshots
 eligible event metadata without external calls. Receiver, signup, and staff
 controllers are described in [public resources](public-resources.MD).
 
+`Client::InvalidPathError` retains only bounded structural path diagnostics in the
+exception and in backfill/webhook `last_error`; it never sends a rejected request
+or exposes raw IDs, authorities, query values, credentials, or private receiver paths.
+
 Manual operator Rake tasks: `eventbrite:backfill_events`, `eventbrite:backfill_orders`,
 `eventbrite:backfill_attendees`, `eventbrite:retry_failed`. They modify local MongoDB
 data only and share Redis throttles with live ingestion. None is exposed through
 the admin run-job API. Invocation, filters, resume, errors, credentials and
 deployment requirements: [Eventbrite operator guide](eventbrite.md).
+
+Order backfills use an unfiltered order listing with attendee/refund expansions;
+they do not send the rejected `status=both` argument. A query-version marker resets
+legacy order continuation tokens on resume while preserving event-page progress
+and filters. See the operator guide for live historical-completeness checks.
+
+## Eventbrite Slack announcements
+
+EventbriteDeliveryJob invokes EventbriteIntegration::Announcements after resource
+synchronization and before completing its durable inbox entry. The service hydrates
+public event details, resolves series, refreshes admission inventory, and records
+publication/update intent. Backfills do not invoke it. AnnouncementMessage produces
+escaped accessible Block Kit and fallback text without attendee or buyer data.
+EventbriteSlackDeliveryJob posts or edits durable outbox records, saves receipts on
+events, and repairs interrupted receipt mirroring. It preserves actual destinations
+and SLACK_ENV isolation; ambiguous sends require operator reconciliation.
+EventbriteInventoryRefreshJob processes five-minute post-order reconciliation.
+EventbriteRecoveryJob now processes both kinds of pending work every minute.
+Manual task eventbrite:announce_upcoming[days] defaults to 24 hours, groups series,
+updates same-day reminders, and exits nonzero on incomplete delivery. It is not
+registered in Portal Jobs or automatically scheduled. See eventbrite.md for retry,
+expiry, count semantics and console repair instructions.
+
+`eventbrite:announce_upcoming` prints per-delivery failure/deferral details to stderr,
+including whether the record was already terminally failed before the invocation.
+It first prints the current mode, configured channel and effective channel for new
+posts without contacting Slack; existing messages retain their saved destinations.
+Terminal failures remain stopped until corrected and explicitly reset by
+`eventbrite:retry_failed`; ambiguous sends still require receipt reconciliation.
+EventbriteSlackDeliveryJob handles the SDK's separate TooManyRequestsError class
+as Retry-After deferral (no attempt consumed), clears send markers for definite
+invalid-block-format rejections, and stores/logs bounded, filtered error diagnostics
+with Slack validation details instead of only the exception class.
+
+Publication selection and Slack sending share a lease, and duplicate notifications
+do not bypass existing Slack retry deadlines. Fresh publications with no visible
+occurrences defer within the five-minute consistency window. Series inventory work
+is limited to represented occurrences and the first new announcement. Hydrated
+series candidates are rechecked and re-sorted before selecting the first date;
+publication intent is persisted before inventory requests so a ticket endpoint
+failure cannot discard a successfully hydrated announcement. Hydrated
+availability changes dirty saved messages before inventory work; unpublishing
+therefore removes registration actions even when inventory or series APIs fail.
+Listings preserve omitted venue/logo expansions. Reminder windows are rechecked
+after hydration. Inventory subtracts pending purchases from event and pool capacity,
+honors ticket-class limits, and displays known sold counts when capacity is unknown.
+Order processing persists reconciliation for the previous occurrence before an
+import can replace its event ID; transfers refresh both dates and reconcile again
+after five minutes. No API contract or environment-variable changes accompany these fixes.

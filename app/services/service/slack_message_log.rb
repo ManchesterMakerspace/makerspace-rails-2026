@@ -5,8 +5,8 @@ module Service
   #
   # Called from Service::SlackConnector.send_slack_message (which nearly every
   # message goes through, including the queued ones SlackMessagesJob sends) and
-  # from the two jobs that still post directly: FixTicketDelivery and
-  # ShopOutageSlackJob. Interactive replies to slash commands (ephemeral and
+  # from direct senders: FixTicketDelivery, ShopOutageSlackJob and
+  # EventbriteSlackDeliveryJob. Interactive replies to slash commands (ephemeral and
   # response_url answers) and edits of existing messages are not recorded.
   #
   # Recording never raises: a failed write is reported to Honeybadger and the

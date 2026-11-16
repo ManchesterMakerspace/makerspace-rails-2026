@@ -25,6 +25,16 @@ RSpec.describe EventbriteIntegration::Synchronizer do
     expect(EventbriteEvent.count).to eq(0)
   end
 
+  it 'preserves expansions omitted by listings and clears them when explicitly removed' do
+    record = sync.import_event(event_data.merge('venue' => { 'name' => 'Workshop' }, 'logo' => { 'url' => 'https://example.com/image.png' }))
+    sync.import_event(event_data)
+    expect(record.reload.venue_label).to eq('Workshop')
+    expect(record.image_url).to eq('https://example.com/image.png')
+    sync.import_event(event_data.merge('venue' => nil, 'logo' => nil))
+    expect(record.reload.venue_label).to be_blank
+    expect(record.image_url).to be_nil
+  end
+
   it 'accepts token-accessible organizations when the allowlist is empty' do
     allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([])
     record = sync.import_event(event_data.merge('organization_id' => 'another-org'))

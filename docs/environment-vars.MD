@@ -172,3 +172,11 @@ Manual task inputs: `NAME_INCLUDE`/`NAME_EXCLUDE` are optional case-insensitive
 literal event-name substrings for Events/Orders; `CHANGED_SINCE` is an optional UTC
 ISO8601 timestamp or `last` for Attendees (omitted means full); `RESUME_RUN_ID`
 resumes persisted criteria. See [Eventbrite operations](eventbrite.md).
+
+### Eventbrite Slack consumers
+
+No new environment variables are introduced for announcements. Existing
+SLACK_BOT_TOKEN/SLACK_ADMIN_TOKEN token selection and SLACK_ENV test-channel
+redirection also apply to Eventbrite messages. The destination override is the
+SystemConfig key slack_channel_upcoming_events (blank/unset: upcoming-events).
+The Rake horizon is a positional days argument, not an environment variable.

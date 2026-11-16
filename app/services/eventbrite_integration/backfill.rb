@@ -1,5 +1,6 @@
 module EventbriteIntegration
   class Backfill
+    ORDER_LISTING_VERSION = 'unfiltered-v1'.freeze
     attr_reader :run
     class WaitingClient < Client
       def get(...)
@@ -66,7 +67,14 @@ module EventbriteIntegration
                   if @kind == 'events'
                     @sync.tickets(event)
                   else
-                    @client.each_page("events/#{event.eventbrite_id}/orders/", { 'status' => 'both', 'expand' => 'attendees,refund_requests' }, continuation: state['order_cursor']) do |orders, order_cursor|
+                    # Live endpoints reject the documented status=both value.
+                    # A continuation belongs to its original query criteria.
+                    if state['order_listing_version'] != ORDER_LISTING_VERSION
+                      state['order_cursor'] = nil
+                      state['order_listing_version'] = ORDER_LISTING_VERSION
+                      checkpoint(org, state)
+                    end
+                    @client.each_page("events/#{event.eventbrite_id}/orders/", { 'expand' => 'attendees,refund_requests' }, continuation: state['order_cursor']) do |orders, order_cursor|
                       orders.fetch('orders').each { |order| @sync.import_order(order); @run.inc(processed: 1) }
                       state['order_cursor'] = order_cursor
                       checkpoint(org, state)
@@ -101,7 +109,8 @@ module EventbriteIntegration
       end
       @run
     rescue StandardError => e
-      @run&.update!(last_error: e.is_a?(Client::ApiError) ? e.message : e.class.name, failed: 1)
+      safe_error = e.is_a?(Client::ApiError) || e.is_a?(Client::InvalidPathError)
+      @run&.update!(last_error: safe_error ? e.message : e.class.name, failed: 1)
       raise
     end
     private

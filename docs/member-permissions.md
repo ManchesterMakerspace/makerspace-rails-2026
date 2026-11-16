@@ -244,3 +244,10 @@ and `linked=unlinked` returns none. Survey correction retains existing admin/boa
 permissions; public signup never exposes a member directory. Email matching
 does not grant membership, checkout, billing or access permissions. See
 [Eventbrite](eventbrite.md).
+
+### Eventbrite announcement channel
+
+The existing admin/board system-settings API permits changing
+slack_channel_upcoming_events. The portal retains its existing settings visibility.
+This adds no member permissions or status mutation paths. Slack publication includes
+only public listed events and aggregate inventory, never attendee/buyer identity.

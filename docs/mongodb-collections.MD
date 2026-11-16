@@ -308,7 +308,8 @@ the existing SystemConfig storage.
 
 ## Eventbrite collections
 
-All six are top-level Mongoid collections. `eventbrite_events`, `eventbrite_orders`,
+The six ingestion collections are top-level Mongoid collections; the additional
+Slack delivery collection is described below. `eventbrite_events`, `eventbrite_orders`,
 `eventbrite_attendees`, and `eventbrite_ticket_classes` have unique
 `(organization_id, eventbrite_id)` indexes; IDs remain strings. Event date/public
 eligibility and order/ticket/attendee parent lookups are indexed. Attendees index
@@ -320,8 +321,32 @@ Invalidated events, refunded orders, and deleted ticket classes retain history.
 indexes kind/completion and persists criteria, page progress and success watermarks.
 Its organization snapshot comes from the configured optional allowlist or, when
 blank, the token's paginated organization discovery; resumed runs retain that snapshot.
+Within `progress`, `order_listing_version` identifies the unfiltered order query.
+Legacy order cursors are cleared once on resume when that marker is missing;
+event-page progress and saved filters are preserved. No new collection/index is needed.
 Member indexes pending reconciliation time and adds source event ID/snapshot,
 provider prompt state, and pending local email-link reconciliation. No new
 embedded documents become separate collections.
 Apply model indexes through `data:ensure_unique_indexes` before ingestion; see
 [Eventbrite lifecycle and rollout](eventbrite.md).
+
+## Eventbrite announcement state
+
+eventbrite_events now stores series identity, safe public presentation metadata,
+capacity, sold/remaining inventory snapshots, inventory_refresh_at, and a
+slack_receipts hash keyed by delivery ID (embedded values, not a collection).
+Series and due-inventory lookup indexes support recovery.
+eventbrite_slack_deliveries is a top-level durable outbox. Its unique key is
+organization_id/scope_id/kind/day/mode. It retains represented event IDs, revisions,
+actual channel/ts, stable client message ID, attempts, due/failure state and ambiguous
+send markers. Lookup indexes cover due work and represented occurrences.
+No TTL removes message history. Apply indexes with data:ensure_unique_indexes.
+`last_error` includes bounded, filtered error details and Slack response validation
+messages for new failures. Existing class-only or ambiguous errors are retained;
+rerunning a reminder does not erase terminal state. HTTP 429 retains due work
+without a failed_at or sending_at marker. No additional fields or indexes are needed.
+Duplicate notifications preserve pending retry deadlines and serialized publication
+selection keeps receipts anchored to the occurrence actually sent. An order update
+marks its previous occurrence for inventory reconciliation before replacing the
+order's event ID, preserving both sides of a transfer across interrupted deliveries.
+These lifecycle fixes add no fields or indexes.
