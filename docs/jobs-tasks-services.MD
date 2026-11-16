@@ -1240,6 +1240,11 @@ data only and share Redis throttles with live ingestion. None is exposed through
 the admin run-job API. Invocation, filters, resume, errors, credentials and
 deployment requirements: [Eventbrite operator guide](eventbrite.md).
 
+Order backfills use an unfiltered order listing with attendee/refund expansions;
+they do not send the rejected `status=both` argument. A query-version marker resets
+legacy order continuation tokens on resume while preserving event-page progress
+and filters. See the operator guide for live historical-completeness checks.
+
 ## Eventbrite Slack announcements
 
 EventbriteDeliveryJob invokes EventbriteIntegration::Announcements after resource

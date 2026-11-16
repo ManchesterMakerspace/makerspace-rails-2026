@@ -321,6 +321,9 @@ Invalidated events, refunded orders, and deleted ticket classes retain history.
 indexes kind/completion and persists criteria, page progress and success watermarks.
 Its organization snapshot comes from the configured optional allowlist or, when
 blank, the token's paginated organization discovery; resumed runs retain that snapshot.
+Within `progress`, `order_listing_version` identifies the unfiltered order query.
+Legacy order cursors are cleared once on resume when that marker is missing;
+event-page progress and saved filters are preserved. No new collection/index is needed.
 Member indexes pending reconciliation time and adds source event ID/snapshot,
 provider prompt state, and pending local email-link reconciliation. No new
 embedded documents become separate collections.

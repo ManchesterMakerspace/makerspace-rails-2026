@@ -112,7 +112,12 @@ Rake command and remove it afterwards with `Remove-Item Env:NAME_EXCLUDE`.
 Name filters are literal case-insensitive substrings, combined as include AND
 not-exclude. They apply only to Events/Orders backfill runs, not later webhooks
 or existing records. Each task discovers upstream records independently. Events
-include ticket classes; Orders request all statuses and attendee/refund expansions.
+include ticket classes; Orders omit the status filter and retain attendee/refund
+expansions. The live endpoint rejects the documented `status=both` value; do not
+replace it with an active-only filter, which could hide refunded history. The
+backfill imports every order returned by the unfiltered listing. Verify known
+refunded orders against the live response before relying on historical completeness;
+provider-side default exclusions cannot be established by mocked tests.
 When the organization allowlist is blank, each new run discovers organizations
 through the paginated `users/me/organizations/` API using the same throttled client.
 With an allowlist, new runs use those configured IDs instead.
@@ -121,6 +126,11 @@ Runs persist their kind, organization list, filters, progress, counters and erro
 in `eventbrite_sync_runs`. Resume retains those original criteria and organization
 snapshot without rediscovery. A nonempty current allowlist must still permit every
 organization in the resumed run; a blank allowlist permits the saved snapshot.
+Order-list progress carries a query version. On the first resume after the removal
+of `status=both`, any legacy order cursor is cleared and that event's order listing
+restarts. Event-page checkpoints, completed-event markers and saved name filters
+remain intact. Replayed orders use the existing idempotent synchronization path;
+processed counts may include replays.
 Expired tokens
 restart the relevant listing once per invocation. Replayed pages are idempotent; counters measure
 processed work and can include replayed records. Errors exit nonzero. For attendee
