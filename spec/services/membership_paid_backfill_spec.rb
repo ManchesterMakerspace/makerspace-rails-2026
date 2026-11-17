@@ -115,6 +115,16 @@ RSpec.describe MembershipPaidBackfill, requires_transactions: true do
     expect(MembershipPaidCreditEntry.where(action: 'application').count).to eq(2)
   end
 
+  it 'keeps a pre-application refund deducted when replaying a held payment' do
+    invoice = create(:invoice, member: member, resource_id: member.id.to_s, resource_class: 'member',
+      amount: 120, quantity: 12, plan_id: nil, transaction_id: 'held-refund-before-fob')
+    MembershipPaidCredit.refund!(invoice_id: invoice.id, refund_id: 'half', amount: 60, at: 1.day.ago)
+    create(:card, member: member)
+    expect(member.reload.continuous_paid_membership_months).to eq(6)
+    described_class.run!(mode: 'apply')
+    expect(member.reload.continuous_paid_membership_months).to eq(6)
+  end
+
   it 'can deduct a confirmed refund from a seeded legacy source without an invoice' do
     legacy_payment(txn_id: 'legacy-refund-source')
     described_class.run!(mode: 'apply')

@@ -96,6 +96,40 @@ RSpec.describe MembershipPaidCredit, requires_transactions: true do
     expect(MembershipPaidCreditEntry.where(action: 'reversal').count).to eq(1)
   end
 
+  it 'applies a new charge on the same invoice after the previous attempt was reversed' do
+    invoice = apply(member, transaction_id: 'declined-attempt')
+    invoice.reverse_settlement
+    expect(described_class.read(member.id)[:continuousPaidMembershipMonths]).to eq(0)
+    invoice.reload.update!(transaction_id: 'successful-retry', membership_paid_amount: BigDecimal('120'))
+    invoice.settle_invoice
+    expect(described_class.read(member.id)[:continuousPaidMembershipMonths]).to eq(12)
+    expect(MembershipPaidCreditEntry.where(invoice_id: invoice.id, action: 'application').count).to eq(2)
+    expect(MembershipPaidCreditEntry.where(invoice_id: invoice.id, action: 'reversal').count).to eq(1)
+    expect(invoice.reload.membership_paid_source_key).to eq('braintree:successful-retry')
+    invoice.settle_invoice
+    expect(MembershipPaidCreditEntry.where(invoice_id: invoice.id, action: 'application').count).to eq(2)
+    refund(invoice, 'retry-half-refund', 60)
+    expect(described_class.read(member.id)[:continuousPaidMembershipMonths]).to eq(6)
+    expect(MembershipPaidCreditEntry.where(source_key: 'braintree:declined-attempt', action: 'refund').count).to eq(0)
+    invoice.reverse_settlement
+    expect(described_class.read(member.id)[:continuousPaidMembershipMonths]).to eq(0)
+    expect(MembershipPaidCreditEntry.where(source_key: 'braintree:declined-attempt', action: 'reversal').count).to eq(1)
+    expect(MembershipPaidCreditEntry.where(source_key: 'braintree:successful-retry', action: 'reversal').count).to eq(1)
+  end
+
+  it 'retries an already confirmed cash receipt after accounting fails' do
+    create(:card, member: member)
+    invoice = invoice_for
+    allow(described_class).to receive(:apply_invoice!).and_raise(Error::Conflict.new('retry'))
+    expect { invoice.submit_for_settlement }.to raise_error(Error::Conflict)
+    expect(invoice.reload.membership_paid_confirmed_at).to be_present
+    expect(invoice.settled_at).to be_nil
+    expect(described_class.read(member.id)[:continuousPaidMembershipMonths]).to eq(0)
+    allow(described_class).to receive(:apply_invoice!).and_call_original
+    invoice.submit_for_settlement
+    expect(described_class.read(member.id)[:continuousPaidMembershipMonths]).to eq(12)
+  end
+
   it 'does not credit an unpaid renewal and resets before a late extension' do
     apply
     member.reload.update!(renew: 1)

@@ -227,7 +227,9 @@ class MembershipPaidHistory
           end
         end
         source[:cohort] = @cohort
-        @balance += source[:months]
+        # A held payment may have been refunded before its first-fob release.
+        # Its refund event already set deducted_months without a cohort to debit.
+        @balance += source[:months] - source[:deducted_months]
         expiry = [expiry, source[:coverage_end]].compact.max
       when :refund, :deduction
         source = event[:source]

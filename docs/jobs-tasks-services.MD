@@ -18,7 +18,10 @@ policy. Paid first-fob release remains after the card assignment commits.
 Confirmed offline held receipts have their own invoice marker. Card release
 recognizes it, serializer/list filters show the receipt as paid, processor invoice
 matching/cancellation excludes it, and due analytics excludes it. A repeated
-settlement request is rejected before a processor call. `Group.paid_invoice?`
+processor settlement request is rejected before a processor call. A confirmed
+receipt left unapplied by an accounting failure can retry application without
+another payment. A new charge after a settlement decline uses a distinct ledger
+source; refunds and reversal target that attempt. `Group.paid_invoice?`
 recognizes the receipt for household standing without crediting months early.
 
 `MembershipPaidResetJob.perform_now` is installed every minute by Whenever,

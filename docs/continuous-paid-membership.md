@@ -22,7 +22,8 @@ responses and list filters, and excluded from past-due analytics and processor
 invoice matching/cancellation. Its `settled_at` and paid-month credit remain
 unset until release. Repeating settlement is rejected before any processor call
 with “Payment already received. Membership time is held until the first fob is
-issued.”
+issued.” If accounting failed after the receipt was recorded, an Admin may
+retry applying that same confirmed receipt without taking another payment.
 
 Both household invoice forms are supported: an invoice addressed to `Group`,
 or a household-plan member invoice. Each member covered at application receives
@@ -64,6 +65,9 @@ Successful portal refunds, settled provider refund notifications, explicit
 provider reconciliation, and confirmed offline refunds use the same service.
 Refunds leave expiration unchanged. Settlement declines reverse applied credit
 and the existing duration operation once; held declines never subtract duration.
+If a declined invoice is charged again, the new transaction ID is a distinct
+payment attempt; application, later refunds, and any reversal use only that
+attempt's ledger source. The earlier reversed source remains for audit.
 If the processor refunded successfully but local accounting failed, reconcile
 before issuing another processor refund. Reconciliation/offline recording send
 no money and no email.

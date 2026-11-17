@@ -185,12 +185,21 @@ class MembershipPaidCredit
       transaction do
         invoice = Invoice.find(invoice_id)
         raise Error::NotFound.new unless invoice
-        if invoice.membership_paid_applied_at || invoice.settled_at
+        new_attempt = invoice.membership_paid_reversed_at.present? && invoice.transaction_id.present? &&
+          invoice.transaction_id != invoice.last_failed_transaction_id
+        if (invoice.membership_paid_applied_at && !new_attempt) || invoice.settled_at
           Rails.logger.info("[MembershipPaidCredit] duplicate_application invoice_id=#{invoice.id}")
           next false
         end
-        next false if invoice.refunded || invoice.membership_paid_reversed_at ||
+        next false if (invoice.refunded && !new_attempt) || (invoice.membership_paid_reversed_at && !new_attempt) ||
           (invoice.transaction_id.present? && invoice.last_failed_transaction_id == invoice.transaction_id)
+        if new_attempt
+          # The old attempt remains in the ledger. Its reversal already removed
+          # its credit; the new charge receives a distinct source identity.
+          invoice.update!(membership_paid_applied_at: nil, membership_paid_reversed_at: nil,
+            membership_paid_recipient_ids: [], membership_paid_source_key: nil,
+            membership_paid_refunds: [], refunded: false)
+        end
         resource = invoice.resource
         raise Error::NotFound.new unless resource
         track!(resource)
@@ -254,7 +263,7 @@ class MembershipPaidCredit
         invoice.inc(membership_paid_operation_revision: 1)
         records = invoice.membership_paid_refunds + [{ 'id' => identity, 'amount' => amount.to_s('F'), 'currency' => currency, 'at' => at }]
         total = records.sum { |r| decimal(r['amount']) }
-        MembershipPaidCreditEntry.where(invoice_id: invoice.id, action: 'application').each do |credit|
+        MembershipPaidCreditEntry.where(invoice_id: invoice.id, source_key: source_key(invoice), action: 'application').each do |credit|
           document = reset_if_due!(document!(credit.member_id), at: at)
           deduction = [refund_deduction(credit.months, total, credit.paid_amount), credit.deducted_months].max
           delta = deduction - credit.deducted_months
@@ -325,12 +334,12 @@ class MembershipPaidCredit
     def reverse_invoice!(invoice_id)
       transaction do
         invoice = Invoice.find(invoice_id)
-        if invoice.membership_paid_reversed_at
+        if invoice.membership_paid_reversed_at && invoice.last_failed_transaction_id == invoice.transaction_id
           Rails.logger.info("[MembershipPaidCredit] duplicate_reversal invoice_id=#{invoice.id}")
           next false
         end
         invoice.inc(membership_paid_operation_revision: 1)
-        MembershipPaidCreditEntry.where(invoice_id: invoice.id, action: 'application').each do |credit|
+        MembershipPaidCreditEntry.where(invoice_id: invoice.id, source_key: source_key(invoice), action: 'application').each do |credit|
           document = reset_if_due!(document!(credit.member_id))
           delta = credit.months - credit.deducted_months
           same_streak = document['continuous_paid_membership_streak_id'] == credit.streak_id

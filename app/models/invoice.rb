@@ -167,6 +167,11 @@ class Invoice
   def submit_for_settlement_without_reservation_lock(gateway=nil, payment_method_id=nil, transaction_id=nil)
     raise Error::UnprocessableEntity.new("Already paid") if settled
     if membership_paid_confirmed_at.present?
+      if payment_method_id.nil? && transaction_id.nil? && membership_paid_applied_at.nil? && settled_at.nil?
+        # A prior accounting attempt may have failed after recording the receipt.
+        # Retry its application without recording another payment or cloning a cycle.
+        return settle_invoice
+      end
       raise Error::UnprocessableEntity.new('Payment already received. Membership time is held until the first fob is issued.')
     end
     raise Error::UnprocessableEntity.new("Cannot dictate transaction id when creating new transaction") if payment_method_id && transaction_id
