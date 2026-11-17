@@ -26,7 +26,8 @@ RSpec.configure do |config|
         event: { type: :object, nullable: true, properties: { name: { type: :string, nullable: true }, startsAt: { type: :string, nullable: true }, timezone: { type: :string, nullable: true } } },
         costs: { type: :object }, cost: { type: :object }, free: { type: :boolean }, quantityTotal: { type: :integer, nullable: true },
         linkConflict: { type: :boolean }, startsAt: { type: :string, nullable: true }, timezone: { type: :string, nullable: true },
-        invalidatedAt: { type: :string, nullable: true }, invalidationReason: { type: :string, nullable: true }, refundedAt: { type: :string, nullable: true },
+        invalidatedAt: { type: :string, nullable: true }, invalidationReason: { type: :string, nullable: true },
+        refundedAt: { type: :string, nullable: true, description: 'Provider refund timestamp, falling back to the provider changed timestamp. Null when the provider date is unknown, even for refunded/invalidated orders; never the import time.' },
         attendees: { type: :array, items: { '$ref' => '#/components/schemas/EventbriteRecord' } },
         ticketClasses: { type: :array, items: { '$ref' => '#/components/schemas/EventbriteRecord' } }
       }, required: %w[id organizationId eventbriteId]

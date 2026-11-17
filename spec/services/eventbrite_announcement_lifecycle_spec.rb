@@ -105,7 +105,8 @@ RSpec.describe 'Eventbrite announcement lifecycle' do
 
   it 'retains previous totals after a partial inventory fetch fails' do
     event = service.hydrate('first')
-    event.update!(tickets_sold: 2, tickets_remaining: 8)
+    opening = 1.day.from_now.change(usec: 0)
+    event.update!(tickets_sold: 2, tickets_remaining: 8, ticket_sales_start_at: opening, has_member_ticket_class: true)
     allow(client).to receive(:each_page) do |_, *_, &block|
       block.call({ 'ticket_classes' => [{ 'id' => 'partial', 'quantity_sold' => 8, 'quantity_total' => 10 }] }, 'next')
       raise EventbriteIntegration::Client::ApiError.new(503, 'UNAVAILABLE')
@@ -113,6 +114,38 @@ RSpec.describe 'Eventbrite announcement lifecycle' do
     expect { service.refresh(event) }.to raise_error(EventbriteIntegration::Client::ApiError)
     expect(event.reload.tickets_sold).to eq(2)
     expect(event.tickets_remaining).to eq(8)
+    expect(event.ticket_sales_start_at).to eq(opening)
+    expect(event.has_member_ticket_class).to be(true)
+  end
+
+  it 'includes ticket sale timing and member discount links in publication and reminder edits' do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with('EVENTBRITE_MEMBER_DISCOUNT_CODE').and_return('MEMBERS')
+    opening = 1.hour.from_now.change(usec: 0)
+    inventory.first.merge!('sales_start' => opening.iso8601, 'description' => 'Special MEMBER pricing')
+    service.webhook({ 'type' => 'event', 'id' => 'first' }, 'event.published')
+    event = EventbriteEvent.find_by(eventbrite_id: 'first')
+    expect(event.ticket_sales_start_at).to eq(opening)
+    expect(event.has_member_ticket_class).to be(true)
+    reminder = service.request(event, 'reminder', ['first'], day: Time.current.in_time_zone('America/New_York').to_date.iso8601)
+    slack = double('Slack', chat_postMessage: { 'ts' => '123.456', 'channel' => 'CTEST' }, chat_update: { 'ok' => true })
+    allow(Service::SlackConnector).to receive(:client).and_return(slack)
+    allow(Service::SlackConnector).to receive(:resolved_channel_id).and_return('CTEST')
+    messages = EventbriteSlackDelivery.all.to_a
+    messages.each { |message| EventbriteSlackDeliveryJob.perform_now(message.id.to_s) }
+    expect(slack).to have_received(:chat_postMessage).with(hash_including(text: include('Tickets go on sale'), blocks: include(
+      hash_including(type: 'actions', elements: include(hash_including(url: 'https://example.com/first?discount=MEMBERS')))
+    ))).twice
+
+    inventory.first.merge!('sales_start' => 1.hour.ago.iso8601, 'description' => 'General admission', 'quantity_sold' => 4)
+    service.refresh(event)
+    messages.each { |message| EventbriteSlackDeliveryJob.perform_now(message.id.to_s) }
+    expect(slack).to have_received(:chat_update).with(hash_including(text: include('4 sold · 6 remaining'), blocks: include(
+      hash_including(type: 'actions', elements: include(hash_including(url: 'https://example.com/first')))
+    ))).twice
+    expect(event.reload.ticket_sales_start_at).to be_nil
+    expect(event.has_member_ticket_class).to be(false)
+    expect(reminder.reload.ts).to be_present
   end
 
   it 'updates unpublished state without allocating a new publication' do

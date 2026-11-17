@@ -181,6 +181,10 @@ Order filters always intersect the selected member's attendee-derived history.
 Consequently, member-scoped `linked=unlinked` returns an empty list with a zero
 total, including when that member has no imported attendees. The global unlinked
 order browser still lists orders without any linked attendees.
+Order `refundedAt` is the provider refund timestamp or its changed timestamp,
+never the import time. It remains null when that date is unknown, while refund
+invalidation and provider status remain visible. Existing known refund dates are
+preserved on replay. The EventbriteRecord schema retains its nullable string shape.
 The React `/admin/eventbrite` browser and member Eventbrite tab use these routes.
 See [Eventbrite](eventbrite.md).
 

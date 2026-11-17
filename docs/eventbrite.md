@@ -56,8 +56,17 @@ Events keep provider status, public/listed visibility, occurrence dates/timezone
 and invalidation state. Draft/canceled events are invalid; live, started, ended
 and completed events remain valid. Republishing restores validity. Orders retain
 buyer details, costs and refund evidence; **any** refund permanently invalidates
-an order. Free orders are not classified as refunded from their cost. Attendee
-updates and order expansions maintain attendee records. Ticket deletion is
+an order. Free orders are not classified as refunded from their cost.
+
+Refund timestamps use an explicit provider `refunded_at`, otherwise the refund
+snapshot's `changed` time (stored as `provider_changed_at`), or the previously
+stored provider changed time if the snapshot omits it. If all are missing,
+`refunded_at` stays unknown; import time is never substituted. Refund evidence
+still invalidates the order, including refunds discovered through attendees.
+Repeated imports preserve an existing refund timestamp and the original local
+invalidation time; a later dated snapshot can fill an unknown refund time.
+Previously populated refund timestamps are not rewritten automatically.
+Attendee updates and order expansions maintain attendee records. Ticket deletion is
 confirmed by a complete parent-event ticket listing after the five-minute provider
 consistency window; incomplete listings cannot invalidate unseen records.
 
@@ -257,6 +266,31 @@ containing the occurrence and request another inventory refresh after five minut
 Moving an order between occurrences refreshes both dates. The previous date's
 delayed reconciliation is saved before importing the transfer, so retries retain it.
 Ticket-class and attendee changes also refresh inventory. Backfills never announce.
+
+When no admission ticket class is currently on sale and a scheduled future sale
+exists, each occurrence's Slack section includes `Tickets go on sale <DATE>`,
+using the earliest eligible ticket-class `sales_start` in that event's timezone
+(Eastern fallback), including the year and time. Sold-out/empty classes, expired
+sales and add-ons do not determine this date; exhausted shared/event capacity
+suppresses it. A class triggered by another class selling out has no predictable
+sale date until that predecessor is sold out. A missing or unknown start for an
+otherwise eligible class prevents a misleading future-sale claim. Once its
+saved opening time has arrived, subsequent message renders omit the notice.
+These metadata are saved with inventory only after the complete fetch succeeds;
+a failed refresh retains the previous snapshot.
+
+Set optional `EVENTBRITE_MEMBER_DISCOUNT_CODE` to add `discount=<encoded code>`
+to Slack registration links when any ticket-class name or description contains
+`member` (case-insensitive). This includes classes whose sales have not started.
+Nonmatching events and blank/unset codes retain their ordinary links. Existing
+query parameters/fragments are preserved and any previous `discount` is replaced.
+Per-occurrence series links use that occurrence's ticket classes; the all-dates
+overflow link qualifies if any represented public date has a matching class.
+The stored provider URL remains unchanged. The code must already be configured
+in Eventbrite; it is intentionally shared in Slack links and is not exposed in
+public portal configuration. Publication, reminders and later in-place updates
+use the same formatter. Existing events acquire the new metadata on their next
+successful announcement inventory refresh; no data migration is required.
 
 Slack work is stored in eventbrite_slack_deliveries. Minute recovery handles due work.
 Successful receipts are mirrored into each represented event's slack_receipts.

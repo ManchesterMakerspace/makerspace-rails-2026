@@ -201,7 +201,8 @@
           },
           "refundedAt": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Provider refund timestamp, falling back to the provider changed timestamp. Null when the provider date is unknown, even for refunded/invalidated orders; never the import time."
           },
           "attendees": {
             "type": "array",

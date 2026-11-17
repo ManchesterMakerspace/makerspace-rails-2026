@@ -316,6 +316,10 @@ eligibility and order/ticket/attendee parent lookups are indexed. Attendees inde
 email/member and member/organization/order lookups. Only attendees store member
 links; orders derive their potentially multiple members through attendees.
 Invalidated events, refunded orders, and deleted ticket classes retain history.
+Order `refunded_at` records the provider refund timestamp or provider changed time,
+never import time. It may be nil even for an invalidated/refunded order when no
+provider date is known; `refund_evidence` and invalidation still retain the refund.
+Existing refund timestamps survive replay, and missing ones can be filled later.
 `eventbrite_webhook_deliveries` indexes completion/failure/due/lease state; its
 `expires_at` TTL is set only after completion, for 30 days. `eventbrite_sync_runs`
 indexes kind/completion and persists criteria, page progress and success watermarks.
@@ -333,8 +337,13 @@ Apply model indexes through `data:ensure_unique_indexes` before ingestion; see
 ## Eventbrite announcement state
 
 eventbrite_events now stores series identity, safe public presentation metadata,
-capacity, sold/remaining inventory snapshots, inventory_refresh_at, and a
+capacity, sold/remaining inventory snapshots, `ticket_sales_start_at` (earliest
+scheduled future admission opening when no class is on sale),
+`has_member_ticket_class` (case-insensitive name/description match), inventory_refresh_at, and a
 slack_receipts hash keyed by delivery ID (embedded values, not a collection).
+Sale metadata is replaced alongside inventory after a complete successful fetch.
+Existing events default to no member match and an unknown sale date until refreshed.
+No new indexes or collection rollout are needed for these fields.
 Series and due-inventory lookup indexes support recovery.
 eventbrite_slack_deliveries is a top-level durable outbox. Its unique key is
 organization_id/scope_id/kind/day/mode. It retains represented event IDs, revisions,
@@ -344,7 +353,7 @@ No TTL removes message history. Apply indexes with data:ensure_unique_indexes.
 `last_error` includes bounded, filtered error details and Slack response validation
 messages for new failures. Existing class-only or ambiguous errors are retained;
 rerunning a reminder does not erase terminal state. HTTP 429 retains due work
-without a failed_at or sending_at marker. No additional fields or indexes are needed.
+without a failed_at or sending_at marker. Error handling uses existing delivery fields and indexes.
 Duplicate notifications preserve pending retry deadlines and serialized publication
 selection keeps receipts anchored to the occurrence actually sent. An order update
 marks its previous occurrence for inventory reconciliation before replacing the

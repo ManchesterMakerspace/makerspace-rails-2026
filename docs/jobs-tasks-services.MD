@@ -1257,8 +1257,12 @@ data only and share Redis throttles with live ingestion. None is exposed through
 the admin run-job API. Invocation, filters, resume, errors, credentials and
 deployment requirements: [Eventbrite operator guide](eventbrite.md).
 
-Order backfills use an unfiltered order listing with attendee/refund expansions;
-they do not send the rejected `status=both` argument. A query-version marker resets
+Order backfills use an unfiltered order listing with attendee/refund expansions.
+`Synchronizer` uses provider refund/changed timestamps for `refunded_at`, including
+attendee-driven refund evidence, leaving it nil when the provider date is unknown.
+Local invalidation and evidence persist independently; replay preserves a known
+refund timestamp and can fill a missing one without recording import time as a refund.
+Backfills do not send the rejected `status=both` argument. A query-version marker resets
 legacy order continuation tokens on resume while preserving event-page progress
 and filters. See the operator guide for live historical-completeness checks.
 
@@ -1269,6 +1273,15 @@ synchronization and before completing its durable inbox entry. The service hydra
 public event details, resolves series, refreshes admission inventory, and records
 publication/update intent. Backfills do not invoke it. AnnouncementMessage produces
 escaped accessible Block Kit and fallback text without attendee or buyer data.
+`TicketSales` derives the earliest future admission opening when none is on sale
+and the case-insensitive `member` ticket-name/description flag from the complete
+inventory response. `Announcements` persists that metadata with counts, preserving
+the prior snapshot on failed/incomplete fetches. `AnnouncementMessage` includes
+`Tickets go on sale <DATE>` in the event timezone until the saved opening time,
+and adds the URL-encoded optional `EVENTBRITE_MEMBER_DISCOUNT_CODE` to qualifying
+event/series registration links, preserving other query parameters and fragments.
+Publication, reminders and edits share this behavior. See eventbrite.md for sale
+eligibility, series and refresh details; backfills still send no Slack messages.
 EventbriteSlackDeliveryJob posts or edits durable outbox records, saves receipts on
 events, and repairs interrupted receipt mirroring. It preserves actual destinations
 and SLACK_ENV isolation; ambiguous sends require operator reconciliation.

@@ -78,8 +78,9 @@ module EventbriteIntegration
           end
         end
         sold, remaining = self.class.totals(classes, tiers, fresh.capacity)
+        sales = TicketSales.snapshot(classes, tiers, remaining: remaining)
         check.call
-        fresh.set(tickets_sold: sold, tickets_remaining: remaining, inventory_updated_at: Time.current)
+        fresh.set(sales.merge(tickets_sold: sold, tickets_remaining: remaining, inventory_updated_at: Time.current))
         dirty_event(fresh)
         fresh
       end

@@ -3,6 +3,7 @@ module EventbriteIntegration
   class Configuration
     def self.organization_ids = ENV.fetch('EVENTBRITE_ORGANIZATION_IDS', '').split(',').map(&:strip).reject(&:empty?).uniq
     def self.token = ENV['EVENTBRITE_API_KEY'].to_s.strip
+    def self.member_discount_code = ENV['EVENTBRITE_MEMBER_DISCOUNT_CODE'].to_s.strip.presence
     def self.webhook_path = ENV['EVENTBRITE_WEBHOOK_PATH'].to_s.strip
     def self.validate!
       raise ArgumentError, 'Eventbrite API token is required' if token.empty?
