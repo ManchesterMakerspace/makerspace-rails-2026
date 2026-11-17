@@ -149,10 +149,12 @@ RSpec.describe Service::Analytics do
       member = create(:member, expirationTime: 1.month.from_now.to_i * 1000)
       Invoice.collection.insert_many([
         { member_id: member.id, due_date: 1.day.ago, settled_at: nil, transaction_id: nil },
+        { member_id: member.id, due_date: 1.day.ago, settled_at: nil, transaction_id: nil, membership_paid_confirmed_at: Time.current },
         { member_id: member.id, due_date: 1.day.from_now, refunded: false, refund_requested: Time.current }
       ])
 
       expect(described_class.summary_counts).to eq(past_due_invoices: 1, refunds_pending: 1)
+      expect(described_class.query_past_due.count).to eq(1)
     end
   end
 

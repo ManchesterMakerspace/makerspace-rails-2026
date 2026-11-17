@@ -26,11 +26,13 @@ class Admin::InvoicesController < AdminOrRmController
         query = query_to_bool(invoice_query_params[:settled],
           {"$or" => [
             { :settled_at.ne => nil },
-            { :transaction_id.ne => nil }
+            { :transaction_id.ne => nil },
+            { :membership_paid_confirmed_at.ne => nil }
           ]},
           {"$and" => [
             { settled_at: nil },
-            { transaction_id: nil }
+            { transaction_id: nil },
+            { membership_paid_confirmed_at: nil }
           ]},
         )
       elsif key === :past_due
@@ -38,13 +40,13 @@ class Admin::InvoicesController < AdminOrRmController
           {"$or" => [
             { settled_at: nil },
             { transaction_id: nil }
-          ], :due_date.lt => Time.now },
+          ], :due_date.lt => Time.now, membership_paid_confirmed_at: nil },
           {"$or" => [
             {"$and" => [
               { :settled_at.ne => nil },
               { :transaction_id.ne => nil }
             ]},
-            :due_date.gte => Time.now] }
+            { :membership_paid_confirmed_at.ne => nil }, :due_date.gte => Time.now] }
         )
       elsif bool_params.include?(key)
         query = query_bool_by_name(invoice_query_params[key], key)

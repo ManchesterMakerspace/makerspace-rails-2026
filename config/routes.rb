@@ -107,6 +107,7 @@ Rails.application.routes.draw do
         post   '/totp_sessions', to: 'members/totp_sessions#create'
       end
       resources :members, only: [:show, :index, :update] do
+        get :continuous_paid_membership, on: :member, to: 'members/continuous_paid_memberships#show'
         scope module: :members do
           resources :permissions, only: [:index]
         end
@@ -292,6 +293,7 @@ Rails.application.routes.draw do
         resources :rental_types, only: [:index, :create, :update, :destroy]
 
         resources :members, only: [:create, :update] do
+          put :continuous_paid_membership, on: :member, to: 'members/continuous_paid_memberships#update'
           member do
             post :update_password
             post :send_password_reset

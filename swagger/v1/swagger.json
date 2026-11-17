@@ -96,6 +96,51 @@
           "rental"
         ]
       },
+      "ContinuousPaidMembership": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "continuousPaidMembershipMonths": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "estimated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "continuousPaidMembershipMonths",
+          "revision",
+          "estimated"
+        ]
+      },
+      "IncreaseContinuousPaidMembership": {
+        "type": "object",
+        "properties": {
+          "continuousPaidMembershipMonths": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "continuousPaidMembershipMonths",
+          "expectedRevision",
+          "reason"
+        ]
+      },
       "EventbriteRecord": {
         "type": "object",
         "properties": {
@@ -517,7 +562,8 @@
             "type": "string"
           },
           "settled": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Payment received, including confirmed cash/check receipts held until first-fob issuance; paid months accrue when membership time is applied."
           },
           "pastDue": {
             "type": "boolean"
@@ -7146,6 +7192,7 @@
             "name": "settled",
             "in": "query",
             "required": false,
+            "description": "Includes confirmed cash/check receipts held until first-fob issuance as paid.",
             "schema": {
               "type": "boolean"
             }
@@ -7154,6 +7201,7 @@
             "name": "pastDue",
             "in": "query",
             "required": false,
+            "description": "Confirmed cash/check receipts held until first-fob issuance are not past due.",
             "schema": {
               "type": "boolean"
             }
@@ -10584,6 +10632,103 @@
         }
       }
     },
+    "/members/{id}/continuous_paid_membership": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read stored continuous paid membership months (self, Admin, or Board)",
+        "tags": [
+          "PaidMembership"
+        ],
+        "operationId": "getContinuousPaidMembership",
+        "responses": {
+          "200": {
+            "description": "stored balance with effective expiration reset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinuousPaidMembership"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "authentication or completed TOTP required"
+          },
+          "403": {
+            "description": "another ordinary member or Resource Manager"
+          },
+          "404": {
+            "description": "member not found"
+          }
+        }
+      }
+    },
+    "/admin/members/{id}/continuous_paid_membership": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Increase a paid balance with a required audited correction reason (Admin only)",
+        "tags": [
+          "PaidMembership"
+        ],
+        "operationId": "increaseContinuousPaidMembership",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "increase and audit committed atomically",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinuousPaidMembership"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "authentication, CSRF, or completed TOTP required"
+          },
+          "403": {
+            "description": "Admin role required; Board cannot correct balances"
+          },
+          "404": {
+            "description": "member not found"
+          },
+          "409": {
+            "description": "expected revision is stale"
+          },
+          "422": {
+            "description": "invalid increase, reason, eligibility, or unavailable transaction service"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncreaseContinuousPaidMembership"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/documents/{id}": {
       "get": {
         "summary": "Get a document",
@@ -13159,6 +13304,7 @@
             "name": "settled",
             "in": "query",
             "required": false,
+            "description": "Includes confirmed cash/check receipts held until first-fob issuance as paid.",
             "schema": {
               "type": "boolean"
             }
@@ -13167,6 +13313,7 @@
             "name": "pastDue",
             "in": "query",
             "required": false,
+            "description": "Confirmed cash/check receipts held until first-fob issuance are not past due.",
             "schema": {
               "type": "boolean"
             }

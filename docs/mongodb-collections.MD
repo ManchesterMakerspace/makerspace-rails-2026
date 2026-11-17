@@ -1,5 +1,42 @@
 # MongoDB Collections
 
+## Continuous paid membership accounting
+
+Existing top-level `members` adds whole-month `continuous_paid_membership_months`,
+Decimal128 internal balance, streak ID, revision, estimated flag, reset identity,
+and backfill timestamp/run provenance. `(expirationTime,
+continuous_paid_membership_balance)` supports the minute expiration sweep;
+existing status/expiration indexes support revocations.
+
+Legacy documents missing the estimated flag default to estimated, including on
+unrelated saves. New accounts initialize it to false at creation; backfill sets
+the reviewed result explicitly.
+
+New top-level `membership_paid_credit_entries` retains applications, refunds,
+settlement reversals, resets and admin adjustments across streak changes. Fields
+include source/invoice/member/streak identity, decimal months/delta, original paid
+amount/currency, cumulative refund/deduction, timestamps, coverage boundaries,
+estimates, a source-operation revision for historical refunds, and correction
+details. Unique `(source_key, member_id, action,
+action_key)` prevents duplicates. `(member_id, streak_id, occurred_at)` supports
+reconciliation; `(invoice_id, action)` finds refund recipients.
+
+New top-level `membership_paid_backfill_runs` stores cutoff, mode, checkpoint,
+counts and completion time. `membership_paid_backfill_reports` stores per-member
+balance, evidence, estimates, issues, mode and outcome. `(run_id, member_id)` is
+unique; `(run_id, status)` supports retries/review. These private operator records
+have no TTL.
+
+Existing `invoices` adds application/reversal timestamps, source identity,
+an offline payment-confirmation timestamp (including first-fob-held cash/check),
+recipient ObjectIds, original decimal paid amount/currency, operation revision,
+and embedded confirmed refund records (identity, decimal amount as text, currency,
+timestamp). Embedded refunds are **not** a collection. Recurring clones clear
+prior-cycle state. `groups` adds an operation revision to serialize roster edits
+against application. Deploy additive definitions and run
+`membership:ensure_paid_indexes` before accounting/backfill rollout; baseline
+application remains a separate operation. See [rules and rollout](continuous-paid-membership.md).
+
 ## Member remember-cookie lifecycle
 
 The existing top-level `members` collection's `remember_created_at` supports

@@ -87,7 +87,7 @@ describe 'Admin::Members API', type: :request do
         '$ref' => '#/components/schemas/AdminUpdateMemberDetails'
       }, required: true
 
-      response '200', 'member updated' do
+      response '200', 'member updated', requires_transactions: true do
         before { sign_in admin }
 
         schema '$ref' => '#/components/schemas/Member'
@@ -139,7 +139,7 @@ describe 'Admin::Members API', type: :request do
         end
       end
 
-      response '200', 'revocation skips email deliverability validation' do
+      response '200', 'revocation skips email deliverability validation', requires_transactions: true do
         before do
           sign_in admin
           allow(ENV).to receive(:[]).and_call_original
@@ -167,7 +167,7 @@ describe 'Admin::Members API', type: :request do
         end
       end
 
-      response '200', 'revocation skips email deliverability validation without an email change' do
+      response '200', 'revocation skips email deliverability validation without an email change', requires_transactions: true do
         before do
           sign_in admin
           allow(ENV).to receive(:[]).and_call_original

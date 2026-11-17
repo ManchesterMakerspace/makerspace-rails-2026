@@ -19,13 +19,39 @@ class BraintreeService::Transaction < Braintree::Transaction
     if invoice.nil?
       enque_message("Err: Refunded transaction #{transaction.id} without related invoice. Investigation required")
     else
-      invoice.update!({ refunded: true })
+      if %w[member household].include?(invoice.resource_class)
+        record_membership_refund(transaction, invoice: invoice)
+      else
+        invoice.update!({ refunded: true })
+      end
       BillingMailer.refund(invoice.member.email, transaction_id, invoice.id.to_s).deliver_later
       enque_message("#{invoice.member.fullname}'s refund of #{invoice.amount} for #{invoice.name} from #{invoice.settled_at} completed. " \
                     "If this was a membership payment, check the member's expiration date: a refund does not change it.")
     end
 
     transaction
+  end
+
+  # Called only for successful portal refunds, confirmed refund notifications,
+  # and explicit reconciliation. Plain transaction reads have no accounting side effects.
+  def self.record_membership_refund(transaction, invoice: nil)
+    invoice ||= Invoice.find_by(transaction_id: transaction.refunded_transaction_id)
+    return false unless invoice && %w[member household].include?(invoice.resource_class)
+    MembershipPaidCredit.refund!(invoice_id: invoice.id, refund_id: transaction.id,
+      amount: transaction.amount, currency: transaction.try(:currency_iso_code).presence || 'USD', origin: 'braintree',
+      at: transaction.try(:created_at) || Time.current)
+  end
+
+  def self.reconcile_membership_refunds(gateway, invoice)
+    original = gateway.transaction.find(invoice.transaction_id)
+    Array(original.refund_ids).each do |refund_id|
+      refund = gateway.transaction.find(refund_id)
+      next unless %w[submitted_for_settlement settling settled settlement_pending].include?(refund.status)
+      record_membership_refund(refund, invoice: invoice)
+    end
+  rescue => error
+    Rails.logger.error("[MembershipPaidCredit] reconciliation_failed invoice_id=#{invoice.id} type=#{error.class}")
+    raise
   end
 
   def self.get_transactions(gateway, search_query = nil, limit = 50, result_filter = nil)
@@ -98,10 +124,15 @@ class BraintreeService::Transaction < Braintree::Transaction
       transaction = result.transaction
     end
 
-    invoice.update!({
+    payment_attributes = {
       subscription_id: subscription ? subscription.id : nil,
       transaction_id: transaction.id,
-    })
+    }
+    if %w[member household].include?(invoice.resource_class)
+      payment_attributes[:membership_paid_amount] = BigDecimal(transaction.amount.to_s)
+      payment_attributes[:membership_paid_currency] = transaction.try(:currency_iso_code).presence || 'USD'
+    end
+    invoice.update!(payment_attributes)
 
     BillingMailer.receipt(invoice.member.email, transaction.id, invoice.id.to_s).deliver_later
     unless subscription.nil?

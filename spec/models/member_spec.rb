@@ -368,7 +368,7 @@ RSpec.describe Member, type: :model do
       let(:expired_member) { create(:member, :expired) }
       let(:expired_card) { create(:card, member: expired_member) }
 
-      it "Updates access card expiration" do
+      it "Updates access card expiration", requires_transactions: true do
         first_expiration = expired_member.expirationTime
         expect(expired_card.expiry).to eq(first_expiration)
 

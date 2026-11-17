@@ -16,6 +16,18 @@ RSpec.configure do |config|
   # the root example_group in your specs, e.g. describe '...', swagger_doc: 'v2/swagger.json'
 
   definitions = {
+    ContinuousPaidMembership: {
+      type: :object, additionalProperties: false,
+      properties: { continuousPaidMembershipMonths: { type: :integer, minimum: 0 },
+        revision: { type: :integer, minimum: 0 }, estimated: { type: :boolean } },
+      required: %w[continuousPaidMembershipMonths revision estimated]
+    },
+    IncreaseContinuousPaidMembership: {
+      type: :object,
+      properties: { continuousPaidMembershipMonths: { type: :integer, minimum: 0 },
+        expectedRevision: { type: :integer, minimum: 0 }, reason: { type: :string, minLength: 1, maxLength: 2000 } },
+      required: %w[continuousPaidMembershipMonths expectedRevision reason]
+    },
     EventbriteRecord: {
       type: :object, properties: {
         id: { type: :string }, organizationId: { type: :string }, eventbriteId: { type: :string },
@@ -205,7 +217,7 @@ RSpec.configure do |config|
         id: { type: :string },
         name: { type: :string },
         description: { type: :string },
-        settled: { type: :boolean },
+        settled: { type: :boolean, description: 'Payment received, including confirmed cash/check receipts held until first-fob issuance; paid months accrue when membership time is applied.' },
         pastDue: { type: :boolean },
         createdAt: { type: :string },
         dueDate: { type: :string },

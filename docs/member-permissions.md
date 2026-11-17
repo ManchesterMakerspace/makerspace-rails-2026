@@ -1,5 +1,18 @@
 # MongoDB member permissions
 
+## Continuous paid membership months
+
+GET `/api/members/:id/continuous_paid_membership` permits self, Admin and Board.
+Resource Manager/checkout-approver roles alone grant no other-profile access.
+React uses separate capabilities for viewing other balances and increasing them.
+PUT `/api/admin/members/:id/continuous_paid_membership` explicitly requires Admin;
+the broader AdminController's Board allowance does not apply. It requires a whole
+number increase, expected revision, eligible expiration/status and correction
+reason. Session, completed TOTP and CSRF remain mandatory. Generic member updates
+exclude accounting fields. The correction and audit commit atomically; stale
+revisions return 409. This counter grants no access entitlement or role. See
+[accounting rules](continuous-paid-membership.md).
+
 This page is the canonical reference for named member permissions and Safety
 Checkout approver assignments. The named-permission system has two similarly
 shaped Mongoid collections with different roles:

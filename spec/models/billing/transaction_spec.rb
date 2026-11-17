@@ -4,13 +4,13 @@ RSpec.describe BraintreeService::Transaction, type: :model do
   let(:gateway) { double } # Create a fake gateway
   let(:success_result) { double(success?: true) }
   let(:error_result) { double(success?: false) }
-  let(:fake_transaction) { double(id: "foo") }
+  let(:fake_transaction) { double(id: "foo", amount: '65.00') }
 
   context "public methods" do
-    describe "#refund" do
+    describe "#refund", requires_transactions: true do
       transaction_id = "foo"
 
-      it "raises error if failed result" do
+      it "raises error if failed result", requires_transactions: false do
         allow(gateway).to receive_message_chain(:transaction, refund: error_result) # Setup method calls to gateway
         allow(Error::Braintree::Result).to receive(:new).with(error_result).and_return(Error::Braintree::Result.new) # Bypass error instantiation
 

@@ -6,6 +6,15 @@ This document inventories email that the Rails application can initiate. “Temp
 
 ## Delivery and suppression rules
 
+- Continuous paid membership accounting sends no new email. Successful portal
+  refunds retain the existing refund mail recipient, subject and template below;
+  membership refund accounting commits before that mail is queued. Settled refund
+  notifications, explicit reconciliation, offline refund recording, reset sweeps,
+  backfill and Admin balance corrections send no refund/counter mail. A processor
+  refund followed by accounting failure requires reconciliation before attempting
+  another refund. Household disband notifications retain their existing recipients,
+  subjects and templates and are deferred until an accounting transaction commits.
+
 - Application mail is sent from `SMTP_FROM` (default `contact@manchestermakerspace.org`). Production delivers through Gmail when `GMAIL_USERNAME` is present, otherwise generic SMTP when `SMTP_USERNAME` is present; without either provider, delivery is disabled. See [the environment-variable inventory](environment-vars.MD) for configuration details.
 - Most messages are queued with `deliver_later`. Admin-created-member welcomes use `deliver_now`; the controller therefore waits for that message to be processed.
 - A member with direct notifications suppressed (for example a revoked member) receives no mail through `ApplicationMailer`.
