@@ -43,6 +43,7 @@ class Invoice
   field :settlement_processed_at, type: Time
   field :membership_paid_applied_at, type: Time
   field :membership_paid_confirmed_at, type: Time
+  field :membership_paid_next_invoice_id, type: BSON::ObjectId
   field :membership_paid_reversed_at, type: Time
   field :membership_paid_source_key, type: String
   field :membership_paid_recipient_ids, type: Array, default: []
@@ -168,9 +169,7 @@ class Invoice
     raise Error::UnprocessableEntity.new("Already paid") if settled
     if membership_paid_confirmed_at.present?
       if payment_method_id.nil? && transaction_id.nil? && membership_paid_applied_at.nil? && settled_at.nil?
-        # A prior accounting attempt may have failed after recording the receipt.
-        # Retry its application without recording another payment or cloning a cycle.
-        return settle_invoice
+        return settle_confirmed_offline_membership
       end
       raise Error::UnprocessableEntity.new('Payment already received. Membership time is held until the first fob is issued.')
     end
@@ -181,6 +180,7 @@ class Invoice
       # It has no processor transaction ID, so retain a separate receipt marker.
       update!(membership_paid_confirmed_at: membership_paid_confirmed_at || Time.current,
         membership_paid_amount: membership_paid_amount || BigDecimal(amount.to_s))
+      return settle_confirmed_offline_membership
     end
 
     if payment_method_id
@@ -208,6 +208,21 @@ class Invoice
     execute_invoice_operation
   end
 
+  def settle_confirmed_offline_membership
+    # The receipt is already durable. Application and the next cycle commit
+    # together so either can be retried after a failed attempt.
+    MembershipPaidCredit.transaction do
+      reload
+      inc(membership_paid_operation_revision: 1) # serialize Admin retries, including held payments
+      settle_invoice
+      if plan_id.present? && membership_paid_next_invoice_id.nil?
+        next_invoice = build_next_invoice
+        update!(membership_paid_next_invoice_id: next_invoice.id)
+      end
+    end
+    nil
+  end
+
   def build_next_invoice(gateway=nil)
     next_invoice = self.clone
     next_invoice.created_at = Time.now
@@ -222,6 +237,7 @@ class Invoice
     next_invoice.settlement_processed_at = nil
     next_invoice.membership_paid_applied_at = nil
     next_invoice.membership_paid_confirmed_at = nil
+    next_invoice.membership_paid_next_invoice_id = nil
     next_invoice.membership_paid_reversed_at = nil
     next_invoice.membership_paid_source_key = nil
     next_invoice.membership_paid_recipient_ids = []
@@ -242,6 +258,7 @@ class Invoice
     end
 
     next_invoice.save!
+    next_invoice
   end
 
   # Runs for every subscription cancellation, whether a member/admin

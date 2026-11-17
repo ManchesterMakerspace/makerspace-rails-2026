@@ -23,6 +23,8 @@ receipt left unapplied by an accounting failure can retry application without
 another payment. A new charge after a settlement decline uses a distinct ledger
 source; refunds and reversal target that attempt. `Group.paid_invoice?`
 recognizes the receipt for household standing without crediting months early.
+Recurring offline receipt application and next-cycle creation share one
+transaction; a saved next-invoice ID prevents duplicate cycles on retry.
 
 `MembershipPaidResetJob.perform_now` is installed every minute by Whenever,
 independent of nondurable queue delivery. Its indexed sweep rechecks expiration,

@@ -93,7 +93,9 @@ RSpec.describe 'Paid membership permissions and session protections', type: :req
     get '/api/invoices', params: { settled: true }, as: :json
     expect(response.parsed_body.find { |row| row['id'] == invoice.id.to_s }['settled']).to be(true)
     expect(MembershipPaidCredit.read(member.id)[:continuousPaidMembershipMonths]).to eq(0)
-    expect { invoice.reload.submit_for_settlement }.to raise_error(Error::UnprocessableEntity, /already received/)
+    expect { invoice.reload.submit_for_settlement }.not_to change { Invoice.count }
+    expect(invoice.reload.settled_at).to be_nil
+    expect(MembershipPaidCredit.read(member.id)[:continuousPaidMembershipMonths]).to eq(0)
     expect(invoice.past_due).to be(false)
   end
 end

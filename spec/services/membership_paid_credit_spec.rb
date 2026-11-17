@@ -130,6 +130,37 @@ RSpec.describe MembershipPaidCredit, requires_transactions: true do
     expect(described_class.read(member.id)[:continuousPaidMembershipMonths]).to eq(12)
   end
 
+  it 'creates exactly one next cycle when a recurring offline receipt is recovered' do
+    create(:card, member: member)
+    invoice = invoice_for(member, plan_id: 'membership-one-month-recurring', quantity: 1)
+    allow(described_class).to receive(:apply_invoice!).and_raise(Error::Conflict.new('retry'))
+    expect { invoice.submit_for_settlement }.to raise_error(Error::Conflict)
+    expect(invoice.reload.membership_paid_confirmed_at).to be_present
+    expect(invoice.membership_paid_next_invoice_id).to be_nil
+    expect(Invoice.where(resource_id: member.id.to_s).count).to eq(1)
+
+    allow(described_class).to receive(:apply_invoice!).and_call_original
+    invoice.submit_for_settlement
+    next_invoice = Invoice.find(invoice.reload.membership_paid_next_invoice_id)
+    expect(next_invoice.due_date).to eq(invoice.due_date + 1.month)
+    expect(next_invoice.membership_paid_confirmed_at).to be_nil
+    expect(next_invoice.membership_paid_next_invoice_id).to be_nil
+    expect(described_class.read(member.id)[:continuousPaidMembershipMonths]).to eq(1)
+    expect { invoice.reload.submit_for_settlement }.to raise_error(Error::UnprocessableEntity, /Already paid/)
+    expect(Invoice.where(resource_id: member.id.to_s).count).to eq(2)
+  end
+
+  it 'does not clone a held recurring offline receipt twice on retry' do
+    invoice = invoice_for(member, plan_id: 'membership-one-month-recurring', quantity: 1)
+    invoice.submit_for_settlement
+    expect(invoice.reload.settled_at).to be_nil
+    expect(invoice.membership_paid_next_invoice_id).to be_present
+    invoice.submit_for_settlement
+    expect(Invoice.where(resource_id: member.id.to_s).count).to eq(2)
+    create(:card, member: member)
+    expect(described_class.read(member.id)[:continuousPaidMembershipMonths]).to eq(1)
+  end
+
   it 'does not credit an unpaid renewal and resets before a late extension' do
     apply
     member.reload.update!(renew: 1)

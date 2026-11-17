@@ -24,6 +24,9 @@ unset until release. Repeating settlement is rejected before any processor call
 with “Payment already received. Membership time is held until the first fob is
 issued.” If accounting failed after the receipt was recorded, an Admin may
 retry applying that same confirmed receipt without taking another payment.
+For recurring cash/check invoices, application and next-cycle creation commit
+together. The parent stores the created invoice ID; a held receipt or recovered
+application never creates that cycle twice.
 
 Both household invoice forms are supported: an invoice addressed to `Group`,
 or a household-plan member invoice. Each member covered at application receives

@@ -29,7 +29,8 @@ have no TTL.
 
 Existing `invoices` adds application/reversal timestamps, source identity,
 an offline payment-confirmation timestamp (including first-fob-held cash/check),
-recipient ObjectIds, original decimal paid amount/currency, operation revision,
+`membership_paid_next_invoice_id` on the parent for recurring offline receipt
+recovery, recipient ObjectIds, original decimal paid amount/currency, operation revision,
 and embedded confirmed refund records (identity, decimal amount as text, currency,
 timestamp). Embedded refunds are **not** a collection. Recurring clones clear
 prior-cycle state. `groups` adds an operation revision to serialize roster edits
