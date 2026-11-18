@@ -140,6 +140,9 @@ to the primary are considered. The latter retain the primary's member ID even
 after a group is deleted, so historical secondary membership evidence can match.
 Revoked/deadline-expired accounts stay zero. Unresolved legacy provider links
 remain flagged for manual refund review.
+Live payment entries marked with a revoked streak contributed zero when applied;
+historical replay keeps them at zero after restoration, and later refunds of
+those entries cannot subtract from a new paid streak.
 
 Record a **confirmed** offline refund with
 `bundle exec rake "membership:record_paid_refund[INVOICE_ID,REFUND_ID,AMOUNT,USD]"`.

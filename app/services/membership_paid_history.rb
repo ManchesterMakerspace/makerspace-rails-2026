@@ -122,7 +122,8 @@ class MembershipPaidHistory
     issues << "household_recipients_incomplete:#{invoice['_id']}" if household && Array(invoice['membership_paid_recipient_ids']).empty?
     add_source(source_key: source, invoice_id: invoice['_id'], at: at, months: months, paid_amount: paid,
       currency: invoice['membership_paid_currency'] || 'USD', coverage_start: start, coverage_end: finish,
-      estimated: uncertain, existing: existing, refunds: Array(invoice['membership_paid_refunds']), legacy_refunded: invoice['refunded'])
+      estimated: uncertain, existing: existing, refunds: Array(invoice['membership_paid_refunds']), legacy_refunded: invoice['refunded'],
+      zero_credit: existing&.streak_id&.start_with?('revoked:'))
   rescue ArgumentError, TypeError
     issues << "invalid_invoice:#{invoice['_id']}"
   end
@@ -187,7 +188,8 @@ class MembershipPaidHistory
         add_source(source_key: entry.source_key, invoice_id: entry.invoice_id, at: entry.occurred_at,
           months: entry.months, paid_amount: entry.paid_amount, currency: entry.currency,
           coverage_start: entry.coverage_start, coverage_end: entry.coverage_end, estimated: entry.estimated,
-          existing: entry, refunds: [], legacy_refunded: false)
+          existing: entry, refunds: [], legacy_refunded: false,
+          zero_credit: entry.streak_id.start_with?('revoked:'))
       elsif entry.action == 'reset'
         @events << { type: :reset, at: entry.occurred_at }
       elsif %w[refund reversal].include?(entry.action)
@@ -226,10 +228,13 @@ class MembershipPaidHistory
             reset
           end
         end
-        source[:cohort] = @cohort
+        # Live application entries use a dedicated revoked streak when the
+        # payment extended duration but deliberately credited no paid months.
+        # Keep it outside every credited cohort, even after status restoration.
+        source[:cohort] = source[:zero_credit] ? nil : @cohort
         # A held payment may have been refunded before its first-fob release.
         # Its refund event already set deducted_months without a cohort to debit.
-        @balance += source[:months] - source[:deducted_months]
+        @balance += source[:months] - source[:deducted_months] unless source[:zero_credit]
         expiry = [expiry, source[:coverage_end]].compact.max
       when :refund, :deduction
         source = event[:source]

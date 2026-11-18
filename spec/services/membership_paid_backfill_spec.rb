@@ -125,6 +125,36 @@ RSpec.describe MembershipPaidBackfill, requires_transactions: true do
     expect(member.reload.continuous_paid_membership_months).to eq(6)
   end
 
+  it 'does not resurrect an application that credited zero while revoked after restoration' do
+    create(:card, member: member)
+    member.reload.update!(status: 'revoked')
+    invoice = create(:invoice, member: member, resource_id: member.id.to_s, resource_class: 'member',
+      amount: 120, quantity: 12, plan_id: nil)
+    invoice.settle_invoice
+    entry = MembershipPaidCreditEntry.where(invoice_id: invoice.id, action: 'application').first
+    expect(entry.balance_delta).to eq(0)
+    expect(entry.streak_id).to start_with('revoked:')
+    member.reload.update!(status: 'activeMember')
+    described_class.run!(mode: 'apply')
+    expect(member.reload.continuous_paid_membership_months).to eq(0)
+  end
+
+  it 'does not deduct a revoked application refund from a later paid streak during replay' do
+    create(:card, member: member)
+    member.reload.update!(status: 'revoked')
+    old_invoice = create(:invoice, member: member, resource_id: member.id.to_s, resource_class: 'member',
+      amount: 120, quantity: 12, plan_id: nil)
+    old_invoice.settle_invoice
+    member.reload.update!(status: 'activeMember')
+    current_invoice = create(:invoice, member: member, resource_id: member.id.to_s, resource_class: 'member',
+      amount: 10, quantity: 1, plan_id: nil)
+    current_invoice.settle_invoice
+    MembershipPaidCredit.refund!(invoice_id: old_invoice.id, refund_id: 'old-half', amount: 60)
+    expect(member.reload.continuous_paid_membership_months).to eq(1)
+    described_class.run!(mode: 'apply')
+    expect(member.reload.continuous_paid_membership_months).to eq(1)
+  end
+
   it 'can deduct a confirmed refund from a seeded legacy source without an invoice' do
     legacy_payment(txn_id: 'legacy-refund-source')
     described_class.run!(mode: 'apply')

@@ -36,6 +36,8 @@ failures are logged. The job is not exposed through the admin job API.
 live entries without invoking `Payment` initialization callbacks. Historical
 household recipients require snapshots/audits for either group-addressed or
 primary-addressed household-plan invoices; today's roster adds no old credit.
+Applications recorded on a revoked streak remain zero-credit during replay even
+after restoration, and their later refunds do not reduce a new paid streak.
 `MembershipPaidBackfill` persists a fixed cutoff, resumable checkpoints, evidence
 and per-member review reports. Default dry run writes reports only; explicit
 apply initializes each baseline/source history atomically, replays later live
