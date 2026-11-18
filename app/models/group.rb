@@ -1,6 +1,7 @@
 class Group
   include Mongoid::Document
   include InvoiceableResource
+  include MembershipPaidDeferredEffects
   include Service::SlackConnector
 
   # Adults a household covers when its plan does not say (see InvoiceOption#household_size).
@@ -11,6 +12,7 @@ class Group
   field :expiry, type: Integer    # expiration in ms, propagated to all household members
   field :subscription_id, type: String
   field :subscription, type: Boolean, default: false
+  field :membership_paid_operation_revision, type: Integer, default: 0
 
   belongs_to :member, primary_key: 'fullname', foreign_key: "groupRep"
   has_many :active_members, class_name: "Member", inverse_of: :group, primary_key: 'groupName', foreign_key: "groupName"
@@ -47,6 +49,8 @@ class Group
   # not been applied yet) unless its settlement was declined.
   def self.paid_invoice?(invoice)
     return true if invoice.settled_at.present?
+    return false if invoice.membership_paid_reversed_at.present?
+    return true if invoice.membership_paid_confirmed_at.present?
 
     invoice.transaction_id.present? && invoice.last_failed_transaction_id != invoice.transaction_id
   end
@@ -95,7 +99,8 @@ class Group
   def household_member_ids
     keys = [groupName.to_s]
     keys << BSON::ObjectId.from_string(groupName.to_s) if BSON::ObjectId.legal?(groupName.to_s)
-    Member.collection.find(groupName: { '$in' => keys }, merged_at: nil).projection(_id: 1).map { |doc| doc['_id'] }
+    Member.collection.find({ groupName: { '$in' => keys }, merged_at: nil }, MembershipPaidCredit.session_options)
+      .projection(_id: 1).map { |doc| doc['_id'] }
   end
 
   def secondary_members
@@ -127,6 +132,15 @@ class Group
   # reason to override the address. Returns the override details when one was used (for the audit entry), else nil.
   # invitation: the invitation this join comes from; its own seat does not count against the household.
   def add_subordinate(subordinate_member, address_override_reason: nil, invitation: nil)
+    MembershipPaidCredit.transaction(attempts: 1) do
+      MembershipPaidCredit.track!(self)
+      reload
+      inc(membership_paid_operation_revision: 1)
+      add_subordinate_with_paid_lifecycle(subordinate_member, address_override_reason: address_override_reason, invitation: invitation)
+    end
+  end
+
+  def add_subordinate_with_paid_lifecycle(subordinate_member, address_override_reason: nil, invitation: nil)
     if full?(ignoring_invitation: invitation)
       raise ::Error::UnprocessableEntity.new(
         "This household is full (#{seats_used} of #{size} adults). Remove someone, or move to a larger household plan, before adding another."
@@ -143,6 +157,14 @@ class Group
   end
 
   def remove_subordinate(subordinate_member)
+    MembershipPaidCredit.transaction(attempts: 1) do
+      MembershipPaidCredit.track!(self)
+      inc(membership_paid_operation_revision: 1)
+      remove_subordinate_with_paid_lifecycle(subordinate_member)
+    end
+  end
+
+  def remove_subordinate_with_paid_lifecycle(subordinate_member)
     # Revert to their own invoice's expiration if available
     own_invoice = Invoice.where(
       resource_class: "member",
@@ -164,22 +186,24 @@ class Group
   end
 
   def update_expiration(new_expiration)
+    MembershipPaidCredit.transaction { update_paid_membership_expiration(new_expiration) }
+  end
+
+  def update_paid_membership_expiration(new_expiration)
     member_ids = (household_member_ids + [member&.id]).compact.uniq
 
-    Group.collection.find(_id: id).update_one("$set" => { expiry: new_expiration })
+    Group.collection.find({ _id: id }, MembershipPaidCredit.session_options).update_one("$set" => { expiry: new_expiration })
     self.expiry = new_expiration
     # Only the expiry is written for everyone. The primary is also tagged with the household, in the form Mongoid itself
     # stores (an ObjectId): writing groupName here as a String is what made Mongoid's household queries stop finding the
     # secondaries after the first update.
-    Member.collection.find(_id: { "$in" => member_ids }).update_many(
-      "$set" => { expirationTime: new_expiration }
-    )
+    member_ids.each { |member_id| MembershipPaidCredit.change_expiration!(member_id, new_expiration) }
     if member
       stored_key = BSON::ObjectId.legal?(groupName.to_s) ? BSON::ObjectId.from_string(groupName.to_s) : groupName.to_s
-      Member.collection.find(_id: member.id).update_one("$set" => { groupName: stored_key })
+      Member.collection.find({ _id: member.id }, MembershipPaidCredit.session_options).update_one("$set" => { groupName: stored_key })
     end
     Card.where(:member_id.in => member_ids).update_all(expiry: new_expiration)
-    Service::ToolCheckoutSlackCanvas.enqueue_for_members(member_ids)
+    MembershipPaidCredit.after_commit { Service::ToolCheckoutSlackCanvas.enqueue_for_members(member_ids) }
 
     true
   end
@@ -189,6 +213,7 @@ class Group
   # uniquifiers per recipient, not the synchronous send_slack_message this
   # codebase has been moving away from (see #91).
   def send_renewal_slack_message(current_user = nil)
+    return if defer_paid_membership_effect { send_renewal_slack_message(current_user) }
     slack_user = SlackUser.find_by(member_id: member.id) if member
     unless slack_user.nil?
       enque_message(
@@ -205,6 +230,7 @@ class Group
   end
 
   def send_renewal_reversal_slack_message
+    return if defer_paid_membership_effect { send_renewal_reversal_slack_message }
     slack_user = SlackUser.find_by(member_id: member.id) if member
     unless slack_user.nil?
       enque_message(

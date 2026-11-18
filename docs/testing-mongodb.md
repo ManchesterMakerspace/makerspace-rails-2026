@@ -1,8 +1,18 @@
 # MongoDB transactions in tests
 
-Card assignment/release and repair-ticket mutations use real MongoDB transactions.
+Card assignment/release, repair-ticket mutations, paid membership accounting, and
+normal member expiration/status updates use real MongoDB transactions.
 CI runs both RSpec and Playwright against MongoDB 7.0 configured as a single-node
 replica set. This tests atomicity; it does not test replica failover.
+
+Paid invoices, first-fob release, household propagation, unpaid/earned extensions,
+revocation and Admin counter increases must use a replica set. Membership lifecycle
+writes join an existing card/ticket transaction rather than nesting sessions;
+the surrounding operation keeps its existing commit/retry/notification policy.
+Standalone coverage remains available for dedicated balance reads, authorization,
+pre-transaction input validation, dry-run history reporting and mocked unavailable
+transaction regressions. Tag examples that reach an actual transaction, including
+fixture setup that changes an existing member's expiration/status.
 
 ## Local setup with Docker
 

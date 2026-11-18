@@ -1,5 +1,53 @@
 # Production jobs, tasks, and services
 
+## Continuous paid membership accounting
+
+`MembershipPaidCredit` synchronously coordinates paid duration application,
+confirmed refunds, settlement reversals, conditional resets and audited Admin
+increases with decimal arithmetic, source identities, revisions and MongoDB
+transactions. Up to five attempts use bounded transient backoff; generic saves
+use one attempt and return a conflict. Raw writes explicitly attach the session.
+`MembershipPaidLifecycle` intercepts expiration/status updates; `Group` guards raw
+propagation and roster edits. Earned/admin extensions add no paid credit.
+`MembershipPaidDeferredEffects` postpones provider/queue callbacks until commit;
+processor calls stay outside retries. Relation caches clear before session end.
+Refund and reversal accounting follows saved recipient credits even when a
+recipient has since been soft-deleted; ordinary member reads and new credit
+application still exclude deleted accounts.
+Audit failure rolls an Admin increase back. There is no standalone fallback.
+When invoked inside an existing card/ticket transaction, lifecycle accounting
+joins its session; that caller keeps its existing commit/retry/notification
+policy. Paid first-fob release remains after the card assignment commits.
+Confirmed offline held receipts have their own invoice marker. Card release
+recognizes it, serializer/list filters show the receipt as paid, processor invoice
+matching/cancellation excludes it, and due analytics excludes it. A repeated
+processor settlement request is rejected before a processor call. A confirmed
+receipt left unapplied by an accounting failure can retry application without
+another payment. A new charge after a settlement decline uses a distinct ledger
+source; refunds and reversal target that attempt. `Group.paid_invoice?`
+recognizes the receipt for household standing without crediting months early.
+Recurring offline receipt application and next-cycle creation share one
+transaction; a saved next-invoice ID prevents duplicate cycles on retry.
+
+`MembershipPaidResetJob.perform_now` is installed every minute by Whenever,
+independent of nondurable queue delivery. Its indexed sweep rechecks expiration,
+status, streak and revision transactionally. Failures raise; later invocations
+retry. GET reports zero at the exact 240-hour boundary. Reset counts/transaction
+failures are logged. The job is not exposed through the admin job API.
+
+`MembershipPaidHistory` raw-reads invoices, audit transitions, legacy payments and
+live entries without invoking `Payment` initialization callbacks. Historical
+household recipients require snapshots/audits for either group-addressed or
+primary-addressed household-plan invoices; today's roster adds no old credit.
+Applications recorded on a revoked streak remain zero-credit during replay even
+after restoration, and their later refunds do not reduce a new paid streak.
+`MembershipPaidBackfill` persists a fixed cutoff, resumable checkpoints, evidence
+and per-member review reports. Default dry run writes reports only; explicit
+apply initializes each baseline/source history atomically, replays later live
+activity and preserves admin corrections. Failed/conflicted records retry.
+Neither service contacts processors or sends notifications. See
+[operator instructions and monitoring](continuous-paid-membership.md).
+
 ## Checkout Required sheet services
 
 `CheckoutRequiredSheetsController#create` synchronously authorizes a shop/tool
@@ -465,11 +513,17 @@ and repeats daily until someone acts. Invoke it with `RAILS_ENV=production bundl
 
 ## Manual operator Rake tasks
 
-These tasks are run by hand and are not installed by Whenever or the admin job API. None
-has a built-in dry run. Run production commands only when the task's effect is wanted.
+These tasks are run by hand and are not installed by Whenever or the admin job API.
+The paid-month backfill defaults to dry run; other tasks below have no built-in
+dry run. Run production commands only when the task's effect is wanted.
 
 | Task | Manual command | Purpose and effect |
 | --- | --- | --- |
+| `membership:ensure_paid_indexes` | `bundle exec rake membership:ensure_paid_indexes` | Creates additive ledger/report unique and lookup indexes and the member expiration/balance index. No data rewrite. |
+| `membership:backfill_paid_months` | `bundle exec rake "membership:backfill_paid_months[dry_run,RUN_ID,100]"` (omit arguments for a new dry run) | Reports/checkpoints by default. Explicit `[apply,RUN_ID,100]` initializes balances and source history with revision protection; resume using the returned ID. Review estimates/conflicts/failures before release. |
+| `membership:record_paid_refund` | `bundle exec rake "membership:record_paid_refund[INVOICE_ID,REFUND_ID,AMOUNT,USD]"` | Records a confirmed offline refund idempotently. Stable ID and this refund's amount required. Does not send money, email or change expiration. |
+| `membership:reconcile_paid_refunds` | `bundle exec rake "membership:reconcile_paid_refunds[INVOICE_ID]"` | Read-only Braintree requests record successful refunds through the common service. No processor refund or email. Errors raise; reruns are idempotent. |
+| `membership:record_paid_source_refund` | `bundle exec rake "membership:record_paid_source_refund[SOURCE_KEY,REFUND_ID,AMOUNT,USD]"` | Records a confirmed refund against seeded legacy/deleted-invoice source entries. Stable identity, original currency and explicit evidence required. Uses the common decimal/transaction rules; no money, email or expiration changes. |
 | `member_access:revoke` | `RAILS_ENV=production bundle exec rake member_access:revoke EMAIL=user@example.com` (or `MEMBER_ID=` or `NAME='First Last'`) | Offboarding for one member. Calls `Service::MemberAccess.revoke`, which removes the member's Google Drive resource access and Drive transfer share (including a share under their previous email address) and removes their Slack access, then prints a status line per system. It changes remote access immediately and aborts if the member is not found or no selector is given. |
 | `members:reconcile_provisioning` | `RAILS_ENV=production bundle exec rake members:reconcile_provisioning` | Calls `Service::MemberProvisioning.backfill!`, which backfills the local Slack and Google Drive provisioning state **without changing remote access**, then prints counts (Slack invited, Slack live, Drive resources, Drive transfer). Used after provisioning changes or when the local state has drifted. |
 | `reservations:normalize_cancelled_status` | `RAILS_ENV=production bundle exec rake reservations:normalize_cancelled_status` | One-time normalization of legacy spelling: sets reservations with status `canceled` to `cancelled` and prints the count. Safe to re-run; it can be removed once production has no `canceled` reservations. |
@@ -1257,8 +1311,12 @@ data only and share Redis throttles with live ingestion. None is exposed through
 the admin run-job API. Invocation, filters, resume, errors, credentials and
 deployment requirements: [Eventbrite operator guide](eventbrite.md).
 
-Order backfills use an unfiltered order listing with attendee/refund expansions;
-they do not send the rejected `status=both` argument. A query-version marker resets
+Order backfills use an unfiltered order listing with attendee/refund expansions.
+`Synchronizer` uses provider refund/changed timestamps for `refunded_at`, including
+attendee-driven refund evidence, leaving it nil when the provider date is unknown.
+Local invalidation and evidence persist independently; replay preserves a known
+refund timestamp and can fill a missing one without recording import time as a refund.
+Backfills do not send the rejected `status=both` argument. A query-version marker resets
 legacy order continuation tokens on resume while preserving event-page progress
 and filters. See the operator guide for live historical-completeness checks.
 
@@ -1269,6 +1327,15 @@ synchronization and before completing its durable inbox entry. The service hydra
 public event details, resolves series, refreshes admission inventory, and records
 publication/update intent. Backfills do not invoke it. AnnouncementMessage produces
 escaped accessible Block Kit and fallback text without attendee or buyer data.
+`TicketSales` derives the earliest future admission opening when none is on sale
+and the case-insensitive `member` ticket-name/description flag from the complete
+inventory response. `Announcements` persists that metadata with counts, preserving
+the prior snapshot on failed/incomplete fetches. `AnnouncementMessage` includes
+`Tickets go on sale <DATE>` in the event timezone until the saved opening time,
+and adds the URL-encoded optional `EVENTBRITE_MEMBER_DISCOUNT_CODE` to qualifying
+event/series registration links, preserving other query parameters and fragments.
+Publication, reminders and edits share this behavior. See eventbrite.md for sale
+eligibility, series and refresh details; backfills still send no Slack messages.
 EventbriteSlackDeliveryJob posts or edits durable outbox records, saves receipts on
 events, and repairs interrupted receipt mirroring. It preserves actual destinations
 and SLACK_ENV isolation; ambiguous sends require operator reconciliation.

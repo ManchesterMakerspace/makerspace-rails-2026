@@ -39,6 +39,23 @@ RSpec.describe EventbriteIntegration::Backfill do
     expect(run.progress).to eq({})
     expect(run.failed).to eq(1)
   end
+
+  it 'backfills refund timestamps from the provider without inventing an import-time refund' do
+    allow(EventbriteIntegration::Synchronizer).to receive(:new).and_call_original
+    expect(client).to receive(:each_page).with('organizations/org/events/', anything, continuation: nil)
+      .and_yield({ 'events' => [{ 'id' => 'event-1', 'organization_id' => 'org', 'status' => 'live' }] }, nil)
+    expect(client).to receive(:each_page).with('events/event-1/orders/', anything, continuation: nil)
+      .and_yield({ 'orders' => [
+        { 'id' => 'dated', 'event_id' => 'event-1', 'status' => 'refunded', 'changed' => '2026-10-03T12:00:00Z' },
+        { 'id' => 'unknown', 'event_id' => 'event-1', 'status' => 'refunded' }
+      ] }, nil)
+    run = described_class.new('orders', {}).call
+    expect(run.completed_at).to be_present
+    expect(EventbriteOrder.find_by(eventbrite_id: 'dated').refunded_at).to eq(Time.utc(2026, 10, 3, 12))
+    unknown = EventbriteOrder.find_by(eventbrite_id: 'unknown')
+    expect(unknown.refunded_at).to be_nil
+    expect(unknown.invalidated_at).to be_present
+  end
   it 'persists rejected-path structure without leaking raw app-generated values' do
     error = EventbriteIntegration::Client::InvalidPathError.new('events/private value/orders/')
     allow(client).to receive(:each_page).and_raise(error)

@@ -289,6 +289,12 @@ No automated actions have been taken at this time.")
 
   def self.process_transaction(notification, claim_attempt = 0, notification_record = nil)
     last_transaction = notification.transaction
+    if last_transaction.respond_to?(:refunded_transaction_id) && last_transaction.refunded_transaction_id.present?
+      if notification.kind == Braintree::WebhookNotification::Kind::TransactionSettled
+        ::BraintreeService::Transaction.record_membership_refund(last_transaction)
+      end
+      return
+    end
     processed_invoice = Invoice.find_by(transaction_id: last_transaction.id)
     requires_claim = false
     claim_acquired = false
@@ -492,6 +498,10 @@ No automated actions have been taken at this time.")
   end
 
   def self.process_success(invoice, transaction)
+    if %w[member household].include?(invoice.resource_class) && invoice.membership_paid_amount.nil?
+      invoice.update!(membership_paid_amount: BigDecimal(transaction.amount.to_s),
+        membership_paid_currency: transaction.try(:currency_iso_code).presence || 'USD')
+    end
     enque_message("#{invoice.subscription_id ? "Recurring" : "One-time"} payment from #{invoice.member.fullname} successful. Processing invoice...")
     begin
       invoice.submit_for_settlement(nil, nil, transaction.id)

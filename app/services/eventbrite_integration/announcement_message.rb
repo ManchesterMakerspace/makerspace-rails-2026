@@ -16,15 +16,19 @@ module EventbriteIntegration
           [event.tickets_sold.nil? ? 'Sold count unavailable' : "#{event.tickets_sold} sold",
             event.tickets_remaining.nil? ? 'Remaining count unavailable' : "#{event.tickets_remaining} remaining"].join(' · ')
         end
-        content = event.announcement_public? ? [date, event.venue_label, tickets].reject(&:blank?).join("\n") : "#{date}\nNo longer published — registration unavailable"
+        sale_notice = if event.ticket_sales_start_at && event.ticket_sales_start_at > Time.current
+          "Tickets go on sale #{event.ticket_sales_start_at.in_time_zone(zone).strftime('%a, %b %-d, %Y at %-I:%M %p %Z')}"
+        end
+        content = event.announcement_public? ? [date, event.venue_label, tickets, sale_notice].reject(&:blank?).join("\n") : "#{date}\nNo longer published — registration unavailable"
         blocks << section(content)
-        if event.announcement_public? && safe_url(event.public_url)
-          blocks << { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'View event / Register' }, url: event.public_url }] }
+        url = event.announcement_public? ? registration_url(event.public_url, member_tickets: event.has_member_ticket_class) : nil
+        if url
+          blocks << { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'View event / Register' }, url: url }] }
         end
       end
       blocks << section("#{events.size - 20} additional dates; view the series on Eventbrite.") if events.size > 20
-      if events.size > 20 && safe_url(series_url)
-        blocks << { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'View all series dates' }, url: series_url }] }
+      if events.size > 20 && (url = registration_url(series_url, member_tickets: events.any? { |event| event.announcement_public? && event.has_member_ticket_class }))
+        blocks << { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'View all series dates' }, url: url }] }
       end
       if first.announcement_public? && safe_url(first.image_url)
         blocks[1][:accessory] = { type: 'image', image_url: first.image_url, alt_text: first.name.to_s.first(200) } if blocks[1]&.dig(:type) == 'section'
@@ -36,6 +40,15 @@ module EventbriteIntegration
     end
 
     def self.section(text) = { type: 'section', text: { type: 'plain_text', text: text.to_s.first(2900) } }
+    def self.registration_url(value, member_tickets:)
+      return unless safe_url(value)
+      code = Configuration.member_discount_code if member_tickets
+      return value unless code
+      uri = URI.parse(value)
+      query = URI.decode_www_form(uri.query.to_s).reject { |key, _| key == 'discount' }
+      uri.query = URI.encode_www_form(query + [['discount', code]])
+      uri.to_s
+    end
     def self.safe_url(value)
       uri = URI.parse(value.to_s)
       %w[http https].include?(uri.scheme) && uri.host.present? && !uri.userinfo

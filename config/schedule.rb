@@ -25,6 +25,7 @@ end
 
 every 1.minute do
   runner 'EventbriteRecoveryJob.perform_now'
+  runner 'MembershipPaidResetJob.perform_now'
 end
 
 every :day, at: '2am' do

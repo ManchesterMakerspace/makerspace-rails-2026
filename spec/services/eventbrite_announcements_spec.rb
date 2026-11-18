@@ -93,4 +93,47 @@ RSpec.describe EventbriteIntegration::Announcements do
     expect(payload[:text]).to include('3 sold · Remaining count unavailable')
     expect(payload[:text].scan('New event: Welding').size).to eq(1)
   end
+
+  it 'annotates future ticket sales in the event timezone and removes the notice once sales open' do
+    travel_to(Time.utc(2026, 11, 16, 12)) do
+      opening = Time.utc(2026, 11, 17, 15)
+      event.set(timezone: 'America/New_York', ticket_sales_start_at: opening)
+      publication = service.request(event, 'publication', ['one'])
+      message = EventbriteIntegration::AnnouncementMessage
+      expect(message.build(publication, [event])[:text]).to include('Tickets go on sale Tue, Nov 17, 2026 at 10:00 AM EST')
+      event.set(invalidated_at: Time.current)
+      expect(message.build(publication, [event])[:text]).not_to include('Tickets go on sale')
+      event.set(invalidated_at: nil)
+      travel_to(opening)
+      expect(message.build(publication, [event])[:text]).not_to include('Tickets go on sale')
+    end
+  end
+
+  it 'adds the encoded member discount to matching event and series links without losing query strings or fragments' do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with('EVENTBRITE_MEMBER_DISCOUNT_CODE').and_return('Members & friends/+')
+    event.set(has_member_ticket_class: true, public_url: 'https://www.eventbrite.com/e/one?aff=slack&discount=old#tickets')
+    events = [event] + (2..21).map do |id|
+      EventbriteEvent.new(organization_id: 'org', eventbrite_id: id.to_s, name: 'Another date', status: 'live',
+        listed: true, starts_at: id.days.from_now, public_url: "https://www.eventbrite.com/e/#{id}")
+    end
+    publication = service.request(event, 'publication', ['one'])
+    payload = EventbriteIntegration::AnnouncementMessage.build(publication, events, series_url: 'https://www.eventbrite.com/e/series?aff=slack#dates')
+    urls = payload[:blocks].select { |block| block[:type] == 'actions' }.flat_map { |block| block[:elements].map { |element| element[:url] } }
+    expect(urls.first).to eq('https://www.eventbrite.com/e/one?aff=slack&discount=Members+%26+friends%2F%2B#tickets')
+    expect(urls[1]).to eq('https://www.eventbrite.com/e/2')
+    expect(urls.last).to eq('https://www.eventbrite.com/e/series?aff=slack&discount=Members+%26+friends%2F%2B#dates')
+    expect(event.public_url).to include('discount=old')
+  end
+
+  it 'leaves event links unchanged when the discount code is missing or blank' do
+    event.set(has_member_ticket_class: true)
+    publication = service.request(event, 'publication', ['one'])
+    allow(ENV).to receive(:[]).and_call_original
+    [nil, '', '  '].each do |code|
+      allow(ENV).to receive(:[]).with('EVENTBRITE_MEMBER_DISCOUNT_CODE').and_return(code)
+      payload = EventbriteIntegration::AnnouncementMessage.build(publication, [event])
+      expect(payload[:blocks].find { |block| block[:type] == 'actions' }[:elements].first[:url]).to eq(event.public_url)
+    end
+  end
 end

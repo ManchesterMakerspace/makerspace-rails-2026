@@ -1,5 +1,23 @@
 # Public Resources
 
+## Authenticated paid membership representation
+
+`GET /api/members/:id/continuous_paid_membership` returns only
+`continuousPaidMembershipMonths`, `revision` and `estimated` as JSON. It requires
+a normal authenticated, TOTP-complete session and permits self, Admin or Board;
+it is not public, and Resource Manager alone grants no other-member access.
+`PUT /api/admin/members/:id/continuous_paid_membership` requires Admin and CSRF,
+accepts desired whole months, expected revision and required reason, and returns
+the same representation (422 invalid/ineligible, 409 stale). Neither route exposes
+payment history or adds balance fields to generic member representations. See
+[contract, counting and rollout](continuous-paid-membership.md).
+
+Authenticated member/admin invoice lists also recognize confirmed cash/check
+receipts held until first-fob issuance as paid: `settled=true` includes them,
+`settled=false` and `pastDue=true` exclude them. `pastDue=false` includes them;
+the serialized receipt has `settled: true`, `pastDue: false` while paid months
+remain zero until the duration is released. Existing invoice role scopes apply.
+
 This document is the source-of-truth inventory for public, deep-linkable Rails
 resources owned by this repository. Add a row whenever a server-rendered page or
 API endpoint is intentionally usable without a member session, and link a feature
@@ -181,6 +199,10 @@ Order filters always intersect the selected member's attendee-derived history.
 Consequently, member-scoped `linked=unlinked` returns an empty list with a zero
 total, including when that member has no imported attendees. The global unlinked
 order browser still lists orders without any linked attendees.
+Order `refundedAt` is the provider refund timestamp or its changed timestamp,
+never the import time. It remains null when that date is unknown, while refund
+invalidation and provider status remain visible. Existing known refund dates are
+preserved on replay. The EventbriteRecord schema retains its nullable string shape.
 The React `/admin/eventbrite` browser and member Eventbrite tab use these routes.
 See [Eventbrite](eventbrite.md).
 

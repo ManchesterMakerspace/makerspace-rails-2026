@@ -82,10 +82,15 @@ module EventbriteIntegration
         email: normalize(data.dig('profile', 'email')), status: data['status'], refunded: data['refunded'] == true
       })
       if record.refunded && order_id
-        EventbriteOrder.where(organization_id: parent.organization_id, eventbrite_id: order_id, refunded_at: nil)
-          .update_all(refunded_at: Time.current, invalidated_at: Time.current, invalidation_reason: 'refund')
-        EventbriteOrder.collection.find(organization_id: parent.organization_id, eventbrite_id: order_id)
-          .update_one('$addToSet' => { refund_evidence: 'refunded_attendee' })
+        Lease.with("EventbriteOrder:#{parent.organization_id}:#{order_id}") do |check|
+          order = EventbriteOrder.where(organization_id: parent.organization_id, eventbrite_id: order_id).first
+          if order
+            mark_refunded(order)
+            order.refund_evidence |= ['refunded_attendee']
+            check.call
+            order.save!
+          end
+        end
       end
       MemberLinker.link(record)
       record.reload
@@ -131,14 +136,17 @@ module EventbriteIntegration
         unless changed && record.provider_changed_at && changed < record.provider_changed_at
           record.assign_attributes(attributes.merge(provider_changed_at: changed || record.provider_changed_at, synced_at: Time.current))
         end
-        if refund && !record.refunded_at
-          record.assign_attributes(refunded_at: Time.current, invalidated_at: Time.current, invalidation_reason: 'refund')
-        end
+        mark_refunded(record, at: time(data['refunded_at']) || changed) if refund
         record.refund_evidence |= refund_evidence if model == EventbriteOrder
         check.call
         record.save!
         record
       end
+    end
+    def mark_refunded(record, at: nil)
+      # Ingestion time records discovery, not when the provider issued a refund.
+      record.assign_attributes(refunded_at: record.refunded_at || at || record.provider_changed_at,
+        invalidated_at: record.invalidated_at || Time.current, invalidation_reason: 'refund')
     end
     def normalize(email) = email.to_s.strip.downcase.presence
     def refund_detected?(data)

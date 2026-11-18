@@ -107,6 +107,29 @@ describe 'Eventbrite API', type: :request do
             sign_in create(:member, role: 'admin')
           end
           run_test!
+          if kind == 'orders'
+            context 'a historical refund with a provider changed time' do
+              let(:id) do
+                sync = EventbriteIntegration::Synchronizer.new(instance_double(EventbriteIntegration::Client))
+                sync.import_event('id' => 'event', 'organization_id' => 'org-1', 'status' => 'live')
+                sync.import_order({ 'id' => 'refunded', 'event_id' => 'event', 'status' => 'refunded', 'changed' => '2026-10-03T12:00:00Z' }).id.to_s
+              end
+              run_test! { |response| expect(Time.iso8601(JSON.parse(response.body)['refundedAt'])).to eq(Time.utc(2026, 10, 3, 12)) }
+            end
+            context 'a refund without a known provider time' do
+              let(:id) do
+                sync = EventbriteIntegration::Synchronizer.new(instance_double(EventbriteIntegration::Client))
+                sync.import_event('id' => 'event', 'organization_id' => 'org-1', 'status' => 'live')
+                sync.import_order({ 'id' => 'refunded', 'event_id' => 'event', 'status' => 'refunded' }).id.to_s
+              end
+              run_test! do |response|
+                data = JSON.parse(response.body)
+                expect(data['refundedAt']).to be_nil
+                expect(data['invalidationReason']).to eq('refund')
+                expect(data['invalidatedAt']).to be_present
+              end
+            end
+          end
         end
         response '403', 'Forbidden' do
           before { sign_in create(:member) }

@@ -637,25 +637,20 @@ RSpec.describe Invoice, type: :model do
         expect { no_operation.send(:execute_invoice_operation) }.to raise_error(Error::UnprocessableEntity)
       end
 
-      it "delays invoice operation if delay callback exists" do
-        allow(invoice).to receive_message_chain(:resource, :delay_invoice_operation).with(invoice.operation).and_return(true)
-        expect(invoice).to receive_message_chain(:resource, :delay_invoice_operation).with(invoice.operation).and_return(true)
+      it "delays invoice operation if delay callback exists", requires_transactions: true do
         expect(invoice).to receive(:enque_message).with("Delaying processing of invoice #{invoice.id}... Is member missing a key?")
         invoice.send(:execute_invoice_operation)
         expect(invoice.settled).to be_falsey
       end
 
-      it "raises error if operation fails" do
-        allow(invoice).to receive_message_chain(:resource, :delay_invoice_operation).with(invoice.operation).and_return(false)
-        expect(invoice).to receive_message_chain(:resource, :execute_operation).with(invoice.operation, invoice).and_return(false)
+      it "raises error if operation fails", requires_transactions: true do
+        create(:card, member: invoice.resource)
+        allow_any_instance_of(Member).to receive(:execute_operation).and_return(false)
         expect { invoice.send(:execute_invoice_operation) }.to raise_error(Error::UnprocessableEntity)
       end
 
-      it "Settles the invoice if successful" do
-        allow(invoice).to receive_message_chain(:resource, :delay_invoice_operation).with(invoice.operation).and_return(false)
-        expect(invoice).to receive_message_chain(:resource, :delay_invoice_operation).with(invoice.operation).and_return(false)
-        expect(invoice).to receive_message_chain(:resource, :execute_operation).with(invoice.operation, invoice).and_return(true)
-        expect(invoice).to receive_message_chain(:resource, :send_renewal_slack_message)
+      it "Settles the invoice if successful", requires_transactions: true do
+        create(:card, member: invoice.resource)
         invoice.send(:execute_invoice_operation)
         expect(invoice.settled).to be_truthy
       end
@@ -703,7 +698,7 @@ RSpec.describe Invoice, type: :model do
     end
   end
 
-  describe "reactivating a lapsed account when a membership payment is processed" do
+  describe "reactivating a lapsed account when a membership payment is processed", requires_transactions: true do
     before { allow_any_instance_of(Member).to receive(:send_renewal_slack_message) }
 
     %w[inactive nonMember].each do |lapsed_status|

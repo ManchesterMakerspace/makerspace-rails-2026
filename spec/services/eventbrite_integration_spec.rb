@@ -50,12 +50,60 @@ RSpec.describe EventbriteIntegration::Synchronizer do
 
   it 'retains partial-refund invalidation after later placed updates' do
     sync.import_event(event_data)
-    data = { 'id' => 'order-1', 'event_id' => 'event-1', 'status' => 'placed', 'refund_requests' => [{ 'items' => [{ 'status' => 'processed', 'item_type' => 'attendee' }] }] }
+    data = { 'id' => 'order-1', 'event_id' => 'event-1', 'status' => 'placed', 'changed' => '2026-11-02T12:00:00Z', 'refund_requests' => [{ 'items' => [{ 'status' => 'processed', 'item_type' => 'attendee' }] }] }
     order = sync.import_order(data)
     sync.import_order(data.except('refund_requests'))
     expect(order.reload.refunded_at).to be_present
     expect(order.invalidated_at).to be_present
     expect(order.refund_evidence).to include('processed_refund_request')
+  end
+
+  it 'uses the provider changed time for historical refunded orders rather than import time' do
+    sync.import_event(event_data)
+    changed = '2026-10-03T12:00:00Z'
+    data = { 'id' => 'refunded', 'event_id' => 'event-1', 'status' => 'refunded', 'changed' => changed }
+    order = sync.import_order(data)
+    expect(order.refunded_at).to eq(Time.iso8601(changed))
+    expect(order.invalidated_at).to be_present
+    sync.import_order(data.merge('changed' => '2026-11-03T12:00:00Z'))
+    expect(order.reload.refunded_at).to eq(Time.iso8601(changed))
+  end
+
+  it 'prefers an explicit refund time to the provider changed time' do
+    sync.import_event(event_data)
+    order = sync.import_order({ 'id' => 'refunded', 'event_id' => 'event-1', 'status' => 'refunded',
+      'changed' => '2026-11-03T12:00:00Z', 'refunded_at' => '2026-10-03T12:00:00Z' })
+    expect(order.refunded_at).to eq(Time.utc(2026, 10, 3, 12))
+  end
+
+  it 'uses a previously stored provider changed time when a refund snapshot omits it' do
+    sync.import_event(event_data)
+    order = sync.import_order({ 'id' => 'refunded', 'event_id' => 'event-1', 'status' => 'placed', 'changed' => '2026-10-03T12:00:00Z' })
+    sync.import_order({ 'id' => 'refunded', 'event_id' => 'event-1', 'status' => 'refunded' })
+    expect(order.reload.refunded_at).to eq(Time.utc(2026, 10, 3, 12))
+  end
+
+  it 'keeps an unknown refund date nil even when the refunded order expands refunded attendees' do
+    sync.import_event(event_data)
+    data = { 'id' => 'refunded', 'event_id' => 'event-1', 'status' => 'refunded',
+      'attendees' => [{ 'id' => 'refunded-attendee', 'refunded' => true }] }
+    order = sync.import_order(data)
+    expect(order.reload.refunded_at).to be_nil
+    expect(order.invalidated_at).to be_present
+    expect(order.refund_evidence).to include('provider_refund_status', 'refunded_attendee')
+    invalidated_at = order.invalidated_at
+    sync.import_order(data.merge('changed' => '2026-10-03T12:00:00Z'))
+    expect(order.reload.refunded_at).to eq(Time.utc(2026, 10, 3, 12))
+    expect(order.invalidated_at).to eq(invalidated_at)
+  end
+
+  it 'uses an older refund snapshot date without replacing a newer provider status' do
+    sync.import_event(event_data)
+    order = sync.import_order({ 'id' => 'refunded', 'event_id' => 'event-1', 'status' => 'placed', 'changed' => '2026-11-03T12:00:00Z' })
+    sync.import_order({ 'id' => 'refunded', 'event_id' => 'event-1', 'status' => 'refunded', 'changed' => '2026-10-03T12:00:00Z' })
+    expect(order.reload.status).to eq('placed')
+    expect(order.refunded_at).to eq(Time.utc(2026, 10, 3, 12))
+    expect(order.provider_changed_at).to eq(Time.utc(2026, 11, 3, 12))
   end
 
   it 'links attendees, not buyers, and preserves links across email changes' do

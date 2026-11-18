@@ -1,5 +1,7 @@
 class Member
   include Mongoid::Document
+  include MembershipPaidLifecycle
+  include MembershipPaidDeferredEffects
   field :card_operation_version, type: Integer, default: 0
   include SanitizesUserInput
   include Mongoid::Search
@@ -513,6 +515,7 @@ class Member
   end
 
   def handle_reservation_membership_changes
+    return if defer_paid_membership_effect { handle_reservation_membership_changes }
     cleanup_type = if previous_changes["status"]&.first != "revoked" && status == "revoked"
       "revoked"
     elsif membership_subscription_ended? && !active_membership_subscription?
@@ -701,8 +704,10 @@ class Member
     # With a fob the renewal that follows saves the expiration, and that save queues both of
     # these. With no fob the payment is only held, so nothing else will.
     if access_cards.none?
-      MemberProvisioningJob.perform_later(id.to_s)
-      Service::ToolCheckoutSlackCanvas.enqueue_for_members([id])
+      MembershipPaidCredit.after_commit do
+        MemberProvisioningJob.perform_later(id.to_s)
+        Service::ToolCheckoutSlackCanvas.enqueue_for_members([id])
+      end
     end
     Service::AuditLogger.log(
       log_type:        'member',
@@ -718,6 +723,7 @@ class Member
 
   # Emit to Member & Management channels on renewal
   def send_renewal_slack_message(current_user=nil)
+    return if defer_paid_membership_effect { send_renewal_slack_message(current_user) }
     slack_user = SlackUser.find_by(member_id: id)
     # NOTE: enque_message's default uniquifier is derived only from the
     # calling method name + Current.request_id — both calls below happen
@@ -741,6 +747,7 @@ class Member
 
   # Emit to Member & Management channels on renewal reversals
   def send_renewal_reversal_slack_message
+    return if defer_paid_membership_effect { send_renewal_reversal_slack_message }
     slack_user = SlackUser.find_by(member_id: id)
     unless slack_user.nil?
       enque_message(
@@ -893,6 +900,7 @@ class Member
   end
 
   def cancel_active_household_subscription(group)
+    return if defer_paid_membership_effect { cancel_active_household_subscription(group) }
     return unless group.subscription_id.present?
 
     gateway = ::Service::BraintreeGateway.connect_gateway
@@ -900,6 +908,7 @@ class Member
   end
 
   def notify_household_disbanded(members)
+    return if defer_paid_membership_effect { notify_household_disbanded(members) }
     members.each do |member|
       primary = member.id == self.id
       template = primary ? :household_disbanded_primary : :household_disbanded_secondary
@@ -950,10 +959,12 @@ class Member
   end
 
   def publish_update
+    return if defer_paid_membership_effect { publish_update }
     publish(:billing_info_changed) if previous_changes.keys.any? { |attr| [:firstname, :lastname, :email].include?(attr.to_sym) }
   end
 
   def handle_successful_email_change
+    return if defer_paid_membership_effect { handle_successful_email_change }
     return unless previous_changes.key?("email")
 
     previous_email = previous_changes["email"].first.to_s.strip.downcase.presence
@@ -1011,12 +1022,14 @@ class Member
   end
 
   def enqueue_member_provisioning
+    return if defer_paid_membership_effect { enqueue_member_provisioning }
     return unless previous_changes.keys.any? { |key| %w[email expirationTime status].include?(key.to_s) }
 
     MemberProvisioningJob.perform_later(id.to_s)
   end
 
   def enqueue_checkout_canvas_syncs
+    return if defer_paid_membership_effect { enqueue_checkout_canvas_syncs }
     return unless previous_changes.keys.any? { |key| %w[expirationTime status].include?(key.to_s) }
 
     Service::ToolCheckoutSlackCanvas.enqueue_for_members([id])

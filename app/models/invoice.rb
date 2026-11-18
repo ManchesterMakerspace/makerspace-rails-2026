@@ -41,6 +41,16 @@ class Invoice
   field :locked, type: Boolean, default: false # Deprecated. Lock an invoice to prevent braintree notification race condition
   field :locked_at, type: Time
   field :settlement_processed_at, type: Time
+  field :membership_paid_applied_at, type: Time
+  field :membership_paid_confirmed_at, type: Time
+  field :membership_paid_next_invoice_id, type: BSON::ObjectId
+  field :membership_paid_reversed_at, type: Time
+  field :membership_paid_source_key, type: String
+  field :membership_paid_recipient_ids, type: Array, default: []
+  field :membership_paid_operation_revision, type: Integer, default: 0
+  field :membership_paid_currency, type: String, default: 'USD'
+  field :membership_paid_amount, type: BigDecimal
+  field :membership_paid_refunds, type: Array, default: []
 
   ## Admin/Operation Information
   # How many operations to perform (eg, num of months renewed)
@@ -136,7 +146,7 @@ class Invoice
   end
 
   def past_due
-    if (self.settled || self.transaction_id)
+    if (self.settled || self.transaction_id || membership_paid_confirmed_at)
       false
     else
       (self.due_date && self.due_date < Time.now) # Still outstanding, request after due date
@@ -157,7 +167,21 @@ class Invoice
 
   def submit_for_settlement_without_reservation_lock(gateway=nil, payment_method_id=nil, transaction_id=nil)
     raise Error::UnprocessableEntity.new("Already paid") if settled
+    if membership_paid_confirmed_at.present?
+      if payment_method_id.nil? && transaction_id.nil? && membership_paid_applied_at.nil? && settled_at.nil?
+        return settle_confirmed_offline_membership
+      end
+      raise Error::UnprocessableEntity.new('Payment already received. Membership time is held until the first fob is issued.')
+    end
     raise Error::UnprocessableEntity.new("Cannot dictate transaction id when creating new transaction") if payment_method_id && transaction_id
+
+    if payment_method_id.nil? && transaction_id.nil? && self.transaction_id.blank? && %w[member household].include?(resource_class)
+      # A staff-confirmed cash/check receipt may be held for a first fob too.
+      # It has no processor transaction ID, so retain a separate receipt marker.
+      update!(membership_paid_confirmed_at: membership_paid_confirmed_at || Time.current,
+        membership_paid_amount: membership_paid_amount || BigDecimal(amount.to_s))
+      return settle_confirmed_offline_membership
+    end
 
     if payment_method_id
       self.payment_method_id = payment_method_id
@@ -184,6 +208,21 @@ class Invoice
     execute_invoice_operation
   end
 
+  def settle_confirmed_offline_membership
+    # The receipt is already durable. Application and the next cycle commit
+    # together so either can be retried after a failed attempt.
+    MembershipPaidCredit.transaction do
+      reload
+      inc(membership_paid_operation_revision: 1) # serialize Admin retries, including held payments
+      settle_invoice
+      if plan_id.present? && membership_paid_next_invoice_id.nil?
+        next_invoice = build_next_invoice
+        update!(membership_paid_next_invoice_id: next_invoice.id)
+      end
+    end
+    nil
+  end
+
   def build_next_invoice(gateway=nil)
     next_invoice = self.clone
     next_invoice.created_at = Time.now
@@ -196,6 +235,15 @@ class Invoice
     next_invoice.locked = false
     next_invoice.locked_at = nil
     next_invoice.settlement_processed_at = nil
+    next_invoice.membership_paid_applied_at = nil
+    next_invoice.membership_paid_confirmed_at = nil
+    next_invoice.membership_paid_next_invoice_id = nil
+    next_invoice.membership_paid_reversed_at = nil
+    next_invoice.membership_paid_source_key = nil
+    next_invoice.membership_paid_recipient_ids = []
+    next_invoice.membership_paid_operation_revision = 0
+    next_invoice.membership_paid_refunds = []
+    next_invoice.membership_paid_amount = nil
     # A failure on THIS cycle must not carry over and misattribute a later,
     # unrelated cancellation of the next cycle's invoice as payment-related
     # (see #send_cancellation_notification's auto_cancelled detection).
@@ -210,6 +258,7 @@ class Invoice
     end
 
     next_invoice.save!
+    next_invoice
   end
 
   # Runs for every subscription cancellation, whether a member/admin
@@ -265,7 +314,8 @@ class Invoice
         invoice.resource.remove_subscription()
         invoice.resource.reload
       end
-      Invoice.where(subscription_id: invoice.subscription_id, settled_at: nil, transaction_id: nil, :resource_class.ne => 'fee').destroy unless invoice.subscription_id.nil?
+      Invoice.where(subscription_id: invoice.subscription_id, settled_at: nil, transaction_id: nil,
+        membership_paid_confirmed_at: nil, :resource_class.ne => 'fee').destroy unless invoice.subscription_id.nil?
       !skip_notification && invoice.send_cancellation_notification
     end
   end
@@ -274,7 +324,7 @@ class Invoice
   # has already been cancelled (the resource's current subscription_id no longer
   # matches). These can block resubscription and need admin cleanup.
   def self.orphaned
-    candidates = where(:settled_at => nil, :transaction_id => nil, :subscription_id.ne => nil)
+    candidates = where(:settled_at => nil, :transaction_id => nil, membership_paid_confirmed_at: nil, :subscription_id.ne => nil)
     candidates.select do |invoice|
       resource = invoice.resource
       resource.nil? || resource.try(:subscription_id) != invoice.subscription_id
@@ -293,6 +343,7 @@ class Invoice
       subscription_id: invoice.subscription_id,
       settled_at: nil,
       transaction_id: nil,
+      membership_paid_confirmed_at: nil,
       :resource_class.ne => 'fee'
     ).destroy
 
@@ -328,7 +379,7 @@ class Invoice
   end
 
   def self.active_invoice_for_resource(resource_id)
-    active = self.find_by(resource_id: resource_id, settled_at: nil, transaction_id: nil)
+    active = self.find_by(resource_id: resource_id, settled_at: nil, transaction_id: nil, membership_paid_confirmed_at: nil)
   end
 
   # Not scoped by resource_class: this method has no current call sites in
@@ -337,7 +388,7 @@ class Invoice
   def self.oldest_active_invoice_matching_amount(resource_id, amount)
     target_amount = BigDecimal(amount.to_s)
 
-    where(resource_id: resource_id, settled_at: nil, transaction_id: nil)
+    where(resource_id: resource_id, settled_at: nil, transaction_id: nil, membership_paid_confirmed_at: nil)
       .asc(:created_at)
       .detect { |invoice| BigDecimal(invoice.amount.to_s) == target_amount }
   rescue ArgumentError
@@ -347,7 +398,7 @@ class Invoice
   def self.oldest_active_invoice_for_member_matching_amount(member_id, amount)
     target_amount = BigDecimal(amount.to_s)
 
-    where(member_id: member_id, settled_at: nil, transaction_id: nil)
+    where(member_id: member_id, settled_at: nil, transaction_id: nil, membership_paid_confirmed_at: nil)
       .asc(:created_at)
       .detect { |invoice| BigDecimal(invoice.amount.to_s) == target_amount }
   rescue ArgumentError
@@ -356,7 +407,7 @@ class Invoice
 
   def self.oldest_active_subscription_invoice_matching_amount(subscription_id:, plan_id:, resource_id:, member_id:, resource_class:, amount:)
     scopes = []
-    scopes << where(subscription_id: subscription_id, resource_class: resource_class, settled_at: nil, transaction_id: nil) if subscription_id.present?
+    scopes << where(subscription_id: subscription_id, resource_class: resource_class, settled_at: nil, transaction_id: nil, membership_paid_confirmed_at: nil) if subscription_id.present?
     if plan_id.present? && member_id.present? && resource_id.present?
       scopes << where(
         plan_id: plan_id,
@@ -364,10 +415,11 @@ class Invoice
         resource_id: resource_id,
         resource_class: resource_class,
         settled_at: nil,
-        transaction_id: nil
+        transaction_id: nil,
+        membership_paid_confirmed_at: nil
       )
     end
-    scopes << where(resource_id: resource_id, resource_class: resource_class, settled_at: nil, transaction_id: nil) if resource_id.present?
+    scopes << where(resource_id: resource_id, resource_class: resource_class, settled_at: nil, transaction_id: nil, membership_paid_confirmed_at: nil) if resource_id.present?
 
     target_amount = BigDecimal(amount.to_s)
     scopes.each do |scope|
@@ -386,6 +438,7 @@ class Invoice
       {
         _id: invoice_id,
         settled_at: nil,
+        membership_paid_confirmed_at: nil,
         :$and => [
           { :$or => [{ transaction_id: nil }, { transaction_id: transaction_id }] },
           {
@@ -457,6 +510,16 @@ class Invoice
 
   def execute_invoice_operation
     raise ::Error::NotFound.new if resource.nil?
+    unless OPERATION_FUNCTIONS.include?(operation)
+      raise ::Error::UnprocessableEntity.new("Unable to process invoice. Invalid operation for invoice #{id}")
+    end
+    if %w[member household].include?(resource_class)
+      applied = MembershipPaidCredit.apply_invoice!(id)
+      reload
+      enque_message("Delaying processing of invoice #{id}... Is member missing a key?") if applied == :held
+      return applied == true
+    end
+    raise ::Error::NotFound.new if resource.nil?
     operation = OPERATION_FUNCTIONS.find{ |f| f == self.operation }
     raise ::Error::UnprocessableEntity.new("Unable to process invoice. Invalid operation for invoice #{self.id}") if operation.nil?
 
@@ -478,6 +541,15 @@ class Invoice
   end
 
   def reverse_invoice_operation
+    if %w[member household].include?(resource_class)
+      result = MembershipPaidCredit.reverse_invoice!(id)
+      reload
+      return result
+    end
+    reverse_invoice_operation_without_paid_credit
+  end
+
+  def reverse_invoice_operation_without_paid_credit
     raise ::Error::NotFound.new if resource.nil?
     operation = OPERATION_FUNCTIONS.find{ |f| f == self.operation }
     raise ::Error::UnprocessableEntity.new("Unable to reverse invoice. Invalid operation for invoice #{self.id}") if operation.nil?
@@ -504,7 +576,7 @@ class Invoice
   # elsewhere in this file (see active_invoice_for_resource below) is the
   # established precedent for this exact scoping concern.
   def one_active_invoice_per_resource
-    active = Invoice.where(resource_id: resource_id, resource_class: "member", settled_at: nil, transaction_id: nil)
+    active = Invoice.where(resource_id: resource_id, resource_class: "member", settled_at: nil, transaction_id: nil, membership_paid_confirmed_at: nil)
     outstanding_invoice = active.first
 
     return unless outstanding_invoice

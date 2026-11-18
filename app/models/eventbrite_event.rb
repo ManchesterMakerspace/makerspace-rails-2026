@@ -17,6 +17,8 @@ class EventbriteEvent
   field :capacity, type: Integer
   field :tickets_sold, type: Integer
   field :tickets_remaining, type: Integer
+  field :ticket_sales_start_at, type: Time
+  field :has_member_ticket_class, type: Boolean, default: false
   field :inventory_updated_at, type: Time
   field :inventory_refresh_at, type: Time
   field :slack_receipts, type: Hash, default: {}

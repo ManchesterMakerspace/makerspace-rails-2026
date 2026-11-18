@@ -255,7 +255,7 @@ module Service
       end
 
       def self.query_past_due_conditions
-        { "due_date" => { "$lt" => Time.now }, "settled_at" => nil, "transaction_id" => nil }
+        { "due_date" => { "$lt" => Time.now }, "settled_at" => nil, "transaction_id" => nil, "membership_paid_confirmed_at" => nil }
       end
       private_class_method :query_past_due_conditions
 
@@ -281,7 +281,7 @@ module Service
       end
 
       def self.query_past_due(base = Mongoid::Criteria.new(Invoice)) #invoice review and controller
-        base.where(:due_date.lt => Time.now, settled_at: nil, transaction_id: nil, :member_id.in => ::Service::Analytics::Members.query_total_members.pluck(:id))
+        base.where(:due_date.lt => Time.now, settled_at: nil, transaction_id: nil, membership_paid_confirmed_at: nil, :member_id.in => ::Service::Analytics::Members.query_total_members.pluck(:id))
       end
 
       def self.query_refunds_pending(base = Mongoid::Criteria.new(Invoice)) #invoice review and controller

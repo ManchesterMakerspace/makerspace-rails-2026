@@ -22,6 +22,10 @@ class InvoiceSerializer < ApplicationSerializer
 
   has_one :member, serializer: MemberSerializer
 
+  def settled
+    object.settled || object.membership_paid_confirmed_at.present?
+  end
+
   def member_id
     object.member && object.member.id
   end

@@ -61,14 +61,14 @@ RSpec.describe Group, type: :model do
       expect(group.subscription).to be(false)
     end
 
-    it 'returns a truthy value when renewing household expiration' do
+    it 'returns a truthy value when renewing household expiration', requires_transactions: true do
       new_expiration = group.expiry + 1.month.to_i * 1000
 
       expect(group.update_expiration(new_expiration)).to eq(true)
       expect(group.reload.expiry).to eq(new_expiration)
     end
 
-    it 'renews the primary member and card when only secondaries are linked by groupName' do
+    it 'renews the primary member and card when only secondaries are linked by groupName', requires_transactions: true do
       secondary = create(:member, groupName: member.id.to_s)
       primary_card = create(:card, member: member)
       secondary_card = create(:card, member: secondary)
@@ -85,7 +85,7 @@ RSpec.describe Group, type: :model do
     end
 
     if ENV['RUN_OPTIONAL_CHECKOUT_CANVAS_SPECS'] == 'true'
-      it 'refreshes checkout canvases for every household member after a bulk expiration update' do
+      it 'refreshes checkout canvases for every household member after a bulk expiration update', requires_transactions: true do
         secondary = create(:member, groupName: member.id.to_s)
         shop = create(:shop)
         ToolCheckout.create!(member: secondary, tool: create(:tool, shop: shop))

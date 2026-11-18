@@ -69,7 +69,7 @@ class AuditLog
     'slack'        => { label: 'Slack messages',          exact: [], prefixes: %w[slack_message_] },
     'settings'     => { label: 'Settings & system',       exact: %w[portal_setting_changed permissions_updated document_upload_failed google_api_permission_denied],
                         prefixes: %w[template_] },
-    'members'      => { label: 'Members & accounts',      exact: %w[password_changed contract_signed blocked_login_attempt slack_email_mismatch fob_checkout_lookup],
+    'members'      => { label: 'Members & accounts',      exact: %w[password_changed contract_signed blocked_login_attempt slack_email_mismatch fob_checkout_lookup continuous_paid_membership_months_increased],
                         prefixes: %w[member_ membership_ household_ totp_ card_ earned_membership_ slack_invite_ slack_identity_
                                      slack_promotion_ slack_manual_ slack_previous_ google_drive_] },
     'billing'      => { label: 'Billing',                 exact: %w[refund_requested],

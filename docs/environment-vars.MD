@@ -175,8 +175,18 @@ resumes persisted criteria. See [Eventbrite operations](eventbrite.md).
 
 ### Eventbrite Slack consumers
 
-No new environment variables are introduced for announcements. Existing
-SLACK_BOT_TOKEN/SLACK_ADMIN_TOKEN token selection and SLACK_ENV test-channel
+`EVENTBRITE_MEMBER_DISCOUNT_CODE` is optional (blank/unset disables it). When any
+current ticket class name or description contains `member`, case-insensitively,
+Slack event registration links include the URL-encoded `discount` query parameter.
+Series overflow links include it when any represented public occurrence qualifies.
+Existing query parameters and fragments are retained; an existing `discount` is
+replaced. The code is read server-side by web/worker/task processes and is shared
+in those Slack links, never through public `/api/config`. Configure the matching
+discount in Eventbrite; this does not create or validate provider discount codes.
+Restart the affected processes after changing their environment; existing messages
+receive the new link when refreshed, rather than immediately on an environment change.
+
+Existing SLACK_BOT_TOKEN/SLACK_ADMIN_TOKEN token selection and SLACK_ENV test-channel
 redirection also apply to Eventbrite messages. The destination override is the
 SystemConfig key slack_channel_upcoming_events (blank/unset: upcoming-events).
 The Rake horizon is a positional days argument, not an environment variable.

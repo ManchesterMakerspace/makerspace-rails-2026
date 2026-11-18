@@ -1,5 +1,20 @@
 # Member Statuses
 
+## Continuous paid membership balance and status writes
+
+`MembershipPaidLifecycle` evaluates the old persisted expiration before every
+normal expiration/status update, including Admin Renew, earned renewals and
+household joining/leaving. Raw household propagation uses the same service.
+Revocation resets the paid balance in the status-write transaction; restoration
+does not recover it. Suspension alone does not reset it, while expiration still
+does after 240 elapsed hours. Paid invoices add months only at actual duration
+application and preserve existing payment reactivation rules (`inactive` and
+`nonMember` become `activeMember`; revoked/suspended do not). The minute reset
+sweep and backfill change accounting fields without changing member status.
+The Admin correction endpoint also changes no status, expiration or eligibility.
+These paths supplement the mutation-path appendix below; see
+[counting and rollout](continuous-paid-membership.md).
+
 `Member#status` is a case-sensitive string. The supported values are defined by
 the validation in `app/models/member.rb`.
 
@@ -110,6 +125,12 @@ them queued by the method itself. Each change writes a
 are skipped when held payments are applied at the first fob.
 
 ### Jobs, tasks, model callbacks, and direct writes
+
+- `MembershipPaidLifecycle` wraps normal expiration/status saves and resets the
+  balance in the same transaction as revocation. Raw household propagation uses
+  `MembershipPaidCredit.change_expiration!`. The reset job, refund recorders,
+  historical backfill and dedicated Admin correction change accounting fields
+  only, and introduce no additional status mutation path.
 
 - No scheduled job or Rake task changes an existing member's status.
   Expiration also never causes an automatic status transition.

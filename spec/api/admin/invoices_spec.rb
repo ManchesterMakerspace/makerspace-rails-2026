@@ -15,8 +15,10 @@ describe 'Admin::Invoices API', type: :request do
       parameter name: :order, in: :query, type: :string, required: false
       parameter name: :search, in: :query, type: :string, required: false
 
-      parameter name: :settled, in: :query, type: :boolean, required: false
-      parameter name: :pastDue, in: :query, type: :boolean, required: false
+      parameter name: :settled, in: :query, type: :boolean, required: false,
+        description: 'Includes confirmed cash/check receipts held until first-fob issuance as paid.'
+      parameter name: :pastDue, in: :query, type: :boolean, required: false,
+        description: 'Confirmed cash/check receipts held until first-fob issuance are not past due.'
       parameter name: :refunded, in: :query, type: :boolean, required: false
       parameter name: :refundRequested, in: :query, type: :boolean, required: false
 
@@ -31,6 +33,21 @@ describe 'Admin::Invoices API', type: :request do
             items: { '$ref' => '#/components/schemas/Invoice' }
 
         run_test!
+
+        context 'with a confirmed cash/check receipt held until the first fob', requires_transactions: true do
+          let(:settled) { true }
+          let(:pastDue) { false }
+          let!(:receipt) do
+            create(:invoice, member: basic, resource_id: basic.id.to_s, resource_class: 'member',
+              plan_id: nil, due_date: 1.day.ago).tap(&:submit_for_settlement)
+          end
+
+          run_test! do |response|
+            row = JSON.parse(response.body).find { |invoice| invoice['id'] == receipt.id.to_s }
+            expect(row).to include('settled' => true, 'pastDue' => false)
+            expect(receipt.reload.settled_at).to be_nil
+          end
+        end
       end
 
       response '403', 'User unauthorized' do
@@ -145,7 +162,7 @@ describe 'Admin::Invoices API', type: :request do
         }
       }, required: true
 
-      response '200', 'invoice updated' do
+      response '200', 'invoice updated', requires_transactions: true do
         before { sign_in admin }
 
         schema '$ref' => '#/components/schemas/Invoice'

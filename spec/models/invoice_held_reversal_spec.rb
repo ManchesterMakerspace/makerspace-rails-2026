@@ -2,7 +2,7 @@ require 'rails_helper'
 
 # A payment taken from a member with no fob is held (the invoice has a transaction but is not applied) until their first
 # fob. A declined settlement must not take months off a membership that never had them, and must not be applied later.
-RSpec.describe Invoice, 'reversing a payment' do
+RSpec.describe Invoice, 'reversing a payment', requires_transactions: true do
   let(:plan) { 'household-membership-one-month-recurring' }
 
   before do
