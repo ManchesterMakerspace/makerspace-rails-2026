@@ -117,12 +117,14 @@ class MembershipPaidCredit
       representation(document!(member_id))
     end
 
-    def document!(member_id)
+    def document!(member_id, include_deleted: false)
       if member_id.is_a?(String)
         raise Error::NotFound.new unless BSON::ObjectId.legal?(member_id)
         member_id = BSON::ObjectId.from_string(member_id)
       end
-      Member.collection.find({ _id: member_id, merged_at: nil }, session_options).first || raise(Error::NotFound.new)
+      selector = { _id: member_id }
+      selector[:merged_at] = nil unless include_deleted
+      Member.collection.find(selector, session_options).first || raise(Error::NotFound.new)
     end
 
     def source_key(invoice)
@@ -264,7 +266,7 @@ class MembershipPaidCredit
         records = invoice.membership_paid_refunds + [{ 'id' => identity, 'amount' => amount.to_s('F'), 'currency' => currency, 'at' => at }]
         total = records.sum { |r| decimal(r['amount']) }
         MembershipPaidCreditEntry.where(invoice_id: invoice.id, source_key: source_key(invoice), action: 'application').each do |credit|
-          document = reset_if_due!(document!(credit.member_id), at: at)
+          document = reset_if_due!(document!(credit.member_id, include_deleted: true), at: at)
           deduction = [refund_deduction(credit.months, total, credit.paid_amount), credit.deducted_months].max
           delta = deduction - credit.deducted_months
           same_streak = document['continuous_paid_membership_streak_id'] == credit.streak_id
@@ -315,7 +317,7 @@ class MembershipPaidCredit
           end
           credit.inc(operation_revision: 1)
           total = credit.refunded_amount + amount
-          document = reset_if_due!(document!(credit.member_id), at: at)
+          document = reset_if_due!(document!(credit.member_id, include_deleted: true), at: at)
           target = [refund_deduction(credit.months, total, credit.paid_amount), credit.deducted_months].max
           delta = target - credit.deducted_months
           same_streak = document['continuous_paid_membership_streak_id'] == credit.streak_id
@@ -340,7 +342,7 @@ class MembershipPaidCredit
         end
         invoice.inc(membership_paid_operation_revision: 1)
         MembershipPaidCreditEntry.where(invoice_id: invoice.id, source_key: source_key(invoice), action: 'application').each do |credit|
-          document = reset_if_due!(document!(credit.member_id))
+          document = reset_if_due!(document!(credit.member_id, include_deleted: true))
           delta = credit.months - credit.deducted_months
           same_streak = document['continuous_paid_membership_streak_id'] == credit.streak_id
           entry!(document, source_key: credit.source_key, invoice_id: invoice.id, action: 'reversal',

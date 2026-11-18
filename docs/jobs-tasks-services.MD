@@ -11,6 +11,9 @@ use one attempt and return a conflict. Raw writes explicitly attach the session.
 propagation and roster edits. Earned/admin extensions add no paid credit.
 `MembershipPaidDeferredEffects` postpones provider/queue callbacks until commit;
 processor calls stay outside retries. Relation caches clear before session end.
+Refund and reversal accounting follows saved recipient credits even when a
+recipient has since been soft-deleted; ordinary member reads and new credit
+application still exclude deleted accounts.
 Audit failure rolls an Admin increase back. There is no standalone fallback.
 When invoked inside an existing card/ticket transaction, lifecycle accounting
 joins its session; that caller keeps its existing commit/retry/notification

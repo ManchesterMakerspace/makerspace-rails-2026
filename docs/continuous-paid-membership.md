@@ -63,6 +63,9 @@ no-op; a changed amount for the same identity returns 409. Old-streak refunds
 remain recorded without reducing the current streak. Refunded held payments add
 no negative credit; fully refunded held payments are never released. Refund
 requests have no effect.
+Confirmed refunds and settlement reversals continue to update the saved credit
+entries for soft-deleted recipients. Their accounts stay hidden; one deleted
+household recipient does not prevent accounting for the others.
 
 Successful portal refunds, settled provider refund notifications, explicit
 provider reconciliation, and confirmed offline refunds use the same service.

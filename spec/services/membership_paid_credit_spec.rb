@@ -265,6 +265,29 @@ RSpec.describe MembershipPaidCredit, requires_transactions: true do
     expect(invoice.reload.membership_paid_recipient_ids).to match_array([member.id, secondary.id])
   end
 
+  it 'records a household refund after one credited recipient is soft-deleted' do
+    create(:card, member: member)
+    invoice = invoice_for(member, plan_id: 'household-membership-one-month-recurring', quantity: 2)
+    member.update!(groupName: member.id.to_s)
+    group = Group.create!(groupName: member.id.to_s, groupRep: member.fullname, expiry: member.expirationTime)
+    secondary = create(:member)
+    group.add_subordinate(secondary)
+    invoice.settle_invoice
+
+    secondary.update!(status: 'inactive')
+    allow(Service::MemberAccess).to receive(:full_deprovision).and_return({})
+    Service::MemberSoftDelete.delete!(secondary, actor: create(:member, :admin))
+    expect { described_class.read(secondary.id) }.to raise_error(Error::NotFound)
+
+    refund(invoice, 'after-soft-delete', 60)
+
+    expect(described_class.read(member.id)[:continuousPaidMembershipMonths]).to eq(1)
+    expect(invoice.reload.membership_paid_refunds.map { |record| record['id'] }).to include('offline:after-soft-delete')
+    expect(MembershipPaidCreditEntry.where(invoice_id: invoice.id, action: 'refund').pluck(:member_id)).to match_array([member.id, secondary.id])
+    expect(MembershipPaidCreditEntry.where(invoice_id: invoice.id, action: 'application').pluck(:deducted_months)).to all(eq(BigDecimal('1')))
+    expect(secondary.reload.merged_at).to be_present
+  end
+
   it 'supports invoices addressed directly to the household Group resource' do
     group = create(:group, member: member)
     invoice = create(:invoice, member: member, resource_class: 'household', resource_id: group.id.to_s, quantity: 6, amount: 300, plan_id: nil)
