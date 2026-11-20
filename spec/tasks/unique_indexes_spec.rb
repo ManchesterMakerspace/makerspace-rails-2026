@@ -37,6 +37,20 @@ RSpec.describe 'data:ensure_unique_indexes' do
     end
   end
 
+  it 'creates announcement receipt indexes and safely repeats the operation' do
+    ReservationSlackAnnouncement.collection.drop
+    2.times do
+      task.reenable
+      task.invoke
+      actual = ReservationSlackAnnouncement.collection.indexes.to_a
+      ReservationSlackAnnouncement.index_specifications.each do |specification|
+        index = actual.find { |candidate| candidate['key'] == specification.key.stringify_keys }
+        expect(index).to be_present
+        expect(index['unique']).to be(true) if specification.options[:unique]
+      end
+    end
+  end
+
   it 'retains the old repair-index command as an alias to the consolidated task' do
     expect(Rake::Task['fix_tickets:ensure_indexes'].prerequisites).to eq(['data:ensure_unique_indexes'])
     expect(Rake::Task['fix_tickets:ensure_indexes'].actions).to be_empty

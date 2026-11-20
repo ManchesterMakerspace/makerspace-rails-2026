@@ -1,5 +1,81 @@
 # Production jobs, tasks, and services
 
+## Daily reservation channel announcements
+
+`ReservationSlackAnnouncementJob` calls `Service::ReservationSlackAnnouncements`
+and records the admin status key `reservation_slack_announcements`. The synchronous
+task is `RAILS_ENV=production bundle exec rake reservations:announce_today`;
+configure it in the external scheduler every ten minutes, including the 7-AM
+Eastern boundary. It does nothing before 7 AM in `America/New_York` or for a
+queued date that is no longer today. `config/schedule.rb` remains an inert
+template, not activation of this new schedule. **Daily Reservation
+Announcements → Run Now** uses the same cutover gate.
+
+The service creates or updates one dated Slack summary per actual resolved
+channel, local date, and destination mode. Approved, pending, and unpaid bookings
+beginning today appear; tool users channels take precedence over shop fallback,
+and whole-shop bookings fan out to the shop plus all configured tool users
+channels. Entries are deduplicated within shared channels.
+Before building the summary, started unpaid bookings still overlapping today
+are reconciled through `ReservationFeeService`, applying its existing overdue
+cancellation rules. Future unpaid bookings remain listed as unpaid.
+The common `ReservationService.enqueue_external_syncs` hook requests current-day refreshes
+after reservation/fee/member-lifecycle changes; shop/tool routing, names,
+availability, the shop's empty flag, and blackout mutations also request a
+refresh. Periodic reconciliation recovers dropped enqueues and updates persisted
+destinations even after the last routed booking disappears.
+The `enqueue_today` helper reports auxiliary queue errors without failing a
+completed catalog write; the periodic task recovers the missed refresh.
+
+`ReservationAnnouncementLease` is a renewable Redis lease per delivery, with a
+120-second lifetime and 30-second heartbeat. A fresh payload is built under the
+lease; unchanged fingerprints skip message writes. MongoDB
+`reservation_slack_announcements` records string Slack `ts`, channel, represented
+shops/canvases, and retry state. `chat.update` always receives full text and blocks
+before any replacement is considered. Only `message_not_found` permits reposting.
+Definite API rejections permit retry; ordinary backoff is exponential up to ten
+minutes and rate limits honor `Retry-After`. An ambiguous initial post leaves
+`sending_at` populated and stops automatic reposts. Inspect Slack for the post,
+reconcile its channel and `ts` into the receipt, and clear the send marker only
+after establishing the outcome; do not erase receipts and retry blindly.
+Individual channel failures are collected while others continue, then the run
+reports failure. Historical receipt records have no TTL.
+
+Before creating today's first post, the service checks the saved receipt for
+yesterday's local date in the same channel and destination mode. When its last
+successful message was an empty agenda (promotion or neutral summary), it first
+attempts `chat.delete` with that receipt's `ts`. Confirmed deletion or an already
+missing message sets `deleted_at`; the receipt and historical `ts` remain. A
+failed delete is logged/reported but does not block today's post. Nonempty
+yesterday summaries, older dates, and other channel/mode receipts are untouched.
+
+The `Shop.slack_announce_empty_reservations` flag is false by default. It allows
+empty invitations only in channels whose relevant whole-day agenda is empty;
+overnight bookings, blackouts, and unavailable resources suppress invitations.
+Both new posts and edits use current availability: hidden or out-of-service
+tools lose promotional reserving text, while their existing booked rows remain.
+An existing emptied post becomes a dated neutral summary when invitations are
+disabled/ineligible; no new empty post is created with the flag off. Every post
+includes live today-canvas links and shop-context reservation-modal buttons.
+The signed `reservation_open` message action resolves the clicking linked active
+member and reuses existing reservation authorization. It deliberately omits the
+message `response_url` from modal metadata, keeping final outcomes in a DM.
+
+`Service::ReservationSlackCanvas.ensure_today_for_announcement!` synchronously
+refreshes a current-day canvas and grants destination read access before posting.
+It supports a tool-users destination without a configured shop channel.
+Production reuses `canvas_today`; other destination modes use isolated
+`announcement_test_canvas_today`, without production canvas writes or shop-channel
+grants. `Service::SlackConnector.slack_canvas_url` uses cached team metadata and
+the docs URL form; the existing `team:read` bot scope is needed, with no new scope
+or environment variable. Existing `chat:write` and canvas scopes still apply.
+
+Install the model's unique `(day, mode, channel_id)` index using the existing
+`data:ensure_unique_indexes` release task before scheduling. Deploy Rails before
+the companion React shop-editor setting. No environment-variable inventory
+changes and no generated API-client publication are needed. See
+[reservation behavior and rollout](reservations.MD#daily-channel-announcements).
+
 ## Continuous paid membership accounting
 
 `MembershipPaidCredit` synchronously coordinates paid duration application,
@@ -379,6 +455,7 @@ job wrapper records `job_status_<admin key>` with a completion time and
 
 | Admin key | Task displayed by API | Manual command | Purpose and effect |
 | --- | --- | --- | --- |
+| `reservation_slack_announcements` | `reservations:announce_today` | `RAILS_ENV=production bundle exec rake reservations:announce_today` | Synchronously runs `ReservationSlackAnnouncementJob`, recording status; maintains each channel's dated reservation summary after 7 AM Eastern, updates saved Slack receipts, and recovers current-day changes. Optional empty invitations follow each shop's setting. Requires an external ten-minute schedule; see [delivery and recovery](#daily-reservation-channel-announcements). |
 | `slack_sync` | `slack:sync_users` | `RAILS_ENV=production bundle exec rake slack:sync_users` | Reads the Slack workspace user list and creates or updates local `SlackUser` identities by matching email addresses to members. It reports created, updated, and unmatched counts to the logs channel. When `slack_sync_enabled` is true, both the task and job wrapper record status. When it is false, the direct task skips and leaves the previous admin-visible status untouched; the job wrapper records the skipped invocation as a success. |
 | `slack_profile_sync` | `slack:sync_profiles` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'SlackProfileSyncJob.perform_now'`. | Performs an expiration-only incremental sync. It selects members whose `expirationTime` is after the saved `slack_profile_sync_last_run_at` checkpoint and at or before the run time, randomizes that materialized list to distribute calls across members, then attempts to write `Expired` to their Slack custom-profile field. A Slack 429 response pauses the affected update for its `Retry-After` duration and is retried up to five times. On the first run, the lower bound is the Unix epoch. It does **not** reconcile active members or unrelated member-status changes. `slack_profile_sync_enabled` can skip the work. The API-displayed `slack:sync_profiles` task does not exist. See the partial-success warning below before relying on its count or status. |
 | `slack_channel_cache` | `slack:refresh_public_channel_cache` | `RAILS_ENV=production bundle exec rake slack:refresh_public_channel_cache` | Rebuilds Redis lookups for active public Slack channels, atomically promotes the staged cache, removes stale live entries, and stores cache metadata. The task calls the job synchronously, so it records status. |
@@ -436,6 +513,12 @@ values and would use the chosen scheduler's timezone.
 | Daily at 14:30 UTC | `CheckoutRequestDigestJob.perform_later` | `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'` | Sends the checkout-request approver digests described above. Also exposed as `checkout_request_digest` in the admin jobs list. |
 
 ## Production schedule (Heroku Scheduler)
+
+Pending deployment: add `bundle exec rake reservations:announce_today` every ten
+minutes, including the 7-AM Eastern boundary. Its application-timezone guard
+handles daylight saving. This requirement is not evidence that the dashboard
+entry has already been installed; update the recorded production table only
+after configuring the scheduler.
 
 Production work is scheduled in the **Heroku Scheduler** add-on of `makerspace-interface-prod`,
 not by Whenever. The dashboard is the source of truth; this table records it as of
@@ -566,6 +649,8 @@ synchronous diagnostic invocation where one is useful.
 
 | Service | Manual invocation | Purpose and effect |
 | --- | --- | --- |
+| `Service::ReservationSlackAnnouncements` and `ReservationAnnouncementLease` | Use `RAILS_ENV=production bundle exec rake reservations:announce_today`. | Reconciles channel/date/mode receipts and content under renewable Redis leases, prepares live canvas access, and posts or edits messages; see [delivery and failure semantics](#daily-reservation-channel-announcements). |
+| `Service::ReservationSlackCanvas.ensure_today_for_announcement!` and `Service::SlackConnector.slack_canvas_url` | Job-time only; use `reservations:announce_today`. | Refresh a successfully shared live today canvas, with isolated nonproduction state, and build its workspace URL from cached team metadata. |
 | `Service::SlackUserSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackUserSync.sync_all'` | Implements bulk Slack identity synchronization. It observes `slack_sync_enabled`; use the Rake task for normal operations and Slack reporting. |
 | `Service::SlackProfileSync.sync_all` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackProfileSync.sync_all'` | Performs the checkpointed expiration-only Slack profile update described above and observes `slack_profile_sync_enabled`. Eligible members are materialized and shuffled before updates begin, and each profile update honors Slack's `Retry-After` delay for rate-limit responses, retrying up to five times. It is not a full profile-status reconciliation, and its returned count includes selected members whose Slack update failed after retries. This is currently the only direct implementation behind the admin profile-sync job. |
 | `Service::SlackChannelCache.rebuild!` | `RAILS_ENV=production bundle exec rails runner 'pp Service::SlackChannelCache.rebuild!'` | Rebuilds and swaps the Redis public-channel cache. Prefer the Rake task, which also records admin-visible status through its job. |

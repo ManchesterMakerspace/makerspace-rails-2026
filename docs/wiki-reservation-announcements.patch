@@ -1,0 +1,102 @@
+diff --git a/digital-makerspace/members/reserve-a-shop-or-tool.md b/digital-makerspace/members/reserve-a-shop-or-tool.md
+--- a/digital-makerspace/members/reserve-a-shop-or-tool.md
++++ b/digital-makerspace/members/reserve-a-shop-or-tool.md
+@@ -87,6 +87,16 @@
+ 
+ Some shops show "Today's reservations" and "Tomorrow's reservations" in their Slack channel so you can see who has the shop. Ask the Resource Manager if you want that for your shop.
+ 
++## Daily reservation messages in Slack
++
++From 7 AM Eastern, the portal posts one dated summary per shop/tool channel for reservations beginning that day. Approved, pending and unpaid bookings are labeled. Tool bookings go to the tool's Users Channel, or the shop channel when none is set. Whole-shop bookings also appear in the shop's tool-users channels. The same message changes when bookings are edited or cancelled during the day.
++
++Choose **Reserve [shop]** to open the reservation form in Slack. You still need a linked active membership and the normal checkouts. The result comes to you privately by DM. **Live today agenda** opens the shop's current canvas; an old message links to the live agenda, not an archived date.
++
++Some channels show **Shop is wide open, book your time now!**, or name free tools, when the Resource Manager has enabled empty-agenda invitations. They appear only when that channel's whole-day agenda is empty. An empty invitation is not permission to skip checkouts, fees or booking rules. Marking a tool hidden or out of service removes its booking invitation on the next summary update; existing bookings remain visible.
++
++Before posting today's new summary, the portal tries to remove yesterday's post in the same channel if its last message was an empty invitation or neutral empty summary. Summaries that listed reservations stay in Slack. A failed cleanup does not prevent today's message.
++
+ ## If something goes wrong
+ 
+ | What you see | What to do |
+diff --git a/digital-makerspace/resource-managers/tools-and-shops.md b/digital-makerspace/resource-managers/tools-and-shops.md
+--- a/digital-makerspace/resource-managers/tools-and-shops.md
++++ b/digital-makerspace/resource-managers/tools-and-shops.md
+@@ -80,6 +80,10 @@
+ | **Reservable** | Whether the shop can be reserved. |
+ | **Slack Channel** | The shop's channel, for example `#shop-woodworking`. **This is how `/checkout` and `/reserve` in Slack know which shop a command is for.** Set it, or the Slack commands and the printed sign will have no channel. |
+ 
++**Announce empty reservation agendas in Slack** is off by default. Turn it on to invite members to book this shop or its tools when the relevant channel's entire day agenda is empty. It is available even when **Reservable** for the whole shop is off. Assigned RMs may change it for their shops; admins and board members may change it for every shop. Save with **Save Shop**. Booked-channel summaries still appear when this option is off.
++
++Invitations do not mix with reservation entries. Marking a tool hidden or out of service removes its reserving invitation from the next new or updated summary, while keeping existing reservation rows visible. Overnight bookings, blackouts, and hidden/out-of-service resources prevent a misleading free-agenda invitation. See [Manage Reservations](/digital-makerspace/resource-managers/reservations).
++
+ ![Edit Shop dialog](/images/checkouts/rm-edit-shop-dialog.png){width=700px}
+ 
+ Adding a new shop, deleting one, and assigning its Resource Managers are done by admins and board members.
+diff --git a/digital-makerspace/resource-managers/reservations.md b/digital-makerspace/resource-managers/reservations.md
+--- a/digital-makerspace/resource-managers/reservations.md
++++ b/digital-makerspace/resource-managers/reservations.md
+@@ -78,6 +78,18 @@
+ - Reservation events are shown on the shop's Google Calendar, in the shop's color.
+ - If the canvases look out of date, an admin can rebuild them: open **Portal Settings**, choose **Jobs**, find **Reservation Canvas Rebuild**, and choose **Run Now**.
+ 
++## Daily Slack summaries and empty invitations
++
++Each day from 7 AM Eastern, configured channels receive one dated summary of approved, pending and unpaid reservations beginning that day. Tool reservations use the tool's **Users Channel**, falling back to the shop channel only when undefined. Whole-shop bookings go to the shop and all its configured tool-users channels. Shared channels do not repeat the same booking. Edits and cancellations update the original message.
++
++Every message includes **Live today agenda** links and **Reserve [shop]** buttons. Tool-users channel members can read the linked shop canvas. The link follows the rolling live agenda, even from an older message. The Reserve button checks the clicking member's linked account and eligibility.
++
++In **Edit Shop**, **Announce empty reservation agendas in Slack** controls free-agenda invitations for that shop and its tools. It starts off and is separate from whole-shop **Reservable**. Assigned RMs, admins and board members can change it. Invitations appear only in empty channels, counting bookings that carry over from yesterday, blackouts and availability. Switching it off removes invitation text from today's existing message. Marking a tool hidden or out of service also removes its invitation on an update, while retaining any existing booked rows for review. A previously posted summary that becomes empty can remain as **No reservations to announce for [date]**.
++
++Before posting today's new summary, the portal tries to remove yesterday's post in the same channel if its last message was an empty invitation or neutral empty summary. Summaries that listed reservations stay in Slack. A failed cleanup does not prevent today's message.
++
++An admin can use **Portal Settings → Jobs → Daily Reservation Announcements → Run Now** to recover a summary after 7 AM. A failure can mean Slack could not post, edit, or share its canvas. Ask an admin to check the job status and channel configuration; do not repeatedly delete summaries.
++
+ ## Troubleshooting
+ 
+ | Problem | What to check |
+diff --git a/digital-makerspace/admin/portal-settings.md b/digital-makerspace/admin/portal-settings.md
+--- a/digital-makerspace/admin/portal-settings.md
++++ b/digital-makerspace/admin/portal-settings.md
+@@ -55,6 +55,14 @@
+ 
+ Below that, each background job shows what it does, when it last ran and whether it **Succeeded** or **Failed**. **Run Now** runs it straight away, whatever the schedule says. Examples are the database backup, the member and invoice reviews, the card expiration check, the reservation canvas rebuild, and the checkout request reminders and digest. A message under the button confirms that the job was queued.
+ 
++### Daily Reservation Announcements
++
++**Daily Reservation Announcements** keeps one dated reservation summary per destination channel, starting at 7 AM Eastern. Its **Run Now** action follows the same time gate. Midday changes edit the existing message; the external scheduler also checks every ten minutes. The status reports failure if a channel or required agenda canvas could not be updated, while other channels are still attempted.
++
++Empty-agenda invitations are off by default and are controlled separately in each shop's **Edit Shop** dialog with **Announce empty reservation agendas in Slack**. Admins/board can edit every shop and assigned RMs can edit their own. Normal booked summaries do not depend on that option.
++
++Before posting today's new summary, the portal tries to remove yesterday's post in the same channel if its last message was an empty invitation or neutral empty summary. Summaries that listed reservations stay in Slack. A failed cleanup does not prevent today's message.
++
+ ## Security
+ 
+ - **Two-Factor Authentication Enforcement:** switches to require two-factor sign-in for admins, board members and Resource Managers. When required, a privileged member who has not enrolled is sent to their Security settings after login and cannot use the portal until they enroll. All members may turn on two-factor themselves. See [Log In](/digital-makerspace/log-in).
+diff --git a/digital-makerspace/troubleshooting.md b/digital-makerspace/troubleshooting.md
+--- a/digital-makerspace/troubleshooting.md
++++ b/digital-makerspace/troubleshooting.md
+@@ -74,6 +74,24 @@
+ 
+ See [Troubleshooting: Tool Checkouts](/digital-makerspace/troubleshooting/checkouts). It explains every message you can see and what to do.
+ 
++## Reservation announcements
++
++### The Reserve button in a Slack summary will not open a form
++
++You need a linked, active, unexpired Member Portal account. Read the private **Reservation unavailable** message, sign in to the portal and check your membership. The shop may be hidden, out of service, or have no resources you can reserve. Ask its Resource Manager or use **Reservations** in the portal. The button does not bypass required tool checkouts.
++
++### An empty-shop invitation is missing or changed
++
++The shop's **Announce empty reservation agendas in Slack** option starts off. Ask its Resource Manager about enabling it. Invitations appear only when the channel's whole day is empty; bookings from yesterday, blackouts and unavailable resources can prevent them. A booking or setting change can replace an invitation in the same message. **No reservations to announce for [date]** is a neutral update, not a promise that every resource is available.
++
++### Yesterday's empty message disappeared
++
++The portal tries to remove yesterday's empty invitation or neutral empty summary before posting today's message in that channel. Nonempty summaries stay. Cleanup can fail without stopping today's post; an admin can check the job logs.
++
++### A summary or its agenda link looks stale
++
++Check the date printed in the summary. **Live today agenda** links always open the current rolling canvas, including from yesterday's message. Ask an admin to check **Portal Settings → Jobs → Daily Reservation Announcements** and use **Run Now** after 7 AM Eastern. Slack channel or canvas-access problems may need the admin's attention.
++
+ ## Storage rentals
+ 
+ ### I cannot rent a space

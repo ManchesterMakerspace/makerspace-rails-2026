@@ -1,6 +1,15 @@
 require "rails_helper"
 require "rake"
 
+RSpec.describe "reservations:announce_today" do
+  it "runs the tracked job synchronously so a scheduler process can wait for delivery" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("reservations:announce_today")
+    expect(ReservationSlackAnnouncementJob).to receive(:perform_now)
+    Rake::Task["reservations:announce_today"].reenable
+    Rake::Task["reservations:announce_today"].invoke
+  end
+end
+
 RSpec.describe "reservations:backfill_resource_manager_shops" do
   before do
     Rails.application.load_tasks unless Rake::Task.task_defined?("reservations:backfill_resource_manager_shops")

@@ -1,8 +1,10 @@
 require 'active_support/parameter_filter'
+require 'uri'
 
 module Service
   module SlackConnector
     mattr_accessor :slack_team_id
+    mattr_accessor :slack_workspace_urls, default: {}
     SLACK_RATE_LIMIT_MAX_RETRIES = 5
 
     # Wrap the SDK's shared request boundary, including direct client calls and
@@ -441,6 +443,7 @@ module Service
 
       response = client.team_info
       self.slack_team_id = response.team.id if response.respond_to?(:team) && response.team.respond_to?(:id)
+      cache_workspace_url(response.team) if response.respond_to?(:team)
       Rails.logger.warn("Slack team id could not be determined") if slack_team_id.blank?
       slack_team_id
     rescue => e
@@ -460,6 +463,28 @@ module Service
       return nil if id.blank? || channel_id.blank?
       "slack://channel?team=#{id}&id=#{channel_id}"
     end
+    def self.slack_canvas_url(canvas_id)
+      return nil if canvas_id.blank?
+
+      id = team_id
+      return nil if id.blank?
+
+      unless slack_workspace_urls[id]
+        response = client.team_info
+        cache_workspace_url(response.team) if response.respond_to?(:team) && response.team.id == id
+      end
+      base_url = slack_workspace_urls[id]
+      return nil if base_url.blank?
+
+      "#{base_url}/docs/#{URI.encode_www_form_component(id)}/#{URI.encode_www_form_component(canvas_id)}"
+    end
+    def self.cache_workspace_url(team)
+      return unless team.respond_to?(:id) && team.respond_to?(:domain)
+      return unless team.id.present? && team.domain.to_s.match?(/\A[a-zA-Z0-9-]+\z/)
+
+      slack_workspace_urls[team.id] = "https://#{team.domain}.slack.com"
+    end
+    private_class_method :cache_workspace_url
     def invite_to_slack(email, lastname, firstname)
       ::Service::SlackConnector.invite_to_slack(email, lastname, firstname)
     end

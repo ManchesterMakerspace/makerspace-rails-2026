@@ -33,7 +33,10 @@ RSpec.describe 'Shop Resource Manager assignments', type: :request do
       response('200', 'Visible shops') do
         schema type: :array, items: { '$ref' => '#/components/schemas/Shop' }
         before { shop }
-        run_test!
+        run_test! do |r|
+          expect(JSON.parse(r.body).find { |row| row['id'] == shop.id.to_s })
+            .to include('slackAnnounceEmptyReservations' => false)
+        end
       end
     end
   end
@@ -61,8 +64,71 @@ RSpec.describe 'Shop Resource Manager assignments', type: :request do
           data = JSON.parse(r.body)
           expect(manager.reload.resource_manager_shop_ids).to include(data['id'])
           expect(data['resourceManagers'].map { |m| m['id'] }).to eq([manager.id.to_s])
+          expect(data['slackAnnounceEmptyReservations']).to eq(false)
+        end
+        context 'with empty reservation announcements enabled' do
+          let(:body) { { name: 'New workshop', slack_announce_empty_reservations: true } }
+          it 'returns the enabled setting', rswag: true do
+            expect(response).to have_http_status(:ok)
+            expect(JSON.parse(response.body)['slackAnnounceEmptyReservations']).to eq(true)
+          end
         end
       end
+    end
+  end
+
+  describe 'empty reservation announcement settings' do
+    %w[admin board_member resource_manager].each do |role|
+      it "allows #{role} to enable and disable announcements in an authorized shop" do
+        actor = create(:member, :current, role: role, resource_manager_shop_ids: [shop.id.to_s])
+        sign_in actor
+        [true, false].each do |value|
+          put "/api/admin/shops/#{shop.id}", params: { slack_announce_empty_reservations: value }, as: :json
+          expect(response).to have_http_status(:ok)
+          expect(shop.reload.slack_announce_empty_reservations).to eq(value)
+          expect(JSON.parse(response.body)['slackAnnounceEmptyReservations']).to eq(value)
+        end
+      end
+    end
+
+    it 'preserves the saved value when another shop setting changes' do
+      shop.update!(slack_announce_empty_reservations: true)
+      patch "/api/admin/shops/#{shop.id}", params: { name: 'Renamed workshop' }, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(shop.reload.slack_announce_empty_reservations).to eq(true)
+    end
+
+    it 'rejects null instead of storing a nonboolean setting' do
+      put "/api/admin/shops/#{shop.id}", params: { slack_announce_empty_reservations: nil }, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(shop.reload.slack_announce_empty_reservations).to eq(false)
+    end
+
+    it 'preserves a successful shop update when announcement enqueuing fails' do
+      existing = shop
+      allow(ReservationSlackAnnouncementJob).to receive(:perform_later).and_raise('Queue unavailable')
+      allow(Service::ErrorReporter).to receive(:notify)
+      put "/api/admin/shops/#{existing.id}", params: { slack_announce_empty_reservations: true }, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(existing.reload.slack_announce_empty_reservations).to eq(true)
+      expect(ReservationSlackAnnouncementJob).to have_received(:perform_later)
+    end
+
+    %w[resource_manager member].each do |role|
+      it "forbids #{role} without shop management authority" do
+        actor = create(:member, :current, role: role)
+        sign_in actor
+        put "/api/admin/shops/#{shop.id}", params: { slack_announce_empty_reservations: true }, as: :json
+        expect(response).to have_http_status(:forbidden)
+        expect(shop.reload.slack_announce_empty_reservations).to eq(false)
+      end
+    end
+
+    it 'requires authentication to change announcement settings' do
+      sign_out member
+      put "/api/admin/shops/#{shop.id}", params: { slack_announce_empty_reservations: true }, as: :json
+      expect(response).to have_http_status(:unauthorized)
+      expect(shop.reload.slack_announce_empty_reservations).to eq(false)
     end
   end
   path '/admin/shops/{id}' do

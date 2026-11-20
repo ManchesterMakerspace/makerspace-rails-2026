@@ -20,6 +20,8 @@ class ReservationBlackout
   index({ shop_id: 1, recurrence: 1, start_date: 1, end_date: 1 })
 
   before_validation :normalize_values
+  after_save :enqueue_reservation_slack_announcement
+  after_destroy :enqueue_reservation_slack_announcement
 
   validates :title, :shop, :created_by, presence: true
   validates :recurrence, inclusion: { in: RECURRENCES }
@@ -92,6 +94,10 @@ class ReservationBlackout
   end
 
   private
+
+  def enqueue_reservation_slack_announcement
+    ReservationSlackAnnouncementJob.enqueue_today
+  end
 
   def normalize_values
     self.title = title.to_s.strip

@@ -64,6 +64,7 @@ module FixTicketApiSchemas
       wiki_url: nullable_string, shop: object.call({ id: string, name: string, wiki_url: nullable_string, out_of_service: boolean }) }),
     ShopWrite: { type: :object, properties: {
       name: string, wiki_url: nullable_string, gdrive_id: nullable_string, slack_channel: nullable_string,
+      slack_announce_empty_reservations: boolean.merge(default: false, description: 'Include empty shop/tool agenda invitations in Slack. Owning-shop Resource Managers, Admins and Board members may edit; omission preserves the existing value.'),
       disabled: boolean, reservable: boolean, color_id: string, floor_name: nullable_string, capacity: integer,
       resource_manager_ids: { type: :array, items: string, description: 'Admin/board only. Replace Resource Manager assignments; omit to preserve, [] to clear. IDs must belong to Resource Managers, Admins, or Board members; their roles are preserved.' },
       max_concurrent_reservations: integer, reservation_horizon_days: integer, minimum_advance_notice_hours: { type: :number },

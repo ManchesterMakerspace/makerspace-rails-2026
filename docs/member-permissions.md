@@ -1,5 +1,20 @@
 # MongoDB member permissions
 
+## Empty reservation announcements and Slack entry
+
+The shop setting `slack_announce_empty_reservations` uses existing shop-edit
+authority: admins and board members may edit every shop, while Resource Managers
+may edit only assigned shops. Ordinary members, checkout approvers without shop
+management authority, and out-of-scope RMs cannot change it. Shop creation remains
+admin/board only. It is not a new named member permission and defaults to off.
+
+A Slack **Reserve [shop]** announcement button identifies shop context only. The
+signed interaction resolves the clicking Slack identity to a linked active,
+unexpired member and reuses existing modal eligibility and reservation-service
+authorization. Channel membership or a supplied shop ID grants no additional
+reservation rights. Failure feedback is private; the public summary is not a
+modal-outcome response target. See [daily announcements](reservations.MD#daily-channel-announcements).
+
 ## Continuous paid membership months
 
 GET `/api/members/:id/continuous_paid_membership` permits self, Admin and Board.

@@ -7,6 +7,39 @@ RSpec.describe Service::SlackConnector do
     allow(described_class).to receive(:client).and_return(client)
   end
 
+  describe ".slack_canvas_url" do
+    around do |example|
+      previous_urls = described_class.slack_workspace_urls
+      described_class.slack_workspace_urls = {}
+      example.run
+    ensure
+      described_class.slack_workspace_urls = previous_urls
+    end
+
+    before do
+      allow(described_class).to receive(:team_id).and_return("TWORKSPACE")
+    end
+
+    it "uses and caches workspace metadata without requesting file scopes" do
+      allow(client).to receive(:team_info).and_return(double(team: double(id: "TWORKSPACE", domain: "makerspace")))
+      expect(described_class.slack_canvas_url("FCANVAS")).to eq("https://makerspace.slack.com/docs/TWORKSPACE/FCANVAS")
+      expect(described_class.slack_canvas_url("FOTHER")).to eq("https://makerspace.slack.com/docs/TWORKSPACE/FOTHER")
+      expect(client).to have_received(:team_info).once
+    end
+
+    it "does not build a link from a different workspace's metadata" do
+      allow(client).to receive(:team_info).and_return(double(team: double(id: "TOTHER", domain: "other")))
+      expect(described_class.slack_canvas_url("FCANVAS")).to be_nil
+    end
+
+    it "returns no link when the workspace or canvas ID is missing" do
+      expect(client).not_to receive(:team_info)
+      expect(described_class.slack_canvas_url(nil)).to be_nil
+      allow(described_class).to receive(:team_id).and_return(nil)
+      expect(described_class.slack_canvas_url("FCANVAS")).to be_nil
+    end
+  end
+
   it "creates an unbound canvas and grants a shop channel read access" do
     allow(client).to receive(:canvases_create)
       .with(title: "Today's Reservations")

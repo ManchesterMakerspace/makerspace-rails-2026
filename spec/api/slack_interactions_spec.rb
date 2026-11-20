@@ -2,7 +2,7 @@ require "swagger_helper"
 
 describe "Slack interactions API", type: :request do
   path "/slack/interactions" do
-    post "Handles signed Slack modal interactions",
+    post "Handles signed Slack modal and reservation announcement interactions",
       operation: { servers: [{ url: "/", description: "Application root" }] } do
       tags "SlackInteractions"
       operationId "slackInteractions"
@@ -20,7 +20,7 @@ describe "Slack interactions API", type: :request do
             type: :string,
             pattern: '"type"\s*:\s*"(view_submission|block_actions|view_closed)"',
             description: "JSON-encoded Slack interaction. Reservation views accept view_submission, " \
-              "view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Block actions include actions and current view state. Checkout field errors use checkout_note. Echo the opaque private_metadata unchanged; do not construct it from this example. Submissions supply view.state.values.checkout_note.checkout_note.value (optional string, maximum 128 characters). Menu values are active, request_tools, volunteer and requests; checkout_request_select uses a persisted request ID for checkout requests or volunteer:<request_id> for volunteer rows; other selectors use persisted record IDs.",
+              "view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Message block_actions with action_id reservation_open and value shop ID open the reservation modal for the clicking linked active member, including from tool-users channels. The server acknowledges with {}, opens errors privately, and omits the announcement response_url so submission outcomes use DM fallback. Block actions include actions and current view state. Checkout field errors use checkout_note. Echo the opaque private_metadata unchanged; do not construct it from this example. Submissions supply view.state.values.checkout_note.checkout_note.value (optional string, maximum 128 characters). Menu values are active, request_tools, volunteer and requests; checkout_request_select uses a persisted request ID for checkout requests or volunteer:<request_id> for volunteer rows; other selectors use persisted record IDs.",
             example: {
               type: "block_actions",
               user: { id: "U12345678" },
@@ -85,6 +85,39 @@ describe "Slack interactions API", type: :request do
 
           expect(response).to have_http_status(:ok)
           expect(response.parsed_body).to eq({})
+        end
+
+        context "with a reservation announcement button" do
+          let(:member) { create(:member, :current) }
+          let(:shop) { create(:shop) }
+          before do
+            SlackUser.create!(member: member, slack_id: 'URESERVATION')
+            allow(Service::SlackConnector).to receive(:open_modal)
+          end
+
+          it "opens the existing reservation modal without the shared announcement response URL" do
+            payload = { type: 'block_actions', user: { id: 'URESERVATION' }, trigger_id: 'TOPEN',
+              channel: { id: 'CTOOLUSERS' }, response_url: 'https://hooks.slack.com/actions/shared-message',
+              actions: [{ action_id: 'reservation_open', value: shop.id.to_s }] }
+            post '/slack/interactions', params: { payload: payload.to_json }
+            expect(response.parsed_body).to eq({})
+            expect(Service::SlackConnector).to have_received(:open_modal) do |trigger, view|
+              expect(trigger).to eq('TOPEN')
+              expect(view[:callback_id]).to eq('reservation_submit')
+              expect(JSON.parse(view[:private_metadata])).to include('member_id' => member.id.to_s,
+                'shop_id' => shop.id.to_s, 'slack_user_id' => 'URESERVATION')
+              expect(JSON.parse(view[:private_metadata])).not_to have_key('response_url')
+            end
+          end
+
+          it "privately explains an inactive clicking member without opening a reservation form" do
+            member.set(status: 'revoked')
+            post '/slack/interactions', params: { payload: { type: 'block_actions', user: { id: 'URESERVATION' },
+              trigger_id: 'TOPEN', actions: [{ action_id: 'reservation_open', value: shop.id.to_s }] }.to_json }
+            expect(response.parsed_body).to eq({})
+            expect(Service::SlackConnector).to have_received(:open_modal).with('TOPEN',
+              hash_including(callback_id: 'reservation_open_alert'))
+          end
         end
 
         %w[date start_time duration].each do |action_id|

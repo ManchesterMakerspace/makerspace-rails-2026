@@ -102,6 +102,42 @@ module Service
           .uniq
       end
 
+      # Always refresh the rolling agenda before handing its ID to a message.
+      # A cached ID alone does not mean its content has rolled over to today.
+      def ensure_today_for_announcement!(shop, channel_id:, date:, mode:)
+        today = Time.current.in_time_zone(ReservationService::ZONE).to_date
+        raise ArgumentError, "Announcement canvas date must be today" unless parse_date(date) == today
+        unless %w[production test].include?(mode) && mode == Service::SlackConnector.message_destination_mode
+          raise ArgumentError, "Announcement canvas destination mode does not match"
+        end
+        raise ArgumentError, "Announcement canvas needs a destination channel" if channel_id.blank?
+
+        production = mode == "production"
+        if !production && Service::SlackConnector.resolved_channel_id(channel_id) != channel_id
+          raise ArgumentError, "Test announcement canvas must use the redirected test channel"
+        end
+        field = production ? :canvas_today : :announcement_test_canvas_today
+        title = "Today's #{shop.name} Reservations#{production ? '' : ' (Test)'}"
+        with_canvas_lock(shop.id, field) do
+          shop.reload
+          canvas_id = shop.public_send(field).presence
+          reused_canvas = canvas_id.present?
+          owners = production ? canvas_owner_slack_ids(shop) : []
+          canvas_id ||= create_and_cache_canvas!(shop, field, title, owners)
+
+          begin
+            publish_announcement_agenda!(canvas_id, shop, channel_id, today, production: production)
+          rescue Slack::Web::Api::Errors::CanvasNotFound, Slack::Web::Api::Errors::CanvasDeleted
+            raise unless reused_canvas
+
+            shop.set(field => nil)
+            canvas_id = create_and_cache_canvas!(shop, field, title, owners)
+            publish_announcement_agenda!(canvas_id, shop, channel_id, today, production: production)
+          end
+          canvas_id
+        end
+      end
+
       def sync_member_access!(member, shop_ids:)
         slack_id = member.slack_user&.slack_id.to_s
         return if slack_id.blank?
@@ -119,6 +155,16 @@ module Service
       end
 
       private
+
+      def publish_announcement_agenda!(canvas_id, shop, channel_id, date, production:)
+        publish_agenda!(canvas_id, channel_id, shop, date)
+        return unless production && shop.slack_channel.present?
+
+        shop_channel_id = Service::SlackConnector.find_channel_id(shop.slack_channel)
+        if shop_channel_id.present? && shop_channel_id != channel_id
+          Service::SlackConnector.set_canvas_channel_access(canvas_id, shop_channel_id)
+        end
+      end
 
       def rebuild_shop_with_rate_limit_retry!(shop, dates)
         retries = 0

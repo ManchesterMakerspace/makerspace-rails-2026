@@ -1,5 +1,32 @@
 # MongoDB Collections
 
+## Daily reservation Slack announcements
+
+`reservation_slack_announcements` is a new top-level durable delivery collection
+owned by `ReservationSlackAnnouncement`. Its unique `(day, mode, channel_id)`
+index represents one Eastern calendar day's summary in the actual resolved Slack
+conversation and destination mode. `ts` is a string Slack message receipt;
+`fingerprint` records the last successful content. `shop_ids` and `canvas_ids`
+retain context for edits after the last reservation is removed. Send intent,
+client message ID, attempt count, retry time, and last error support retry and
+ambiguous-send handling. Historical receipts have no TTL and are not embedded
+reservation records. Apply the index through `data:ensure_unique_indexes` before
+running the new external `reservations:announce_today` schedule.
+
+`empty_agenda` records whether the last successful message had no announced
+reservation rows, including promotional and neutral empty summaries. Before
+today's first new post, yesterday's same-channel/mode receipt may be used to
+delete that empty Slack message. `deleted_at` records a confirmed deletion or
+already missing message; its historical `ts` and receipt are retained. Nonempty
+summaries are not deleted by this cleanup, and no TTL removes the records.
+
+The existing top-level `shops` collection adds Boolean
+`slack_announce_empty_reservations` (default `false`, including legacy records)
+and String `announcement_test_canvas_today`, an isolated rolling canvas ID used
+only by nonproduction announcement destinations. Production continues to use
+`canvas_today`; these IDs are live slots, not historical date snapshots. No
+reservation collection fields or indexes change.
+
 ## Continuous paid membership accounting
 
 Existing top-level `members` adds whole-month `continuous_paid_membership_months`,
