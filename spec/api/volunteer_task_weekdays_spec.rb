@@ -83,14 +83,15 @@ RSpec.describe 'Volunteer task weekday API contract', type: :request do
     child_id = response.parsed_body.fetch('id')
     expect(response.parsed_body).to include('dayOfWeek' => nil)
 
-    travel_to(Time.utc(2026, 11, 20, 17)) do
-      get '/api/volunteer/tasks/my_claims'
-      expect(response).to have_http_status(:ok)
-      expect(response.parsed_body.map { |row| row['id'] }).to include(child_id)
-      post "/api/volunteer/tasks/#{child_id}/complete", params: {}, as: :json
-      expect(response).to have_http_status(:ok)
-      expect(response.parsed_body).to include('status' => 'pending')
-    end
+    travel_to(Time.utc(2026, 11, 20, 17))
+    sign_out member
+    sign_in member
+    get '/api/volunteer/tasks/my_claims'
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.map { |row| row['id'] }).to include(child_id)
+    post "/api/volunteer/tasks/#{child_id}/complete", params: {}, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('status' => 'pending')
   end
 
   %w[html json xml].each do |format|
@@ -100,6 +101,12 @@ RSpec.describe 'Volunteer task weekday API contract', type: :request do
       any_day = task(title: 'Any day cleanup')
       get "/volunteer/bounties.#{format}"
       expect(response).to have_http_status(:ok)
+      if format == 'html'
+        expect(response.body).to include('Volunteer Bounties', '/volunteer/bounties.json')
+        # The display loads task rows from this JSON endpoint in the browser.
+        get '/volunteer/bounties.json'
+        expect(response).to have_http_status(:ok)
+      end
       expect(response.body).to include(matching.title, any_day.title)
       expect(response.body).not_to include('Friday cleanup')
       if format == 'json'

@@ -63,11 +63,10 @@ RSpec.describe VolunteerTask, 'weekday availability', type: :model do
       task = described_class.create!(attributes.merge(status: status, days: status == 'recurring' ? 7 : nil, day_of_week: 4))
       child = task.claim!(member)
       expect(child.day_of_week).to be_nil
-      travel_to(Time.utc(2026, 11, 20, 17)) do
-        expect(child.weekday_available?).to be(true)
-        child.mark_pending!(member)
-        expect(child.reload.status).to eq('pending')
-      end
+      travel_to(Time.utc(2026, 11, 20, 17))
+      expect(child.weekday_available?).to be(true)
+      child.mark_pending!(member)
+      expect(child.reload.status).to eq('pending')
     end
   end
 
