@@ -1,4 +1,6 @@
 class Admin::VolunteerTasksController < AdminOrRmController
+  include VolunteerValidationErrors
+
   MUTATION_ACTIONS = [
     :update,
     :destroy,
@@ -137,6 +139,7 @@ class Admin::VolunteerTasksController < AdminOrRmController
       :shop_id,
       :status,
       :days,
+      :day_of_week,
       prerequisite_tool_ids: []
     )
   end

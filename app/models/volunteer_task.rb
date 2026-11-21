@@ -34,6 +34,9 @@ class VolunteerTask
   # Recurrence interval in days (recurring tasks only)
   field :days,           type: Integer, default: nil
 
+  # Optional Eastern weekday for new claims on multi-use parent tasks (0 = Sunday).
+  field :day_of_week,    type: Integer, default: nil
+
   # Date after which a recurring task is claimable again (set on the parent)
   field :next_available, type: Date,    default: nil
 
@@ -62,6 +65,10 @@ class VolunteerTask
   end
   validates_inclusion_of :status, in: VALID_STATUSES
   validates :days, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
+  validates :day_of_week, inclusion: { in: 0..6 }, allow_nil: true
+  validate do
+    errors.add(:day_of_week, 'must be a whole number from 0 (Sunday) to 6 (Saturday)') if @invalid_day_of_week
+  end
 
   validate :days_required_for_recurring
   validate :credit_value_within_max, on: :create
@@ -82,13 +89,19 @@ class VolunteerTask
   scope :available, -> { where(status: 'available') }
   scope :active,    -> { where(:status.in => %w[available claimed pending reusable repeatable recurring]) }
 
-  # Claimable from the member's perspective — excludes recurring tasks still cooling down
+  # Weekday filtering affects new claims on multi-use parents only. Existing
+  # child claims keep their lifecycle regardless of the parent's current day.
   scope :claimable, -> {
     any_of(
       { :status.in => %w[available reusable repeatable] },
       { status: 'recurring', :next_available.lte => Date.today },
       { status: 'recurring', next_available: nil }
-    )
+    ).and('$or' => [
+      { :status.nin => MULTI_USE_STATUSES },
+      { :parent_task_id.ne => nil },
+      { day_of_week: nil },
+      { day_of_week: business_date.wday }
+    ])
   }
 
   # ── Settings ──────────────────────────────────────────────────────────────
@@ -106,6 +119,20 @@ class VolunteerTask
     find_by(task_number: number.to_i)
   end
 
+  def self.business_date(time: Time.current)
+    time.in_time_zone('America/New_York').to_date
+  end
+
+  def day_of_week=(value)
+    candidate = value.is_a?(String) ? value.strip : value
+    blank = candidate.nil? || candidate == ''
+    valid = blank || (candidate.is_a?(Integer) && (0..6).cover?(candidate)) ||
+      (candidate.is_a?(String) && candidate.match?(/\A[0-6]\z/))
+    # Validate before Mongoid's Integer coercion can silently truncate fractions.
+    @invalid_day_of_week = !valid
+    write_attribute(:day_of_week, valid && !blank ? candidate : nil)
+  end
+
   # ── Derived Flags ─────────────────────────────────────────────────────────
 
   def child_task?
@@ -118,6 +145,10 @@ class VolunteerTask
 
   def currently_cooling_down?
     status == 'recurring' && next_available.present? && next_available > Date.today
+  end
+
+  def weekday_available?(date: self.class.business_date)
+    child_task? || !MULTI_USE_STATUSES.include?(status) || day_of_week.nil? || day_of_week == date.wday
   end
 
   # ── Instance Methods ──────────────────────────────────────────────────────
@@ -185,6 +216,7 @@ class VolunteerTask
   def claim!(member, sync_canvas: true)
     reload
     raise Error::Forbidden.new unless member.status == "activeMember"
+    raise Error::Forbidden.new unless weekday_available?
     raise Error::Forbidden.new unless eligible_for?(member)
 
     result = case status

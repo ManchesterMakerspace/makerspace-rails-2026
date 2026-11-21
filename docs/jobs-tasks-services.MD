@@ -1422,8 +1422,8 @@ public signup choices for at most five minutes. Keys include schema version,
 environment, MongoDB database and organization configuration. Batched misses use
 projected MongoDB reads; missing records/empty choices are cached too. Each hit
 reads the current generation and all requested payloads in one atomic Lua call,
-rejecting payloads from older generations. Event and
-ticket semantic save/destroy hooks change generation tokens; inventory, receipts
+rejecting payloads from older generations. Event and ticket semantic save/destroy
+hooks change generation tokens; inventory, receipts
 and sync bookkeeping do not. Lua publication fences stale in-flight fills, and
 Redis failures/corrupt entries fall back to MongoDB. Signup choices also expire
 at the next Eastern midnight. Callback-bypassing content imports/deletes must use

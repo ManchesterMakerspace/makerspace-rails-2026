@@ -219,8 +219,9 @@ expire at local midnight. Semantic event/ticket saves and deletes invalidate
 their metadata generation; inventory, sync and Slack receipt bookkeeping do not.
 One atomic Lua read checks generation and batched payloads in a single roundtrip;
 each payload must belong to that generation. Generation-checked Lua publication
-prevents a pre-invalidation fill from replacing new state. Redis errors or invalid cached values fall back to projected MongoDB
-reads. A Redis outage/crash between MongoDB persistence and invalidation can leave
+prevents a pre-invalidation fill from replacing new state. Redis errors or invalid
+cached values fall back to projected MongoDB reads. A Redis outage/crash between
+MongoDB persistence and invalidation can leave
 display data stale until expiry; the two systems do not share an atomic commit.
 
 Callback-bypassing content writes must run inside

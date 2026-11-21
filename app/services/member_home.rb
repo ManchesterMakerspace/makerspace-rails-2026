@@ -29,8 +29,9 @@ class MemberHome
     { accepted: !!accepted, newMembersChannelUrl: accepted ? slack_channel_url : nil }
   end
 
-  def available_volunteer_opportunities(random: Random)
+  def available_volunteer_opportunities
     return [] unless @member.status == 'activeMember'
+    today = VolunteerTask.business_date
 
     # Reusable tasks are once per member; repeatable/recurring tasks can return
     # after completion, but don't recommend a second concurrent claim on Home.
@@ -43,13 +44,20 @@ class MemberHome
       already_claimed = task.status == 'reusable' ? claimed_once.include?(task.id.to_s) : in_progress.include?(task.id.to_s)
       !already_claimed && task.eligible_for?(@member)
     end
-    events = VolunteerEvent.claimable_events.where(:event_date.gt => Date.today).select do |event|
+    events = VolunteerEvent.claimable_events.where(:event_date.gt => today).select do |event|
       !event.attendee_ids.map(&:to_s).include?(@member.id.to_s) && event.eligible_for?(@member)
     end
 
-    # Sample the combined eligible pool, not separate five-item lists or an
-    # unfiltered shortlist that could omit otherwise available opportunities.
-    (tasks + events).sample(5, random: random).map do |opportunity|
+    # Today's weekday tasks get the first five places; other opportunities get
+    # five more. Partition every candidate before limiting either ranked pool.
+    opportunities = (tasks + events).uniq { |opportunity| [opportunity.class.name, opportunity.id.to_s] }
+    weekday_tasks, other_opportunities = opportunities.partition do |opportunity|
+      opportunity.is_a?(VolunteerTask) && VolunteerTask::MULTI_USE_STATUSES.include?(opportunity.status) &&
+        opportunity.day_of_week == today.wday
+    end
+    ranking = ->(opportunity) { [-opportunity.credit_value.to_f, opportunity.title.to_s.downcase,
+      opportunity.id.to_s, opportunity.class.name] }
+    (weekday_tasks.sort_by(&ranking).first(5) + other_opportunities.sort_by(&ranking).first(5)).map do |opportunity|
       event = opportunity.is_a?(VolunteerEvent)
       shop = opportunity.shop
       {

@@ -79,8 +79,8 @@ RSpec.describe Admin::AnalyticsController, type: :controller do
         { member_id: admin.id, status: 'pending', credit_value: 1.0, created_at: Time.utc(2023, 1, 1) }
       ])
       VolunteerTask.collection.insert_many([
-        { status: 'completed', completed_at: Time.utc(2024, 12, 31, 23, 59, 59, 500_000) },
-        { status: 'completed', completed_at: Time.utc(2025, 1, 1) }
+        { task_number: 1, status: 'completed', completed_at: Time.utc(2024, 12, 31, 23, 59, 59, 500_000) },
+        { task_number: 2, status: 'completed', completed_at: Time.utc(2025, 1, 1) }
       ])
 
       get :volunteer_summary, params: { year: 2024 }, format: :json

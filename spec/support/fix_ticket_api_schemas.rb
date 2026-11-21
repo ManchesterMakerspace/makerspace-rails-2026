@@ -37,7 +37,9 @@ module FixTicketApiSchemas
     VolunteerTaskWrite: { type: :object, properties: {
           title: { type: :string }, description: { type: :string }, credit_value: { type: :number, exclusiveMinimum: true, minimum: 0, description: 'Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited.' },
           shop_id: { type: :string, nullable: true }, status: { type: :string, enum: VolunteerTask::VALID_STATUSES },
-          days: { type: :integer, nullable: true }, prerequisite_tool_ids: { type: :array, items: { type: :string } }
+          days: { type: :integer, nullable: true },
+          day_of_week: { type: :integer, nullable: true, minimum: 0, maximum: 6, description: 'Optional day for new multi-use parent claims in America/New_York: 0 Sunday through 6 Saturday; null means any day. Existing child claims remain usable on other days.' },
+          prerequisite_tool_ids: { type: :array, items: { type: :string } }
         } },
     FixTicketUpdate: { type: :object, properties: {
         respond_as: { type: :string, enum: %w[assignee reporter], description: 'Required for notes when the viewer is both reporter and assignee.' },
@@ -133,6 +135,7 @@ module FixTicketApiSchemas
       verifiedById: nullable_string, verifiedByName: nullable_string, parentTaskId: nullable_string,
       claimedAt: { type: :string, format: 'date-time', nullable: true }, completedAt: { type: :string, format: 'date-time', nullable: true },
       createdAt: timestamp, updatedAt: timestamp, days: { type: :integer, nullable: true },
+      dayOfWeek: { type: :integer, nullable: true, minimum: 0, maximum: 6, description: 'Eastern weekday restriction for new multi-use parent claims; null means any day.' },
       nextAvailable: { type: :string, nullable: true }, rejectionReason: nullable_string, isChildTask: boolean, isCoolingDown: boolean,
       capabilities: object.call({ canClaim: boolean, canSubmitCompletion: boolean }) },
       %i[id title description status creditValue ticketId capabilities])
