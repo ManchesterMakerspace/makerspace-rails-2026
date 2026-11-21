@@ -28,6 +28,15 @@ RSpec.describe 'Reservation announcement refreshes' do
       .to have_enqueued_job(ReservationSlackAnnouncementJob).with('2026-11-20')
   end
 
+  it 'refreshes when a tool moves to another shop or clears its users channel' do
+    tool = create(:tool, shop: shop, users_channel: 'old-tool-users')
+    destination = create(:shop)
+    expect { tool.update!(shop: destination) }
+      .to have_enqueued_job(ReservationSlackAnnouncementJob).with('2026-11-20')
+    expect { tool.update!(users_channel: nil) }
+      .to have_enqueued_job(ReservationSlackAnnouncementJob).with('2026-11-20')
+  end
+
   it 'refreshes when a resource or blackout is deleted' do
     tool = create(:tool, shop: shop)
     blackout = create(:reservation_blackout, shop: shop)

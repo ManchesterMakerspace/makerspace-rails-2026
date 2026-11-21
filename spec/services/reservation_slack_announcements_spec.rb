@@ -158,8 +158,8 @@ RSpec.describe Service::ReservationSlackAnnouncements do
     tool.update!(users_channel: 'CTOOL00002')
     sync
     expect(posts.map { |payload| payload[:channel] }).to eq([tool_channel, 'CTOOL00002'])
-    expect(updates.first[:channel]).to eq(tool_channel)
-    expect(text(updates.first)).not_to include('Project time')
+    expect(client).to have_received(:chat_delete).with(channel: tool_channel, ts: '100.1').once
+    expect(updates).to be_empty
   end
 
   it 'defaults to no empty posts and advertises opted-in empty channels only' do
@@ -503,5 +503,303 @@ RSpec.describe Service::ReservationSlackAnnouncements do
     expect(ReservationFeeService).not_to receive(:reconcile!)
     sync
     expect(text(posts.first)).to include('Unpaid')
+  end
+
+  it 'deletes the saved invitation when its last represented shop is deleted and does not repeat the delete' do
+    shop.update!(slack_announce_empty_reservations: true)
+    sync
+    receipt = ReservationSlackAnnouncement.first
+    expect do
+      Shop.find(shop.id).destroy
+    end.to have_enqueued_job(ReservationSlackAnnouncementJob).with(date.iso8601)
+
+    sync
+    expect(client).to have_received(:chat_delete).with(channel: shop_channel, ts: '100.1').once
+    expect(receipt.reload.deleted_at).to be_present
+    expect(receipt.ts).to eq('100.1')
+    expect(receipt.shop_ids).to be_empty
+    expect(receipt.canvas_ids).to be_empty
+    expect(receipt.fingerprint).to be_nil
+    sync
+    expect(client).to have_received(:chat_delete).once
+    expect(posts.size).to eq(1)
+    expect(updates).to be_empty
+  end
+
+  it 'records an already missing orphaned invitation as deleted without creating a replacement' do
+    shop.update!(slack_announce_empty_reservations: true)
+    sync
+    receipt = ReservationSlackAnnouncement.first
+    Shop.find(shop.id).destroy
+    allow(client).to receive(:chat_delete).and_raise(Slack::Web::Api::Errors::SlackError.new('message_not_found'))
+    sync
+    expect(receipt.reload.deleted_at).to be_present
+    expect(posts.size).to eq(1)
+    expect(updates).to be_empty
+  end
+
+  it 'retries an orphaned invitation deletion failure without silently marking it deleted' do
+    shop.update!(slack_announce_empty_reservations: true)
+    sync
+    receipt = ReservationSlackAnnouncement.first
+    Shop.find(shop.id).destroy
+    allow(client).to receive(:chat_delete).and_raise(Slack::Web::Api::Errors::SlackError.new('cant_delete_message'))
+    expect { sync }.to raise_error(described_class::DeliveryError, /cant_delete_message/)
+    expect(receipt.reload.deleted_at).to be_nil
+    expect(receipt.last_error).to include('cant_delete_message')
+    expect(receipt.retry_at).to be_present
+    allow(client).to receive(:chat_delete).and_return('ok' => true)
+    travel_to(zone.local(2026, 11, 20, 8, 1)) { sync }
+    expect(receipt.reload.deleted_at).to be_present
+    expect(receipt.last_error).to be_nil
+    expect(client).to have_received(:chat_delete).twice
+    expect(posts.size).to eq(1)
+  end
+
+  it 'updates a shared-channel invitation to retain the other represented shop after one shop is deleted' do
+    shop.update!(slack_announce_empty_reservations: true)
+    other_shop = create(:shop, name: 'Metalshop', slack_channel: shop_channel, slack_announce_empty_reservations: true)
+    sync
+    receipt = ReservationSlackAnnouncement.first
+    Shop.find(shop.id).destroy
+    sync
+    expect(client).not_to have_received(:chat_delete)
+    expect(updates.first[:ts]).to eq('100.1')
+    expect(text(updates.first)).to include('Metalshop', other_shop.id.to_s)
+    expect(text(updates.first)).not_to include('Woodshop', shop.id.to_s)
+    expect(receipt.reload.shop_ids).to eq([other_shop.id.to_s])
+    expect(receipt.deleted_at).to be_nil
+  end
+
+  it 'deletes an existing invitation if its last shop disappears during canvas refresh' do
+    shop.update!(slack_announce_empty_reservations: true)
+    sync
+    receipt = ReservationSlackAnnouncement.first
+    shop.update!(name: 'Renamed shop')
+    allow(Service::ReservationSlackCanvas).to receive(:ensure_today_for_announcement!) do |resource, **_options|
+      Shop.find(resource.id).destroy
+      "F#{resource.id}"
+    end
+    sync
+    expect(client).to have_received(:chat_delete).with(channel: shop_channel, ts: '100.1').once
+    expect(receipt.reload.deleted_at).to be_present
+    expect(posts.size).to eq(1)
+    expect(updates).to be_empty
+  end
+
+  it 'posts a fresh invitation if another shop later uses a channel whose invitation was deleted' do
+    shop.update!(slack_announce_empty_reservations: true)
+    sync
+    receipt = ReservationSlackAnnouncement.first
+    first_client_msg_id = receipt.client_msg_id
+    Shop.find(shop.id).destroy
+    sync
+    replacement = create(:shop, name: 'Replacement shop', slack_channel: shop_channel, slack_announce_empty_reservations: true)
+    sync
+    expect(posts.size).to eq(2)
+    expect(updates).to be_empty
+    expect(text(posts.last)).to include('Replacement shop', replacement.id.to_s)
+    expect(receipt.reload.ts).to eq('100.2')
+    expect(receipt.deleted_at).to be_nil
+    expect(receipt.shop_ids).to eq([replacement.id.to_s])
+    expect(receipt.client_msg_id).not_to eq(first_client_msg_id)
+    expect(posts.last[:client_msg_id]).to eq(receipt.client_msg_id)
+  end
+
+  it 'does not delete a message for an unsent receipt after its shop is removed' do
+    ReservationSlackAnnouncement.create!(day: date.iso8601, mode: 'production', channel_id: shop_channel,
+      shop_ids: [shop.id.to_s])
+    Shop.find(shop.id).destroy
+    sync
+    expect(client).not_to have_received(:chat_delete)
+    expect(posts).to be_empty
+    expect(updates).to be_empty
+  end
+
+  describe 'tool routing changes' do
+    before do
+      shop.update!(reservable: false, slack_announce_empty_reservations: true)
+    end
+
+    it 'deletes the old invitation when the last tool serving its users channel is deleted' do
+      tool
+      sync
+      receipt = ReservationSlackAnnouncement.first
+      Tool.find(tool.id).destroy
+      sync
+      expect(client).to have_received(:chat_delete).with(channel: tool_channel, ts: '100.1').once
+      expect(receipt.reload.deleted_at).to be_present
+      expect(posts.size).to eq(1)
+      expect(updates).to be_empty
+    end
+
+    it 'deletes a fallback-channel invitation when its only reservable tool is deleted' do
+      tool.update!(users_channel: nil)
+      sync
+      Tool.find(tool.id).destroy
+      sync
+      expect(client).to have_received(:chat_delete).with(channel: shop_channel, ts: '100.1').once
+      expect(posts.size).to eq(1)
+      expect(updates).to be_empty
+    end
+
+    it 'deletes the old invitation when a tool moves to a shop with invitations off' do
+      tool
+      sync
+      destination = create(:shop, name: 'Metalshop', slack_channel: 'COTHER0001', reservable: false)
+      tool.update!(shop: destination)
+      sync
+      expect(client).to have_received(:chat_delete).with(channel: tool_channel, ts: '100.1').once
+      expect(updates).to be_empty
+      expect(posts.size).to eq(1)
+    end
+
+    it 'clears the old fallback channel and advertises a moved tool in its opted-in destination shop' do
+      tool.update!(users_channel: nil)
+      sync
+      destination = create(:shop, name: 'Metalshop', slack_channel: 'COTHER0001', reservable: false,
+        slack_announce_empty_reservations: true)
+      tool.update!(shop: destination)
+      sync
+      expect(client).to have_received(:chat_delete).with(channel: shop_channel, ts: '100.1').once
+      expect(posts.map { |payload| payload[:channel] }).to eq([shop_channel, 'COTHER0001'])
+      expect(text(posts.last)).to include('Metalshop', destination.id.to_s, 'Bandsaw is wide open')
+      expect(text(posts.last)).not_to include('Woodshop', shop.id.to_s)
+    end
+
+    it 'reuses the existing message with the new shop context when a moved tool keeps its users channel' do
+      tool
+      sync
+      destination = create(:shop, name: 'Metalshop', slack_channel: 'COTHER0001', reservable: false,
+        slack_announce_empty_reservations: true)
+      tool.update!(shop: destination)
+      sync
+      expect(posts.size).to eq(1)
+      expect(client).not_to have_received(:chat_delete)
+      expect(updates.first[:ts]).to eq('100.1')
+      expect(text(updates.first)).to include('Metalshop', destination.id.to_s)
+      expect(text(updates.first)).not_to include('Woodshop', shop.id.to_s)
+    end
+
+    it 'deletes a retired users-channel invitation and posts in the new users channel' do
+      tool
+      sync
+      tool.update!(users_channel: 'CTOOL00002')
+      sync
+      expect(client).to have_received(:chat_delete).with(channel: tool_channel, ts: '100.1').once
+      expect(posts.map { |payload| payload[:channel] }).to eq([tool_channel, 'CTOOL00002'])
+      expect(updates).to be_empty
+      expect(text(posts.last)).to include('Bandsaw is wide open')
+    end
+
+    it 'replaces a cleared users channel with the shop fallback without leaving the old post behind' do
+      tool
+      sync
+      tool.update!(users_channel: nil)
+      sync
+      expect(client).to have_received(:chat_delete).with(channel: tool_channel, ts: '100.1').once
+      expect(posts.map { |payload| payload[:channel] }).to eq([tool_channel, shop_channel])
+      expect(updates).to be_empty
+    end
+
+    it 'removes the old shop fallback when a tool gains a dedicated users channel' do
+      tool.update!(users_channel: nil)
+      sync
+      tool.update!(users_channel: tool_channel)
+      sync
+      expect(client).to have_received(:chat_delete).with(channel: shop_channel, ts: '100.1').once
+      expect(posts.map { |payload| payload[:channel] }).to eq([shop_channel, tool_channel])
+      expect(updates).to be_empty
+    end
+
+    it 'keeps other tools in a shared channel when a tool is deleted' do
+      tool
+      create(:tool, shop: shop, name: 'Lathe', users_channel: tool_channel)
+      sync
+      Tool.find(tool.id).destroy
+      sync
+      expect(client).not_to have_received(:chat_delete)
+      expect(updates.first[:ts]).to eq('100.1')
+      expect(text(updates.first)).to include('Lathe is wide open')
+      expect(text(updates.first)).not_to include('Bandsaw')
+    end
+
+    it 'keeps other tools in the old users channel when a tool is reassigned' do
+      tool
+      create(:tool, shop: shop, name: 'Lathe', users_channel: tool_channel)
+      sync
+      tool.update!(users_channel: 'CTOOL00002')
+      sync
+      expect(client).not_to have_received(:chat_delete)
+      old_update = updates.find { |payload| payload[:channel] == tool_channel }
+      expect(old_update[:ts]).to eq('100.1')
+      expect(text(old_update)).to include('Lathe is wide open')
+      expect(text(old_update)).not_to include('Bandsaw')
+      expect(text(posts.last)).to include('Bandsaw is wide open')
+    end
+
+    it 'preserves the saved message when a changed channel cannot be resolved' do
+      tool
+      sync
+      receipt = ReservationSlackAnnouncement.first
+      fingerprint = receipt.fingerprint
+      shop.update!(slack_announce_empty_reservations: false)
+      tool.update!(users_channel: '#missing')
+      expect { sync }.to raise_error(described_class::DeliveryError, /Channel resolution incomplete/)
+      expect(client).not_to have_received(:chat_delete)
+      expect(updates).to be_empty
+      expect(receipt.reload.fingerprint).to eq(fingerprint)
+      expect(receipt.deleted_at).to be_nil
+    end
+
+    it 'retains a confirmed users-channel binding when an unrelated shop channel cannot resolve' do
+      tool
+      sync
+      shop.update!(slack_announce_empty_reservations: false, slack_channel: '#missing')
+      sync
+      expect(client).not_to have_received(:chat_delete)
+      expect(updates.first[:ts]).to eq('100.1')
+      expect(text(updates.first)).to include('No reservations to announce')
+      expect(text(updates.first)).not_to include('wide open')
+    end
+
+    it 'removes a retired destination if the users channel changes during canvas refresh' do
+      tool
+      sync
+      tool.update!(name: 'Renamed bandsaw')
+      allow(Service::ReservationSlackCanvas).to receive(:ensure_today_for_announcement!) do |resource, **_options|
+        resource.set(canvas_today: "F#{resource.id}")
+        tool.update!(users_channel: 'CTOOL00002')
+        "F#{resource.id}"
+      end
+      sync
+      expect(client).to have_received(:chat_delete).with(channel: tool_channel, ts: '100.1').once
+      expect(updates).to be_empty
+      sync
+      expect(posts.map { |payload| payload[:channel] }).to eq([tool_channel, 'CTOOL00002'])
+    end
+
+    it 'does not send a historical booking in the old shop to a moved tool\'s new users channel' do
+      shop.update!(slack_announce_empty_reservations: false)
+      booking(start_at: zone.local(2026, 11, 20, 6), end_at: zone.local(2026, 11, 20, 7))
+      sync
+      destination = create(:shop, name: 'Metalshop', slack_channel: 'COTHER0001', reservable: false)
+      tool.update!(shop: destination, users_channel: 'CTOOL00002')
+      sync
+      expect(posts.map { |payload| payload[:channel] }).to eq([tool_channel, shop_channel])
+      expect(text(posts.last)).to include('Woodshop', 'Project time')
+      expect(client).to have_received(:chat_delete).with(channel: tool_channel, ts: '100.1').once
+    end
+
+    it 'keeps a deleted tool\'s earlier booking in its shop without retaining the retired users post' do
+      shop.update!(slack_announce_empty_reservations: false)
+      booking(start_at: zone.local(2026, 11, 20, 6), end_at: zone.local(2026, 11, 20, 7))
+      sync
+      Tool.find(tool.id).destroy
+      sync
+      expect(posts.map { |payload| payload[:channel] }).to eq([tool_channel, shop_channel])
+      expect(text(posts.last)).to include('Woodshop', 'Project time')
+      expect(client).to have_received(:chat_delete).with(channel: tool_channel, ts: '100.1').once
+    end
   end
 end

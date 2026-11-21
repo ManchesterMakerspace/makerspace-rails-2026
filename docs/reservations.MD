@@ -530,10 +530,22 @@ initial-post outcomes are retained as ambiguous errors for operator reconciliati
 instead of blindly posting duplicates. Unchanged summaries do not repeat Slack
 message writes. Individual channel failures do not stop the remaining channels.
 
-If a posted summary becomes empty with invitations disabled or ineligible, it
-is edited to **No reservations to announce for [date]**, preserving its buttons,
-canvas links, and timestamp. A new empty post is never created with the option
+If a posted summary in a still-associated channel becomes empty with invitations
+disabled or ineligible, it is edited to **No reservations to announce for [date]**,
+preserving its buttons, canvas links, and timestamp. A new empty post is never created with the option
 off. Turning the option off removes promotional wording from an existing post.
+Deleting the last shop represented in a current-day summary removes the Slack
+message and its reservation buttons. A shared-channel summary instead updates
+to retain its surviving shops. Missing messages count as already removed;
+Slack deletion failures are reported and retried. A later shop in that channel
+can receive a fresh summary on the same day.
+Deleting or moving the last tool serving a channel, or changing/clearing its
+Users Channel, also removes an abandoned summary. Shared channels retain their
+other tools and shops. Moving a tool while keeping its users channel updates the
+existing post with its new shop context when an invitation is eligible there.
+Earlier bookings for moved or deleted tools remain in their original reservation
+shop's channel rather than following the tool to another shop. A failed Slack
+channel lookup preserves the existing message for retry.
 Summaries show at most eight shop sections and forty reservation rows; omitted
 counts and full-agenda links keep larger agendas accessible.
 

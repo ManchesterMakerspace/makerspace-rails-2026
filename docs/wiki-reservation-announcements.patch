@@ -27,7 +27,7 @@ diff --git a/digital-makerspace/resource-managers/tools-and-shops.md b/digital-m
  
 +**Announce empty reservation agendas in Slack** is off by default. Turn it on to invite members to book this shop or its tools when the relevant channel's entire day agenda is empty. It is available even when **Reservable** for the whole shop is off. Assigned RMs may change it for their shops; admins and board members may change it for every shop. Save with **Save Shop**. Booked-channel summaries still appear when this option is off.
 +
-+Invitations do not mix with reservation entries. Marking a tool hidden or out of service removes its reserving invitation from the next new or updated summary, while keeping existing reservation rows visible. Overnight bookings, blackouts, and hidden/out-of-service resources prevent a misleading free-agenda invitation. See [Manage Reservations](/digital-makerspace/resource-managers/reservations).
++Invitations do not mix with reservation entries. Marking a tool hidden or out of service removes its reserving invitation from the next new or updated summary, while keeping existing reservation rows visible. Overnight bookings, blackouts, and hidden/out-of-service resources prevent a misleading free-agenda invitation. Deleting the last shop represented in today's summary removes the Slack message; shared summaries keep their surviving shops. Deleting or moving a tool, or changing its Users Channel, removes an abandoned channel's summary while shared channels keep their remaining resources. A moved tool's earlier bookings stay with their original reservation shop. See [Manage Reservations](/digital-makerspace/resource-managers/reservations).
 +
  ![Edit Shop dialog](/images/checkouts/rm-edit-shop-dialog.png){width=700px}
  
@@ -95,7 +95,7 @@ diff --git a/digital-makerspace/troubleshooting.md b/digital-makerspace/troubles
 +
 +### A summary or its agenda link looks stale
 +
-+Check the date printed in the summary. **Live today agenda** links always open the current rolling canvas, including from yesterday's message. Ask an admin to check **Portal Settings → Jobs → Daily Reservation Announcements** and use **Run Now** after 7 AM Eastern. Slack channel or canvas-access problems may need the admin's attention.
++Check the date printed in the summary. **Live today agenda** links always open the current rolling canvas, including from yesterday's message. Deleting the last shop represented in today's summary removes the message instead of leaving a reservation button for a deleted shop; Slack deletion failures are retried. Deleting or moving a tool, or changing its Users Channel, refreshes the old and new destinations; abandoned summaries are removed and shared summaries retain their other resources. Failed channel lookups preserve the existing message until Slack can resolve the configuration. Ask an admin to check **Portal Settings → Jobs → Daily Reservation Announcements** and use **Run Now** after 7 AM Eastern. Slack channel or canvas-access problems may need the admin's attention.
 +
  ## Storage rentals
  

@@ -71,13 +71,16 @@ module Service
           # Reload under the lease: an older queued job must not overwrite a newer summary.
           snapshot = Snapshot.new(date, mode)
           data = snapshot.data(channel_id)
+          shop_ids = data[:shop_ids].presence || snapshot.retained_shop_ids(channel_id, receipt&.shop_ids)
           if snapshot.routing_incomplete_for?(channel_id, receipt)
             raise DeliveryError, 'Channel resolution incomplete; preserving existing reservation announcement'
           end
           return if receipt&.ts.blank? && data[:starting].empty? && data[:promotions].empty?
-          shop_ids = data[:shop_ids].presence || Array(receipt&.shop_ids)
           shops = shop_ids.filter_map { |id| snapshot.shops[id.to_s] }.sort_by { |shop| [shop.name.to_s.downcase, shop.id.to_s] }
-          return if shops.empty?
+          if shops.empty?
+            delete_orphaned_announcement!(receipt, check)
+            return
+          end
 
           receipt ||= ReservationSlackAnnouncement.create!(key)
           # Canvas IDs are part of the payload, but publishing a canvas is unnecessary
@@ -103,13 +106,16 @@ module Service
           # rendering so a tool taken out of service loses its invitation.
           snapshot = Snapshot.new(date, mode)
           data = snapshot.data(channel_id)
+          fresh_shop_ids = data[:shop_ids].presence || snapshot.retained_shop_ids(channel_id, receipt.shop_ids)
           if snapshot.routing_incomplete_for?(channel_id, receipt, shop_ids: shops.map { |shop| shop.id.to_s })
             raise DeliveryError, 'Channel resolution incomplete after canvas refresh'
           end
           return if receipt.ts.blank? && data[:starting].empty? && data[:promotions].empty?
-          fresh_shop_ids = data[:shop_ids].presence || Array(receipt.shop_ids)
           shops = fresh_shop_ids.filter_map { |id| snapshot.shops[id.to_s] }.sort_by { |shop| [shop.name.to_s.downcase, shop.id.to_s] }
-          return if shops.empty?
+          if shops.empty?
+            delete_orphaned_announcement!(receipt, check)
+            return
+          end
           unless shops.first(MAX_SHOPS).all? { |shop| canvas_ids[shop.id.to_s].present? }
             raise DeliveryError, 'Reservation destinations changed during canvas refresh; retrying current state'
           end
@@ -131,8 +137,23 @@ module Service
         end
       end
 
+      def delete_orphaned_announcement!(receipt, check)
+        return if receipt&.ts.blank? || receipt.deleted_at.present?
+        return unless due?(Date.iso8601(receipt.day)) && receipt.mode == Service::SlackConnector.message_destination_mode
+
+        check.call
+        begin
+          Service::SlackConnector.client.chat_delete(channel: receipt.channel_id, ts: receipt.ts)
+        rescue Slack::Web::Api::Errors::SlackError => error
+          raise unless error.message.to_s == 'message_not_found'
+        end
+        check.call
+        receipt.set(deleted_at: Time.current, fingerprint: nil, shop_ids: [], canvas_ids: {},
+          attempts: 0, retry_at: nil, last_error: nil, client_msg_id: SecureRandom.uuid)
+      end
+
       def deliver!(receipt, payload, check)
-        if receipt.ts.present?
+        if receipt.ts.present? && receipt.deleted_at.blank?
           begin
             response = Service::SlackConnector.client.chat_update(channel: receipt.channel_id, ts: receipt.ts,
               **payload, parse: 'none', link_names: false)
@@ -155,7 +176,7 @@ module Service
             client_msg_id: receipt.client_msg_id, parse: 'none', link_names: false, unfurl_links: false, unfurl_media: false)
           raise AmbiguousSend, 'Slack did not return the reservation message receipt' if response['ts'].blank? || response['channel'].blank?
           raise AmbiguousSend, 'Slack returned a different reservation destination' unless response['channel'].to_s == receipt.channel_id
-          receipt.set(ts: response['ts'].to_s, sending_at: nil)
+          receipt.set(ts: response['ts'].to_s, sending_at: nil, deleted_at: nil)
           Service::SlackConnector.record_slack_message(channel: receipt.channel_id, message: payload[:blocks],
             source: name, response: response)
         rescue => error
@@ -294,6 +315,33 @@ module Service
             (result[:busy] ? [] : result[:promotions].map { |promotion| promotion[:shop_id] })).uniq)
       end
 
+      def retained_shop_ids(channel_id, saved_ids)
+        Array(saved_ids).filter_map do |id|
+          shop = @shops[id.to_s]
+          next unless shop
+
+          tools = Array(@tools_by_shop[id.to_s])
+          names = tools.map { |tool| tool.users_channel.presence || shop.slack_channel }
+          names << shop.slack_channel if shop.reservable
+          failures = []
+          associated = names.compact_blank.uniq.any? do |name|
+            begin
+              resolved_channel(name) == channel_id
+            rescue => error
+              failures << error
+              false
+            end
+          end
+          # A failed alias lookup cannot prove that this destination was retired.
+          # Ignore unrelated lookup failures when another binding confirms it.
+          if !associated && failures.any?
+            @errors.concat(failures)
+            @unresolved_shop_ids << id.to_s
+          end
+          id.to_s if associated
+        end
+      end
+
       def routing_incomplete_for?(channel_id, receipt, shop_ids: [])
         result = @channels[channel_id] || blank_data
         ids = shop_ids + Array(receipt&.shop_ids) + result[:starting].map { |reservation| reservation.shop_id.to_s } +
@@ -320,27 +368,40 @@ module Service
 
       def channel(value, shop_id:)
         return if value.blank?
-        normalized = Service::SlackChannelCache.normalize_name(value)
-        if @resolved.key?(normalized)
-          @unresolved_shop_ids << shop_id if @resolved[normalized].nil?
-          return @resolved[normalized]
-        end
-        resolved = Service::SlackConnector.resolved_channel_id(normalized)
-        unless Service::SlackChannelCache.channel_id?(resolved)
-          raise DeliveryError, "Reservation announcement channel could not be resolved: #{normalized}"
-        end
-        @resolved[normalized] = resolved
+        resolved_channel(value)
       rescue => error
         @errors << error
         @unresolved_shop_ids << shop_id
+        nil
+      end
+
+      def resolved_channel(value)
+        normalized = Service::SlackChannelCache.normalize_name(value)
+        unless @resolved.key?(normalized)
+          @resolved[normalized] = Service::SlackConnector.resolved_channel_id(normalized)
+        end
+        resolved = @resolved[normalized]
+        unless Service::SlackChannelCache.channel_id?(resolved)
+          raise DeliveryError, "Reservation announcement channel could not be resolved: #{normalized}"
+        end
+        resolved
+      rescue
         @resolved[normalized] = nil
+        raise
       end
 
       def resource_channels(reservation, shop)
         names = if reservation.reservation_scope == 'shop'
           [shop.slack_channel] + Array(@tools_by_shop[shop.id.to_s]).map(&:users_channel)
         else
-          Array(reservation.tool_ids).map { |id| @tools[id.to_s]&.users_channel.presence || shop.slack_channel }
+          Array(reservation.tool_ids).map do |id|
+            tool = @tools[id.to_s]
+            if tool && tool.shop_id.to_s == shop.id.to_s
+              tool.users_channel.presence || shop.slack_channel
+            else
+              shop.slack_channel
+            end
+          end
         end
         names = names.compact_blank.uniq
         destinations = names.filter_map { |name| channel(name, shop_id: shop.id.to_s) }.uniq

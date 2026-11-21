@@ -24,6 +24,21 @@ after reservation/fee/member-lifecycle changes; shop/tool routing, names,
 availability, the shop's empty flag, and blackout mutations also request a
 refresh. Periodic reconciliation recovers dropped enqueues and updates persisted
 destinations even after the last routed booking disappears.
+If all shops represented by an existing current-day message have been deleted,
+reconciliation deletes that message using its saved channel and `ts`. Confirmed
+deletion or `message_not_found` records `deleted_at` and clears obsolete shop,
+canvas, and fingerprint context; failures retain the receipt for normal retry.
+Shared-channel messages keep their remaining shops. If a new shop later uses the
+same channel that day, it receives a fresh post and timestamp.
+Saved shop context is retained only while a current shop/tool channel binding
+still serves that destination. Deleting or moving the last tool, or changing or
+clearing its users channel, removes an abandoned message using the same receipt
+cleanup. Shared channels retain their remaining tools and shops; a moved tool
+that keeps its channel can update the same post with its new shop's context.
+Failed channel lookups preserve existing messages and report a retryable error
+instead of treating an unresolved destination as retired. Today's earlier bookings
+for deleted or moved tools use their original reservation shop's channel, never
+the moved tool's new shop/channel.
 The `enqueue_today` helper reports auxiliary queue errors without failing a
 completed catalog write; the periodic task recovers the missed refresh.
 
@@ -54,9 +69,10 @@ empty invitations only in channels whose relevant whole-day agenda is empty;
 overnight bookings, blackouts, and unavailable resources suppress invitations.
 Both new posts and edits use current availability: hidden or out-of-service
 tools lose promotional reserving text, while their existing booked rows remain.
-An existing emptied post becomes a dated neutral summary when invitations are
-disabled/ineligible; no new empty post is created with the flag off. Every post
-includes live today-canvas links and shop-context reservation-modal buttons.
+An existing emptied post in a still-associated channel becomes a dated neutral
+summary when invitations are disabled/ineligible; no new empty post is created
+with the flag off. Every post includes live today-canvas links and shop-context
+reservation-modal buttons.
 The signed `reservation_open` message action resolves the clicking linked active
 member and reuses existing reservation authorization. It deliberately omits the
 message `response_url` from modal metadata, keeping final outcomes in a DM.

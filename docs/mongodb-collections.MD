@@ -7,7 +7,8 @@ owned by `ReservationSlackAnnouncement`. Its unique `(day, mode, channel_id)`
 index represents one Eastern calendar day's summary in the actual resolved Slack
 conversation and destination mode. `ts` is a string Slack message receipt;
 `fingerprint` records the last successful content. `shop_ids` and `canvas_ids`
-retain context for edits after the last reservation is removed. Send intent,
+retain context for edits after the last reservation is removed, while its shop
+still has a current resource/channel association with the destination. Send intent,
 client message ID, attempt count, retry time, and last error support retry and
 ambiguous-send handling. Historical receipts have no TTL and are not embedded
 reservation records. Apply the index through `data:ensure_unique_indexes` before
@@ -19,6 +20,12 @@ today's first new post, yesterday's same-channel/mode receipt may be used to
 delete that empty Slack message. `deleted_at` records a confirmed deletion or
 already missing message; its historical `ts` and receipt are retained. Nonempty
 summaries are not deleted by this cleanup, and no TTL removes the records.
+`deleted_at` also marks removal of a current-day announcement whose represented
+shops have all been deleted or no longer serve that channel after tool deletion,
+shop moves, or channel reassignment. That removal retains its historical `ts`, clears
+obsolete shop/canvas/fingerprint context, and renews its client message ID so a
+later shop in that channel can post again. A successful new post replaces `ts`
+and clears `deleted_at`. No field or index addition is needed for this lifecycle.
 
 The existing top-level `shops` collection adds Boolean
 `slack_announce_empty_reservations` (default `false`, including legacy records)
