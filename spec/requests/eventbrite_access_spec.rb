@@ -53,6 +53,61 @@ RSpec.describe 'Eventbrite staff visibility', type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
+  it 'keeps absent or malformed member IDs scoped to empty history' do
+    viewer = create(:member, role: 'admin')
+    EventbriteOrder.create!(organization_id: 'org', eventbrite_id: 'someone-elses-order')
+    EventbriteAttendee.create!(organization_id: 'org', eventbrite_id: 'someone-elses-attendee',
+      order_id: 'someone-elses-order', member_id: viewer.id)
+    sign_in viewer
+    [BSON::ObjectId.new.to_s, 'not-a-member-id'].each do |id|
+      %w[orders attendees].each do |kind|
+        get "/api/admin/members/#{id}/eventbrite/#{kind}"
+        expect(response).to have_http_status(:ok)
+        expect(JSON.parse(response.body)).to eq([])
+        expect(response.headers['total-items'].to_s).to eq('0')
+      end
+    end
+  end
+
+  it 'preserves full-record JSON defaults and relationships through projections and cold or warm metadata caches' do
+    member_id = BSON::ObjectId.new
+    start = Time.current.change(usec: 123_000)
+    event_id, order_id, attendee_id, ticket_id = 4.times.map { BSON::ObjectId.new }
+    # Legacy imports can omit fields with model defaults. Read projections must
+    # preserve the same JSON as an unprojected document, including those defaults.
+    EventbriteEvent.collection.insert_one(_id: event_id, organization_id: 'org', eventbrite_id: 'event',
+      name: 'Workshop', starts_at: start, timezone: 'America/New_York', slack_receipts: { private: 'not serialized' })
+    EventbriteOrder.collection.insert_one(_id: order_id, organization_id: 'org', eventbrite_id: 'order', event_id: 'event')
+    EventbriteAttendee.collection.insert_one(_id: attendee_id, organization_id: 'org', eventbrite_id: 'attendee',
+      event_id: 'event', order_id: 'order', ticket_class_id: 'ticket', member_id: member_id)
+    EventbriteTicketClass.collection.insert_one(_id: ticket_id, organization_id: 'org', eventbrite_id: 'ticket',
+      event_id: 'event', name: 'Admission')
+    event, order, attendee, ticket = [EventbriteEvent.find(event_id), EventbriteOrder.find(order_id),
+      EventbriteAttendee.find(attendee_id), EventbriteTicketClass.find(ticket_id)]
+    sign_in create(:member, role: 'admin')
+
+    { 'events' => [event, 'ticketClasses', [ticket]], 'orders' => [order, 'attendees', [attendee]],
+      'attendees' => [attendee, nil, []] }.each do |kind, (record, children_key, children)|
+      expected = JSON.parse(EventbriteIntegration::Presenter.call(record).to_json)
+      detail = expected.dup
+      detail[children_key] = JSON.parse(EventbriteIntegration::Presenter.many(children).to_json) if children_key
+
+      EventbriteIntegration::DisplayCache.invalidate_all
+      2.times do
+        get "/api/admin/eventbrite/#{kind}"
+        expect(response).to have_http_status(:ok)
+        expect(JSON.parse(response.body)).to eq([expected])
+        expect(response.headers['total-items'].to_s).to eq('1')
+      end
+      EventbriteIntegration::DisplayCache.invalidate_all
+      2.times do
+        get "/api/admin/eventbrite/#{kind}/#{record.id}"
+        expect(response).to have_http_status(:ok)
+        expect(JSON.parse(response.body)).to eq(detail)
+      end
+    end
+  end
+
   [['org'], []].each do |organizations|
     context "member order filters with organization allowlist #{organizations.inspect}" do
       before { allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return(organizations) }

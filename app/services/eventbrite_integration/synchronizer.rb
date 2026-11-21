@@ -56,24 +56,34 @@ module EventbriteIntegration
       upsert(EventbriteEvent, org, data, attributes)
     end
 
-    def import_order(data, action: nil)
-      parent = event(data.fetch('event_id'))
+    def import_order(data, action: nil, parent: nil)
+      parent = event(data.fetch('event_id')) if !parent || parent.eventbrite_id != data.fetch('event_id').to_s
       refunded = refund_detected?(data)
       record = upsert(EventbriteOrder, parent.organization_id, data, {
         event_id: parent.eventbrite_id, name: data['name'], email: normalize(data['email']),
         status: data['status'], costs: money(data['costs'])
       }, refund: refunded, refund_evidence: refund_evidence(data))
-      Array(data['attendees']).each { |a| import_attendee(a.merge('event_id' => parent.eventbrite_id, 'order_id' => data.fetch('id')), parent: parent) }
+      attendees = Array(data['attendees'])
+      ticket_ids = attendees.filter_map { |attendee| attendee['ticket_class_id'].to_s.presence }.uniq
+      known_tickets = EventbriteTicketClass.where(organization_id: parent.organization_id, :eventbrite_id.in => ticket_ids)
+        .pluck(:eventbrite_id) unless ticket_ids.empty?
+      tickets(parent) if ticket_ids.any? && (ticket_ids - known_tickets).any?
+      # This invocation already saved the order and checked all its expanded
+      # ticket classes; no per-attendee existence queries are needed.
+      attendees.each do |attendee|
+        import_attendee(attendee.merge('event_id' => parent.eventbrite_id, 'order_id' => data.fetch('id')),
+          parent: parent, order: record, tickets_checked: true)
+      end
       record
     end
 
-    def import_attendee(data, parent: nil)
+    def import_attendee(data, parent: nil, order: nil, tickets_checked: false)
       parent ||= event(data.fetch('event_id'))
       order_id = data['order_id'].to_s.presence
-      if order_id && !EventbriteOrder.where(organization_id: parent.organization_id, eventbrite_id: order_id).exists?
-        import_order(@client.get("orders/#{order_id}/", { 'expand' => 'refund_requests' }))
+      if order_id && !order && !EventbriteOrder.where(organization_id: parent.organization_id, eventbrite_id: order_id).exists?
+        import_order(@client.get("orders/#{order_id}/", { 'expand' => 'refund_requests' }), parent: parent)
       end
-      if data['ticket_class_id'].present? && !EventbriteTicketClass.where(organization_id: parent.organization_id, eventbrite_id: data['ticket_class_id'].to_s).exists?
+      if !tickets_checked && data['ticket_class_id'].present? && !EventbriteTicketClass.where(organization_id: parent.organization_id, eventbrite_id: data['ticket_class_id'].to_s).exists?
         tickets(parent)
       end
       record = upsert(EventbriteAttendee, parent.organization_id, data, {

@@ -5,6 +5,15 @@ namespace :data do
      EventbriteWebhookDelivery, EventbriteSyncRun, EventbriteSlackDelivery,
      ReservationSlackAnnouncement].each(&:create_indexes)
     Member.collection.indexes.create_one({ eventbrite_link_pending_at: 1 })
+    # This global overlap lookup does not begin with a shop/member/tool ID.
+    # Install only this additive index, without unrelated reservation index work.
+    reservation_read_key = { status: 1, end_at: 1, start_at: 1 }
+    reservation_read_index = Reservation.index_specifications.find do |index|
+      index.key.stringify_keys.to_a == reservation_read_key.stringify_keys.to_a
+    end
+    raise 'Missing reservation announcement read index declaration' unless reservation_read_index
+    raise 'Reservation announcement read index must be nonunique' if reservation_read_index.options[:unique]
+    Reservation.collection.indexes.create_one(reservation_read_index.key, reservation_read_index.options)
     member_index_collections = %w[
       permissions
       earned_memberships

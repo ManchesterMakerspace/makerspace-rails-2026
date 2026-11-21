@@ -1,6 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe EventbriteIntegration::Synchronizer do
+  include ReservationReadMeasurement
   let(:client) { instance_double(EventbriteIntegration::Client) }
   let(:sync) { described_class.new(client) }
   let(:event_data) { { 'id' => 'event-1', 'organization_id' => 'org-1', 'name' => { 'text' => 'Welding' }, 'listed' => true, 'status' => 'live', 'changed' => '2026-11-01T12:00:00Z', 'start' => { 'utc' => '2026-11-13T15:00:00Z', 'timezone' => 'America/New_York' } } }
@@ -162,6 +163,26 @@ RSpec.describe EventbriteIntegration::Synchronizer do
     order = sync.import_order({ 'id' => 'order', 'event_id' => 'event-1', 'costs' => { 'gross' => { 'value' => 0 } }, 'attendees' => members.each_with_index.map { |member, i| { 'id' => "a#{i}", 'profile' => { 'email' => member.email } } } })
     expect(order.refunded_at).to be_nil
     expect(EventbriteAttendee.pluck(:member_id)).to match_array(members.map(&:id))
+  end
+
+  it 'checks shared ticket classes once and reuses the imported order for expanded attendees' do
+    parent = sync.import_event(event_data)
+    EventbriteTicketClass.create!(organization_id: parent.organization_id, eventbrite_id: 'ticket', event_id: parent.eventbrite_id)
+    data = { 'id' => 'expanded', 'event_id' => parent.eventbrite_id, 'attendees' => 3.times.map do |i|
+      { 'id' => "expanded-#{i}", 'ticket_class_id' => 'ticket' }
+    end }
+    measured = measure_reservation_reads { sync.import_order(data, parent: parent) }
+    expect(measured[:commands].count { |_, collection| collection == 'eventbrite_events' }).to eq(0)
+    expect(measured[:commands].count { |_, collection| collection == 'eventbrite_ticket_classes' }).to eq(1)
+    expect(measured[:commands].count { |_, collection| collection == 'eventbrite_orders' }).to eq(1)
+    expect(EventbriteAttendee.where(order_id: 'expanded').count).to eq(3)
+  end
+
+  it 'rechecks an order moved to another occurrence instead of reusing its listing parent' do
+    old_parent = sync.import_event(event_data)
+    new_parent = sync.import_event(event_data.merge('id' => 'rescheduled'))
+    order = sync.import_order({ 'id' => 'moved', 'event_id' => new_parent.eventbrite_id }, parent: old_parent)
+    expect(order.event_id).to eq(new_parent.eventbrite_id)
   end
   it 'never transfers historical links when a ghost email is reused' do
     old = create(:member, email: 'reuse@example.com')

@@ -56,6 +56,16 @@ after establishing the outcome; do not erase receipts and retry blindly.
 Individual channel failures are collected while others continue, then the run
 reports failure. Historical receipt records have no TTL.
 
+`ReservationDisplayQuery` supplies explicit read projections for summaries and
+canvases. Destination discovery omits member names; each channel refresh scopes
+bookings to its current/retained shop bindings, retaining uncertain bindings for
+safe resolution. Member names are plucked in one query without running Member
+initialization callbacks. Canvas member/tool lookups are batched per render, and
+blackout candidates are restricted by shop/date before the existing Ruby
+overnight/DST expansion. Routing, availability and reservations are read again
+after canvas I/O; no reservation snapshot or final payload is cached in Redis.
+Started unpaid reconciliation still reloads the full reservation under its lock.
+
 Before creating today's first post, the service checks the saved receipt for
 yesterday's local date in the same channel and destination mode. When its last
 successful message was an empty agenda (promotion or neutral summary), it first
@@ -292,6 +302,10 @@ reported as errors for operator review.
 
 `data:ensure_unique_indexes` runs in the release phase for both buildpack and
 container deployments. In addition to the core identity constraints, it installs
+the additive reservation `(status, end_at, start_at)` global read index and the
+Eventbrite attendee `(organization_id, order_id, member_id)` relationship index.
+The reservation addition creates only that declared nonunique index, preserving
+other reservation indexes. The task also installs
 the partial unique indexes that permit only one open checkout-approver request
 per member/tool and only one volunteer credit per tool checkout, plus the
 nonunique reminder indexes on `volunteer_tasks(status, completed_at)` and
@@ -1396,6 +1410,28 @@ backfills use configured organization IDs when present, otherwise discover them
 through paginated `users/me/organizations/` calls with the shared throttled client.
 Resume retains the run's organization snapshot without rediscovery and checks it
 against the current allowlist only when that allowlist is nonempty.
+`PresentationContext` batches parent/ticket metadata and groups order member IDs
+with MongoDB aggregation. `OrderHistoryQuery` uses organization-and-order
+existence joins for member/link filters before count/pagination. Recovery selects
+IDs when child jobs reload documents. Expanded order imports reuse their parent,
+saved order and one ticket existence batch; announcement dirtying increments
+revisions and schedules eligible due work in bulk without shortening backoff.
+
+`DisplayCache` caches only shared event name/start/timezone, ticket names and
+public signup choices for at most five minutes. Keys include schema version,
+environment, MongoDB database and organization configuration. Batched misses use
+projected MongoDB reads; missing records/empty choices are cached too. Each hit
+reads the current generation and all requested payloads in one atomic Lua call,
+rejecting payloads from older generations. Event and
+ticket semantic save/destroy hooks change generation tokens; inventory, receipts
+and sync bookkeeping do not. Lua publication fences stale in-flight fills, and
+Redis failures/corrupt entries fall back to MongoDB. Signup choices also expire
+at the next Eastern midnight. Callback-bypassing content imports/deletes must use
+`DisplayCache.with_event_changes` / `with_ticket_class_changes` outside an outer
+transaction; partial batches invalidate in `ensure`. Redis and MongoDB have no
+shared commit, so failed invalidation can leave display metadata stale until TTL.
+Member links, signup validation, inventory/delivery decisions and durable outbox
+state remain live. No environment variables or public response fields change.
 `EventbriteWebhookPrivacy` rewrites valid secret ingress paths before Rails logging;
 invalid configured paths cannot intercept existing application routes.
 Member save hooks persist pending reconciliation; signup validation snapshots

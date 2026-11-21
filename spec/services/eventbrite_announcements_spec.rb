@@ -77,6 +77,25 @@ RSpec.describe EventbriteIntegration::Announcements do
     expect(publication.reload.due_at).to be_within(0.001).of(retry_at)
   end
 
+  it 'dirties matching deliveries in bulk without overriding failures or future retry deadlines' do
+    now = Time.current
+    mode = Service::SlackConnector.message_destination_mode
+    base = { organization_id: event.organization_id, event_ids: [event.eventbrite_id], kind: 'reminder', mode: mode }
+    ready = EventbriteSlackDelivery.create!(base.merge(scope_id: 'ready', due_at: nil, revision: 3))
+    delayed = EventbriteSlackDelivery.create!(base.merge(scope_id: 'delayed', due_at: now + 2.minutes))
+    failed = EventbriteSlackDelivery.create!(base.merge(scope_id: 'failed', due_at: nil, failed_at: now))
+    unrelated = EventbriteSlackDelivery.create!(base.merge(organization_id: 'outside', scope_id: 'other'))
+    service.send(:dirty_event, event)
+    expect(ready.reload.revision).to eq(4)
+    expect(ready.due_at).to be >= now
+    expect(delayed.reload.revision).to eq(1)
+    expect(delayed.due_at).to be_within(0.001).of(now + 2.minutes)
+    expect(failed.reload.revision).to eq(1)
+    expect(failed.due_at).to be_nil
+    expect(failed.failed_at).to be_within(0.001).of(now)
+    expect(unrelated.reload.revision).to eq(0)
+  end
+
   it 'removes registration actions for unpublished events and avoids mrkdwn interpretation' do
     event.update!(invalidated_at: Time.current, summary: '<script>test</script>', name: '<!channel>')
     delivery = service.request(event, 'publication', ['one'])

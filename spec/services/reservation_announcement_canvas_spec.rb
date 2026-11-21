@@ -88,10 +88,26 @@ RSpec.describe Service::ReservationSlackCanvas, ".ensure_today_for_announcement!
     expect { ensure_agenda }.to raise_error(StandardError, "Slack unavailable")
   end
 
-  it "rejects stale dates without changing a canvas" do
-    expect do
-      described_class.ensure_today_for_announcement!(shop, channel_id: "CTOOL", date: Date.yesterday, mode: "production")
-    end.to raise_error(ArgumentError, /date must be today/)
-    expect(Service::SlackConnector).not_to have_received(:replace_canvas)
+  [8, 20].each do |hour|
+    it "rejects Eastern yesterday without changing a canvas at #{hour}:00 Eastern" do
+      travel_to(zone.local(2026, 11, 20, hour)) do
+        yesterday = Time.current.in_time_zone(zone).to_date - 1.day
+        expect do
+          described_class.ensure_today_for_announcement!(shop, channel_id: "CTOOL", date: yesterday, mode: "production")
+        end.to raise_error(ArgumentError, /date must be today/)
+      end
+      expect(Service::SlackConnector).not_to have_received(:replace_canvas)
+    end
+  end
+
+  it "accepts Eastern today after UTC has rolled into the next date" do
+    Time.use_zone('UTC') do
+      travel_to(zone.local(2026, 11, 20, 20)) do
+        expect(Date.current).to eq(Date.new(2026, 11, 21))
+        expect(ensure_agenda).to eq('FFRESH')
+        expect(Service::SlackConnector).to have_received(:replace_canvas)
+          .with('FFRESH', a_string_including('Friday, November 20, 2026'))
+      end
+    end
   end
 end

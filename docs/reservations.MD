@@ -549,6 +549,15 @@ channel lookup preserves the existing message for retry.
 Summaries show at most eight shop sections and forty reservation rows; omitted
 counts and full-agenda links keep larger agendas accessible.
 
+Announcement and canvas reads use explicit field projections and batched member
+names/tool lookups. Destination discovery omits names; per-channel refreshes
+limit reservation reads to current/retained shop bindings, keeping uncertain
+bindings for safe routing. Blackout rules are filtered by shop/date before Ruby
+expands overnight intervals and DST. Current routing, availability and bookings
+are re-read under the channel lease and after canvas work. These reservation
+reads, fee reconciliation and delivery receipts are not cached in Redis. See
+[read performance](reservation-performance.MD) for the repeatable benchmark.
+
 Before creating today's first post in a channel, the service looks up yesterday's
 receipt for the same destination mode and actual channel. If the last successfully
 posted content was empty (an invitation or neutral empty summary), it first tries

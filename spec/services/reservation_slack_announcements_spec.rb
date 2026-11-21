@@ -57,6 +57,68 @@ RSpec.describe Service::ReservationSlackAnnouncements do
     JSON.generate(payload[:blocks])
   end
 
+  it 'scopes a channel refresh to its live bindings and retained shops' do
+    reservation = booking
+    other_shop = create(:shop, name: 'Metalshop', slack_channel: 'COTHER0001')
+    other_member = create(:member, :current)
+    other_reservation = create(:reservation, shop: other_shop, member: other_member,
+      start_at: reservation.start_at, end_at: reservation.end_at)
+
+    snapshot = described_class::Snapshot.new(date, 'production', channel_id: tool_channel)
+    expect(snapshot.channels.keys).to eq([tool_channel])
+    expect(snapshot.member_names.keys).to eq([member.id.to_s])
+
+    retained = described_class::Snapshot.new(date, 'production', channel_id: tool_channel,
+      retained_shop_ids: [other_shop.id.to_s])
+    expect(retained.data('COTHER0001')[:starting].map(&:id)).to eq([other_reservation.id])
+  end
+
+  it 'does not hydrate names while discovering destinations' do
+    booking
+    expect(ReservationDisplayQuery).not_to receive(:member_names)
+    snapshot = described_class::Snapshot.new(date, 'production', load_member_names: false)
+    expect(snapshot.channels.keys).to eq([tool_channel])
+  end
+
+  it 'does not treat an unrelated inactive unresolved binding as a delivery failure' do
+    booking
+    create(:shop, name: 'Unused shop', slack_channel: '#unused', slack_announce_empty_reservations: false)
+    allow(Service::SlackChannelCache).to receive(:fetch).with('#unused').and_return(nil)
+    expect(Service::SlackConnector).not_to receive(:resolved_channel_id).with('#unused')
+    snapshot = described_class::Snapshot.new(date, 'production', channel_id: tool_channel)
+    expect(snapshot.errors).to be_empty
+    expect(snapshot.data(tool_channel)[:starting].length).to eq(1)
+  end
+
+  it 'uses cached alias bindings to scope without contacting unrelated Slack destinations' do
+    booking
+    other_shop = create(:shop, name: 'Metalshop', slack_channel: '#metalshop')
+    create(:reservation, shop: other_shop, member: member, start_at: zone.local(2026, 11, 20, 12),
+      end_at: zone.local(2026, 11, 20, 13))
+    allow(Service::SlackChannelCache).to receive(:fetch).with('#metalshop').and_return(id: 'COTHER0001')
+    expect(Service::SlackConnector).not_to receive(:resolved_channel_id).with('#metalshop')
+
+    snapshot = described_class::Snapshot.new(date, 'production', channel_id: tool_channel)
+    expect(snapshot.channels.keys).to eq([tool_channel])
+  end
+
+  it 'rechecks availability after publishing through the real canvas path' do
+    shop.update!(reservable: false, slack_announce_empty_reservations: true)
+    shop.set(canvas_today: 'FEXISTING')
+    tool
+    allow(Service::ReservationSlackCanvas).to receive(:ensure_today_for_announcement!).and_call_original
+    allow(Service::SlackConnector).to receive(:set_canvas_channel_access)
+    allow(Service::SlackConnector).to receive(:find_channel_id).and_return(shop_channel)
+    allow(Service::SlackConnector).to receive(:replace_canvas) do |_id, markdown|
+      expect(markdown).to include('Woodshop', 'No pending or approved reservations')
+      tool.set(out_of_service: true)
+    end
+
+    sync
+    expect(Service::SlackConnector).to have_received(:replace_canvas).once
+    expect(posts).to be_empty
+  end
+
   it 'posts a dated tool summary with its status, live canvas and reservation button, retaining string ts' do
     booking(title: 'Make a cabinet', status: 'pending')
     sync

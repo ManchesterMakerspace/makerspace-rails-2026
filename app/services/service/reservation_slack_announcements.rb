@@ -20,7 +20,7 @@ module Service
 
         reconcile_started_unpaid!(date)
         mode = Service::SlackConnector.message_destination_mode
-        snapshot = Snapshot.new(date, mode)
+        snapshot = Snapshot.new(date, mode, load_member_names: false)
         channels = (snapshot.channels.keys + ReservationSlackAnnouncement.where(day: date.iso8601, mode: mode).pluck(:channel_id)).uniq
         errors = snapshot.errors.dup
         channels.sort.each do |channel_id|
@@ -47,7 +47,9 @@ module Service
 
       def reconcile_started_unpaid!(date)
         start_at, = day_bounds(date)
-        Reservation.where(status: 'unpaid', :start_at.lte => Time.current, :end_at.gt => start_at).each do |reservation|
+        Reservation.where(status: 'unpaid', :start_at.lte => Time.current, :end_at.gt => start_at,
+          :invoice.exists => true, :invoice.nin => [nil, '']).only(:id, :shop_id, :invoice, :status).each do |reservation|
+          # The service reloads the complete document inside its existing lock.
           ReservationFeeService.reconcile!(reservation) if reservation.invoice.present?
         end
       end
@@ -69,7 +71,7 @@ module Service
           return [DeliveryError.new("Reservation announcement #{receipt.id} deferred until #{receipt.retry_at.iso8601}")] if receipt&.retry_at && receipt.retry_at > Time.current
 
           # Reload under the lease: an older queued job must not overwrite a newer summary.
-          snapshot = Snapshot.new(date, mode)
+          snapshot = Snapshot.new(date, mode, channel_id: channel_id, retained_shop_ids: receipt&.shop_ids)
           data = snapshot.data(channel_id)
           shop_ids = data[:shop_ids].presence || snapshot.retained_shop_ids(channel_id, receipt&.shop_ids)
           if snapshot.routing_incomplete_for?(channel_id, receipt)
@@ -104,7 +106,8 @@ module Service
           end
           # Canvas I/O can take time. Recheck availability immediately before
           # rendering so a tool taken out of service loses its invitation.
-          snapshot = Snapshot.new(date, mode)
+          snapshot = Snapshot.new(date, mode, channel_id: channel_id,
+            retained_shop_ids: Array(receipt.shop_ids) + shops.map { |shop| shop.id.to_s })
           data = snapshot.data(channel_id)
           fresh_shop_ids = data[:shop_ids].presence || snapshot.retained_shop_ids(channel_id, receipt.shop_ids)
           if snapshot.routing_incomplete_for?(channel_id, receipt, shop_ids: shops.map { |shop| shop.id.to_s })
@@ -277,7 +280,7 @@ module Service
         resources = reservation.reservation_scope == 'shop' ? 'Entire shop' :
           Array(reservation.tool_ids).map { |id| snapshot.tools[id.to_s]&.name || 'Unavailable tool' }.join(', ')
         resources = "#{reservation.group_label} — #{resources}" if reservation.group_snapshots.present?
-        member = snapshot.members[reservation.member_id.to_s]&.fullname.to_s.presence || 'Member'
+        member = snapshot.member_names[reservation.member_id.to_s].to_s.presence || 'Member'
         "*#{escape(reservation.title.to_s.first(180))}* · #{escape(reservation.status.titleize)}\n#{time} · #{escape(resources.first(650))} · #{escape(member.first(120))}".first(2900)
       end
 
@@ -289,21 +292,30 @@ module Service
     # One batched view of today's bookings and their resource routing. Channel
     # emptiness includes carryovers even though the announcement lists starts today.
     class Snapshot
-      attr_reader :channels, :errors, :shops, :tools, :members
+      attr_reader :channels, :errors, :shops, :tools, :member_names
 
-      def initialize(date, mode)
+      def initialize(date, mode, channel_id: nil, retained_shop_ids: [], load_member_names: true)
         @date, @mode = date, mode
         @start_at, @end_at = ReservationSlackAnnouncements.send(:day_bounds, date)
-        @shops = Shop.all.to_a.index_by { |shop| shop.id.to_s }
-        @tools = Tool.all.to_a.index_by { |tool| tool.id.to_s }
+        @shops = Shop.only(*ReservationDisplayQuery::SHOP_FIELDS).to_a.index_by { |shop| shop.id.to_s }
+        @tools = Tool.only(*ReservationDisplayQuery::TOOL_FIELDS).to_a.index_by { |tool| tool.id.to_s }
         @tools_by_shop = @tools.values.group_by { |tool| tool.shop_id.to_s }
-        @reservations = Reservation.blocking.where(:start_at.lt => @end_at, :end_at.gt => @start_at)
-          .order_by(start_at: :asc, id: :asc).to_a
-        @reservations_by_shop = @reservations.group_by { |reservation| reservation.shop_id.to_s }
-        @members = Member.where(:id.in => @reservations.map(&:member_id).uniq).to_a.index_by { |member| member.id.to_s }
-        @blackouts = ReservationBlackout.all.to_a.group_by { |blackout| blackout.shop_id.to_s }
         @channels, @errors, @resolved, @unresolved_shop_ids = {}, [], {}, []
         @unresolved_reservation_ids = {}
+        @scope_shop_ids = channel_id ? channel_shop_ids(channel_id, retained_shop_ids) : @shops.keys
+        criteria = Reservation.blocking.where(:start_at.lt => @end_at, :end_at.gt => @start_at)
+        criteria = criteria.where(:shop_id.in => @scope_shop_ids) if channel_id
+        @reservations = ReservationDisplayQuery.reservations(criteria)
+        @reservations_by_shop = @reservations.group_by { |reservation| reservation.shop_id.to_s }
+        @member_names = load_member_names ? ReservationDisplayQuery.member_names(
+          @reservations.select { |reservation| reservation.start_at >= @start_at }.map(&:member_id)
+        ) : {}
+        promotional_shop_ids = @scope_shop_ids.select do |id|
+          shop = @shops[id]
+          shop && shop.slack_announce_empty_reservations && !shop.disabled? && !shop.out_of_service?
+        end
+        @blackouts = ReservationDisplayQuery.blackouts(shop_ids: promotional_shop_ids,
+          start_at: @start_at, end_at: @end_at).group_by { |blackout| blackout.shop_id.to_s }
         route_reservations
         route_promotions
       end
@@ -361,6 +373,36 @@ module Service
       end
 
       private
+
+      def channel_shop_ids(channel_id, retained_ids)
+        ids = Array(retained_ids).map(&:to_s)
+        # Test mode redirects every binding to one destination, even literal IDs.
+        return (ids + @shops.keys).uniq unless @mode == 'production'
+
+        cached_channels = {}
+        @shops.each_value do |shop|
+          names = [shop.slack_channel] + Array(@tools_by_shop[shop.id.to_s]).map do |tool|
+            tool.users_channel.presence || shop.slack_channel
+          end
+          associated = names.compact_blank.uniq.any? do |name|
+            normalized = Service::SlackChannelCache.normalize_name(name)
+            if Service::SlackChannelCache.channel_id?(normalized)
+              normalized == channel_id
+            else
+              unless cached_channels.key?(normalized)
+                cached_channels[normalized] = Service::SlackChannelCache.fetch(normalized)&.dig(:id)
+              end
+              cached = cached_channels[normalized]
+              # Scoping must not contact Slack for inactive/unrelated aliases.
+              # Unknown aliases include the shop conservatively; actual rows
+              # still resolve live through the ordinary routing/error path.
+              !Service::SlackChannelCache.channel_id?(cached) || cached == channel_id
+            end
+          end
+          ids << shop.id.to_s if associated
+        end
+        ids.uniq
+      end
 
       def blank_data
         { starting: [], busy: false, promotions: [] }
@@ -427,6 +469,7 @@ module Service
 
       def route_promotions
         @shops.each_value do |shop|
+          next unless @scope_shop_ids.include?(shop.id.to_s)
           next unless shop.slack_announce_empty_reservations && !shop.disabled? && !shop.out_of_service?
           next if Array(@blackouts[shop.id.to_s]).any? { |blackout| blackout.occurrences_overlapping(@start_at, @end_at).any? }
           reservations = Array(@reservations_by_shop[shop.id.to_s])

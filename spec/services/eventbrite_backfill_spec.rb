@@ -107,8 +107,8 @@ RSpec.describe EventbriteIntegration::Backfill do
     expect(run.reload.completed_at).to be_present
     expect(run.processed).to eq(2)
     expect(run.progress['org']['order_cursor']).to be_nil
-    expect(sync).to have_received(:import_order).with(placed).once
-    expect(sync).to have_received(:import_order).with(refunded).once
+    expect(sync).to have_received(:import_order).with(placed, parent: event).once
+    expect(sync).to have_received(:import_order).with(refunded, parent: event).once
   end
 
   it 'discards a legacy status-filtered order cursor while preserving the event checkpoint and name filters' do

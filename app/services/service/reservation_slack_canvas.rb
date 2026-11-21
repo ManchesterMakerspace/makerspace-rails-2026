@@ -353,19 +353,25 @@ module Service
           next_date.month,
           next_date.day
         ).utc
-        reservations = Reservation.blocking
-          .where(
+        reservations = ReservationDisplayQuery.reservations(
+          Reservation.blocking.where(
             shop_id: shop.id,
             :start_at.lt => day_end,
             :end_at.gt => day_start
           )
-          .order_by(start_at: :asc)
-          .to_a
-        blackouts = ReservationBlackout.occurrences_overlapping(
-          shop_id: shop.id,
+        )
+        member_names = ReservationDisplayQuery.member_names(reservations.map(&:member_id))
+        tool_ids = reservations.flat_map { |reservation| Array(reservation.tool_ids) }.compact.map(&:to_s).uniq
+        tools = if tool_ids.empty?
+          {}
+        else
+          Tool.where(:id.in => tool_ids).only(*ReservationDisplayQuery::TOOL_FIELDS).to_a.index_by { |tool| tool.id.to_s }
+        end
+        blackouts = ReservationDisplayQuery.blackouts(
+          shop_ids: [shop.id],
           start_at: day_start,
           end_at: day_end
-        )
+        ).flat_map { |blackout| blackout.occurrences_overlapping(day_start, day_end) }
         agenda_items = reservations.map do |reservation|
           {
             kind: :reservation,
@@ -419,8 +425,8 @@ module Service
               [
                 reservation_time(reservation),
                 reservation_title(reservation),
-                escape_table_cell(reservation.member&.fullname),
-                escape_table_cell(resource_names(reservation)),
+                escape_table_cell(member_names[reservation.member_id.to_s]),
+                escape_table_cell(resource_names(reservation, tools)),
                 escape_table_cell(reservation.status.to_s.titleize)
               ]
             end
@@ -462,10 +468,11 @@ module Service
           .gsub(/[[:space:]]+/, " ").strip.presence || "Reservation"
       end
 
-      def resource_names(reservation)
+      def resource_names(reservation, tools_by_id)
         return "Entire shop" if reservation.reservation_scope == "shop"
 
-        tools = reservation.tools.map do |tool|
+        selected_ids = Array(reservation.tool_ids).map(&:to_s).to_set
+        tools = tools_by_id.each_value.select { |tool| selected_ids.include?(tool.id.to_s) }.map do |tool|
           tool.disabled? || tool.out_of_service? ? "#{tool.name} (OUT OF SERVICE)" : tool.name
         end.join(", ")
         reservation.group_snapshots.present? ? "#{reservation.group_label} — #{tools}" : tools

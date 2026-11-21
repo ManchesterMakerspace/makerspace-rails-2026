@@ -14,6 +14,13 @@ ambiguous-send handling. Historical receipts have no TTL and are not embedded
 reservation records. Apply the index through `data:ensure_unique_indexes` before
 running the new external `reservations:announce_today` schedule.
 
+The nonunique `reservations` index `(status, end_at, start_at)` supports global
+overlap and started-unpaid scans, which have no leading shop/member/tool filter.
+It does not satisfy start-time ordering after the end-time range; readers retain
+their deterministic result sort. `data:ensure_unique_indexes` installs this
+additive index without creating or replacing other reservation indexes. No data
+migration or new collection is needed.
+
 `empty_agenda` records whether the last successful message had no announced
 reservation rows, including promotional and neutral empty summaries. Before
 today's first new post, yesterday's same-channel/mode receipt may be used to
@@ -186,7 +193,7 @@ conditions are included where they are part of the index contract.
 | `rental_types` | `RentalType` | Rental product categories and links to invoice options. | Unique `{ display_name: 1 }`, partial when `display_name` is a string |
 | `rentals` | `Rental` | A member's rental assignment, agreement, subscription, expiration, and lifecycle status (including `awaiting_verification`, with `vacated_reported_at` set when the member reported vacating). | `{ member_id: 1 }` (deployment task) |
 | `reservation_blackouts` | `ReservationBlackout` | One-time or recurring periods when a shop cannot be reserved. | `{ shop_id: 1, recurrence: 1, start_date: 1, end_date: 1 }` |
-| `reservations` | `Reservation` | Shop/tool reservation intervals, approval state, invoicing, and external-calendar synchronization. | Sparse `{ invoice: 1 }`; `{ shop_id: 1, status: 1, start_at: 1, end_at: 1 }`; `{ member_id: 1, status: 1, start_at: 1, end_at: 1 }`; `{ tool_ids: 1, status: 1, start_at: 1, end_at: 1 }` |
+| `reservations` | `Reservation` | Shop/tool reservation intervals, approval state, invoicing, and external-calendar synchronization. | Sparse `{ invoice: 1 }`; `{ shop_id: 1, status: 1, start_at: 1, end_at: 1 }`; `{ member_id: 1, status: 1, start_at: 1, end_at: 1 }`; `{ tool_ids: 1, status: 1, start_at: 1, end_at: 1 }`; `{ status: 1, end_at: 1, start_at: 1 }` |
 | `shortcodes` | `Shortcode` | Permanent mappings from generated short codes to deep-link target URLs. | Full unique `{ code: 1 }`; full unique `{ target_url: 1 }` |
 | `shops` | `Shop` | Shop catalog, reservation rules, communication channels, and resource integrations. | Unique case-insensitive `{ name: 1 }` with `en` strength-2 collation, partial when `name` is a string |
 | `slack_identity_conflicts` | `SlackIdentityConflict` | Unresolved and resolved conflicts between Slack identities and member records. | `{ slack_id: 1 }`; `{ member_id: 1 }`; `{ resolved_at: 1 }` |
@@ -403,6 +410,10 @@ event-page progress and saved filters are preserved. No new collection/index is 
 Member indexes pending reconciliation time and adds source event ID/snapshot,
 provider prompt state, and pending local email-link reconciliation. No new
 embedded documents become separate collections.
+The additive nonunique attendee index `(organization_id, order_id, member_id)`
+supports order detail/member aggregation and correlated history existence joins
+without requiring an event ID. It is installed by `data:ensure_unique_indexes`;
+no collection or data migration is needed.
 Apply model indexes through `data:ensure_unique_indexes` before ingestion; see
 [Eventbrite lifecycle and rollout](eventbrite.md).
 

@@ -52,6 +52,7 @@ class Reservation
   belongs_to :decided_by, class_name: "Member", optional: true
 
   index({ invoice: 1 }, { sparse: true })
+  index({ status: 1, end_at: 1, start_at: 1 })
   index({ shop_id: 1, status: 1, start_at: 1, end_at: 1 })
   index({ member_id: 1, status: 1, start_at: 1, end_at: 1 })
   index({ tool_ids: 1, status: 1, start_at: 1, end_at: 1 })
