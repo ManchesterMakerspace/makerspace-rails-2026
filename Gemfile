@@ -48,7 +48,7 @@ gem 'mini_magick', '~> 5.4'
 gem 'sprockets-rails'
 gem 'mime-types', '~> 3.5'
 gem 'rest-client', '~> 2.1'
-gem 'git', '~> 5.6'
+gem 'git', '~> 6.0'
 gem 'rswag-api', '~> 2.14'
 gem 'rswag-ui', '~> 2.14'
 # PDF generation
