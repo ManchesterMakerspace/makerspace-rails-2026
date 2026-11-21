@@ -216,6 +216,13 @@ RSpec.describe Admin::SystemConfigsController, type: :controller do
       expect(ReservationSlackCanvasRebuildJob).to have_received(:perform_later)
     end
 
+    it "enqueues the reservation announcement reconciliation job" do
+      allow(ReservationSlackAnnouncementJob).to receive(:perform_later)
+      post :run_job, params: { key: 'reservation_slack_announcements' }, format: :json
+      expect(response).to have_http_status(:ok)
+      expect(ReservationSlackAnnouncementJob).to have_received(:perform_later).with(no_args)
+    end
+
     it "enqueues the Slack channel cache rebuild job" do
       post :run_job,
            params: { key: "slack_channel_cache" },

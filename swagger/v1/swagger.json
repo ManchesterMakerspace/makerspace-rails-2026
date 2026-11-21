@@ -1571,6 +1571,11 @@
                 "type": "string",
                 "x-nullable": true
               },
+              "slackAnnounceEmptyReservations": {
+                "type": "boolean",
+                "default": false,
+                "description": "Include an invitation to book when the shop or tool agenda is empty. Editable by owning-shop Resource Managers, Admins and Board members."
+              },
               "disabled": {
                 "type": "boolean"
               },
@@ -3493,6 +3498,13 @@
             "type": "integer",
             "nullable": true
           },
+          "day_of_week": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 6,
+            "description": "Optional day for new multi-use parent claims in America/New_York: 0 Sunday through 6 Saturday; null means any day. Existing child claims remain usable on other days."
+          },
           "prerequisite_tool_ids": {
             "type": "array",
             "items": {
@@ -3935,6 +3947,11 @@
           "slack_channel": {
             "type": "string",
             "nullable": true
+          },
+          "slack_announce_empty_reservations": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include empty shop/tool agenda invitations in Slack. Owning-shop Resource Managers, Admins and Board members may edit; omission preserves the existing value."
           },
           "disabled": {
             "type": "boolean"
@@ -5158,6 +5175,13 @@
             "type": "integer",
             "nullable": true
           },
+          "dayOfWeek": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 6,
+            "description": "Eastern weekday restriction for new multi-use parent claims; null means any day."
+          },
           "nextAvailable": {
             "type": "string",
             "nullable": true
@@ -5297,6 +5321,13 @@
             "type": "integer",
             "nullable": true
           },
+          "dayOfWeek": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 6,
+            "description": "Eastern weekday restriction for new multi-use parent claims; null means any day."
+          },
           "nextAvailable": {
             "type": "string",
             "nullable": true
@@ -5336,6 +5367,7 @@
           "createdAt",
           "updatedAt",
           "days",
+          "dayOfWeek",
           "nextAvailable",
           "rejectionReason",
           "isChildTask",
@@ -8903,7 +8935,7 @@
           "Volunteer"
         ],
         "security": [],
-        "description": "Hidden shop names and prerequisite tools (including tools inside hidden shops) are omitted. Shop filtering only matches visible shop names. An optional deployment-configured feed token may be required.",
+        "description": "Hidden shop names and prerequisite tools (including tools inside hidden shops) are omitted. Shop filtering only matches visible shop names. Multi-use parents with day_of_week appear only on that weekday in America/New_York, and recurring cooldowns still apply. An optional deployment-configured feed token may be required.",
         "parameters": [
           {
             "name": "shop",
@@ -8948,6 +8980,12 @@
                         "type": "string",
                         "nullable": true
                       },
+                      "day_of_week": {
+                        "type": "integer",
+                        "nullable": true,
+                        "minimum": 0,
+                        "maximum": 6
+                      },
                       "prerequisite_tools": {
                         "type": "array",
                         "items": {
@@ -8979,6 +9017,12 @@
                       "shop_name": {
                         "type": "string",
                         "nullable": true
+                      },
+                      "day_of_week": {
+                        "type": "integer",
+                        "nullable": true,
+                        "minimum": 0,
+                        "maximum": 6
                       },
                       "prerequisite_tools": {
                         "type": "array",
@@ -9385,6 +9429,7 @@
         "tags": [
           "System configuration"
         ],
+        "description": "Admins and Board members may run registered portal jobs, including reservation Slack announcements. Checkout expiration notices require an Admin; Resource Managers and ordinary members cannot run these jobs.",
         "security": [
           {
             "sessionAuth": []
@@ -9393,10 +9438,25 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Job queued"
+            "description": "Job queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           },
           "403": {
-            "description": "Checkout expiration notices are admin-only"
+            "description": "Only Admins and Board may run jobs; checkout expiration notices are admin-only"
           },
           "401": {
             "description": "Authentication required"
@@ -9427,6 +9487,7 @@
                       "db_backup",
                       "card_expiration_check",
                       "reservation_canvas_rebuild",
+                      "reservation_slack_announcements",
                       "member_provisioning_reconciliation",
                       "volunteer_event_reminder",
                       "membership_expiration_notice",
@@ -10592,6 +10653,64 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config": {
+      "get": {
+        "summary": "Gets safe runtime configuration before login",
+        "tags": [
+          "Configuration"
+        ],
+        "operationId": "getClientConfig",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Public integration settings and the ordinary task creation credit maximum",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "firebase_api_key",
+                    "firebase_project_id",
+                    "firebase_auth_domain",
+                    "firebase_auth_type",
+                    "wiki_url",
+                    "app_domain",
+                    "volunteer_task_max_credit"
+                  ],
+                  "properties": {
+                    "firebase_api_key": {
+                      "type": "string"
+                    },
+                    "firebase_project_id": {
+                      "type": "string"
+                    },
+                    "firebase_auth_domain": {
+                      "type": "string"
+                    },
+                    "firebase_auth_type": {
+                      "type": "string"
+                    },
+                    "wiki_url": {
+                      "type": "string"
+                    },
+                    "app_domain": {
+                      "type": "string"
+                    },
+                    "turnstile_site_key": {
+                      "type": "string"
+                    },
+                    "volunteer_task_max_credit": {
+                      "type": "number",
+                      "description": "Effective maximum when creating an ordinary volunteer task; existing task edits and volunteer events remain uncapped."
+                    }
+                  }
                 }
               }
             }
@@ -12661,7 +12780,7 @@
             "sessionAuth": []
           }
         ],
-        "description": "Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance, up to 10 eligible, in-service safety checkouts (Orientation first), and up to five randomly sampled volunteer opportunities for activeMember members. Volunteer recommendations reuse claim eligibility, exclude reusable tasks already claimed and repeatable/recurring tasks with an in-progress claim, and include only open events dated after today that the member has not joined. Other member statuses receive an empty volunteer list. Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.",
+        "description": "Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance, up to 10 eligible, in-service safety checkouts (Orientation first), and volunteer opportunities for activeMember members. Up to five eligible weekday-bound tasks matching today in America/New_York appear first, followed by up to five other eligible tasks and future events. Each group sorts by descending credits, then title and ID. All weekday-priority candidates are excluded from the second group. The response is one flat list of at most ten opportunities without duplicates. Volunteer recommendations reuse claim eligibility, exclude reusable tasks already claimed and repeatable/recurring tasks with an in-progress claim, and include only open events dated after today that the member has not joined. Other member statuses receive an empty volunteer list. Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.",
         "responses": {
           "200": {
             "description": "current member home data",
@@ -12698,7 +12817,7 @@
                     },
                     "availableVolunteerOpportunities": {
                       "type": "array",
-                      "maxItems": 5,
+                      "maxItems": 10,
                       "items": {
                         "type": "object",
                         "additionalProperties": false,
@@ -17627,7 +17746,7 @@
     },
     "/slack/interactions": {
       "post": {
-        "summary": "Handles signed Slack modal interactions",
+        "summary": "Handles signed Slack modal and reservation announcement interactions",
         "servers": [
           {
             "url": "/",
@@ -17799,7 +17918,7 @@
                   "payload": {
                     "type": "string",
                     "pattern": "\"type\"\\s*:\\s*\"(view_submission|block_actions|view_closed)\"",
-                    "description": "JSON-encoded Slack interaction. Reservation views accept view_submission, view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Block actions include actions and current view state. Checkout field errors use checkout_note. Echo the opaque private_metadata unchanged; do not construct it from this example. Submissions supply view.state.values.checkout_note.checkout_note.value (optional string, maximum 128 characters). Menu values are active, request_tools, volunteer and requests; checkout_request_select uses a persisted request ID for checkout requests or volunteer:<request_id> for volunteer rows; other selectors use persisted record IDs.",
+                    "description": "JSON-encoded Slack interaction. Reservation views accept view_submission, view_closed, and block_actions; checkout_modal accepts block_actions and view_submission. Message block_actions with action_id reservation_open and value shop ID open the reservation modal for the clicking linked active member, including from tool-users channels. The server acknowledges with {}, opens errors privately, and omits the announcement response_url so submission outcomes use DM fallback. Block actions include actions and current view state. Checkout field errors use checkout_note. Echo the opaque private_metadata unchanged; do not construct it from this example. Submissions supply view.state.values.checkout_note.checkout_note.value (optional string, maximum 128 characters). Menu values are active, request_tools, volunteer and requests; checkout_request_select uses a persisted request ID for checkout requests or volunteer:<request_id> for volunteer rows; other selectors use persisted record IDs.",
                     "example": "{\"type\":\"block_actions\",\"user\":{\"id\":\"U12345678\"},\"actions\":[{\"block_id\":\"checkout_menu\",\"action_id\":\"checkout_menu_select\",\"selected_option\":{\"text\":{\"type\":\"plain_text\",\"text\":\"View my checkouts\"},\"value\":\"active\"}}],\"view\":{\"id\":\"V12345678\",\"hash\":\"view-hash\",\"callback_id\":\"checkout_modal\",\"private_metadata\":\"\\u003copaque signed metadata returned by views.open\\u003e\",\"state\":{\"values\":{}}}}"
                   }
                 },
@@ -18921,6 +19040,377 @@
         }
       }
     },
+    "/admin/volunteer_events": {
+      "post": {
+        "summary": "Save a volunteer event with a positive credit value and no upper credit cap",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Saved event; event credits remain uncapped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "title",
+                    "creditValue"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "creditValue": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Friendly event validation errors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "error",
+                    "message",
+                    "errors"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "enum": [
+                        422
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "unprocessable_content"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "credit_value": {
+                    "type": "number",
+                    "exclusiveMinimum": true,
+                    "minimum": 0
+                  },
+                  "event_date": {
+                    "type": "string",
+                    "format": "date",
+                    "nullable": true
+                  },
+                  "shop_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "prerequisite_tool_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/volunteer_events/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Save a volunteer event with a positive credit value and no upper credit cap",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Saved event; event credits remain uncapped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "title",
+                    "creditValue"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "creditValue": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Friendly event validation errors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "error",
+                    "message",
+                    "errors"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "enum": [
+                        422
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "unprocessable_content"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "credit_value": {
+                    "type": "number",
+                    "exclusiveMinimum": true,
+                    "minimum": 0
+                  },
+                  "event_date": {
+                    "type": "string",
+                    "format": "date",
+                    "nullable": true
+                  },
+                  "shop_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "prerequisite_tool_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Save a volunteer event with a positive credit value and no upper credit cap",
+        "tags": [
+          "Volunteer"
+        ],
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Saved event; event credits remain uncapped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "title",
+                    "creditValue"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "creditValue": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Friendly event validation errors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "error",
+                    "message",
+                    "errors"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "enum": [
+                        422
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "unprocessable_content"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "credit_value": {
+                    "type": "number",
+                    "exclusiveMinimum": true,
+                    "minimum": 0
+                  },
+                  "event_date": {
+                    "type": "string",
+                    "format": "date",
+                    "nullable": true
+                  },
+                  "shop_id": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "prerequisite_tool_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/volunteer/tasks": {
       "get": {
         "summary": "List volunteer tasks including nullable source ticketId",
@@ -19050,6 +19540,48 @@
         ],
         "parameters": [],
         "responses": {
+          "422": {
+            "description": "Friendly task validation errors; the creation credit maximum does not cap edits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "error",
+                    "message",
+                    "errors"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "enum": [
+                        422
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "unprocessable_content"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "200": {
             "description": "Saved task with nullable ticketId (source linkage is not generically editable)",
             "content": {
@@ -19095,6 +19627,48 @@
         ],
         "parameters": [],
         "responses": {
+          "422": {
+            "description": "Friendly task validation errors; the creation credit maximum does not cap edits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "error",
+                    "message",
+                    "errors"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "enum": [
+                        422
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "unprocessable_content"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only admin and board may change linked bounty credits",
             "content": {
@@ -19138,6 +19712,48 @@
         ],
         "parameters": [],
         "responses": {
+          "422": {
+            "description": "Friendly task validation errors; the creation credit maximum does not cap edits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "error",
+                    "message",
+                    "errors"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "enum": [
+                        422
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "unprocessable_content"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only admin and board may change linked bounty credits",
             "content": {

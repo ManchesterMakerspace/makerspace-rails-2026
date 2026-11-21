@@ -8,6 +8,7 @@ class Shop
   field :wiki_url, type: String
   field :gdrive_id, type: String
   field :slack_channel, type: String  # e.g. "shop-woodworking" — used for slash command routing
+  field :slack_announce_empty_reservations, type: Boolean, default: false
   field :disabled, type: Boolean, default: false
   field :out_of_service, type: Boolean, default: false
   field :out_of_service_note, type: String
@@ -35,6 +36,7 @@ class Shop
   field :color_id, type: String, default: "1"
   field :canvas_today, type: String
   field :canvas_tomorrow, type: String
+  field :announcement_test_canvas_today, type: String
   field :volunteer_canvas_id, type: String
   field :checkout_canvas_id, type: String
 
@@ -50,8 +52,11 @@ class Shop
   after_destroy :refresh_available_shop_cache_after_destroy
   after_save :warm_changed_slack_channel_cache
   after_save :enqueue_checkout_canvas_sync_after_channel_change
+  after_save :enqueue_reservation_slack_announcement_after_change
+  after_destroy :enqueue_reservation_slack_announcement
 
   validates :name, presence: true, uniqueness: { case_sensitive: false }
+  validates :slack_announce_empty_reservations, inclusion: { in: [true, false] }
   validates :out_of_service_note, presence: true, if: :out_of_service?
   validates :max_concurrent_reservations, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :floor_name, presence: true, inclusion: { in: FLOOR_NAMES }
@@ -83,6 +88,17 @@ class Shop
   end
 
   private
+
+  def enqueue_reservation_slack_announcement_after_change
+    fields = %w[name slack_channel slack_announce_empty_reservations disabled out_of_service out_of_service_note reservable]
+    return unless (previous_changes.keys & fields).any?
+
+    enqueue_reservation_slack_announcement
+  end
+
+  def enqueue_reservation_slack_announcement
+    ReservationSlackAnnouncementJob.enqueue_today
+  end
 
   def refresh_available_shop_cache
     return unless (previous_changes.keys & %w[_id name disabled slack_channel]).any?

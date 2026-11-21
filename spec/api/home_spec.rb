@@ -8,7 +8,7 @@ RSpec.describe 'Member Home API', type: :request do
       operationId 'getHome'
       security [sessionAuth: []]
       produces 'application/json'
-      description 'Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance, up to 10 eligible, in-service safety checkouts (Orientation first), and up to five randomly sampled volunteer opportunities for activeMember members. Volunteer recommendations reuse claim eligibility, exclude reusable tasks already claimed and repeatable/recurring tasks with an in-progress claim, and include only open events dated after today that the member has not joined. Other member statuses receive an empty volunteer list. Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.'
+      description 'Requires a member session and completed TOTP challenge. Returns only the current member, confirmed Slack acceptance, up to 10 eligible, in-service safety checkouts (Orientation first), and volunteer opportunities for activeMember members. Up to five eligible weekday-bound tasks matching today in America/New_York appear first, followed by up to five other eligible tasks and future events. Each group sorts by descending credits, then title and ID. All weekday-priority candidates are excluded from the second group. The response is one flat list of at most ten opportunities without duplicates. Volunteer recommendations reuse claim eligibility, exclude reusable tasks already claimed and repeatable/recurring tasks with an in-progress claim, and include only open events dated after today that the member has not joined. Other member statuses receive an empty volunteer list. Does not contact Slack or initiate provisioning. The nested member.slack.url is null; use slack.newMembersChannelUrl, which uses only cached workspace configuration.'
 
       response '200', 'current member home data' do
         schema type: :object, required: %w[member slack availableCheckouts availableVolunteerOpportunities], properties: {
@@ -20,7 +20,7 @@ RSpec.describe 'Member Home API', type: :request do
             }
           },
           availableVolunteerOpportunities: {
-            type: :array, maxItems: 5, items: {
+            type: :array, maxItems: 10, items: {
               type: :object, additionalProperties: false,
               required: %w[id kind title description creditValue shopName eventDate], properties: {
                 id: { type: :string }, kind: { type: :string, enum: %w[task event] },
@@ -60,6 +60,20 @@ RSpec.describe 'Member Home API', type: :request do
 
           run_test! do |response|
             expect(response.parsed_body.fetch('availableVolunteerOpportunities').pluck('id')).to contain_exactly(task.id.to_s, volunteer_event.id.to_s)
+          end
+        end
+
+        context 'an active member with weekday tasks and other opportunities' do
+          let(:member) { create(:member, :current) }
+          let!(:weekday_task) { VolunteerTask.create!(title: 'Today task', description: 'Help today', status: 'reusable',
+            day_of_week: VolunteerTask.business_date.wday, credit_value: 0.5) }
+          let!(:other_task) { VolunteerTask.create!(title: 'Any day task', description: 'Help anytime', credit_value: 2) }
+          let!(:volunteer_event) { VolunteerEvent.create!(title: 'Event', event_date: VolunteerTask.business_date + 1.day, credit_value: 1) }
+
+          run_test! do |response|
+            opportunities = response.parsed_body.fetch('availableVolunteerOpportunities')
+            expect(opportunities.pluck('id')).to eq([weekday_task, other_task, volunteer_event].map { |row| row.id.to_s })
+            expect(opportunities.pluck('id').uniq.length).to eq(opportunities.length)
           end
         end
 

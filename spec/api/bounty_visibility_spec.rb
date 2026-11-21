@@ -29,12 +29,13 @@ RSpec.describe 'Bounty resource visibility', type: :request do
       tags 'Volunteer'
       security []
       produces 'application/json', 'application/xml'
-      description 'Hidden shop names and prerequisite tools (including tools inside hidden shops) are omitted. Shop filtering only matches visible shop names. An optional deployment-configured feed token may be required.'
+      description 'Hidden shop names and prerequisite tools (including tools inside hidden shops) are omitted. Shop filtering only matches visible shop names. Multi-use parents with day_of_week appear only on that weekday in America/New_York, and recurring cooldowns still apply. An optional deployment-configured feed token may be required.'
       parameter name: :shop, in: :query, required: false, schema: { type: :string }
       parameter name: :token, in: :query, required: false, schema: { type: :string }
       response '200', 'Public claimable bounty projections' do
         schema type: :array, items: { type: :object, required: %w[id title shop_name prerequisite_tools], properties: {
           id: { type: :string }, title: { type: :string }, shop_name: { type: :string, nullable: true },
+          day_of_week: { type: :integer, nullable: true, minimum: 0, maximum: 6 },
           prerequisite_tools: { type: :array, items: { type: :string } }
         } }
         %w[json xml].each do |format|

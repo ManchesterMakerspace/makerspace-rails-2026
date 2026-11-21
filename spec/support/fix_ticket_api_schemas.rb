@@ -37,7 +37,9 @@ module FixTicketApiSchemas
     VolunteerTaskWrite: { type: :object, properties: {
           title: { type: :string }, description: { type: :string }, credit_value: { type: :number, exclusiveMinimum: true, minimum: 0, description: 'Positive credit value. Creation is capped; admin/board updates have no upper limit and credit changes are audited.' },
           shop_id: { type: :string, nullable: true }, status: { type: :string, enum: VolunteerTask::VALID_STATUSES },
-          days: { type: :integer, nullable: true }, prerequisite_tool_ids: { type: :array, items: { type: :string } }
+          days: { type: :integer, nullable: true },
+          day_of_week: { type: :integer, nullable: true, minimum: 0, maximum: 6, description: 'Optional day for new multi-use parent claims in America/New_York: 0 Sunday through 6 Saturday; null means any day. Existing child claims remain usable on other days.' },
+          prerequisite_tool_ids: { type: :array, items: { type: :string } }
         } },
     FixTicketUpdate: { type: :object, properties: {
         respond_as: { type: :string, enum: %w[assignee reporter], description: 'Required for notes when the viewer is both reporter and assignee.' },
@@ -64,6 +66,7 @@ module FixTicketApiSchemas
       wiki_url: nullable_string, shop: object.call({ id: string, name: string, wiki_url: nullable_string, out_of_service: boolean }) }),
     ShopWrite: { type: :object, properties: {
       name: string, wiki_url: nullable_string, gdrive_id: nullable_string, slack_channel: nullable_string,
+      slack_announce_empty_reservations: boolean.merge(default: false, description: 'Include empty shop/tool agenda invitations in Slack. Owning-shop Resource Managers, Admins and Board members may edit; omission preserves the existing value.'),
       disabled: boolean, reservable: boolean, color_id: string, floor_name: nullable_string, capacity: integer,
       resource_manager_ids: { type: :array, items: string, description: 'Admin/board only. Replace Resource Manager assignments; omit to preserve, [] to clear. IDs must belong to Resource Managers, Admins, or Board members; their roles are preserved.' },
       max_concurrent_reservations: integer, reservation_horizon_days: integer, minimum_advance_notice_hours: { type: :number },
@@ -132,6 +135,7 @@ module FixTicketApiSchemas
       verifiedById: nullable_string, verifiedByName: nullable_string, parentTaskId: nullable_string,
       claimedAt: { type: :string, format: 'date-time', nullable: true }, completedAt: { type: :string, format: 'date-time', nullable: true },
       createdAt: timestamp, updatedAt: timestamp, days: { type: :integer, nullable: true },
+      dayOfWeek: { type: :integer, nullable: true, minimum: 0, maximum: 6, description: 'Eastern weekday restriction for new multi-use parent claims; null means any day.' },
       nextAvailable: { type: :string, nullable: true }, rejectionReason: nullable_string, isChildTask: boolean, isCoolingDown: boolean,
       capabilities: object.call({ canClaim: boolean, canSubmitCompletion: boolean }) },
       %i[id title description status creditValue ticketId capabilities])

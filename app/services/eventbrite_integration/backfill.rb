@@ -75,7 +75,7 @@ module EventbriteIntegration
                       checkpoint(org, state)
                     end
                     @client.each_page("events/#{event.eventbrite_id}/orders/", { 'expand' => 'attendees,refund_requests' }, continuation: state['order_cursor']) do |orders, order_cursor|
-                      orders.fetch('orders').each { |order| @sync.import_order(order); @run.inc(processed: 1) }
+                      orders.fetch('orders').each { |order| @sync.import_order(order, parent: event); @run.inc(processed: 1) }
                       state['order_cursor'] = order_cursor
                       checkpoint(org, state)
                     end

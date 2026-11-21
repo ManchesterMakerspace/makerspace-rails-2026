@@ -129,6 +129,7 @@ RSpec.describe 'Checkout expiration API', type: :request do
   path '/admin/system_configs/run_job' do
     post 'Run a registered portal job; checkout expiration notices require an admin' do
       tags 'System configuration'
+      description 'Admins and Board members may run registered portal jobs, including reservation Slack announcements. Checkout expiration notices require an Admin; Resource Managers and ordinary members cannot run these jobs.'
       security [sessionAuth: []]
       consumes 'application/json'
       produces 'application/json'
@@ -136,17 +137,44 @@ RSpec.describe 'Checkout expiration API', type: :request do
         type: :object, required: ['key'], properties: { key: { type: :string, enum: SystemConfig::JOB_KEYS.keys } }
       }
       let(:body) { { key: 'checkout_expiration_notice' } }
+      before { ActiveJob::Base.queue_adapter = :test }
       response '200', 'Job queued' do
-        before { allow(CheckoutExpirationNoticeJob).to receive(:perform_later) }
-        run_test! { expect(CheckoutExpirationNoticeJob).to have_received(:perform_later) }
+        schema type: :object, required: ['message'], properties: { message: { type: :string } }
+        context 'checkout expiration notices' do
+          before { allow(CheckoutExpirationNoticeJob).to receive(:perform_later) }
+          run_test! { expect(CheckoutExpirationNoticeJob).to have_received(:perform_later) }
+        end
+        context 'reservation announcements run by an Admin' do
+          let(:body) { { key: 'reservation_slack_announcements' } }
+          run_test! { expect(ReservationSlackAnnouncementJob).to have_been_enqueued }
+        end
+        context 'reservation announcements run by a Board member' do
+          let(:actor) { create(:member, :board_member, :current) }
+          let(:body) { { key: 'reservation_slack_announcements' } }
+          run_test! { expect(ReservationSlackAnnouncementJob).to have_been_enqueued }
+        end
       end
-      response '403', 'Checkout expiration notices are admin-only' do
-        let(:actor) { create(:member, :board_member, :current) }
-        run_test!
+      response '403', 'Only Admins and Board may run jobs; checkout expiration notices are admin-only' do
+        context 'Board member running checkout expiration notices' do
+          let(:actor) { create(:member, :board_member, :current) }
+          run_test!
+        end
+        %w[resource_manager member].each do |role|
+          context "#{role} running reservation announcements" do
+            let(:actor) { create(:member, :current, role: role) }
+            let(:body) { { key: 'reservation_slack_announcements' } }
+            run_test! { expect(ReservationSlackAnnouncementJob).not_to have_been_enqueued }
+          end
+        end
       end
       response '401', 'Authentication required' do
         before { sign_out actor }
-        run_test!
+        %w[checkout_expiration_notice reservation_slack_announcements].each do |key|
+          context key do
+            let(:body) { { key: key } }
+            run_test! { expect(ReservationSlackAnnouncementJob).not_to have_been_enqueued }
+          end
+        end
       end
       response '422', 'Unknown job' do
         let(:body) { { key: 'unknown' } }

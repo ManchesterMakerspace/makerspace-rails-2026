@@ -15,7 +15,10 @@ FactoryBot.define do
     lastname {generate(:lastname)}
     expirationTime {generate(:expiry)}
     email {generate(:email)}
-    encrypted_password { BCrypt::Password.create('password') }
+    encrypted_password do
+      cost = Rails.env.test? ? BCrypt::Engine::MIN_COST : BCrypt::Engine.cost
+      BCrypt::Password.create('password', cost: cost)
+    end
     member_contract_signed_date { Date.today }
     status { 'activeMember' }
     phone { "992001234" }

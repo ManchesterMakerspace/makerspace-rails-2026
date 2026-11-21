@@ -50,7 +50,8 @@ class Volunteer::BountiesController < ApplicationController
         shop_name:    (visibility.shop&.name rescue nil),
         prerequisite_tools: visibility.prerequisite_tools.map(&:name),
         claimed_at:   t.claimed_at,
-        next_available: t.next_available
+        next_available: t.next_available,
+        day_of_week: t.day_of_week
       }
     end
   end

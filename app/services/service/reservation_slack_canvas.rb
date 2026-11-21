@@ -102,6 +102,42 @@ module Service
           .uniq
       end
 
+      # Always refresh the rolling agenda before handing its ID to a message.
+      # A cached ID alone does not mean its content has rolled over to today.
+      def ensure_today_for_announcement!(shop, channel_id:, date:, mode:)
+        today = Time.current.in_time_zone(ReservationService::ZONE).to_date
+        raise ArgumentError, "Announcement canvas date must be today" unless parse_date(date) == today
+        unless %w[production test].include?(mode) && mode == Service::SlackConnector.message_destination_mode
+          raise ArgumentError, "Announcement canvas destination mode does not match"
+        end
+        raise ArgumentError, "Announcement canvas needs a destination channel" if channel_id.blank?
+
+        production = mode == "production"
+        if !production && Service::SlackConnector.resolved_channel_id(channel_id) != channel_id
+          raise ArgumentError, "Test announcement canvas must use the redirected test channel"
+        end
+        field = production ? :canvas_today : :announcement_test_canvas_today
+        title = "Today's #{shop.name} Reservations#{production ? '' : ' (Test)'}"
+        with_canvas_lock(shop.id, field) do
+          shop.reload
+          canvas_id = shop.public_send(field).presence
+          reused_canvas = canvas_id.present?
+          owners = production ? canvas_owner_slack_ids(shop) : []
+          canvas_id ||= create_and_cache_canvas!(shop, field, title, owners)
+
+          begin
+            publish_announcement_agenda!(canvas_id, shop, channel_id, today, production: production)
+          rescue Slack::Web::Api::Errors::CanvasNotFound, Slack::Web::Api::Errors::CanvasDeleted
+            raise unless reused_canvas
+
+            shop.set(field => nil)
+            canvas_id = create_and_cache_canvas!(shop, field, title, owners)
+            publish_announcement_agenda!(canvas_id, shop, channel_id, today, production: production)
+          end
+          canvas_id
+        end
+      end
+
       def sync_member_access!(member, shop_ids:)
         slack_id = member.slack_user&.slack_id.to_s
         return if slack_id.blank?
@@ -119,6 +155,16 @@ module Service
       end
 
       private
+
+      def publish_announcement_agenda!(canvas_id, shop, channel_id, date, production:)
+        publish_agenda!(canvas_id, channel_id, shop, date)
+        return unless production && shop.slack_channel.present?
+
+        shop_channel_id = Service::SlackConnector.find_channel_id(shop.slack_channel)
+        if shop_channel_id.present? && shop_channel_id != channel_id
+          Service::SlackConnector.set_canvas_channel_access(canvas_id, shop_channel_id)
+        end
+      end
 
       def rebuild_shop_with_rate_limit_retry!(shop, dates)
         retries = 0
@@ -307,19 +353,25 @@ module Service
           next_date.month,
           next_date.day
         ).utc
-        reservations = Reservation.blocking
-          .where(
+        reservations = ReservationDisplayQuery.reservations(
+          Reservation.blocking.where(
             shop_id: shop.id,
             :start_at.lt => day_end,
             :end_at.gt => day_start
           )
-          .order_by(start_at: :asc)
-          .to_a
-        blackouts = ReservationBlackout.occurrences_overlapping(
-          shop_id: shop.id,
+        )
+        member_names = ReservationDisplayQuery.member_names(reservations.map(&:member_id))
+        tool_ids = reservations.flat_map { |reservation| Array(reservation.tool_ids) }.compact.map(&:to_s).uniq
+        tools = if tool_ids.empty?
+          {}
+        else
+          Tool.where(:id.in => tool_ids).only(*ReservationDisplayQuery::TOOL_FIELDS).to_a.index_by { |tool| tool.id.to_s }
+        end
+        blackouts = ReservationDisplayQuery.blackouts(
+          shop_ids: [shop.id],
           start_at: day_start,
           end_at: day_end
-        )
+        ).flat_map { |blackout| blackout.occurrences_overlapping(day_start, day_end) }
         agenda_items = reservations.map do |reservation|
           {
             kind: :reservation,
@@ -373,8 +425,8 @@ module Service
               [
                 reservation_time(reservation),
                 reservation_title(reservation),
-                escape_table_cell(reservation.member&.fullname),
-                escape_table_cell(resource_names(reservation)),
+                escape_table_cell(member_names[reservation.member_id.to_s]),
+                escape_table_cell(resource_names(reservation, tools)),
                 escape_table_cell(reservation.status.to_s.titleize)
               ]
             end
@@ -416,10 +468,11 @@ module Service
           .gsub(/[[:space:]]+/, " ").strip.presence || "Reservation"
       end
 
-      def resource_names(reservation)
+      def resource_names(reservation, tools_by_id)
         return "Entire shop" if reservation.reservation_scope == "shop"
 
-        tools = reservation.tools.map do |tool|
+        selected_ids = Array(reservation.tool_ids).map(&:to_s).to_set
+        tools = tools_by_id.each_value.select { |tool| selected_ids.include?(tool.id.to_s) }.map do |tool|
           tool.disabled? || tool.out_of_service? ? "#{tool.name} (OUT OF SERVICE)" : tool.name
         end.join(", ")
         reservation.group_snapshots.present? ? "#{reservation.group_label} — #{tools}" : tools

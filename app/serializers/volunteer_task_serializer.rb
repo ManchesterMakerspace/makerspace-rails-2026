@@ -14,6 +14,7 @@ class VolunteerTaskSerializer < ActiveModel::Serializer
              :prerequisite_tool_ids,
              :status,
              :days,
+             :day_of_week,
              :next_available,
              :parent_task_id,
              :created_by_id,

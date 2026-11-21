@@ -1,4 +1,9 @@
 namespace :reservations do
+  desc "Publish or update today's Slack reservation summaries after 7 AM Eastern"
+  task announce_today: :environment do
+    ReservationSlackAnnouncementJob.perform_now
+  end
+
   desc "Rebuild reservation, volunteer, and recorded checkout Slack canvases"
   task rebuild_slack_canvases: :environment do
     Service::ReservationSlackCanvas.rebuild_all!

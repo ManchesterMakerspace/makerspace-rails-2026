@@ -110,3 +110,78 @@ The shared evaluator still reads reservation session history per resource.
 This change does not redesign history/conflict queries or asynchronous Slack
 acknowledgement. Those costs remain visible separately from catalog/fee reads.
 No public API contract, collection, environment variable, or recurring job changed.
+
+## Eventbrite and announcement read benchmark
+
+The Eventbrite history reader batches parent/ticket metadata and aggregates order
+member IDs; link filters use correlated organization/order existence joins.
+Shared event name/start/timezone, ticket names and public signup choices use a
+five-minute display cache with generation-fenced publication and MongoDB fallback.
+Signup choices also expire at Eastern midnight; mutation validation/member links
+remain live. Announcements use projected live reads scoped by channel bindings,
+and canvas rendering batches names/tools. Full snapshots, availability, payment
+reconciliation and delivery state are not cached.
+
+Run explicitly against disposable MongoDB/Redis using the normal test safety
+hooks (DatabaseCleaner deletes the selected test database's records):
+
+```sh
+bundle exec rspec spec/benchmarks/eventbrite_announcer_reads_spec.rb spec/benchmarks/eventbrite_reservation_indexes_spec.rb --tag benchmark --format progress
+```
+
+The first file measures 1/50-row history and canvas reads and 1/4-channel
+reconciliation with ten bookings per channel. History invokes the controller
+action with rendering stubbed: authentication, HTTP and JSON serialization are
+excluded. Canvas markdown rendering is real; Slack network calls are mocked.
+The announcer canvas callback renders the real agenda but replaces external
+canvas I/O. Fixture creation is outside measurements; changed-content runs force
+the fingerprint path with a setup write included in elapsed time. Five warm
+samples report median and nearest-rank p95 (the maximum). Cold history has one
+sample, followed by five cache-hit samples. The monitor counts actual read
+commands, including `getMore`, and BSON-encodes reply sizes without retaining
+payloads. Reported bytes include command/cursor envelopes and precede compression;
+they are comparative database reply sizes, not exact network usage.
+
+### Measured comparison (2026-11-20)
+
+Windows Ruby 3.4, MongoDB 8.2.6 single-node replica set and an isolated WSL Redis.
+Baseline was commit `394ae35d` with its existing indexes installed; after-change
+data used the same fixture sizes plus the two additive indexes. Runs were
+sequential with no other test workload. Local MongoDB version differs from CI's
+MongoDB 7.0; these measurements do not substitute for that deployment's tests.
+
+Warm timings below are milliseconds, **before → after**:
+
+| Operation | Rows/channels | Read commands | BSON reply bytes | Total p50 | Total p95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Order history, warm metadata | 50 rows | 102 → 3 | 346,470 → 11,698 | 1,613.21 → 78.29 | 1,624.91 → 79.10 |
+| Attendee history, warm metadata | 50 rows | 102 → 2 | 362,316 → 10,824 | 1,612.97 → 110.75 | 1,630.21 → 130.74 |
+| Canvas markdown | 50 rows | 102 → 4 | 131,195 → 14,008 | 1,628.52 → 79.59 | 1,645.64 → 93.64 |
+| Announcer, unchanged | 1 channel | 13 → 10 | 17,040 → 8,710 | 235.99 → 191.78 | 238.04 → 207.06 |
+| Announcer, canvas refresh | 1 channel | 40 → 18 | 51,538 → 16,210 | 773.92 → 424.93 | 784.72 → 441.80 |
+| Announcer, unchanged | 4 channels | 31 → 25 | 127,389 → 35,299 | 644.30 → 557.88 | 652.95 → 601.43 |
+| Announcer, canvas refresh | 4 channels | 139 → 57 | 332,845 → 69,223 | 2,716.11 → 1,442.29 | 2,810.34 → 1,492.45 |
+
+Both 50-row cold history pages used four MongoDB reads after the change (order
+113.84 ms; attendee 163.40 ms), versus 102 before. The one-row canvas stayed at
+four reads. Small history pages show the extra Redis round trips: one-row warm
+order/attendee p50 changed from 63.50/62.79 ms to 79.27/95.40 ms despite fewer MongoDB
+reads. Cache benefits therefore depend on data size, repeated metadata and actual
+Redis/MongoDB latency; the table is not a production latency guarantee.
+
+### Index probes
+
+The second benchmark uses `explain("executionStats")` on disposable fixtures and
+restores the added attendee index after comparing existing indexes. A global
+reservation lookup with 10,000 historical approved bookings plus ten current
+bookings examined **10,010 → 10** documents using
+`status_1_end_at_1_start_at_1`; the final result still sorts by start time/ID.
+For 100 orders and 5,000 attendees, the new correlated-lookup index reduced
+foreign keys examined **199 → 100**, with no foreign collection scans. Both
+probes assert use of the intended index. Planner choices and savings depend on
+data distributions; do not add general history sort index permutations without
+measuring representative filters.
+
+Apply the indexes with `bundle exec rake data:ensure_unique_indexes` before
+deploying optimized readers. No environment variables, public schemas, client
+publication, React changes or wiki flow changes are needed for this optimization.

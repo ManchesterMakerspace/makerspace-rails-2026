@@ -25,6 +25,9 @@ class EventbriteEvent
   index({ organization_id: 1, series_id: 1 })
   index({ inventory_refresh_at: 1 })
 
+  after_save :invalidate_changed_display_cache
+  after_destroy :invalidate_display_cache
+
   def announcement_public? = listed && !restricted && invalidated_at.nil? && %w[live started ended completed].include?(status)
   def announcement_upcoming? = announcement_public? && !series_parent && starts_at && starts_at > Time.current
   def announcement_scope = series_id.presence || eventbrite_id
@@ -40,5 +43,20 @@ class EventbriteEvent
           listed: true, series_parent: false, invalidated_at: nil,
           :status.in => %w[live started ended completed], :starts_at.gte => first, :starts_at.lt => finish,
           :name.not => /open house/i)).order_by(starts_at: :asc, eventbrite_id: :asc)
+  end
+
+  private
+
+  def invalidate_changed_display_cache
+    fields = previous_changes.keys
+    EventbriteIntegration::DisplayCache.invalidate_events if (fields & %w[_id organization_id eventbrite_id name starts_at timezone]).any?
+    if (fields & %w[_id organization_id eventbrite_id name starts_at timezone listed series_parent status invalidated_at]).any?
+      EventbriteIntegration::DisplayCache.invalidate_signup_choices
+    end
+  end
+
+  def invalidate_display_cache
+    EventbriteIntegration::DisplayCache.invalidate_events
+    EventbriteIntegration::DisplayCache.invalidate_signup_choices
   end
 end

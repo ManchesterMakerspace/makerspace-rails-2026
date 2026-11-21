@@ -47,6 +47,12 @@ RSpec.describe 'System configuration', type: :request do
               'slack_channel_upcoming_events' => 'upcoming-events')
           end
         end
+        context 'reservation announcement job' do
+          run_test! do |response|
+            expect(JSON.parse(response.body).fetch('jobs').map { |job| job['key'] })
+              .to include('reservation_slack_announcements')
+          end
+        end
         context 'with independently configured staff channels' do
           before do
             SystemConfig.set('slack_channel_rm', 'CRESOURCE')

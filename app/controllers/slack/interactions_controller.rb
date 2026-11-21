@@ -8,6 +8,9 @@ class Slack::InteractionsController < ApplicationController
     if payload['action_id'].to_s.start_with?('fix_') || payload.dig('view', 'callback_id').to_s.start_with?('fix_') || Array(payload['actions']).any? { |a| a['action_id'].to_s.start_with?('fix_') }
       return render json: FixSlack.interaction(payload)
     end
+    if payload["type"] == "block_actions" && Array(payload["actions"]).any? { |action| action["action_id"] == "reservation_open" }
+      return open_reservation_from_announcement(payload)
+    end
 
     callback_id = payload.dig("view", "callback_id")
     if callback_id == SlackCheckoutModal::CALLBACK_ID && payload["type"].in?(%w[block_actions view_submission])
@@ -40,6 +43,44 @@ class Slack::InteractionsController < ApplicationController
   end
 
   private
+
+  def open_reservation_from_announcement(payload)
+    slack_user_id = payload.dig("user", "id")
+    slack_user = SlackUser.find_by(slack_id: slack_user_id) if slack_user_id.present?
+    member = slack_user && Member.find_by(id: slack_user.member_id)
+    unless member&.active_unexpired?
+      return reservation_open_alert(payload, "Link an active Member Portal account before making a reservation.")
+    end
+
+    action = Array(payload["actions"]).find { |item| item["action_id"] == "reservation_open" }
+    shop_id = action["value"].to_s
+    shop = Shop.where(id: shop_id).first if BSON::ObjectId.legal?(shop_id)
+    return reservation_open_alert(payload, "This shop is no longer available.") unless shop && !shop.disabled?
+
+    # A message response URL belongs to the shared announcement. Omitting it
+    # makes submission outcomes use the existing private DM fallback instead.
+    view = SlackReservationModal.build(shop, member, response_url: nil, slack_user_id: slack_user_id)
+    Service::SlackConnector.open_modal(payload["trigger_id"], view)
+    render json: {}
+  rescue Error::CustomError => error
+    reservation_open_alert(payload, error.message)
+  rescue => error
+    Service::ErrorReporter.notify(error, context: { phase: "open reservation announcement modal" })
+    reservation_open_alert(payload, "The reservation form could not be opened. Please try again or use the Member Portal.")
+  end
+
+  def reservation_open_alert(payload, message)
+    Service::SlackConnector.open_modal(payload["trigger_id"], {
+      type: "modal", callback_id: "reservation_open_alert",
+      title: { type: "plain_text", text: "Reservation unavailable" },
+      close: { type: "plain_text", text: "Close" },
+      blocks: [{ type: "section", text: { type: "plain_text", text: message.to_s.first(2900) } }]
+    })
+    render json: {}
+  rescue => error
+    Service::ErrorReporter.notify(error, context: { phase: "reservation announcement alert" })
+    render json: {}
+  end
 
   def approve_group_checkout(payload)
     SlackGroupApprovalModal.submit!(payload)
