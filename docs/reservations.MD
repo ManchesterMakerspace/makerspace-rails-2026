@@ -126,6 +126,11 @@ legacy document.
 Each shop can also define:
 
 - `slack_channel`: channel name without `#`, used to route `/reserve`.
+- `slack_announce_empty_reservations`: Boolean, default `false`; the shared shop
+  editor labels it **Announce empty reservation agendas in Slack**. It controls
+  empty-channel invitations for the shop and its tools, independently of whether
+  whole-shop reservations are enabled. Assigned RMs, board members, and admins
+  may change it through normal shop editing.
 - `color_id`: used for the shop's Calendar label and reservation events.
 - `google_resource_id` and `resource_email`: synchronized Google resource
   metadata.
@@ -478,6 +483,113 @@ ephemeral instruction to link an active account.
 8. When a pending reservation is approved or denied, a background job sends
    the linked Slack user a direct notification unless direct notifications are
    suppressed.
+
+### Daily channel announcements
+
+`ReservationSlackAnnouncementJob` maintains one dated reservation summary per
+Slack destination channel and Eastern calendar day. The first eligible run is
+at or after **7:00 AM America/New_York**, including daylight-saving transitions.
+It lists approved, pending, and unpaid reservations beginning that day, retaining
+entries after their end time. Cancelled and denied reservations are excluded.
+Started unpaid bookings still overlapping today are reconciled through the
+existing fee rules before the summary is built, so overdue cancelled bookings
+release capacity and disappear. Future unpaid bookings remain listed as unpaid.
+Tool reservations use each selected tool's **Users Channel**, falling back to
+the shop channel only when no users channel is defined. Whole-shop bookings go
+to the shop channel and every configured tool-users channel for that shop.
+Shared destinations receive each reservation once.
+
+Every summary includes the full local date, each represented shop's **Live today
+agenda** canvas link, and a **Reserve [shop]** button. The button opens the same
+reservation modal as `/reserve`, using the clicking user's linked active,
+unexpired member account and normal resource eligibility. It works in tool-users
+channels as well as shop channels. Outcomes use the member's DM rather than
+replacing the public announcement. Old announcements link to a rolling live
+canvas, not an archived agenda. Today-only links are intentional; tomorrow's
+canvas remains available through existing channel setup.
+
+The new shop option is off for existing and new shops until explicitly enabled.
+When enabled, an otherwise empty destination can show **Shop is wide open, book
+your time now!**, or name the unbooked tools served by that channel. Invitations
+are never mixed into a channel summary containing reservations. Emptiness uses
+all blocking bookings overlapping the local day, including overnight bookings
+from yesterday; tool occupancy includes whole-shop bookings and shop occupancy
+includes its tools. Blackouts and disabled/out-of-service resources suppress
+invitations. Shared channels advertise only opted-in, eligible resources.
+Availability is rechecked before both creating and updating a post: marking a
+tool hidden or out of service removes its reserving invitation from an existing
+summary. Existing reservation rows remain visible for staff review; suppressing
+the invitation does not cancel or hide those bookings.
+
+Successful Slack posts retain their actual channel ID and string `ts` in
+`reservation_slack_announcements`. Midday reservation changes, routing/catalog
+changes, availability changes, blackouts, and changes to the shop option refresh
+the current-day summary. Updates try the saved message first, using both text
+and blocks. Only a confirmed `message_not_found` creates a replacement. Unknown
+initial-post outcomes are retained as ambiguous errors for operator reconciliation
+instead of blindly posting duplicates. Unchanged summaries do not repeat Slack
+message writes. Individual channel failures do not stop the remaining channels.
+
+If a posted summary in a still-associated channel becomes empty with invitations
+disabled or ineligible, it is edited to **No reservations to announce for [date]**,
+preserving its buttons, canvas links, and timestamp. A new empty post is never created with the option
+off. Turning the option off removes promotional wording from an existing post.
+Deleting the last shop represented in a current-day summary removes the Slack
+message and its reservation buttons. A shared-channel summary instead updates
+to retain its surviving shops. Missing messages count as already removed;
+Slack deletion failures are reported and retried. A later shop in that channel
+can receive a fresh summary on the same day.
+Deleting or moving the last tool serving a channel, or changing/clearing its
+Users Channel, also removes an abandoned summary. Shared channels retain their
+other tools and shops. Moving a tool while keeping its users channel updates the
+existing post with its new shop context when an invitation is eligible there.
+Earlier bookings for moved or deleted tools remain in their original reservation
+shop's channel rather than following the tool to another shop. A failed Slack
+channel lookup preserves the existing message for retry.
+Summaries show at most eight shop sections and forty reservation rows; omitted
+counts and full-agenda links keep larger agendas accessible.
+
+Announcement and canvas reads use explicit field projections and batched member
+names/tool lookups. Destination discovery omits names; per-channel refreshes
+limit reservation reads to current/retained shop bindings, keeping uncertain
+bindings for safe routing. Blackout rules are filtered by shop/date before Ruby
+expands overnight intervals and DST. Current routing, availability and bookings
+are re-read under the channel lease and after canvas work. These reservation
+reads, fee reconciliation and delivery receipts are not cached in Redis. See
+[read performance](reservation-performance.MD) for the repeatable benchmark.
+
+Before creating today's first post in a channel, the service looks up yesterday's
+receipt for the same destination mode and actual channel. If the last successfully
+posted content was empty (an invitation or neutral empty summary), it first tries
+to delete that message using its saved `ts`. A confirmed deletion or already
+missing message is recorded, while the historical receipt and timestamp are kept.
+Yesterday's nonempty summaries are left in place. A deletion failure is reported
+but does not prevent today's post. Older dates and other channels/modes are not
+cleaned up by this step.
+
+Before sending, the job refreshes each linked today canvas and grants the
+destination read access. This also supports a tool-users channel when the shop
+has no configured channel. Nonproduction destinations use an isolated
+`announcement_test_canvas_today` slot and never reuse a production canvas or
+grant the real shop channel access through the announcement path.
+
+Under **Portal Settings → Jobs**, **Daily Reservation Announcements** exposes the
+last run and **Run Now**. It retains the 7-AM gate. Production scheduling is an
+external configuration step: run the following every ten minutes, including
+the 7-AM boundary, to recover missed enqueues and transient failures:
+
+```sh
+RAILS_ENV=production bundle exec rake reservations:announce_today
+```
+
+The Rake task invokes the job synchronously. `config/schedule.rb` is an inactive
+Whenever template and does not activate this schedule. Apply the receipt indexes
+with `data:ensure_unique_indexes` before enabling the external schedule. Deploy
+Rails before the companion React shop editor. The local React wrappers do not
+require a new generated API-client release. No environment variables are added
+or changed. Wiki changes are held in
+[wiki-reservation-announcements.patch](wiki-reservation-announcements.patch)
+until this feature is deployed.
 
 Approved reservations also receive a scheduled Slack reminder when the member
 has a linked Slack account. If the reservation starts 6 through 47 hours in the

@@ -50,6 +50,7 @@ class SystemConfig
     "db_backup"       => "backup",
     "card_expiration_check" => "card_expiration_check",
     "reservation_canvas_rebuild" => "reservations:rebuild_slack_canvases",
+    "reservation_slack_announcements" => "reservation_slack_announcements",
     "member_provisioning_reconciliation" => "member_provisioning_reconciliation",
     "volunteer_event_reminder" => "volunteer_event_reminder",
     "membership_expiration_notice" => "membership_expiration_notice",

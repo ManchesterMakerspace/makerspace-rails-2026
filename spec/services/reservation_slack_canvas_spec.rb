@@ -1,6 +1,50 @@
 require "rails_helper"
 
 RSpec.describe Service::ReservationSlackCanvas do
+  include ReservationReadMeasurement
+
+  it 'retains batched query order and deduplicates tool IDs in canvas resource labels' do
+    first = create(:tool, shop: shop, name: 'First tool')
+    second = create(:tool, shop: shop, name: 'Second tool')
+    reservation = build(:reservation, shop: shop, member: member, reservation_scope: 'tools',
+      tool_ids: [second.id.to_s, first.id.to_s, second.id.to_s])
+    batched = { first.id.to_s => first, second.id.to_s => second }
+    expect(described_class.send(:resource_names, reservation, batched)).to eq('First tool, Second tool')
+  end
+
+  it 'renders a legacy tools reservation with nil IDs without looking up an invalid tool ID' do
+    date = Date.new(2026, 9, 15)
+    row = Reservation.new(member: member, shop: shop, title: 'Legacy booking', reservation_scope: 'tools', tool_ids: nil,
+      start_at: zone.local(2026, 9, 15, 10), end_at: zone.local(2026, 9, 15, 11))
+    Reservation.collection.insert_one(row.attributes)
+    measurement = measure_reservation_reads do
+      expect(described_class.send(:agenda_markdown, shop, date)).to include('Ada Lovelace', 'Legacy booking')
+    end
+    expect(measurement[:commands]).not_to include(['find', 'tools'])
+  end
+
+  [1, 25].each do |count|
+    it "batches member and resource reads for #{count} canvas rows" do
+      date = Date.new(2026, 9, 15)
+      resources = Array.new(count) { |index| Tool.new(shop: shop, name: "Tool #{index}") }
+      Tool.collection.insert_many(resources.map(&:attributes))
+      reservations = resources.each_with_index.map do |resource, index|
+        Reservation.new(member: member, shop: shop, reservation_scope: 'tools', tool_ids: [resource.id.to_s],
+          title: "Booking #{index}", start_at: zone.local(2026, 9, 15, 10), end_at: zone.local(2026, 9, 15, 11))
+      end
+      Reservation.collection.insert_many(reservations.map(&:attributes))
+
+      measurement = measure_reservation_reads do
+        markdown = described_class.send(:agenda_markdown, shop, date)
+        expect(markdown).to include('Ada Lovelace', "Booking #{count - 1}", "Tool #{count - 1}")
+      end
+      expect(measurement[:commands].tally).to eq(
+        ['find', 'reservations'] => 1, ['find', 'members'] => 1,
+        ['find', 'tools'] => 1, ['find', 'reservation_blackouts'] => 1
+      )
+    end
+  end
+
   it 'marks only unavailable booked tools and clears the warning after restoration' do
     unavailable = create(:tool, shop: shop, name: 'Unsafe saw', out_of_service: true)
     available = create(:tool, shop: shop, name: 'Working drill')

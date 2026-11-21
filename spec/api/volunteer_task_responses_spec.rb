@@ -54,6 +54,18 @@ RSpec.describe 'Generic volunteer task responses', type: :request do
         produces 'application/json'
         parameter name: :body, in: :body, schema: { '$ref' => '#/components/schemas/VolunteerTaskWrite' }
         let(:body) { { title: 'Repair', description: 'Replace switch', credit_value: 1 } }
+        response '422', 'Friendly task validation errors; the creation credit maximum does not cap edits' do
+          schema type: :object, required: %w[status error message errors], properties: {
+            status: { type: :integer, enum: [422] }, error: { type: :string, enum: ['unprocessable_content'] },
+            message: { type: :string }, errors: { type: :object, additionalProperties: { type: :array, items: { type: :string } } }
+          }
+          let(:body) { { title: 'Repair', description: 'Replace switch', credit_value: verb == :post ? 3 : 0 } }
+          before { allow(VolunteerTask).to receive(:max_credit_value).and_return(2) }
+          run_test! do |response|
+            expect(response.parsed_body['message']).to include('Credit value')
+            expect(response.parsed_body.dig('errors', 'credit_value')).to be_present
+          end
+        end
         unless verb == :post
           response '403', 'Only admin and board may change linked bounty credits' do
             schema '$ref' => '#/components/schemas/FixError'

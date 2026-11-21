@@ -187,7 +187,9 @@ module EventbriteIntegration
     def deliveries(event) = EventbriteSlackDelivery.where(organization_id: event.organization_id, scope_id: event.announcement_scope)
     def dirty_event(event)
       scope = event.series_parent ? deliveries(event) : EventbriteSlackDelivery.where(organization_id: event.organization_id, event_ids: event.eventbrite_id)
-      scope.each { |delivery| dirty(delivery) }
+      scope.collection.find(scope.selector).update_many('$inc' => { 'revision' => 1 })
+      now = Time.current
+      scope.where(failed_at: nil).where('$or' => [{ due_at: nil }, { due_at: { '$lte' => now } }]).update_all(due_at: now)
     end
     def dirty(delivery)
       delivery.inc(revision: 1)

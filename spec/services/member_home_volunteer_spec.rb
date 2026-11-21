@@ -11,7 +11,7 @@ RSpec.describe 'Member Home volunteer recommendations' do
   end
 
   def event(**attributes)
-    VolunteerEvent.create!({ title: 'Help at the open house', event_date: Date.tomorrow }.merge(attributes))
+    VolunteerEvent.create!({ title: 'Help at the open house', event_date: VolunteerTask.business_date + 1.day }.merge(attributes))
   end
 
   def ids
@@ -27,16 +27,60 @@ RSpec.describe 'Member Home volunteer recommendations' do
     end
   end
 
-  it 'samples up to five from the combined eligible pool, after filtering' do
+  it 'ranks the combined eligible pool by descending credits before limiting to five' do
     6.times { task(status: 'cancelled') }
-    candidates = 6.times.map { |n| task(title: "Task #{n}") } + 6.times.map { |n| event(title: "Event #{n}") }
-    first = home.available_volunteer_opportunities(random: Random.new(1))
-    second = home.available_volunteer_opportunities(random: Random.new(2))
+    candidates = 6.times.map { |n| task(title: "Task #{n}", credit_value: 1.0 + n / 10.0) } +
+      6.times.map { |n| event(title: "Event #{n}", credit_value: 1.0 + n / 10.0) }
+    first = home.available_volunteer_opportunities
+    second = home.available_volunteer_opportunities
     expect(first.length).to eq(5)
     expect(first.pluck(:id).uniq.length).to eq(5)
     expect(first.pluck(:id) - candidates.map { |row| row.id.to_s }).to be_empty
     expect(first.pluck(:kind).uniq).to contain_exactly('task', 'event')
-    expect(first.pluck(:id)).not_to eq(second.pluck(:id))
+    expect(first.pluck(:creditValue)).to eq([1.5, 1.5, 1.4, 1.4, 1.3])
+    expect(first).to eq(second)
+  end
+
+  it 'puts eligible weekday tasks for today first and mixes other tasks and events in the remaining ranked places' do
+    today = VolunteerTask.business_date
+    task(title: 'Wrong weekday', status: 'reusable', day_of_week: (today.wday + 1) % 7, credit_value: 2)
+    unavailable = task(title: 'Already claimed weekday task', status: 'reusable', day_of_week: today.wday, credit_value: 2)
+    task(parent_task_id: unavailable.id, claimed_by_id: member.id, status: 'completed')
+    priority_low = task(title: 'Today lower credit', status: 'repeatable', day_of_week: today.wday, credit_value: 0.5)
+    priority_high = task(title: 'Today higher credit', status: 'reusable', day_of_week: today.wday, credit_value: 1)
+    other_task = task(title: 'Any day task', credit_value: 2)
+    other_event = event(title: 'Any day event', credit_value: 1.5)
+    other_small = task(title: 'Any day small task', credit_value: 0.5)
+    expect(ids).to eq([priority_high, priority_low, other_task, other_event, other_small].map { |row| row.id.to_s })
+    expect(ids.uniq).to eq(ids)
+  end
+
+  it 'uses title then ID to order equal-credit opportunities deterministically' do
+    zebra = task(title: 'Zebra')
+    alpha = event(title: 'alpha')
+    beta_first = task(title: 'Beta')
+    beta_last = task(title: 'Beta')
+    expect(ids).to eq([alpha, beta_first, beta_last, zebra].map { |row| row.id.to_s })
+  end
+
+  it 'returns up to five from each pool without spilling additional weekday tasks into the other pool' do
+    today = VolunteerTask.business_date
+    weekday_tasks = 6.times.map do |i|
+      task(title: "Today #{i}", status: 'reusable', day_of_week: today.wday, credit_value: 1 + i / 10.0)
+    end
+    other_events = 6.times.map { |i| event(title: "Event #{i}", credit_value: 1 + i / 10.0) }
+    expected = weekday_tasks.reverse.first(5) + other_events.reverse.first(5)
+    expect(ids).to eq(expected.map { |row| row.id.to_s })
+    expect(ids.length).to eq(10)
+    expect(ids).not_to include(weekday_tasks.first.id.to_s)
+  end
+
+  it 'uses the Eastern weekday around a UTC date boundary' do
+    travel_to(Time.utc(2026, 11, 24, 2)) do
+      today = task(title: 'Monday task', status: 'reusable', day_of_week: 1)
+      task(title: 'Tuesday task', status: 'reusable', day_of_week: 2)
+      expect(ids).to eq([today.id.to_s])
+    end
   end
 
   it 'uses only claimable parent tasks and respects recurring cooldowns' do
@@ -71,15 +115,15 @@ RSpec.describe 'Member Home volunteer recommendations' do
 
   it 'includes only future open events the member has not already joined' do
     future = event
-    event(event_date: Date.today)
-    event(event_date: Date.yesterday)
+    event(event_date: VolunteerTask.business_date)
+    event(event_date: VolunteerTask.business_date - 1.day)
     event(event_date: nil)
     event(status: 'closed')
     event(attendee_ids: [member.id])
     event(attendee_ids: [member.id.to_s])
     expect(home.available_volunteer_opportunities).to contain_exactly(
       id: future.id.to_s, kind: 'event', title: future.title, description: nil,
-      creditValue: 1.0, shopName: nil, eventDate: Date.tomorrow.iso8601
+      creditValue: 1.0, shopName: nil, eventDate: (VolunteerTask.business_date + 1.day).iso8601
     )
   end
 

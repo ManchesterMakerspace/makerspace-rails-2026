@@ -618,6 +618,7 @@ RSpec.configure do |config|
             wikiUrlOverride: { type: :string, format: :uri, 'x-nullable': true },
             gdriveId: { type: :string, 'x-nullable': true },
             slackChannel: { type: :string, 'x-nullable': true },
+            slackAnnounceEmptyReservations: { type: :boolean, default: false, description: 'Include an invitation to book when the shop or tool agenda is empty. Editable by owning-shop Resource Managers, Admins and Board members.' },
             disabled: { type: :boolean },
             colorId: { type: :string, pattern: '^\d+$', 'x-nullable': true },
             reservationPrerequisiteNames: { type: :array, items: { type: :string } },

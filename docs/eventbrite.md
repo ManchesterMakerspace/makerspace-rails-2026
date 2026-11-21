@@ -201,6 +201,45 @@ their own imported history. The public signup listing and Member serializers
 never include attendee/order data. Staff APIs use zero-based `pageNum`, 50 rows,
 and `total-items`, with organization/event/status/link/name/email filters.
 
+### Read performance and display caching
+
+Staff history presentation batches parent events/ticket names and aggregates
+distinct order member IDs once for the selected page. Member/link order filters
+use an indexed organization-and-order existence join before counting/pagination,
+preserving member intersections and the existing literal substring search.
+Recovery scans project IDs for jobs that reload their records, expanded order
+imports reuse their known parent/order and batch ticket checks, and event changes
+dirty matching Slack deliveries in bulk without shortening a future retry.
+
+Shared event name/start/timezone, ticket names, and public signup choices use
+`EventbriteIntegration::DisplayCache` with a five-minute maximum lifetime. Missing
+metadata and empty choices are cached. Keys separate environments, databases and
+organization configurations; signup choices also separate Eastern dates and
+expire at local midnight. Semantic event/ticket saves and deletes invalidate
+their metadata generation; inventory, sync and Slack receipt bookkeeping do not.
+One atomic Lua read checks generation and batched payloads in a single roundtrip;
+each payload must belong to that generation. Generation-checked Lua publication
+prevents a pre-invalidation fill from replacing new state. Redis errors or invalid
+cached values fall back to projected MongoDB reads. A Redis outage/crash between
+MongoDB persistence and invalidation can leave
+display data stale until expiry; the two systems do not share an atomic commit.
+
+Callback-bypassing content writes must run inside
+`DisplayCache.with_event_changes` or `with_ticket_class_changes`, outside an outer
+transaction; these also invalidate partially completed batches. Normal API-token
+imports use model saves and participate automatically. Do not use cached values
+for signup eligibility, member links, inventory/send decisions, retry state or
+receipts. Signup submission checks MongoDB even when its displayed choices are
+cached. Whole filtered history responses and private attendee data are not cached.
+
+Apply the additive attendee `(organization_id, order_id, member_id)` index with
+`bundle exec rake data:ensure_unique_indexes` before deploying optimized readers.
+This performance change adds no environment variables or API fields and requires
+no React/API-client release or wiki flow change. The original feature rollout
+requirements below still apply when deploying the integration for the first time.
+See the [read benchmark](reservation-performance.MD#eventbrite-and-announcement-read-benchmark)
+for reproducible command counts, payload sizes and timing limits.
+
 Deploy Rails and create indexes with `bundle exec rake data:ensure_unique_indexes`
 before enabling subscriptions or importing records. Install the updated minute
 recovery schedule, verify controlled dashboard deliveries, then backfill and deploy

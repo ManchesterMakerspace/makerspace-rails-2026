@@ -15,4 +15,5 @@ class EventbriteAttendee
   index({ email: 1, member_id: 1 })
   index({ member_id: 1, organization_id: 1, order_id: 1 })
   index({ organization_id: 1, event_id: 1, order_id: 1 })
+  index({ organization_id: 1, order_id: 1, member_id: 1 })
 end

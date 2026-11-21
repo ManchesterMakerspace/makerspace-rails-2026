@@ -37,6 +37,37 @@ RSpec.describe 'data:ensure_unique_indexes' do
     end
   end
 
+  it 'creates announcement receipt indexes and safely repeats the operation' do
+    ReservationSlackAnnouncement.collection.drop
+    2.times do
+      task.reenable
+      task.invoke
+      actual = ReservationSlackAnnouncement.collection.indexes.to_a
+      ReservationSlackAnnouncement.index_specifications.each do |specification|
+        index = actual.find { |candidate| candidate['key'] == specification.key.stringify_keys }
+        expect(index).to be_present
+        expect(index['unique']).to be(true) if specification.options[:unique]
+      end
+    end
+  end
+
+  it 'adds reservation overlap and attendee order indexes without replacing existing reservation indexes' do
+    Reservation.collection.indexes.create_one({ title: 1 }, name: 'preserved_reservation_lookup')
+    2.times do
+      task.reenable
+      task.invoke
+      [[Reservation, { 'status' => 1, 'end_at' => 1, 'start_at' => 1 }],
+       [EventbriteAttendee, { 'organization_id' => 1, 'order_id' => 1, 'member_id' => 1 }]].each do |model, key|
+        indexes = model.collection.indexes.to_a.select { |index| index['key'].to_a == key.to_a }
+        expect(indexes.length).to eq(1)
+        expect(indexes.first['unique']).not_to be(true)
+      end
+      expect(Reservation.collection.indexes.to_a.map { |index| index['name'] }).to include('preserved_reservation_lookup')
+    end
+  ensure
+    Reservation.collection.indexes.drop_one('preserved_reservation_lookup')
+  end
+
   it 'retains the old repair-index command as an alias to the consolidated task' do
     expect(Rake::Task['fix_tickets:ensure_indexes'].prerequisites).to eq(['data:ensure_unique_indexes'])
     expect(Rake::Task['fix_tickets:ensure_indexes'].actions).to be_empty

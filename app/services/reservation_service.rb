@@ -804,6 +804,7 @@ class ReservationService
         dates = shop_targets.map { |(_, date)| date.iso8601 }.uniq
         ReservationSlackCanvasSyncJob.perform_later(shop_id, dates)
       end
+      ReservationSlackAnnouncementJob.enqueue_today
     end
 
     def slack_canvas_targets(reservation)

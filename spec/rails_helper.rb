@@ -59,6 +59,7 @@ RSpec.configure do |config|
     ensure_safe_database_cleaner_mlab_uri!
     DatabaseCleaner[:mongoid].clean_with(:deletion)
     AvailableShopCache.invalidate
+    EventbriteIntegration::DisplayCache.invalidate_all
   end
   config.before(:each) do |example|
     ensure_safe_database_cleaner_mlab_uri!
@@ -66,6 +67,7 @@ RSpec.configure do |config|
     DatabaseCleaner[:mongoid].start
     # DatabaseCleaner bypasses Shop callbacks. Clear only this database's display cache.
     AvailableShopCache.invalidate
+    EventbriteIntegration::DisplayCache.invalidate_all
   end
   config.after(:each) do
     ensure_safe_database_cleaner_mlab_uri!

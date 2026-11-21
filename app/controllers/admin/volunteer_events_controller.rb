@@ -1,4 +1,6 @@
 class Admin::VolunteerEventsController < AdminOrRmController
+  include VolunteerValidationErrors
+
   MUTATION_ACTIONS = [
     :update,
     :close,

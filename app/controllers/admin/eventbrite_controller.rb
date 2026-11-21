@@ -2,18 +2,30 @@ class Admin::EventbriteController < AdminOrRmController
   MODELS = { 'events' => EventbriteEvent, 'orders' => EventbriteOrder, 'attendees' => EventbriteAttendee }.freeze
   def index
     scope = filtered
-    response.set_header('total-items', scope.count)
-    records = scope.order_by(created_at: :desc, id: :desc).skip([(params[:page_num] || params[:pageNum]).to_i, 0].max * 50).limit(50)
-    render json: records.map { |record| EventbriteIntegration::Presenter.call(record) }, adapter: :attributes
+    offset = [(params[:page_num] || params[:pageNum]).to_i, 0].max * 50
+    if params[:kind] == 'orders' && (@member_id || params[:linked].present?)
+      query = EventbriteIntegration::OrderHistoryQuery.new(scope, member_id: @member_id, linked: params[:linked])
+      response.set_header('total-items', query.count)
+      records = query.page(offset: offset, limit: 50)
+    else
+      response.set_header('total-items', scope.count)
+      records = scope.order_by(created_at: :desc, id: :desc).skip(offset).limit(50).only(*EventbriteIntegration::Presenter::FIELDS)
+    end
+    render json: EventbriteIntegration::Presenter.many(records), adapter: :attributes
   end
   def show
-    record = base.find(params[:id])
-    result = EventbriteIntegration::Presenter.call(record)
+    record = base.only(*EventbriteIntegration::Presenter::FIELDS).find(params[:id])
+    children = []
     if record.is_a?(EventbriteEvent)
-      result['ticketClasses'] = EventbriteTicketClass.where(organization_id: record.organization_id, event_id: record.eventbrite_id).map { |r| EventbriteIntegration::Presenter.call(r) }
+      children = EventbriteTicketClass.where(organization_id: record.organization_id, event_id: record.eventbrite_id)
+        .only(*EventbriteIntegration::Presenter::FIELDS)
     elsif record.is_a?(EventbriteOrder)
-      result['attendees'] = EventbriteAttendee.where(organization_id: record.organization_id, order_id: record.eventbrite_id).map { |r| EventbriteIntegration::Presenter.call(r) }
+      children = EventbriteAttendee.where(organization_id: record.organization_id, order_id: record.eventbrite_id)
+        .only(*EventbriteIntegration::Presenter::FIELDS)
     end
+    result, *presented_children = EventbriteIntegration::Presenter.many([record] + children.to_a)
+    result['ticketClasses'] = presented_children if record.is_a?(EventbriteEvent)
+    result['attendees'] = presented_children if record.is_a?(EventbriteOrder)
     render json: result
   end
   private
@@ -33,31 +45,19 @@ class Admin::EventbriteController < AdminOrRmController
       regex = /#{Regexp.escape(params[:search].to_s[0, 100])}/i
       scope = scope.where('$or' => [{ name: regex }, { email: regex }])
     end
-    member_id = params[:member_id].presence
-    Member.find(member_id) if member_id
+    if params[:member_id].present?
+      Member.find(params[:member_id])
+      # Finding an absent member returns nil in this application's Mongoid
+      # configuration. Keep its requested ID as a filter, cast as Mongoid does
+      # for attendee criteria, rather than accidentally returning global history.
+      @member_id = EventbriteAttendee.where(member_id: params[:member_id]).selector.fetch('member_id')
+    end
     if params[:kind] == 'attendees'
-      scope = scope.where(member_id: member_id) if member_id
+      scope = scope.where(member_id: @member_id) if @member_id
       scope = scope.where(member_id: nil) if params[:linked] == 'unlinked'
       scope = scope.where(:member_id.ne => nil) if params[:linked] == 'linked'
       scope = scope.where(link_conflict: true) if params[:linked] == 'conflict'
-    elsif params[:kind] == 'orders' && (member_id || params[:linked].present?)
-      attendees = EventbriteIntegration::Configuration.scope_organizations(EventbriteAttendee.all)
-      # Member history is always an intersection, even when a later filter
-      # excludes linked orders. Never negate the member's own order IDs.
-      if member_id
-        attendees = attendees.where(member_id: member_id)
-        scope = orders_for_attendees(scope, attendees)
-      end
-      attendees = attendees.where(:member_id.ne => nil) unless params[:linked] == 'conflict'
-      attendees = attendees.where(link_conflict: true) if params[:linked] == 'conflict'
-      scope = orders_for_attendees(scope, attendees, exclude: params[:linked] == 'unlinked') if params[:linked].present?
     end
     scope
-  end
-
-  def orders_for_attendees(scope, attendees, exclude: false)
-    pairs = attendees.pluck(:organization_id, :order_id).uniq.map { |org, id| { organization_id: org, eventbrite_id: id } }
-    return exclude ? scope : scope.none if pairs.empty?
-    scope.where('$and' => [{ (exclude ? '$nor' : '$or') => pairs }])
   end
 end

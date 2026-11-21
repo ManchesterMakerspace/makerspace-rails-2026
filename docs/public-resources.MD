@@ -1,5 +1,29 @@
 # Public Resources
 
+## Reservation announcement interactions and shop settings
+
+`POST /slack/interactions` additionally accepts signed message `block_actions`
+with action ID `reservation_open` and a shop ID value. Slack signature and replay
+checks remain mandatory; the server resolves the clicking Slack user to an active,
+unexpired linked member before opening the existing reservation modal. Invalid
+or ineligible attempts receive private modal guidance. No reservation is created
+by the button itself. The announcement's response URL is not used for outcome
+replacement; later outcomes are delivered by DM.
+
+Authenticated shop JSON adds Boolean `slackAnnounceEmptyReservations`, default
+false. Existing `/api/admin/shops` create and `/api/admin/shops/:id` update accept
+`slack_announce_empty_reservations` (JSON camel input is transformed normally).
+Omitting it during update preserves the saved value. Existing shop-scoped RM,
+admin/board authorization, session/TOTP, and CSRF requirements are unchanged.
+`GET /api/admin/system_configs` lists `reservation_slack_announcements`, accepted
+by the existing `POST /api/admin/system_configs/run_job` endpoint.
+
+The resulting Slack summaries contain reservation titles, member names, resources,
+times, and statuses in their configured destination channels, and grant those
+destinations read access to the linked shop agenda canvas. They add no anonymous
+Rails route or new public reservation representation. See
+[daily announcements](reservations.MD#daily-channel-announcements).
+
 ## Authenticated paid membership representation
 
 `GET /api/members/:id/continuous_paid_membership` returns only

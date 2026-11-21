@@ -30,7 +30,19 @@ RSpec.describe "Reservation canvas lifecycle" do
         ReservationService.public_send(action, reservation: existing, actor: manager)
       }.to have_enqueued_job(ReservationSlackCanvasSyncJob)
         .with(shop.id.to_s, %w[2026-09-09 2026-09-10]).exactly(:once)
+        .and have_enqueued_job(ReservationSlackAnnouncementJob).with('2026-09-09').exactly(:once)
     end
+  end
+
+  it 'refreshes announcements after creating a reservation' do
+    owner = member
+    resource = shop
+    expect {
+      ReservationService.create!(member: owner, attributes: {
+        title: 'New reservation', shop_id: resource.id.to_s, reservation_scope: 'shop',
+        tool_ids: [], start_at: start_at, end_at: end_at
+      })
+    }.to have_enqueued_job(ReservationSlackAnnouncementJob).with('2026-09-09').exactly(:once)
   end
 
   it "refreshes both dates for a title-only edit" do
@@ -39,6 +51,7 @@ RSpec.describe "Reservation canvas lifecycle" do
       ReservationService.update!(reservation: existing, attributes: { title: "Changed title" })
     }.to have_enqueued_job(ReservationSlackCanvasSyncJob)
       .with(shop.id.to_s, %w[2026-09-09 2026-09-10]).exactly(:once)
+      .and have_enqueued_job(ReservationSlackAnnouncementJob).with('2026-09-09').exactly(:once)
   end
 
   it "refreshes the old shop and new shop when moving an existing reservation" do
@@ -50,6 +63,7 @@ RSpec.describe "Reservation canvas lifecycle" do
       })
     }.to have_enqueued_job(ReservationSlackCanvasSyncJob).with(shop.id.to_s, %w[2026-09-09 2026-09-10])
       .and have_enqueued_job(ReservationSlackCanvasSyncJob).with(destination.id.to_s, ["2026-09-10"])
+      .and have_enqueued_job(ReservationSlackAnnouncementJob).with('2026-09-09').exactly(:once)
   end
 
   it "removes the old dates when moving beyond tomorrow" do
@@ -60,6 +74,7 @@ RSpec.describe "Reservation canvas lifecycle" do
       })
     }.to have_enqueued_job(ReservationSlackCanvasSyncJob)
       .with(shop.id.to_s, %w[2026-09-09 2026-09-10]).exactly(:once)
+      .and have_enqueued_job(ReservationSlackAnnouncementJob).with('2026-09-09').exactly(:once)
   end
 
   it "refreshes both canvases after confirmed invoice payment activates a reservation" do
@@ -74,6 +89,7 @@ RSpec.describe "Reservation canvas lifecycle" do
       ReservationInvoiceSyncJob.perform_now(invoice.id.to_s)
     }.to have_enqueued_job(ReservationSlackCanvasSyncJob)
       .with(shop.id.to_s, %w[2026-09-09 2026-09-10]).exactly(:once)
+      .and have_enqueued_job(ReservationSlackAnnouncementJob).with('2026-09-09').exactly(:once)
     expect(existing.reload.status).to eq("approved")
   end
 

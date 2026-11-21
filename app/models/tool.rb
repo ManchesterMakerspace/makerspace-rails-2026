@@ -60,6 +60,8 @@ class Tool
   after_save :enqueue_checkout_canvas_sync_after_catalog_change
   after_update :enqueue_reservation_canvas_sync_after_availability_change
   after_destroy :enqueue_checkout_canvas_sync_after_destroy
+  after_save :enqueue_reservation_slack_announcement_after_change
+  after_destroy :enqueue_reservation_slack_announcement
 
   validates :name, presence: true
   # Scoped per shop, not global -- a common name like "Hand Tools" is allowed
@@ -190,6 +192,17 @@ class Tool
     return unless previous_changes.key?("disabled")
 
     ToolAvailabilityService.enqueue_reservation_canvas_refreshes(self)
+  end
+
+  def enqueue_reservation_slack_announcement_after_change
+    fields = %w[name shop_id users_channel disabled out_of_service reservable]
+    return unless (previous_changes.keys & fields).any?
+
+    enqueue_reservation_slack_announcement
+  end
+
+  def enqueue_reservation_slack_announcement
+    ReservationSlackAnnouncementJob.enqueue_today
   end
 
   def enqueue_checkout_canvas_syncs(shop_ids)

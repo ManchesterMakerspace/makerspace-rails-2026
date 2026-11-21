@@ -26,11 +26,11 @@ describe 'Billing::Transactions API', type: :request do
       parameter name: :limit, in: :query, schema: { type: :integer, minimum: 1, maximum: 500 }, required: false
 
       response '200', 'transactions found' do 
-        let(:t1) { build(:credit_card_transaction, member_id: basic.id) }
+        let(:t1) { build(:credit_card_transaction, member_id: basic.id, id: 'cardone1') }
         let(:i1) { create(:invoice, member: basic, transaction_id: t1.id) }
-        let(:t2) { build(:credit_card_transaction, member_id: basic.id) }
+        let(:t2) { build(:credit_card_transaction, member_id: basic.id, id: 'cardtwo2') }
         let(:i2) { create(:invoice, member: basic, transaction_id: t2.id) }
-        let(:t3) { build(:paypal_transaction, member_id: basic.id) }
+        let(:t3) { build(:paypal_transaction, member_id: basic.id, id: 'paypal03') }
         let(:i3) { create(:invoice, member: basic, transaction_id: t3.id) }
         
         before do 

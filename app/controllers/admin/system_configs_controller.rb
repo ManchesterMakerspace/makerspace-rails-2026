@@ -235,6 +235,8 @@ class Admin::SystemConfigsController < AdminController
     when 'card_expiration_check' then CardExpirationCheckJob.perform_later
     when 'reservation_canvas_rebuild'
       ReservationSlackCanvasRebuildJob.perform_later
+    when 'reservation_slack_announcements'
+      ReservationSlackAnnouncementJob.perform_later
     when 'member_provisioning_reconciliation'
       MemberProvisioningReconciliationJob.perform_later
     when 'volunteer_event_reminder'
