@@ -9,7 +9,7 @@ diff --git a/digital-makerspace/members/reserve-a-shop-or-tool.md b/digital-make
 +
 +From 7 AM Eastern, the portal posts one dated summary per shop/tool channel for reservations beginning that day. Approved, pending and unpaid bookings are labeled. Tool bookings go to the tool's Users Channel, or the shop channel when none is set. Whole-shop bookings also appear in the shop's tool-users channels. The same message changes when bookings are edited or cancelled during the day.
 +
-+Choose **Reserve [shop]** to open the reservation form in Slack. You still need a linked active membership and the normal checkouts. The result comes to you privately by DM. **Live today agenda** opens the shop's current canvas; an old message links to the live agenda, not an archived date.
++Choose **Reserve [shop]** to open the reservation form in Slack. You still need a linked active membership and the normal checkouts. The result comes to you privately by DM. **Live today agenda** opens the shop's current canvas; an old message links to the live agenda, not an archived date. The agenda also includes bookings carried over from yesterday. Their edits and cancellations refresh the agenda even when today's summary text stays the same.
 +
 +Some channels show **Shop is wide open, book your time now!**, or name free tools, when the Resource Manager has enabled empty-agenda invitations. They appear only when that channel's whole-day agenda is empty. An empty invitation is not permission to skip checkouts, fees or booking rules. Marking a tool hidden or out of service removes its booking invitation on the next summary update; existing bookings remain visible.
 +
@@ -43,7 +43,7 @@ diff --git a/digital-makerspace/resource-managers/reservations.md b/digital-make
 +
 +Each day from 7 AM Eastern, configured channels receive one dated summary of approved, pending and unpaid reservations beginning that day. Tool reservations use the tool's **Users Channel**, falling back to the shop channel only when undefined. Whole-shop bookings go to the shop and all its configured tool-users channels. Shared channels do not repeat the same booking. Edits and cancellations update the original message.
 +
-+Every message includes **Live today agenda** links and **Reserve [shop]** buttons. Tool-users channel members can read the linked shop canvas. The link follows the rolling live agenda, even from an older message. The Reserve button checks the clicking member's linked account and eligibility.
++Every message includes **Live today agenda** links and **Reserve [shop]** buttons. Tool-users channel members can read the linked shop canvas. The link follows the rolling live agenda, even from an older message. The agenda includes overnight carryovers and refreshes when those bookings change, even if the summary stays unchanged or the shop only has a tool Users Channel. The Reserve button checks the clicking member's linked account and eligibility.
 +
 +In **Edit Shop**, **Announce empty reservation agendas in Slack** controls free-agenda invitations for that shop and its tools. It starts off and is separate from whole-shop **Reservable**. Assigned RMs, admins and board members can change it. Invitations appear only in empty channels, counting bookings that carry over from yesterday, blackouts and availability. Switching it off removes invitation text from today's existing message. Marking a tool hidden or out of service also removes its invitation on an update, while retaining any existing booked rows for review. A previously posted summary that becomes empty can remain as **No reservations to announce for [date]**.
 +
@@ -87,7 +87,7 @@ diff --git a/digital-makerspace/troubleshooting.md b/digital-makerspace/troubles
 +
 +### An empty-shop invitation is missing or changed
 +
-+The shop's **Announce empty reservation agendas in Slack** option starts off. Ask its Resource Manager about enabling it. Invitations appear only when the channel's whole day is empty; bookings from yesterday, blackouts and unavailable resources can prevent them. A booking or setting change can replace an invitation in the same message. **No reservations to announce for [date]** is a neutral update, not a promise that every resource is available.
++The shop's **Announce empty reservation agendas in Slack** option starts off. Ask its Resource Manager about enabling it. Invitations appear only when the channel's whole day is empty; bookings from yesterday, blackouts and unavailable resources can prevent them. A booking or setting change can replace an invitation in the same message. **No reservations to announce for [date]** is a neutral update, not a promise that every resource is available. If a linked live agenda still shows an edited or cancelled overnight booking, an admin can use **Portal Settings → Jobs → Daily Reservation Announcements → Run Now** after 7 AM Eastern to refresh it. This also works for shops with only a tool Users Channel; the summary itself may stay unchanged.
 +
 +### Yesterday's empty message disappeared
 +

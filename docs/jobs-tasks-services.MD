@@ -43,8 +43,11 @@ The `enqueue_today` helper reports auxiliary queue errors without failing a
 completed catalog write; the periodic task recovers the missed refresh.
 
 `ReservationAnnouncementLease` is a renewable Redis lease per delivery, with a
-120-second lifetime and 30-second heartbeat. A fresh payload is built under the
-lease; unchanged fingerprints skip message writes. MongoDB
+120-second lifetime and 30-second heartbeat. Linked today canvases refresh under
+the lease before the final message fingerprint is compared. Overnight carryover
+edits and cancellations therefore update the live agenda even when today's
+starting rows and canvas ID are unchanged, including tool-users-only shops with
+no shop Slack channel. Unchanged fingerprints skip only message writes. MongoDB
 `reservation_slack_announcements` records string Slack `ts`, channel, represented
 shops/canvases, and retry state. `chat.update` always receives full text and blocks
 before any replacement is considered. Only `message_not_found` permits reposting.
@@ -88,7 +91,10 @@ member and reuses existing reservation authorization. It deliberately omits the
 message `response_url` from modal metadata, keeping final outcomes in a DM.
 
 `Service::ReservationSlackCanvas.ensure_today_for_announcement!` synchronously
-refreshes a current-day canvas and grants destination read access before posting.
+refreshes a current-day canvas and grants destination read access on each eligible
+channel reconciliation, including when no message write is needed. Canvas failures
+preserve the existing post and follow the receipt's normal retry deadline; a
+successful refresh clears retry state even when the message is unchanged.
 It supports a tool-users destination without a configured shop channel.
 Production reuses `canvas_today`; other destination modes use isolated
 `announcement_test_canvas_today`, without production canvas writes or shop-channel
@@ -316,6 +322,11 @@ not run the updated release task, run
 `RAILS_ENV=production bundle exec rake data:ensure_unique_indexes` before relying
 on the reminder age indexes. Deployments stop for operator review when existing
 duplicate data prevents either constraint from being created.
+
+The Rails startup check warns when it cannot verify the case-insensitive unique
+Tool index on `(shop_id, name)` or when that index is missing. An asset-only
+`bundle exec rails assets:precompile` skips this database read. The release
+task and normal Rails startup still check the index.
 
 The Tool index keeps the equality-scoped shop and case-insensitive name ordering
 before the availability inequalities. A test-database `executionStats` comparison
@@ -1270,6 +1281,35 @@ member-facing guidance for approvers' manual workflow; it does not add a monthly
 job, defer automatic credit creation, or change ledger or discount calculations.
 
 Repair-ticket delivery skips missing optional shop destinations, and scopes central reply receipts to the current Slack thread so recovery can republish pending events after root deletion.
+
+### Volunteer Home recommendations and form validation
+
+`MemberHome#available_volunteer_opportunities` is a synchronous, read-only
+current-member query. For `activeMember` members it ranks up to five eligible,
+unclaimed multi-use tasks matching today's weekday in `America/New_York`, then
+up to five other eligible tasks and future volunteer events. Each group sorts
+by credits descending, then case-insensitive title and ID. The response is one
+flat list, with every weekday-priority candidate excluded from the second group
+before either five-item limit is applied. Existing reusable-claim history,
+in-progress claims, checkouts, repair-ticket restrictions, event attendance, and
+shop redaction still govern eligibility. Other member statuses receive no
+recommendations. The reader neither claims work nor enqueues notifications.
+
+`VolunteerValidationErrors` is the controller concern used by the admin task
+and event forms. Mongoid validation failures return HTTP 422 with the existing
+`status`, `error: unprocessable_content`, and `message` envelope; `message`
+contains the human validation messages, and additive `errors` contains field
+message arrays. The existing validation-alert logging/queue path remains in
+place. No credit is awarded and failed form values are not persisted.
+Ordinary task creation retains its configured credit cap; existing task edits
+and volunteer events retain their uncapped credit rules. These synchronous
+helpers add no recurring job, admin job key, or schedule.
+
+`Service::VolunteerSlackCanvas` uses the same weekday-aware claimable scope
+when rebuilding its saved Slack canvas. An already published canvas is a
+snapshot and adopts a weekday change on its next existing refresh; no new
+midnight refresh schedule is introduced. Direct claim requests always recheck
+the live Eastern weekday, even when a saved canvas still shows an older row.
 
 ### Volunteer task and repair-ticket visibility
 
