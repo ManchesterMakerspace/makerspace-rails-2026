@@ -2,10 +2,10 @@ require 'rails_helper'
 
 RSpec.describe DefaultPermission, type: :model do
 
-    describe "Mongoid validations" do
-      it { is_expected.to be_mongoid_document }
-      it { is_expected.to be_stored_in(collection: 'default_permissions') }
-      it { is_expected.to have_fields(:name, :enabled) }
+    it 'defines its Mongoid collection and fields', :aggregate_failures do
+      expect(described_class).to be_mongoid_document
+      expect(described_class).to be_stored_in(collection: 'default_permissions')
+      expect(described_class).to have_fields(:name, :enabled)
     end
 
     describe "public methods" do

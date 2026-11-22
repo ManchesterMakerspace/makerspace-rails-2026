@@ -43,6 +43,11 @@ Update overlapping instructions here whenever the canonical handbook changes.
 - For endpoint changes, update executable `spec/api` specs, run affected examples,
   run `bundle exec rake rswag:specs:swaggerize`, and include
   `swagger/v1/swagger.json`. TypeScript client publication is a separate release.
+- For consolidated portal routes and their Rails dependencies, check the React
+  `tests/e2e/consolidated-routes.json` map and search other affected Playwright
+  specs. Run the active cases for each affected actor and report results or
+  missing prerequisites. Update the map and matching active and backup assertions
+  when expected behavior changes.
 - Data resets, production jobs, backfills, restores, and publishing are not routine
   validation. Use mocks/sandbox services. Rails-backed Playwright needs real
   Braintree sandbox credentials and resets disposable data; `RAILS_CONTAINER`

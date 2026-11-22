@@ -16,11 +16,11 @@ RSpec.describe AuditLog, type: :model do
       expect(AuditLog.new(valid_attrs)).to be_valid
     end
 
-    %i[log_type event_type resource_type resource_id slack_message].each do |field|
-      it "is invalid without #{field}" do
+    it 'rejects records missing any required field', :aggregate_failures do
+      %i[log_type event_type resource_type resource_id slack_message].each do |field|
         log = AuditLog.new(valid_attrs.except(field))
-        expect(log).not_to be_valid
-        expect(log.errors[field]).to be_present
+        expect(log).not_to be_valid, "expected audit log without #{field} to be invalid"
+        expect(log.errors[field]).to be_present, "expected an error for missing #{field}"
       end
     end
   end

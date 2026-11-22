@@ -47,6 +47,29 @@ database name in `MLAB_URI`. DatabaseCleaner continues using deletion, not a
 transaction around each example, so application transactions and concurrent
 threads remain testable.
 
+RSpec deletes MongoDB documents at suite startup and after each example. Before
+each example, it batches Redis cache generation updates and scans for Pay Now and
+household invitation limits. The reset is scoped to the current database's shop
+and Eventbrite caches and the existing rate-limit prefixes.
+
+## Compare local RSpec runtimes
+
+Use the `rspec` job's [CI test settings](../.github/workflows/ci.yml), including
+`RUN_OPTIONAL_SLACK_CHECKOUT_SPECS=true` and `REQUIRE_MONGO_TRANSACTIONS=true`.
+Use a dedicated Redis instance and a disposable MongoDB replica set. Keep the
+Ruby version, timezone, logging, UI assets, and worker count fixed between runs.
+Run one comparison at a time on the same machine.
+
+Record a fixed-seed baseline with file-size grouping and per-file timings.
+
+```sh
+bundle exec parallel_rspec spec/ -n 4 --group-by filesize --test-options '--seed 1234 --format progress --format ParallelTests::RSpec::RuntimeLogger --out tmp/rspec-filesize.runtime'
+```
+
+Record the runner's total wall time, example count, pending reasons, and
+slowest worker time including file loading. Use a separate timing output for
+each trial so the next run can read the earlier measurements.
+
 ## Transaction-dependent examples
 
 Tag examples (or narrowly scoped groups) that execute transactional operations

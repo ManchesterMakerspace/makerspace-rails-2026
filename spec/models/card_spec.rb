@@ -10,13 +10,13 @@ RSpec.describe Card, type: :model do
     let(:inacitve_member) {create(:member, :inactive)}
     let(:inactive_card) {create(:card, member: inacitve_member)}
 
-  describe "Mongoid validations" do
-    it { is_expected.to be_mongoid_document }
-    it { is_expected.to be_stored_in(collection: 'cards') }
+  it 'defines its Mongoid collection and fields', :aggregate_failures do
+    expect(described_class).to be_mongoid_document
+    expect(described_class).to be_stored_in(collection: 'cards')
 
-    it { is_expected.to have_field(:uid) }
-    it { is_expected.to have_fields(:holder, :validity).of_type(String) }
-    it { is_expected.to have_field(:expiry).of_type(Integer) }
+    expect(described_class).to have_field(:uid)
+    expect(described_class).to have_fields(:holder, :validity).of_type(String)
+    expect(described_class).to have_field(:expiry).of_type(Integer)
   end
 
   describe "ActiveModel validations" do

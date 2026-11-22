@@ -16,35 +16,15 @@ RSpec.describe BraintreeService::Plan, type: :model do
       end
     end
 
-    describe "#select plans for types" do 
-      let(:membership_plan) { double(id: "membership") }
-      let(:rental_plan) { double(id: "rental") }
+    it "selects plans by their ID for each requested type", :aggregate_failures do
+      membership_plan = double(id: "monthly_membership")
+      rental_plan = double(id: "monthly_rental")
+      other_plan = double(id: "other_plan")
+      plans = [membership_plan, rental_plan, other_plan]
 
-      before(:each) do 
-        allow(BraintreeService::Plan).to receive(:get_membership_plans).and_return([membership_plan])
-        allow(BraintreeService::Plan).to receive(:get_rental_plans).and_return([rental_plan])
-      end
-
-      it "can fetch plans by type" do 
-        plans = [membership_plan, rental_plan]
-        expect(BraintreeService::Plan.select_plans_for_types(["member"], plans)).to eq([membership_plan])
-        expect(BraintreeService::Plan.select_plans_for_types(["rental"], plans)).to eq([rental_plan])
-        expect(BraintreeService::Plan.select_plans_for_types(["foo"], plans)).to eq([])
-      end
-
-      describe "#get_membership_plans" do 
-        it "filters plans by ID" do 
-          plans = [membership_plan, rental_plan]
-          expect(BraintreeService::Plan.get_membership_plans(plans)).to eq([membership_plan])
-        end
-      end
-
-      describe "#get_rental_plans" do 
-        it "filters plans by ID" do 
-          plans = [membership_plan, rental_plan]
-          expect(BraintreeService::Plan.get_rental_plans(plans)).to eq([rental_plan])
-        end
-      end
+      expect(described_class.select_plans_for_types(["member"], plans)).to eq([membership_plan])
+      expect(described_class.select_plans_for_types(["rental"], plans)).to eq([rental_plan])
+      expect(described_class.select_plans_for_types(["foo"], plans)).to eq([])
     end
   end
 end

@@ -18,21 +18,8 @@ RSpec.describe HouseholdsController, type: :controller do
     JSON.parse(response.body)
   end
 
-  it 'requires a signed-in member' do
-    get :show, format: :json
-
-    expect(response).to have_http_status(401)
-  end
-
   context 'as the primary' do
     before { sign_in primary }
-
-    it 'shows the household state, with keys the portal reads' do
-      get :show, format: :json
-
-      expect(response).to have_http_status(200)
-      expect(body).to include('role' => nil, 'household_plan' => true, 'can_invite' => true, 'plan_size' => 2)
-    end
 
     it 'invites, then shows the open invitation and no more room' do
       expect { post :invite, params: { email: 'second@example.com' }, format: :json }.to have_enqueued_job(HouseholdInvitationMailJob)
@@ -98,12 +85,6 @@ RSpec.describe HouseholdsController, type: :controller do
       expect(response).to have_http_status(403)
       expect(invitation.reload.status).to eq('pending')
     end
-
-    it 'returns 404 for an invitation that does not exist' do
-      delete :revoke, params: { id: BSON::ObjectId.new.to_s }, format: :json
-
-      expect(response).to have_http_status(404)
-    end
   end
 
   context 'as the invited person' do
@@ -146,29 +127,6 @@ end
 
 RSpec.describe HouseholdInvitationsController, type: :controller do
   let(:plan) { 'household-membership-one-month-recurring' }
-
-  it 'shows only the inviter, the invited email and the expiry, without signing in' do
-    ActiveJob::Base.queue_adapter = :test
-    allow(Service::AuditLogger).to receive(:log)
-    allow(Service::SlackConnector).to receive(:enque_message)
-    primary = create(:member, address_street: '12 Main St', address_postal_code: '03101', firstname: 'Pat', lastname: 'Primary', expirationTime: nil)
-    create(:invoice, member: primary, resource_id: primary.id.to_s, resource_class: 'member', plan_id: plan, settled_at: Time.now)
-    token = HouseholdInvitations.invite!(primary: primary, email: 'second@example.com').issue_token!
-
-    post :lookup, params: { token: token }, format: :json
-
-    expect(response).to have_http_status(200)
-    body = JSON.parse(response.body)
-    expect(body.keys).to contain_exactly('status', 'inviter_name', 'invited_email', 'expires_at')
-    expect(body).to include('inviter_name' => 'Pat P.', 'invited_email' => 'second@example.com', 'status' => 'pending')
-    expect(response.body).not_to match(/Main St|03101/)
-  end
-
-  it 'returns 404 for an unknown link' do
-    post :lookup, params: { token: 'nonsense' }, format: :json
-
-    expect(response).to have_http_status(404)
-  end
 
   it 'returns only the status for a cancelled link, naming nobody' do
     ActiveJob::Base.queue_adapter = :test

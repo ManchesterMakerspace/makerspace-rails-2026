@@ -2,16 +2,16 @@ require 'rails_helper'
 
 RSpec.describe InvoiceOption, type: :model do
 
-  describe "Mongoid validations" do 
-    it { is_expected.to be_mongoid_document }
-    it { is_expected.to be_stored_in(collection: 'invoice_options') }
+  it 'defines its Mongoid collection and fields', :aggregate_failures do
+    expect(described_class).to be_mongoid_document
+    expect(described_class).to be_stored_in(collection: 'invoice_options')
 
-    it { is_expected.to have_fields(:name, :description, :resource_class, :plan_id, :discount_id).of_type(String) }
-    it { is_expected.to have_field(:amount).of_type(Float) }
-    it { is_expected.to have_field(:quantity).of_type(Integer) }
-    it { is_expected.to have_field(:disabled).of_type(Mongoid::Boolean).with_default_value_of(false) }
-    it { is_expected.to have_field(:operation).of_type(String).with_default_value_of('renew=') }
-  end 
+    expect(described_class).to have_fields(:name, :description, :resource_class, :plan_id, :discount_id).of_type(String)
+    expect(described_class).to have_field(:amount).of_type(Float)
+    expect(described_class).to have_field(:quantity).of_type(Integer)
+    expect(described_class).to have_field(:disabled).of_type(Mongoid::Boolean).with_default_value_of(false)
+    expect(described_class).to have_field(:operation).of_type(String).with_default_value_of('renew=')
+  end
 
   describe "ActiveModel validations" do 
     it { is_expected.to validate_numericality_of(:amount) }

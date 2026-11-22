@@ -26,7 +26,9 @@ describe 'Household API', type: :request do
       response '200', 'Household state' do
         before { sign_in primary }
         schema '$ref' => '#/components/schemas/Household'
-        run_test! { |response| expect(JSON.parse(response.body)).to include('can_invite' => true, 'plan_size' => 2) }
+        run_test! do |response|
+          expect(response.parsed_body).to include('role' => nil, 'household_plan' => true, 'can_invite' => true, 'plan_size' => 2)
+        end
       end
 
       response '401', 'Not signed in' do
@@ -190,8 +192,15 @@ describe 'Household API', type: :request do
       let(:lookup) { { token: invitation_for.issue_token! } }
 
       response '200', 'Invitation summary (no household details; a cancelled, expired or used link shows only its status)' do
+        let(:primary) { create(:member, address.merge(firstname: 'Pat', lastname: 'Primary', expirationTime: nil)) }
+
         schema '$ref' => '#/components/schemas/HouseholdInvitationPublic'
-        run_test! { |response| expect(response.body).not_to match(/Main St|03101/) }
+        run_test! do |response|
+          body = response.parsed_body
+          expect(body.keys).to contain_exactly('status', 'inviter_name', 'invited_email', 'expires_at')
+          expect(body).to include('inviter_name' => 'Pat P.', 'invited_email' => 'second@example.com', 'status' => 'pending')
+          expect(response.body).not_to match(/Main St|03101/)
+        end
       end
 
       response '404', 'Unknown link' do

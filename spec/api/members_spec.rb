@@ -38,43 +38,21 @@ describe 'Members API', type: :request do
           sign_in create(:member, :admin)
         end
 
-        it 'returns only one page while preserving the total item count' do
-          get '/api/members', params: {
-            pageNum: 0,
-            orderBy: '',
-            order: 'asc',
-            currentMembers: false
-          }
+        it 'returns two full pages and a final partial page with the same total count', :aggregate_failures do
+          [items_per_page, items_per_page, 6].each_with_index do |expected_size, page_num|
+            aggregate_failures("pageNum #{page_num}") do
+              get '/api/members', params: {
+                pageNum: page_num,
+                orderBy: '',
+                order: 'asc',
+                currentMembers: false
+              }
 
-          expect(response).to have_http_status(:ok)
-          expect(JSON.parse(response.body).length).to eq(items_per_page)
-          expect(response.headers['total-items'].to_i).to eq(total_items)
-        end
-
-        it 'returns the next page for pageNum 1' do
-          get '/api/members', params: {
-            pageNum: 1,
-            orderBy: '',
-            order: 'asc',
-            currentMembers: false
-          }
-
-          expect(response).to have_http_status(:ok)
-          expect(JSON.parse(response.body).length).to eq(items_per_page)
-          expect(response.headers['total-items'].to_i).to eq(total_items)
-        end
-
-        it 'returns the final partial page for pageNum 2' do
-          get '/api/members', params: {
-            pageNum: 2,
-            orderBy: '',
-            order: 'asc',
-            currentMembers: false
-          }
-
-          expect(response).to have_http_status(:ok)
-          expect(JSON.parse(response.body).length).to eq(6)
-          expect(response.headers['total-items'].to_i).to eq(total_items)
+              expect(response).to have_http_status(:ok)
+              expect(JSON.parse(response.body).length).to eq(expected_size)
+              expect(response.headers['total-items'].to_i).to eq(total_items)
+            end
+          end
         end
       end
     end

@@ -286,6 +286,14 @@ Swagger generation does not publish `makerspace-ts-api-client`:
 [lib/tasks/publish.rake](lib/tasks/publish.rake) describes a separate release workflow.
 Record required client publication/dependency upgrades and deployment order.
 
+For changes to a route covered by a consolidated Playwright scenario, including
+its authorization, serializer, or shared dependencies, check the [React route
+map](../makerspace-react-2026/tests/e2e/consolidated-routes.json) for the portal
+path, API method and path, actor, and affected steps. Search the React E2E specs
+for other impacted routes or tests. Run the affected active scenarios and report
+which ran or which prerequisites blocked them. When expected behavior changes,
+update the map and corresponding active and backup assertions in the React checkout.
+
 Build React with Node 22/Yarn Classic and `yarn build`, then transfer the complete
 `dist/` tree into `app/assets/builds/`. The [React handbook](../makerspace-react-2026/AGENTS.md#6-cross-repository-changes)
 provides PowerShell/Bash examples; standalone checkouts can consult the
@@ -298,6 +306,9 @@ credentials, disposable seeded data, Redis, and a verified MongoDB replica set.
 React global setup runs `bundle exec rake db:db_reset`; `RAILS_CONTAINER` uses its
 container's environment without forcing test mode. Follow React's prerequisites
 before running `npx playwright test` there.
+CI seeds before starting Rails and skips Playwright's redundant reset. After a
+consolidated case fails through its retries, CI runs the matching backup on a
+separate Rails process with its own disposable MongoDB database and Redis DB.
 
 ## 7. Operational constraints and common pitfalls
 

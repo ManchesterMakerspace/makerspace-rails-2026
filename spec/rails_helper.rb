@@ -47,28 +47,21 @@ RSpec.configure do |config|
   config.include Devise::Test::ControllerHelpers, :type => :controller
   config.include Devise::Test::IntegrationHelpers, type: :request
   config.include ActiveSupport::Testing::TimeHelpers
+  config.include SpecRedisCleanup
   config.extend ControllerMacros, :type => :controller
   config.include TestHelpers, :type => :controller
   config.include FactoryBot::Syntax::Methods
   config.include Mongoid::Matchers, type: :model
   # Disable ActiveRecord integration — this app uses Mongoid only.
   config.use_active_record = false
-  # Clean/Reset Mongoid DB prior to running each test.
+  # Deletion preserves indexes and allows the app to open real transactions.
   config.use_transactional_fixtures = false
   config.before(:suite) do
     ensure_safe_database_cleaner_mlab_uri!
-    DatabaseCleaner[:mongoid].clean_with(:deletion)
-    AvailableShopCache.invalidate
-    EventbriteIntegration::DisplayCache.invalidate_all
-  end
-  config.before(:each) do |example|
-    ensure_safe_database_cleaner_mlab_uri!
     DatabaseCleaner[:mongoid].strategy = :deletion
-    DatabaseCleaner[:mongoid].start
-    # DatabaseCleaner bypasses Shop callbacks. Clear only this database's display cache.
-    AvailableShopCache.invalidate
-    EventbriteIntegration::DisplayCache.invalidate_all
+    DatabaseCleaner[:mongoid].clean
   end
+  config.before(:each) { SpecRedisCleanup.reset! }
   config.after(:each) do
     ensure_safe_database_cleaner_mlab_uri!
     DatabaseCleaner[:mongoid].clean

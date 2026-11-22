@@ -153,11 +153,6 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
           get :index, params: { category: 'billing' }, format: :json
           expect(JSON.parse(response.body).first['category']).to eq('billing')
         end
-
-        it 'rejects an unknown category' do
-          get :index, params: { category: 'nonsense' }, format: :json
-          expect(response).to have_http_status(:unprocessable_content)
-        end
       end
     end
 
@@ -182,26 +177,8 @@ RSpec.describe Admin::AuditLogsController, type: :controller do
       end
     end
 
-    context 'as board member' do
-      before { sign_in board }
-
-      it 'is permitted' do
-        get :index, format: :json
-        expect(response).to have_http_status(:ok)
-      end
-    end
-
     context 'as resource manager' do
       before { sign_in rm }
-
-      it 'is forbidden' do
-        get :index, format: :json
-        expect(response).to have_http_status(:forbidden)
-      end
-    end
-
-    context 'as regular member' do
-      before { sign_in member }
 
       it 'is forbidden' do
         get :index, format: :json

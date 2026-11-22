@@ -1,14 +1,14 @@
 require 'rails_helper'
 
 RSpec.describe RegistrationToken, type: :model do
-  describe "Mongoid validations" do
-    it { is_expected.to be_mongoid_document }
-    it { is_expected.to be_stored_in(collection: 'registration_tokens') }
+  it 'defines its Mongoid collection and fields', :aggregate_failures do
+    expect(described_class).to be_mongoid_document
+    expect(described_class).to be_stored_in(collection: 'registration_tokens')
 
-    it { is_expected.to have_fields(:token, :email).of_type(String) }
-    it { is_expected.to have_field(:months).of_type(Integer) }
-    it { is_expected.to have_field(:role).of_type(String).with_default_value_of("member") }
-    it { is_expected.to have_field(:used).of_type(Mongoid::Boolean).with_default_value_of(false) }
+    expect(described_class).to have_fields(:token, :email).of_type(String)
+    expect(described_class).to have_field(:months).of_type(Integer)
+    expect(described_class).to have_field(:role).of_type(String).with_default_value_of("member")
+    expect(described_class).to have_field(:used).of_type(Mongoid::Boolean).with_default_value_of(false)
   end
 
   describe "ActiveModel validations" do

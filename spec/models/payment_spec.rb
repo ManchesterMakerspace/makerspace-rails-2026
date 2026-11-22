@@ -1,13 +1,13 @@
 require 'rails_helper'
 
 RSpec.describe Payment, type: :model do
-  describe "Mongoid validations" do
-    it { is_expected.to be_mongoid_document }
-    it { is_expected.to be_stored_in(collection: 'payments') }
+  it 'defines its Mongoid collection and fields', :aggregate_failures do
+    expect(described_class).to be_mongoid_document
+    expect(described_class).to be_stored_in(collection: 'payments')
 
-    it { is_expected.to have_fields(:product, :firstname, :lastname, :currency, :status, :payment_date, :payer_email, :address, :txn_id, :txn_type) }
-    it { is_expected.to have_field(:amount).of_type(Float) }
-    it { is_expected.to have_field(:test).of_type(Mongoid::Boolean) }
+    expect(described_class).to have_fields(:product, :firstname, :lastname, :currency, :status, :payment_date, :payer_email, :address, :txn_id, :txn_type)
+    expect(described_class).to have_field(:amount).of_type(Float)
+    expect(described_class).to have_field(:test).of_type(Mongoid::Boolean)
   end
 
   describe "ActiveModel validations" do
@@ -24,7 +24,6 @@ RSpec.describe Payment, type: :model do
       member = create(:member, firstname: "New", lastname: 'Member')
       incorrect_member = create(:member, firstname: "Wrong", lastname: 'User', email: 'wrong_email@gmail.com')
       email_member = create(:member, firstname: "Test", lastname: 'Tester', email: 'test@gmail.com')
-      sleep(5.seconds)
       name_payment = create(:payment, lastname: 'Member')
       email_payment = create(:payment, payer_email: 'test@gmail.com')
       name_payment.reload
@@ -47,8 +46,6 @@ RSpec.describe Payment, type: :model do
 
     it "Properly sets subscription based on subscription_status" do
       member = create(:member, firstname: "Test", lastname: 'Member')
-      sleep(5.seconds)
-
       rental_payment = create(:payment, :rental_sub, lastname: 'Member')
       rental_payment.reload
       expect(rental_payment.member).to eq(member)

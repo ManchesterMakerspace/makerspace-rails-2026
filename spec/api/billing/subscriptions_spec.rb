@@ -46,14 +46,14 @@ describe 'Billing::Subscriptions API', type: :request do
         before { sign_in non_customer }
         schema '$ref' => '#/components/schemas/error'
         let(:id) { subscription.id }
-        run_test!
+        run_test! { |response| expect(response.parsed_body['message']).to match(/customer/i) }
       end
 
       response '404', 'Subscription not for user' do
         before { sign_in customer }
         schema '$ref' => '#/components/schemas/error'
         let(:id) { subscription.id }
-        run_test!
+        run_test! { |response| expect(response.parsed_body['message']).to match(/resource not found/i) }
       end
 
       response '404', 'secondary household member cannot access household subscription' do
@@ -115,7 +115,7 @@ describe 'Billing::Subscriptions API', type: :request do
         schema '$ref' => '#/components/schemas/error'
         let(:id) { subscription.id }
         let(:updateSubscriptionDetails) {{ payment_method_token: "54321" }}
-        run_test!
+        run_test! { |response| expect(response.parsed_body['message']).to match(/customer/i) }
       end
 
       response '404', 'Subscription not for user' do
@@ -123,7 +123,7 @@ describe 'Billing::Subscriptions API', type: :request do
         schema '$ref' => '#/components/schemas/error'
         let(:id) { subscription.id }
         let(:updateSubscriptionDetails) {{ payment_method_token: "54321" }}
-        run_test!
+        run_test! { |response| expect(response.parsed_body['message']).to match(/resource not found/i) }
       end
     end
 
@@ -154,14 +154,14 @@ describe 'Billing::Subscriptions API', type: :request do
         before { sign_in non_customer }
         schema '$ref' => '#/components/schemas/error'
         let(:id) { subscription.id }
-        run_test!
+        run_test! { |response| expect(response.parsed_body['message']).to match(/customer/i) }
       end
 
       response '404', 'Subscription not for user' do
         before { sign_in customer }
         schema '$ref' => '#/components/schemas/error'
         let(:id) { subscription.id }
-        run_test!
+        run_test! { |response| expect(response.parsed_body['message']).to match(/resource not found/i) }
       end
 
       response '404', 'secondary household member cannot cancel household subscription' do
@@ -285,15 +285,21 @@ describe 'Billing::Subscriptions API', type: :request do
       end
 
       response '403', 'User not authorized' do
-        before { sign_in non_customer }
+        before do
+          sign_in non_customer
+          expect(::PayNow).not_to receive(:attempt!)
+        end
         schema '$ref' => '#/components/schemas/error'
-        run_test!
+        run_test! { |response| expect(response.parsed_body['message']).to match(/customer/i) }
       end
 
       response '404', 'Subscription not for user' do
-        before { sign_in customer }
+        before do
+          sign_in customer
+          expect(::PayNow).not_to receive(:attempt!)
+        end
         schema '$ref' => '#/components/schemas/error'
-        run_test!
+        run_test! { |response| expect(response.parsed_body['message']).to match(/resource not found/i) }
       end
 
       response '404', 'secondary household member cannot pay the household subscription' do

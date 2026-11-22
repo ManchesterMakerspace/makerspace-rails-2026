@@ -3,13 +3,13 @@ require 'rails_helper'
 RSpec.describe Group, type: :model do
   let(:group) { build(:group) }
 
-  describe "Mongoid validations" do
-    it { is_expected.to be_mongoid_document }
-    it { is_expected.to be_stored_in(collection: 'groups') }
+  it 'defines its Mongoid collection and fields', :aggregate_failures do
+    expect(described_class).to be_mongoid_document
+    expect(described_class).to be_stored_in(collection: 'groups')
 
-    it { is_expected.to have_field(:groupRep) }
-    it { is_expected.to have_field(:groupName).of_type(String) }
-    it { is_expected.to have_field(:expiry).of_type(Integer) }
+    expect(described_class).to have_field(:groupRep)
+    expect(described_class).to have_field(:groupName).of_type(String)
+    expect(described_class).to have_field(:expiry).of_type(Integer)
   end
 
   describe "ActiveModel validations" do

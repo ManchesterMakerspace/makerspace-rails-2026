@@ -5,20 +5,20 @@ require 'rails_helper'
 RSpec.describe Member, type: :model do
 
 
-  describe "Mongoid validations" do
-    it { is_expected.to be_mongoid_document }
-    it { is_expected.to be_stored_in(collection: 'members') }
+  it 'defines its Mongoid collection and fields', :aggregate_failures do
+    expect(described_class).to be_mongoid_document
+    expect(described_class).to be_stored_in(collection: 'members')
 
-    it { is_expected.to have_fields(:cardID, :firstname, :lastname, :groupName) }
-    it { is_expected.to have_field(:status).with_default_value_of('activeMember') }
-    it { is_expected.to have_field(:expirationTime).of_type(Integer) }
-    it { is_expected.to have_field(:role).with_default_value_of('member') }
-    it { is_expected.to have_field(:member_contract_signed_date).of_type(Date) }
-    it { is_expected.to have_field(:silence_emails).of_type(Mongoid::Boolean) }
-    it { is_expected.to have_field(:subscription).of_type(Mongoid::Boolean).with_default_value_of(false) }
-    it { is_expected.to have_fields(:email, :encrypted_password).of_type(String).with_default_value_of("") }
-    it { is_expected.to have_field(:reset_password_token).of_type(String) }
-    it { is_expected.to have_fields(:reset_password_sent_at, :remember_created_at).of_type(Time) }
+    expect(described_class).to have_fields(:cardID, :firstname, :lastname, :groupName)
+    expect(described_class).to have_field(:status).with_default_value_of('activeMember')
+    expect(described_class).to have_field(:expirationTime).of_type(Integer)
+    expect(described_class).to have_field(:role).with_default_value_of('member')
+    expect(described_class).to have_field(:member_contract_signed_date).of_type(Date)
+    expect(described_class).to have_field(:silence_emails).of_type(Mongoid::Boolean)
+    expect(described_class).to have_field(:subscription).of_type(Mongoid::Boolean).with_default_value_of(false)
+    expect(described_class).to have_fields(:email, :encrypted_password).of_type(String).with_default_value_of("")
+    expect(described_class).to have_field(:reset_password_token).of_type(String)
+    expect(described_class).to have_fields(:reset_password_sent_at, :remember_created_at).of_type(Time)
   end
 
   describe "ActiveModel validations" do
@@ -52,19 +52,6 @@ RSpec.describe Member, type: :model do
 
     it "accepts pending as a valid member status" do
       expect(build(:member, status: 'pending')).to be_valid
-    end
-    # Not validate_uniqueness_of(:email) -- that matcher looks for a
-    # registered uniqueness validator by type, but email uniqueness is
-    # deliberately enforced by a custom validate method instead (see
-    # validate_email_not_taken_by_an_active_member and the "soft delete"
-    # describe block below), so the duplicate-email behavior is exercised
-    # there instead of via type introspection here.
-    it "rejects a duplicate email" do
-      create(:member, email: "duplicate@example.com")
-      duplicate = build(:member, email: "duplicate@example.com")
-
-      expect(duplicate).not_to be_valid
-      expect(duplicate.errors[:email]).to include("has already been taken")
     end
     it { is_expected.to have_many(:access_cards).as_inverse_of(:member) }
   end
@@ -759,8 +746,11 @@ RSpec.describe Member, type: :model do
     it "still rejects a duplicate email between two active members" do
       email = generate(:email)
       create(:member, email: email)
+      duplicate = build(:member, email: email)
 
-      expect { create(:member, email: email) }.to raise_error(Mongoid::Errors::Validations)
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:email]).to include("has already been taken")
+      expect { duplicate.save! }.to raise_error(Mongoid::Errors::Validations)
     end
 
     describe "#eligible_for_soft_delete?" do
