@@ -239,7 +239,7 @@ jobs:
       OTP_SECRET_KEY: fZ4zRjsUzonEkqfj1zEB1NuxGcLR1VviOY5Oit5CtqI=
       APP_DOMAIN: http://localhost:3035
       RAILS_SERVE_STATIC_FILES: 'true'
-      SLACK_ADMIN_TOKEN: dummy
+      SLACK_ADMIN_TOKEN: ''
       SLACK_SIGNING_SECRET: dummy
       FIREBASE_API_KEY: dummy
       FIREBASE_PROJECT_ID: dummy
@@ -250,6 +250,7 @@ jobs:
       SMTP_FROM: dummy@example.com
       HONEYBADGER_API_KEY: dummy
       HONEYBADGER_ENV: test
+      HONEYBADGER_REPORT_DATA: 'false'
       BT_ENV: sandbox
       BT_MERCHANT_ID: ${{ secrets.BT_MERCHANT_ID }}
       BT_PUBLIC_KEY: ${{ secrets.BT_PUBLIC_KEY }}
