@@ -567,11 +567,15 @@ Yesterday's nonempty summaries are left in place. A deletion failure is reported
 but does not prevent today's post. Older dates and other channels/modes are not
 cleaned up by this step.
 
-Before sending, the job refreshes each linked today canvas and grants the
-destination read access. This also supports a tool-users channel when the shop
-has no configured channel. Nonproduction destinations use an isolated
-`announcement_test_canvas_today` slot and never reuse a production canvas or
-grant the real shop channel access through the announcement path.
+Each eligible announcement reconciliation refreshes its linked today canvases
+and grants destination read access before deciding whether the message changed.
+An overnight carryover's edit or cancellation can update the live agenda without
+rewriting today's summary, since summary rows only list bookings starting today.
+This also supports a tool-users channel when the shop has no configured channel.
+Canvas failures retain the existing message for normal retry; successful refreshes
+clear retry state even when the message stays unchanged. Nonproduction destinations
+use an isolated `announcement_test_canvas_today` slot and never reuse a production
+canvas or grant the real shop channel access through the announcement path.
 
 Under **Portal Settings → Jobs**, **Daily Reservation Announcements** exposes the
 last run and **Run Now**. It retains the 7-AM gate. Production scheduling is an

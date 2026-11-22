@@ -134,8 +134,9 @@ reconciliation with ten bookings per channel. History invokes the controller
 action with rendering stubbed: authentication, HTTP and JSON serialization are
 excluded. Canvas markdown rendering is real; Slack network calls are mocked.
 The announcer canvas callback renders the real agenda but replaces external
-canvas I/O. Fixture creation is outside measurements; changed-content runs force
-the fingerprint path with a setup write included in elapsed time. Five warm
+canvas I/O. Fixture creation is outside measurements; message-update runs clear
+the fingerprint with a setup write included in elapsed time. Both unchanged and
+message-update runs refresh canvases. Five warm
 samples report median and nearest-rank p95 (the maximum). Cold history has one
 sample, followed by five cache-hit samples. The monitor counts actual read
 commands, including `getMore`, and BSON-encodes reply sizes without retaining
@@ -151,6 +152,10 @@ sequential with no other test workload. Local MongoDB version differs from CI's
 MongoDB 7.0; these measurements do not substitute for that deployment's tests.
 
 Warm timings below are milliseconds, **before → after**:
+
+The unchanged-announcer rows record the earlier fingerprint fast path, which
+could skip live-agenda changes. They are historical; current unchanged-message
+costs appear in the live-agenda freshness measurements below.
 
 | Operation | Rows/channels | Read commands | BSON reply bytes | Total p50 | Total p95 |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -169,6 +174,30 @@ order/attendee p50 changed from 63.50/62.79 ms to 79.27/95.40 ms despite fewer M
 reads. Cache benefits therefore depend on data size, repeated metadata and actual
 Redis/MongoDB latency; the table is not a production latency guarantee.
 
+### Live-agenda freshness (2026-11-21)
+
+Announcement reconciliation now refreshes linked canvases and repeats the live
+snapshot before comparing the final message fingerprint. Overnight carryover
+edits and cancellations therefore refresh the agenda even when today's starting
+rows are unchanged, including shops with only tool-users destinations. Successful
+unchanged-message runs also clear receipt retry state. Only the Slack message
+write is skipped; canvas rendering and I/O still run under the channel lease.
+
+The two announcer benchmark examples were rerun on the same local service versions
+and fixture sizes, with five measurements per path. Current costs are:
+
+| Operation | Channels | Read commands | Returned documents | BSON reply bytes | Total p50 (ms) | Total p95 (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Announcer, unchanged message | 1 | 18 | 52 | 16,279 | 426.55 | 502.71 |
+| Announcer, message update | 1 | 18 | 52 | 16,210 | 437.60 | 473.70 |
+| Announcer, unchanged message | 4 | 57 | 256 | 69,499 | 1,421.01 | 1,470.29 |
+| Announcer, message update | 4 | 57 | 256 | 69,223 | 1,438.52 | 1,473.54 |
+
+Unchanged-message reads rise from the historical 10/25 to 18/57 for one/four
+channels because the agenda and post-I/O snapshot can no longer be skipped.
+Changed-message read counts remain 18/57. Slack network calls are mocked, so
+these timings exclude real canvas latency and rate limits.
+
 ### Index probes
 
 The second benchmark uses `explain("executionStats")` on disposable fixtures and
@@ -185,3 +214,13 @@ measuring representative filters.
 Apply the indexes with `bundle exec rake data:ensure_unique_indexes` before
 deploying optimized readers. No environment variables, public schemas, client
 publication, React changes or wiki flow changes are needed for this optimization.
+
+### Canvas refresh validation
+
+The live-agenda correction passed 136 related service, canvas, job and model
+refresh examples, plus both opt-in announcer benchmarks, with zero failures and
+no pending examples. The four new regressions first failed against the old fast
+path and now cover carryover edits/cancellations on a tool-users-only shop,
+refresh failure/retry cleanup, and availability changes during canvas I/O.
+Strict transaction mode and the independent commit/rollback probe passed. The
+full four-worker suite was not repeated for this narrow service correction.

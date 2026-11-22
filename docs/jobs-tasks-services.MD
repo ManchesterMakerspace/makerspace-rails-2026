@@ -43,8 +43,11 @@ The `enqueue_today` helper reports auxiliary queue errors without failing a
 completed catalog write; the periodic task recovers the missed refresh.
 
 `ReservationAnnouncementLease` is a renewable Redis lease per delivery, with a
-120-second lifetime and 30-second heartbeat. A fresh payload is built under the
-lease; unchanged fingerprints skip message writes. MongoDB
+120-second lifetime and 30-second heartbeat. Linked today canvases refresh under
+the lease before the final message fingerprint is compared. Overnight carryover
+edits and cancellations therefore update the live agenda even when today's
+starting rows and canvas ID are unchanged, including tool-users-only shops with
+no shop Slack channel. Unchanged fingerprints skip only message writes. MongoDB
 `reservation_slack_announcements` records string Slack `ts`, channel, represented
 shops/canvases, and retry state. `chat.update` always receives full text and blocks
 before any replacement is considered. Only `message_not_found` permits reposting.
@@ -88,7 +91,10 @@ member and reuses existing reservation authorization. It deliberately omits the
 message `response_url` from modal metadata, keeping final outcomes in a DM.
 
 `Service::ReservationSlackCanvas.ensure_today_for_announcement!` synchronously
-refreshes a current-day canvas and grants destination read access before posting.
+refreshes a current-day canvas and grants destination read access on each eligible
+channel reconciliation, including when no message write is needed. Canvas failures
+preserve the existing post and follow the receipt's normal retry deadline; a
+successful refresh clears retry state even when the message is unchanged.
 It supports a tool-users destination without a configured shop channel.
 Production reuses `canvas_today`; other destination modes use isolated
 `announcement_test_canvas_today`, without production canvas writes or shop-channel
