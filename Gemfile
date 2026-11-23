@@ -10,7 +10,7 @@ gem 'csv'
 gem "rails", "~> 8.0.5.1"
 
 gem 'rack-cors', '~> 3.0'
-gem 'puma', '~> 8.0'
+gem 'puma', '~> 8.1'
 gem 'active_model_serializers', '~> 0.10.15'
 gem 'dotenv-rails'
 gem 'concurrent-ruby', '~> 1.3'
@@ -21,7 +21,7 @@ gem 'redis-actionpack'
 # Authentication
 gem 'devise', '~> 5.0'
 gem 'nokogiri', '~> 1.19.4'
-gem 'rotp',    '~> 6.0'
+gem 'rotp',    '~> 6.4'
 gem 'rqrcode', '~> 3.2'
 gem 'bcrypt', '~> 3.1'
 # MongoDB
