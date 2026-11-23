@@ -95,8 +95,8 @@ RSpec.describe 'Eventbrite and announcement read benchmark', :benchmark do
         end
         Service::ReservationSlackAnnouncements.sync!
         report('announcer_unchanged', channels) { Service::ReservationSlackAnnouncements.sync! }
-        report('announcer_canvas_refresh', channels) do
-          # This is setup, not a read; it forces the changed-content/canvas path.
+        report('announcer_message_update', channels) do
+          # Both paths refresh canvases; this setup write forces message delivery too.
           ReservationSlackAnnouncement.update_all(fingerprint: nil)
           Service::ReservationSlackAnnouncements.sync!
         end

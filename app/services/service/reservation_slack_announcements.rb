@@ -85,15 +85,8 @@ module Service
           end
 
           receipt ||= ReservationSlackAnnouncement.create!(key)
-          # Canvas IDs are part of the payload, but publishing a canvas is unnecessary
-          # when both the message and its known IDs are unchanged.
-          current_canvas_ids = shops.first(MAX_SHOPS).to_h do |shop|
-            [shop.id.to_s, mode == 'production' ? shop.canvas_today : shop.announcement_test_canvas_today]
-          end
-          payload = message(date, data, shops, current_canvas_ids, snapshot)
-          fingerprint = digest(payload)
-          return snapshot.errors if receipt.ts.present? && receipt.fingerprint == fingerprint
-
+          # Carryovers can change the live agenda without changing today's rows.
+          # Refresh canvases before deciding whether the message needs a write.
           canvas_ids = {}
           shops.first(MAX_SHOPS).each do |shop|
             check.call
@@ -123,12 +116,15 @@ module Service
             raise DeliveryError, 'Reservation destinations changed during canvas refresh; retrying current state'
           end
           payload = message(date, data, shops, canvas_ids, snapshot)
+          fingerprint = digest(payload)
           check.call
           return unless due?(date) && mode == Service::SlackConnector.message_destination_mode
 
-          deliver!(receipt, payload, check)
+          unless receipt.ts.present? && receipt.deleted_at.blank? && receipt.fingerprint == fingerprint
+            deliver!(receipt, payload, check)
+          end
           check.call
-          receipt.set(fingerprint: digest(payload), shop_ids: shops.map { |shop| shop.id.to_s },
+          receipt.set(fingerprint: fingerprint, shop_ids: shops.map { |shop| shop.id.to_s },
             canvas_ids: canvas_ids, empty_agenda: data[:starting].empty?, attempts: 0, retry_at: nil, last_error: nil)
           snapshot.errors
         rescue ReservationAnnouncementLease::Busy
@@ -239,8 +235,7 @@ module Service
           shown += selected.length
           promotions = data[:promotions].select { |promotion| promotion[:shop_id] == id }.sort_by { |promotion| promotion[:text] }
           link = canvas_ids[id].present? ? Service::SlackConnector.slack_canvas_url(canvas_ids[id]) : nil
-          # Before canvas preparation this placeholder is used only for fingerprint comparison.
-          link ||= "canvas-pending:#{id}"
+          raise DeliveryError, "Slack canvas URL unavailable for shop #{id}" if link.blank?
           label = "*#{escape(shop.name.to_s.first(150))}*\n<#{link}|Live today agenda>"
           if promotions.any?
             label += "\n#{promotions.map { |promotion| escape(promotion[:text]) }.join("\n")}"

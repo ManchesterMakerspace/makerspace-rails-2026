@@ -189,19 +189,108 @@ RSpec.describe Service::ReservationSlackAnnouncements do
     end
   end
 
-  it 'edits the saved ts when bookings change and leaves unchanged payloads alone' do
+  it 'refreshes canvases but only edits the saved ts when the message changes' do
     reservation = booking
     sync
     sync
     expect(posts.size).to eq(1)
     expect(updates).to be_empty
-    expect(Service::ReservationSlackCanvas).to have_received(:ensure_today_for_announcement!).once
+    expect(Service::ReservationSlackCanvas).to have_received(:ensure_today_for_announcement!).twice
     reservation.update!(title: 'Changed title')
     sync
     expect(updates.size).to eq(1)
     expect(updates.first[:ts]).to eq('100.1')
     expect(updates.first[:blocks]).to be_present
     expect(text(updates.first)).to include('Changed title', 'reservation_open')
+  end
+
+  context 'live agenda refreshes for unchanged announcements' do
+    let(:canvas_writes) { [] }
+
+    before do
+      shop.update!(slack_channel: nil)
+      shop.set(canvas_today: 'FEXISTING')
+      allow(Service::ReservationSlackCanvas).to receive(:ensure_today_for_announcement!).and_call_original
+      allow(Service::SlackConnector).to receive(:set_canvas_channel_access)
+      allow(Service::SlackConnector).to receive(:replace_canvas) do |id, markdown|
+        canvas_writes << [id, markdown]
+      end
+    end
+
+    %w[edit cancel].each do |change|
+      it "refreshes a tool-users-only canvas after an overnight #{change} without rewriting the message" do
+        booking(title: 'Starts today')
+        carryover = booking(title: 'Overnight carryover', start_at: zone.local(2026, 11, 19, 23),
+          end_at: zone.local(2026, 11, 20, 9))
+        sync
+        receipt = ReservationSlackAnnouncement.first
+        fingerprint = receipt.fingerprint
+        expect(canvas_writes.first).to match(['FEXISTING', a_string_including('Starts today', 'Overnight carryover')])
+        expect(text(posts.first)).to include('Starts today')
+        expect(text(posts.first)).not_to include('Overnight carryover')
+
+        if change == 'edit'
+          carryover.update!(title: 'Revised carryover', end_at: zone.local(2026, 11, 20, 9, 30))
+        else
+          carryover.update!(status: 'cancelled')
+        end
+        # The ordinary canvas sync cannot repair a shop with no Slack channel.
+        Service::ReservationSlackCanvas.sync!(shop.reload, dates: [date.iso8601])
+        expect(canvas_writes.length).to eq(1)
+
+        sync
+        expect(canvas_writes.length).to eq(2)
+        expect(canvas_writes.last.last).to include('Starts today')
+        expect(canvas_writes.last.last).not_to include('Overnight carryover')
+        expect(canvas_writes.last.last).to include('Revised carryover', '09:30') if change == 'edit'
+        expect(receipt.reload.fingerprint).to eq(fingerprint)
+        expect(receipt.ts).to eq('100.1')
+        expect(posts.length).to eq(1)
+        expect(updates).to be_empty
+      end
+    end
+
+    it 'retries a failed canvas refresh and clears retry state without rewriting the unchanged message' do
+      booking
+      sync
+      receipt = ReservationSlackAnnouncement.first
+      fingerprint = receipt.fingerprint
+      allow(Service::SlackConnector).to receive(:replace_canvas).and_raise('Canvas refresh failed')
+
+      expect { sync }.to raise_error(described_class::DeliveryError, /Canvas refresh failed/)
+      expect(receipt.reload.attempts).to eq(1)
+      expect(receipt.retry_at).to eq(Time.current + 2)
+      expect(receipt.last_error).to include('Canvas refresh failed')
+      expect(receipt.fingerprint).to eq(fingerprint)
+      expect { sync }.to raise_error(described_class::DeliveryError, /deferred/)
+      expect(Service::SlackConnector).to have_received(:replace_canvas).twice
+
+      allow(Service::SlackConnector).to receive(:replace_canvas) do |id, markdown|
+        canvas_writes << [id, markdown]
+      end
+      travel_to(Time.current + 3.seconds) { sync }
+      expect(receipt.reload).to have_attributes(attempts: 0, retry_at: nil, last_error: nil,
+        ts: '100.1', fingerprint: fingerprint)
+      expect(posts.length).to eq(1)
+      expect(updates).to be_empty
+    end
+
+    it 'rechecks an unchanged invitation after canvas I/O before retaining its reserving text' do
+      shop.update!(reservable: false, slack_announce_empty_reservations: true)
+      tool
+      sync
+      expect(text(posts.first)).to include('Bandsaw is wide open')
+      allow(Service::SlackConnector).to receive(:replace_canvas) do |id, markdown|
+        canvas_writes << [id, markdown]
+        tool.set(out_of_service: true)
+      end
+
+      sync
+      expect(canvas_writes.length).to eq(2)
+      expect(updates.length).to eq(1)
+      expect(text(updates.first)).to include('No reservations to announce')
+      expect(text(updates.first)).not_to include('wide open')
+    end
   end
 
   it 'clears old destinations after a booking moves to a different day, retaining links, button and ts' do

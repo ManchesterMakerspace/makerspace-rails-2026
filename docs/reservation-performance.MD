@@ -199,6 +199,30 @@ channels because the agenda and post-I/O snapshot can no longer be skipped.
 Changed-message read counts remain 18/57. Slack network calls are mocked, so
 these timings exclude real canvas latency and rate limits.
 
+### Live-agenda freshness (2026-11-21)
+
+Announcement reconciliation now refreshes linked canvases and repeats the live
+snapshot before comparing the final message fingerprint. Overnight carryover
+edits and cancellations therefore refresh the agenda even when today's starting
+rows are unchanged, including shops with only tool-users destinations. Successful
+unchanged-message runs also clear receipt retry state. Only the Slack message
+write is skipped; canvas rendering and I/O still run under the channel lease.
+
+The two announcer benchmark examples were rerun on the same local service versions
+and fixture sizes, with five measurements per path. Current costs are:
+
+| Operation | Channels | Read commands | Returned documents | BSON reply bytes | Total p50 (ms) | Total p95 (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Announcer, unchanged message | 1 | 18 | 52 | 16,279 | 426.55 | 502.71 |
+| Announcer, message update | 1 | 18 | 52 | 16,210 | 437.60 | 473.70 |
+| Announcer, unchanged message | 4 | 57 | 256 | 69,499 | 1,421.01 | 1,470.29 |
+| Announcer, message update | 4 | 57 | 256 | 69,223 | 1,438.52 | 1,473.54 |
+
+Unchanged-message reads rise from the historical 10/25 to 18/57 for one/four
+channels because the agenda and post-I/O snapshot can no longer be skipped.
+Changed-message read counts remain 18/57. Slack network calls are mocked, so
+these timings exclude real canvas latency and rate limits.
+
 ### Index probes
 
 The second benchmark uses `explain("executionStats")` on disposable fixtures and
@@ -228,6 +252,7 @@ verified real commit and rollback. The opt-in read/index benchmarks passed all
 eight examples. A separate 42-example follow-up passed the current versions of
 three test files edited while the full run was active. These results cover the
 combined Rails workspace, including the accompanying volunteer weekday changes.
+### Canvas refresh validation
 
 The live-agenda correction passed 136 related service, canvas, job and model
 refresh examples, plus both opt-in announcer benchmarks, with zero failures and
