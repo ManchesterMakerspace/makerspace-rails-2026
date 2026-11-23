@@ -1,0 +1,24 @@
+[Unit]
+Description=WelcomePi makerspace entrance display
+After=network.target
+
+[Service]
+Type=simple
+User=welcomepi
+Group=welcomepi
+SupplementaryGroups=video dialout
+WorkingDirectory=/opt/welcomepi
+EnvironmentFile=/etc/welcomepi.env
+ExecStart=/opt/welcomepi/.venv/bin/python -B -m welcomepi
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+LimitCORE=0
+MemorySwapMax=0
+
+[Install]
+WantedBy=multi-user.target

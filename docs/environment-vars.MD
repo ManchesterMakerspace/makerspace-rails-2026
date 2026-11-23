@@ -11,6 +11,28 @@ folder, spreadsheet, customer, project, and Slack channel/team IDs are treated
 as identifiers rather than credentials. An optional variable can still be
 required to use the feature or task named in its purpose.
 
+## WelcomePi entrance kiosk
+
+The Pi's systemd service reads `/etc/welcomepi.env`. Its read-only database and
+broker accounts are provisioned independently of Rails. See the
+[example environment](../tools/WelcomePi/welcomepi.env.example) and
+[installation guide](../tools/WelcomePi/README.md).
+
+| Variable | Secret? | Requirement and default |
+| --- | --- | --- |
+| `MLAB_URI`, `LEDGER_URI` | Yes | Both required. Include the Rails source database and Ledger database names in their respective MongoDB URIs. |
+| `MQTT_HOST` | No | Required broker hostname. |
+| `MQTT_TLS`, `MQTT_PORT` | No | TLS defaults to `true` and port 8883. Setting TLS to `false` uses port 1883 by default. Set the port explicitly to override either default. |
+| `MQTT_USERNAME`, `MQTT_PASSWORD` | Password | Optional credentials for the broker's subscribe-only kiosk account. |
+| `MQTT_CLIENT_ID` | No | Defaults to `welcomepi-<hostname>`. Use a unique ID for each running kiosk. |
+| `WELCOMEPI_NFC_PORT` | No | PN532 UART device path. Defaults to `/dev/serial0`. |
+| `WELCOMEPI_ROTATION` | No | Defaults to `auto`. Accepted overrides are `left`, `right`, and `normal`. |
+| `WELCOMEPI_OPPORTUNITIES` | No | Positive integer. Defaults to five opportunities on the member agenda. |
+| `EVENTBRITE_ORGANIZATION_IDS` | No | Comma-separated organization IDs, matching the Rails sync configuration. Empty includes public occurrences from all synced organizations. |
+| `SLACKIDS_INELIGIBLE` | No | Match Ledger's excluded Slack user IDs. Accepts a JSON array or quoted brace-delimited set. Defaults to empty. |
+| `WELCOMEPI_SLACK_TOKEN` | Yes | Optional. Reading the private 512-pixel Ledger JPEG requires `files:read` and access to its DM. Without a usable image the kiosk draws the rank icon. |
+| `WELCOMEPI_TEST_MONGO_PORT` | No | Test suite only. When set, run synthetic data tests on a disposable loopback MongoDB instance using randomly named test databases. Omit for in-memory tests. |
+
 ## Mandatory variables
 
 Checkout Required sheet generation also consumes the existing `APP_DOMAIN`

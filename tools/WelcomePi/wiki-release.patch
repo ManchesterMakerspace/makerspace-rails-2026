@@ -1,0 +1,40 @@
+diff --git a/digital-makerspace/members/check-in-activity.md b/digital-makerspace/members/check-in-activity.md
+index e7dea43..2ad3d3e 100644
+--- a/digital-makerspace/members/check-in-activity.md
++++ b/digital-makerspace/members/check-in-activity.md
+@@ -22,6 +22,16 @@ The list shows the newest scans first. For each one you see the **Timestamp**, t
+
+ Scans include both successful entries and refused ones. If a scan was refused, the validity column is the first place to look. If you still cannot get in, see [Troubleshooting](/digital-makerspace/troubleshooting).
+
++## At the entrance display
++
++Your door check-in wakes WelcomePi and shows your first name and today's agenda. You can also tap your fob on the reader beside the display. A local tap operates the display only. The door reader records your arrival.
++
++**Your reservations** covers the next 12 hours, including time already underway. Pending and unpaid reservations carry a label. **Volunteer opportunities** shows work you can claim. Tasks restricted to today's weekday get the first two places when available. Space permitting, the screen also shows today's Eventbrite classes and a QR code for the portal Home page.
++
++**A second tap shows personal information to everyone near the screen.** On your own agenda, lift and tap your fob again if you want to share that view. Ledger participants see their character sheet and current avatar or rank icon. Other members see the text of kudos they have received, including private messages, followed by their current tool checkouts. Tap once more to clear your details.
++
++A different local fob starts its owner's welcome immediately. On the details screen you have 30 seconds before a waiting door arrival takes over. After two minutes without a qualifying scan, the display returns to today's five recent arrivals, lifetime volunteer point leaders, available work, and the portal QR code. After four hours it sleeps until the next qualifying scan.
++
+ ## For admins
+
+ Admins can open the tab on a member's profile. For admins it also lists **Additional Details** for each scan, such as the **Card Holder**, plus the validity and location. Use it to help a member whose fob does not work: find their recent scans and read the validity of the refused ones. Open it only for a real need, such as a member asking for help, and do not share what you see with others.
+diff --git a/digital-makerspace/troubleshooting.md b/digital-makerspace/troubleshooting.md
+index 6bbd6bb..ce36dc4 100644
+--- a/digital-makerspace/troubleshooting.md
++++ b/digital-makerspace/troubleshooting.md
+@@ -42,6 +42,14 @@ A fob works only while your membership is active and not expired, and only if it
+
+ Look at **Subscriptions** in the portal menu. If you pay by subscription, the date moves forward after each successful payment. If something does not look right, tell the board.
+
++### The entrance display did not show my agenda
++
++Lift your fob away from the local reader and tap it again. WelcomePi needs an active fob linked to an active, unexpired membership. Check your expiration date on the portal Home page and your door scans in [Check-In Activity](/digital-makerspace/members/check-in-activity). If your door scan succeeded but the display stays on the board, tell the board when it happened so they can check the reader and the display connection.
++
++### The entrance display showed another welcome while I was reading
++
++A door arrival can replace an agenda immediately. A local tap that opens your character sheet or kudos gives you 30 seconds before a waiting door arrival takes over. Tap your fob to open your agenda again. You can also scan the portal QR code and use your own phone.
++
+ ## Payments
+
+ ### My payment failed

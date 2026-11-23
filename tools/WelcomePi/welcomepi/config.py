@@ -1,0 +1,55 @@
+from dataclasses import dataclass, field
+import json
+import os
+import re
+import socket
+
+
+@dataclass(frozen=True)
+class Settings:
+    rails_uri: str = field(repr=False)
+    ledger_uri: str = field(repr=False)
+    mqtt_host: str
+    mqtt_port: int
+    mqtt_tls: bool
+    mqtt_user: str | None
+    mqtt_password: str | None = field(repr=False)
+    mqtt_id: str
+    nfc_port: str
+    rotation: str
+    opportunity_count: int
+    organizations: tuple
+    excluded: frozenset
+    slack_token: str = field(repr=False)
+
+    @classmethod
+    def load(cls, env=None):
+        env = os.environ if env is None else env
+        def required(key):
+            if not env.get(key):
+                raise ValueError(f"Missing {key}")
+            return env[key]
+
+        tls = env.get("MQTT_TLS", "true").lower()
+        if tls not in ("true", "false"):
+            raise ValueError("MQTT_TLS must be true or false")
+        rotation = env.get("WELCOMEPI_ROTATION", "auto")
+        if rotation not in ("auto", "normal", "left", "right"):
+            raise ValueError("Invalid WELCOMEPI_ROTATION")
+        count = int(env.get("WELCOMEPI_OPPORTUNITIES", "5"))
+        if count < 1:
+            raise ValueError("WELCOMEPI_OPPORTUNITIES must be positive")
+        excluded = env.get("SLACKIDS_INELIGIBLE", "").strip() or "[]"
+        if excluded.startswith("{") and excluded.endswith("}"):
+            excluded = "[" + excluded[1:-1] + "]"
+        ids = json.loads(excluded)
+        if not isinstance(ids, list) or any(not isinstance(s, str) or not re.fullmatch("[UW][A-Z0-9]+", s)
+                                           for s in ids):
+            raise ValueError("Invalid SLACKIDS_INELIGIBLE")
+        return cls(required("MLAB_URI"), required("LEDGER_URI"), required("MQTT_HOST"),
+                   int(env.get("MQTT_PORT", "8883" if tls == "true" else "1883")), tls == "true",
+                   env.get("MQTT_USERNAME"), env.get("MQTT_PASSWORD"),
+                   env.get("MQTT_CLIENT_ID") or "welcomepi-" + socket.gethostname(),
+                   env.get("WELCOMEPI_NFC_PORT", "/dev/serial0"), rotation, count,
+                   tuple(part.strip() for part in env.get("EVENTBRITE_ORGANIZATION_IDS", "").split(",") if part.strip()),
+                   frozenset(ids), env.get("WELCOMEPI_SLACK_TOKEN", ""))

@@ -1,5 +1,25 @@
 # Production jobs, tasks, and services
 
+## WelcomePi entrance display
+
+The standalone [WelcomePi systemd service](../tools/WelcomePi/welcomepi.service)
+runs `python -m welcomepi` on the entrance Pi. Install, start, stop, and inspect
+it on that host with `systemctl` and `journalctl -u welcomepi`.
+It subscribes to ChangeStream2MQTT check-ins and card/member changes, reads the
+local PN532, renders Pillow frames, and controls HDMI standby. Local taps only
+control the display. Database access is read-only. The optional Slack credential
+reads the current Ledger avatar into RAM.
+
+The service starts on the public board, greets eligible arrivals, and advances
+personal pages on local taps. Two idle minutes clear personal content and four
+idle hours disable HDMI. While visible, the board refreshes every minute and at
+Eastern midnight. The directory rebuilds after MQTT subscription, after gaps,
+and periodically. During recovery, a personal greeting requires a direct
+database lookup. The UART reconnects independently, and failed sections retry
+on the next page refresh. The journal records frame submission latency and
+component failures. See the [operator guide](../tools/WelcomePi/README.md)
+for installation, permissions, and on-device acceptance.
+
 ## Daily reservation channel announcements
 
 `ReservationSlackAnnouncementJob` calls `Service::ReservationSlackAnnouncements`

@@ -1,0 +1,1 @@
+"""WelcomePi entrance display."""
