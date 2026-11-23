@@ -1,0 +1,22 @@
+[Unit]
+Description=Check GitHub for a WelcomePi release
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flock /run/lock/welcomepi-setup.lock /usr/bin/python3 -E -s -B /usr/local/lib/welcomepi-update/update.py poll
+RuntimeDirectory=welcomepi-update
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+UMask=0022
+TimeoutStartSec=30min
+ProtectSystem=strict
+ReadWritePaths=/opt/welcomepi /run/lock
+InaccessiblePaths=-/etc/welcomepi.env
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+LimitCORE=0
+MemorySwapMax=0

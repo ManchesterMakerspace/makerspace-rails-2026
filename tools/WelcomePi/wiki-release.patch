@@ -38,3 +38,25 @@ index 6bbd6bb..ce36dc4 100644
  ## Payments
 
  ### My payment failed
+diff --git a/digital-makerspace/admin/welcomepi-updates.md b/digital-makerspace/admin/welcomepi-updates.md
+new file mode 100644
+--- /dev/null
++++ b/digital-makerspace/admin/welcomepi-updates.md
+@@ -0,0 +1,17 @@
++---
++title: WelcomePi updates
++description: Install and check automatic entrance display updates on the Pi Zero W.
++published: true
++date: 2026-11-23T00:00:00.000Z
++tags: admin, kiosk
++editor: markdown
++dateCreated: 2026-11-23T00:00:00.000Z
++---
++
++# WelcomePi updates
++
++Kiosk operators can enroll a working entrance display in automatic updates. Complete a local fob tap and a door check-in first. On the Pi, run `sudo bash setup.sh enable-updates` from `~/WelcomePi`. The Pi checks for a tested release about every five minutes. [Pi Zero W setup and recovery guide](https://github.com/ManchesterMakerspace/makerspace-rails-2026/blob/master/tools/WelcomePi/setup-pi0.MD#8-enable-automatic-updates-from-master)
++
++Run `systemctl list-timers welcomepi-update.timer` to see the next check. To check immediately, run `sudo systemctl start welcomepi-update.service`. A new app release briefly restarts the display and returns it to the generic board. The kiosk keeps running through a failed download and restores its previous version after a failed startup check.
++
++For an update problem, inspect `sudo journalctl -b -u welcomepi-update.service`. The setup guide covers held releases and pausing updates for host maintenance. After a successful update, confirm one welcome at the kiosk reader and another from a real door check-in.

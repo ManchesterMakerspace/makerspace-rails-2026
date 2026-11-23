@@ -18,6 +18,12 @@ broker accounts are provisioned independently of Rails. See the
 [example environment](../tools/WelcomePi/welcomepi.env.example) and
 [installation guide](../tools/WelcomePi/README.md).
 
+Automatic updates use anonymous HTTPS on the Pi and require no additional
+kiosk environment values. In GitHub Actions, `GITHUB_TOKEN` is the
+automatically issued job credential. Only the WelcomePi publishing job requests
+`contents: write`. The workflow supplies `TESTED_SHA256` from its verification
+job to check the release bytes a second time. Both are workflow-local.
+
 | Variable | Secret? | Requirement and default |
 | --- | --- | --- |
 | `MLAB_URI`, `LEDGER_URI` | Yes | Both required. Include the Rails source database and Ledger database names in their respective MongoDB URIs. |

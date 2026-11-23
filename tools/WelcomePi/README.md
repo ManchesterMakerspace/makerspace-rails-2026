@@ -2,7 +2,7 @@
 
 WelcomePi is a read-only entrance kiosk for Raspberry Pi OS Lite **Bookworm, 32-bit**. It draws directly to HDMI with Pillow and KMS. A successful door check-in or a tap on the local PN532 wakes the display and greets a member. Local taps only control this screen.
 
-For a **Pi Zero W at 720p**, follow the [step-by-step setup guide](setup-pi0.MD). It includes the workstation transfer, GPIO wiring, Pi installer, and separate first-welcome checks at the kiosk and the door.
+For a **Pi Zero W at 720p**, follow the [step-by-step setup guide](setup-pi0.MD). It covers the workstation transfer, GPIO wiring, Pi installer and separate first-welcome checks at the kiosk and the door. A working kiosk can [enroll for automatic updates from master](setup-pi0.MD#8-enable-automatic-updates-from-master).
 
 ## Choosing an older board
 
@@ -93,4 +93,4 @@ On each target model, verify the following using test accounts and fobs.
 4. Check a participant's current private avatar, rank-icon fallback, DM-only delivered kudos, and a checkout expiring today. Interrupt MongoDB, MQTT and the UART individually and restore each service. Verify that revoked cards and expired memberships stop opening personal pages.
 5. Leave both inputs idle. Inspect the generic board after two minutes and monitor standby after four hours. Wake from standby independently with each input.
 
-The [wiki release patch](wiki-release.patch) updates **Check-In Activity** and **Troubleshooting**. Hold it until the entrance display is deployed. In a current WikiPages checkout, fetch `master`, apply the patch on a branch with `git apply --check` then `git apply`, and open the normal wiki pull request.
+The [wiki release patch](wiki-release.patch) updates **Check-In Activity** and **Troubleshooting** and adds **WelcomePi updates** for kiosk operators. Hold it until the entrance display and its updater are deployed. In a current WikiPages checkout, fetch `master`, apply the patch on a branch with `git apply --check` then `git apply`, and open the normal wiki pull request.

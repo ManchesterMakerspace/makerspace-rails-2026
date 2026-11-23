@@ -5,7 +5,7 @@ Use the original Raspberry Pi Zero W, Raspberry Pi OS Lite **Bookworm 32-bit**, 
 | Where | What to run |
 | --- | --- |
 | Workstation with the Rails checkout | Raspberry Pi Imager, then [workstation/setup.sh](workstation/setup.sh) to copy the kiosk files over SSH. |
-| Pi Zero W | [setup.sh](setup.sh) installs the software, builds the virtual environment and configures the next boot. The same script can check the installation and observe a real MQTT arrival. |
+| Pi Zero W | [setup.sh](setup.sh) installs the software, builds the virtual environment and configures the next boot. It also checks the installation, observes a real MQTT arrival, and enrolls a working kiosk for automatic updates. |
 
 ## 1. Flash the microSD card on the workstation
 
@@ -131,6 +131,60 @@ sudo bash setup.sh watch-door
 
 The observer should report **Received a fresh checkins/insert**, and the kiosk should show the matching first-name welcome. The journal should record a new frame submission. This exercises the door, its recorded check-in, ChangeStream2MQTT, the broker and the kiosk together. The observer uses a read-only subscription and prints only the subscription and receipt results. A later door arrival for a member whose agenda is already visible refreshes activity on that page.
 
+## 8. Enable automatic updates from master
+
+Complete both welcome checks first. For an existing kiosk, use the workstation transfer in step 3 once to bring over the current setup scripts. The hosted **Publish WelcomePi** workflow must be on `master` in `ManchesterMakerspace/makerspace-rails-2026`. In GitHub, open **Actions → Publish WelcomePi** and check for a successful publication. **Run workflow** on **master** also performs the first publication or retries a failed run. The publishing job needs `contents: write` and permission under the repository's rules to advance `welcomepi-deploy`. Treat write access to that branch as permission to distribute kiosk code. [Publishing workflow](../../.github/workflows/publish-welcomepi.yml)
+
+The original Zero W uses ARMv6. GitHub runs the tests and packages the release. The kiosk reads the public release over outbound HTTPS to `api.github.com` and `raw.githubusercontent.com`. A dependency change also needs access to the Pi's configured Python package index. The Pi needs no GitHub login, Actions runner, or inbound deployment port. [Zero W hardware](https://www.raspberrypi.com/documentation/computers/zero.html) · [.NET hardware support](https://learn.microsoft.com/en-us/dotnet/iot/intro)
+
+From the **Pi's SSH prompt**, enroll the kiosk and inspect its first check.
+
+```sh
+cd ~/WelcomePi
+sudo bash setup.sh enable-updates
+systemctl list-timers welcomepi-update.timer
+sudo systemctl start welcomepi-update.service
+readlink /opt/welcomepi/current
+systemctl show welcomepi.service -p InvocationID
+sudo journalctl -b -u welcomepi-update.service --no-pager
+```
+
+Enrollment saves the installed code as the first rollback copy, adopts the existing virtual environment and enables a timer. The first poll after boot runs at about two minutes, then about five minutes after each check finishes. Starting the update service checks immediately. An unchanged release should leave both the `readlink` result and the kiosk's `InvocationID` unchanged, including on repeated checks. Diagnostics in steps 6 and 7 follow the active release.
+
+| Change reaching master | Expected result |
+| --- | --- |
+| Rails-only edit | The push skips the WelcomePi workflow. |
+| Kiosk guide, tests, installer or unit only | The workflow compares runtime files and leaves the published release alone. Apply host provisioning changes during maintenance. |
+| Kiosk Python package or `pi0/check.py` | GitHub tests the runtime and publishes a new checksum. The Pi verifies the archive, reuses its venv, and restarts the display once. The generic board returns on startup. |
+| `requirements.txt` | The Pi builds a separate native venv as the unprivileged `welcomepi-build` account. The working venv stays available during the build. After activation, repeat the local tap and door check. |
+
+GitHub publishes only the runtime ZIP and manifest, together in one commit. A daily comparison at 05:17 UTC also picks up changes from very large merges that can exceed GitHub's path-filter limits. The Pi fetches both files by that immutable commit. Normal polls keep their HTTP cache in `/run`. The archive is verified in memory, unchanged files are hard-linked, and the Pi retains the current and previous managed releases. The original installer venv remains at its commissioning path. The updater holds a lock shared with the installer and leaves a deliberately stopped display in maintenance.
+
+### Recovery and maintenance
+
+- A network or checksum failure leaves the current service running for the next check. If Python dependency installation fails, the Pi waits an hour before retrying that revision. A newer revision can proceed on the next poll.
+- Failed imports hold the candidate before activation. If the restarted kiosk fails its 12-second startup check, the updater selects the previous release, restarts it and holds the failed revision. An interrupted switch also restores the last working release on the next check, even offline.
+- Inspect `sudo journalctl -b -u welcomepi-update.service -u welcomepi.service`. The Pi picks up a corrected release on `master` automatically. To retry the same held revision **after repairing its cause**, clear its retry records and start a check.
+
+  ```sh
+  sudo flock /run/lock/welcomepi-setup.lock rm -f /opt/welcomepi/update-rejected.json /run/welcomepi-update/dependency-retry.json
+  sudo systemctl start welcomepi-update.service
+  ```
+
+- Pause future checks with `sudo systemctl disable --now welcomepi-update.timer`. Let an in-progress update finish. To maintain OS packages, boot settings, units or the updater itself, transfer the current scripts using step 3 and run `sudo bash setup.sh install`. On an enrolled kiosk this refreshes the host components and preserves the selected runtime. Reboot for boot changes. Resume with `sudo systemctl enable --now welcomepi-update.timer`.
+
+### Optional RAM journal for a dedicated kiosk
+
+Bookworm can keep the **whole host's journal** in RAM, including systemd's routine timer messages. Entries in this journal disappear at reboot. Enable this only if that retention suits the site. [Bookworm journald settings](https://manpages.debian.org/bookworm/systemd/journald.conf.5.en.html)
+
+```sh
+sudo install -d -m 0755 /etc/systemd/journald.conf.d
+printf '[Journal]\nStorage=volatile\nRuntimeMaxUse=8M\n' | sudo tee /etc/systemd/journald.conf.d/60-welcomepi-volatile.conf >/dev/null
+sudo systemctl restart systemd-journald
+```
+
+To return to the host's previous policy, remove that drop-in and restart `systemd-journald`.
+
 ## If a check fails
 
 | Symptom | What to check |
@@ -142,4 +196,4 @@ The observer should report **Received a fresh checkins/insert**, and the kiosk s
 | Database read fails | Check the database name in each URI, credentials, `authSource`, DNS, network access and CA trust on the Pi. The diagnostic names the failed read and omits the URI. |
 | Local works but the door does not | Check the Pi's clock, TLS and broker ACLs, then wait for a new door entry with `watch-door`. A fresh, non-retained `checkins/insert` must come from ChangeStream2MQTT. Old records and redeliveries do not wake the kiosk. If the observer succeeds but the kiosk stays on the board, check eligibility, the kiosk's own broker client ID and its service journal. |
 
-After editing `/etc/welcomepi.env`, run `sudo systemctl restart welcomepi.service`. For an update, repeat the workstation copy and Pi install. The installer keeps the configured environment and the original boot backups, and restarts a previously running instance. Reboot to activate any new boot settings.
+After editing `/etc/welcomepi.env`, run `sudo systemctl restart welcomepi.service`. For manually managed kiosks, repeat the workstation copy and Pi install for an update. The installer keeps the configured environment and the original boot backups, and restarts a previously running instance. Reboot to activate any new boot settings.

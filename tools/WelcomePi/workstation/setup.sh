@@ -10,7 +10,8 @@ cd -- "$(dirname -- "$0")/.."
 # Send only the deployment files. A checkout can also contain a real .env,
 # private test data, caches, and a workstation virtual environment.
 tar -cf - setup.sh workstation/setup.sh setup-pi0.MD README.md requirements.txt welcomepi.service \
-    welcomepi.env.example pi0/configure_boot.py pi0/check.py welcomepi/*.py |
+    welcomepi.env.example pi0/configure_boot.py pi0/check.py welcomepi/*.py \
+    deploy/update.py deploy/release.py deploy/current.conf deploy/welcomepi-update.{service,timer} |
     ssh -T -- "$target" 'set -eu; umask 077; mkdir -p "$HOME/WelcomePi"; tar -xf - -C "$HOME/WelcomePi"'
 
 printf 'Copied WelcomePi. Connect with ssh %s and run:\n' "$target"

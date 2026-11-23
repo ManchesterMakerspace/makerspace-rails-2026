@@ -31,6 +31,25 @@ fresh door event after subscribing. Both diagnostics use the service account
 and a separate MQTT client ID. They print results to the operator's terminal
 and exit unsuccessfully on a failed check.
 
+The [Publish WelcomePi workflow](../.github/workflows/publish-welcomepi.yml)
+runs on GitHub for changes under `tools/WelcomePi/**` on `master`, on manual
+dispatch for `master`, and daily at 05:17 UTC. It compares committed runtime
+bytes with the published checksum and tests changed releases. The publisher
+rechecks the runtime on `master` before advancing `welcomepi-deploy` with an
+archive and manifest in one commit. The GitHub Actions run records publication.
+
+On a commissioned Pi, `sudo bash setup.sh enable-updates` installs the
+[update service](../tools/WelcomePi/deploy/welcomepi-update.service) and
+[timer](../tools/WelcomePi/deploy/welcomepi-update.timer). It polls the public
+GitHub ref two minutes after boot and five minutes after each check finishes.
+`sudo systemctl start welcomepi-update.service` checks immediately. Equal
+checksums skip activation. A changed release reuses the venv or builds new
+dependencies as `welcomepi-build`. After a successful import check it switches
+the active release and restarts the kiosk. Startup failures roll back and hold
+the failed revision. Wi-Fi failures retry and interrupted activation recovers
+locally. Use `journalctl -b -u welcomepi-update.service` and the
+[maintenance procedure](../tools/WelcomePi/setup-pi0.MD#recovery-and-maintenance).
+
 ## Daily reservation channel announcements
 
 `ReservationSlackAnnouncementJob` calls `Service::ReservationSlackAnnouncements`

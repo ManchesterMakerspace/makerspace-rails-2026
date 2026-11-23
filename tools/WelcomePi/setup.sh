@@ -3,21 +3,23 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: sudo bash setup.sh install | check | watch-door"
+    echo "Usage: sudo bash setup.sh install | check | watch-door | enable-updates"
     echo "  install     Configure the Zero W and install the service files"
     echo "  check       Check the reader, database reads and broker subscriptions"
     echo "  watch-door  Wait for a fresh door check-in beside the running kiosk"
+    echo "  enable-updates  Enroll this installation for automatic updates from master"
 }
 die() { echo "$*" >&2; exit 1; }
 if [[ $# == 1 && $1 == --help ]]; then usage; exit 0; fi
 if [[ $# != 1 ]]; then usage >&2; exit 2; fi
-case "$1" in install|check|watch-door) ;; *) usage >&2; exit 2 ;; esac
+case "$1" in install|check|watch-door|enable-updates) ;; *) usage >&2; exit 2 ;; esac
 [[ $EUID == 0 ]] || die "Run this command with sudo on the Pi."
 umask 022
 
 app=/opt/welcomepi
 case "$1" in
     check|watch-door)
+        if [[ -L "$app/current" ]]; then app="$app/current"; fi
         [[ -x "$app/.venv/bin/python" && -f /etc/welcomepi.env ]] || die "Run the install step first."
         args=("$1")
         if [[ $1 == check ]] && systemctl is-active --quiet welcomepi.service; then
@@ -50,6 +52,34 @@ if getent passwd welcomepi >/dev/null; then
     esac
 fi
 
+install_updater() {
+    local helper=/usr/local/lib/welcomepi-update
+    if ! id -u welcomepi-build >/dev/null 2>&1; then
+        useradd --system --user-group --no-create-home --home-dir /nonexistent \
+            --shell /usr/sbin/nologin welcomepi-build
+    fi
+    [[ $(id -u welcomepi-build) != 0 && $(id -g welcomepi-build) != 0 ]] || \
+        die "The dependency builder needs an unprivileged account."
+    case "$(getent passwd welcomepi-build | cut -d: -f7)" in
+        */nologin|*/false) ;;
+        *) die "Reserve welcomepi-build for the non-interactive dependency builder." ;;
+    esac
+    install -d -m 0755 "$helper" /etc/systemd/system/welcomepi.service.d
+    install -m 0644 "$source_dir"/deploy/{update,release}.py "$helper/"
+    /usr/bin/python3 -E -s -B "$helper/update.py" enroll
+    install -m 0644 "$source_dir/deploy/current.conf" /etc/systemd/system/welcomepi.service.d/10-current.conf
+    install -m 0644 "$source_dir"/deploy/welcomepi-update.{service,timer} /etc/systemd/system/
+}
+
+if [[ $1 == enable-updates ]]; then
+    [[ -x "$app/.venv/bin/python" && -f /etc/welcomepi.env ]] || die "Run the install step first."
+    install_updater
+    systemctl daemon-reload
+    systemctl enable --now welcomepi-update.timer
+    echo "Automatic updates enabled. Check with systemctl list-timers welcomepi-update.timer"
+    exit 0
+fi
+
 apt-get update
 apt-get install -y --no-install-recommends \
     python3-venv python3-kms++ kms++-utils python3-pil python3-pymongo \
@@ -61,15 +91,19 @@ if ! id -u welcomepi >/dev/null 2>&1; then
     useradd --system --gid welcomepi --no-create-home --home-dir /nonexistent \
         --shell /usr/sbin/nologin welcomepi
 fi
-install -d -m 0755 "$app" "$app/welcomepi" "$app/pi0"
-/usr/bin/python3 -m venv --system-site-packages "$app/.venv"
-"$app/.venv/bin/python" -m pip --disable-pip-version-check install -r "$source_dir/requirements.txt"
-"$app/.venv/bin/python" -B -c \
-    'from PIL import Image; import pykms, pymongo, paho.mqtt.client, qrcode, nfc; print("Pillow", Image.__version__, "and kiosk dependencies imported")'
+if [[ -L "$app/current" ]]; then
+    install_updater
+else
+    install -d -m 0755 "$app" "$app/welcomepi" "$app/pi0"
+    /usr/bin/python3 -m venv --system-site-packages "$app/.venv"
+    "$app/.venv/bin/python" -m pip --disable-pip-version-check install -r "$source_dir/requirements.txt"
+    "$app/.venv/bin/python" -B -c \
+        'from PIL import Image; import pykms, pymongo, paho.mqtt.client, qrcode, nfc; print("Pillow", Image.__version__, "and kiosk dependencies imported")'
 
-install -m 0644 "$source_dir"/welcomepi/*.py "$app/welcomepi/"
-install -m 0644 "$source_dir/pi0/check.py" "$app/pi0/check.py"
-install -m 0644 "$source_dir/requirements.txt" "$app/requirements.txt"
+    install -m 0644 "$source_dir"/welcomepi/*.py "$app/welcomepi/"
+    install -m 0644 "$source_dir/pi0/check.py" "$app/pi0/check.py"
+    install -m 0644 "$source_dir/requirements.txt" "$app/requirements.txt"
+fi
 if [[ ! -e /etc/welcomepi.env ]]; then
     install -m 0600 "$source_dir/welcomepi.env.example" /etc/welcomepi.env
 fi

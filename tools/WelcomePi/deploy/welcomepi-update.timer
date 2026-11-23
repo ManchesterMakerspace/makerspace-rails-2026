@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for WelcomePi updates every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=10s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
