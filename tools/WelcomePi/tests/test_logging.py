@@ -67,10 +67,16 @@ class SyslogTests(unittest.TestCase):
             stderr = StringIO()
             with redirect_stderr(stderr), kiosk_logging(config):
                 log = logging.getLogger("welcomepi.test")
-                log.info("Card scan at MQTT checkins/insert (Door A), member Test Member")
-                log.warning("No valid member found at local PN532 UART")
-                log.error("MongoDB timeout\n%s p@ss mqtt-private slack-private", config.rails_uri + "?authMechanism=x")
-            messages = [server.recv(9000).decode() for _ in range(3)]
+                log.info("[udp-test] Card scan at MQTT checkins/insert (Door A), member Test Member")
+                log.warning("[udp-test] No valid member found at local PN532 UART")
+                log.error("[udp-test] MongoDB timeout\n%s p@ss mqtt-private slack-private",
+                          config.rails_uri + "?authMechanism=x")
+            # PyMongo can finish a heartbeat asynchronously after its test client closes.
+            messages = []
+            while len(messages) < 3:
+                packet = server.recv(9000).decode()
+                if "[udp-test]" in packet:
+                    messages.append(packet)
         self.assertEqual(stderr.getvalue(), "")
         for line, prefix in zip(messages, ("<30>", "<28>", "<27>")):
             self.assertTrue(line.startswith(prefix), line)
