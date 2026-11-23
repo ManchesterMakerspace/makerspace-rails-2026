@@ -11,6 +11,8 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from PIL import Image
 from pymongo.errors import PyMongoError
 
+from .logs import driver_detail
+
 
 @dataclass(frozen=True)
 class Avatar:
@@ -91,7 +93,7 @@ class LedgerData:
                  "rank": participant["rank"], "slack_id": uid},
                 ["avatar.file_id", "avatar512.file_id", "avatar512.sha256", "revision"])
         except PyMongoError as error:
-            logging.getLogger(__name__).warning("Avatar reference unavailable (%s)", type(error).__name__)
+            logging.getLogger(__name__).error("MongoDB avatar reference failed: %s", driver_detail(error))
             return None
         small = (current or {}).get("avatar512") or {}
         if not small.get("file_id") or not current.get("revision") or not (current.get("avatar") or {}).get("file_id"):

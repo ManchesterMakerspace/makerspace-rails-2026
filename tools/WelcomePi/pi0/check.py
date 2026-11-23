@@ -1,15 +1,22 @@
 """Read-only commissioning probes, run by setup.sh in the service environment."""
 import argparse
 from dataclasses import replace
-from pathlib import Path
+import logging
 from queue import Empty, Queue
 import sys
 import time
 from uuid import uuid4
 
+from pymongo.errors import PyMongoError
+
 from welcomepi.config import Settings
 from welcomepi.data import database_provider
 from welcomepi.inputs import start_mqtt
+from welcomepi.logs import driver_detail, kiosk_logging
+from welcomepi.reader import discover_reader
+
+
+LOG = logging.getLogger(__name__)
 
 
 class CheckFailed(Exception):
@@ -25,14 +32,12 @@ def read_collections(uri, collections):
         db.client.close()
 
 
-def probe_reader(port):
-    import nfc
-
-    tty = Path(port).resolve(strict=True).name
-    if not tty.startswith("tty"):
-        raise CheckFailed("The configured reader path must resolve to a UART device.")
-    with nfc.ContactlessFrontend("tty:" + tty[3:] + ":pn532"):
-        pass  # Opening the PN532 exercises its firmware handshake.
+def probe_reader(settings):
+    reader, report = discover_reader(settings)
+    LOG.log(logging.INFO if reader else logging.WARNING, "%s", report)
+    if reader:
+        reader.close()
+    print(report)
 
 
 def probe_mqtt(settings, watch):
@@ -48,6 +53,8 @@ def probe_mqtt(settings, watch):
             try:
                 event = events.get(timeout=max(0, deadline - time.monotonic()))
             except Empty:
+                if kind == "subscribed":
+                    LOG.error("MQTT commissioning timed out: %s", timeout_message)
                 raise CheckFailed(timeout_message) from None
             if event == kind:
                 return
@@ -79,12 +86,17 @@ def main():
     except ValueError:
         print("Check the required values and their formats in /etc/welcomepi.env.", file=sys.stderr)
         return 1
+    with kiosk_logging(settings):
+        return run_checks(settings, args)
+
+
+def run_checks(settings, args):
     checks = []
     if args.mode == "check":
         if args.reader_in_use:
-            print("The kiosk owns the UART. Verify the reader with a local tap.")
+            print("The kiosk owns reader discovery. Verify the selected reader with a local tap.")
         else:
-            checks.append(("PN532 UART handshake", probe_reader, (settings.nfc_port,)))
+            checks.append(("Reader discovery", probe_reader, (settings,)))
         checks.extend([
             ("Rails member, card and check-in reads", read_collections, (settings.rails_uri, ("members", "cards", "checkins"))),
             ("Ledger participant read", read_collections, (settings.ledger_uri, ("ledger_participants",))),
@@ -95,7 +107,9 @@ def main():
         try:
             probe(*inputs)
         except Exception as error:
-            # Driver exceptions can include a connection URI or private data.
+            if isinstance(error, PyMongoError):
+                LOG.error("MongoDB %s failed: %s", label, driver_detail(error))
+            # Keep connection details in configured syslog, separate from operator output.
             reason = str(error) if isinstance(error, CheckFailed) else type(error).__name__
             print(f"FAIL  {label} ({reason})", file=sys.stderr)
             failed = True

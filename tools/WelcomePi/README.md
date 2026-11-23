@@ -16,8 +16,8 @@ Select **Raspberry Pi OS (Legacy, 32-bit) Lite**, Debian 12 Bookworm. The offici
 
 ## Install on a Pi Zero or Pi 3B+
 
-1. Connect the HDMI monitor and provide networking. An original Zero needs a network adapter. Set the PN532 module to **HSU/UART** mode according to its board markings. Cross its **3.3 V logic** TX/RX with Pi GPIO15/RXD (pin 10) and GPIO14/TXD (pin 8), connect ground, and power the breakout according to its own specifications. The original Zero may need a soldered GPIO header.
-2. In `sudo raspi-config` → **Interface Options** → **Serial Port**, disable the serial login shell and enable the serial hardware. Reboot and check `readlink -f /dev/serial0`. A USB-to-UART adapter can use its stable `/dev/serial/by-id/...` path instead. WelcomePi discovers an ISO 14443-A UID with nfcpy and preserves byte order and leading zeroes. [nfcpy serial configuration](https://nfcpy.readthedocs.io/en/latest/topics/get-started.html)
+1. Connect HDMI and networking. An original Zero needs a network adapter and may need a soldered GPIO header. With power disconnected, select **I²C** or **HSU/UART** on the PN532 breakout. For I²C connect SDA to physical pin 3 and SCL to pin 5. For UART connect breakout TX to pin 10 and RX to pin 8. Connect ground, follow the board's supply specification, and use 3.3 V logic and pull-ups. [Pi Zero wiring guide](setup-pi0.MD#2-wire-the-pn532-while-power-is-disconnected)
+2. In `sudo raspi-config` under **Interface Options**, enable **I2C** for an I²C board. For UART, select **Serial Port**, disable the serial login shell and enable serial hardware. Reboot. WelcomePi probes the configured Linux I²C adapter for PN532 firmware, then tries the configured UART. A USB-to-UART adapter can use its stable `/dev/serial/by-id/...` path. With no local reader the kiosk keeps listening for door check-ins and retries discovery. Both transports preserve the ISO 14443-A UID's byte order and leading zeroes. [Linux I²C interface](https://docs.kernel.org/i2c/dev-interface.html) · [nfcpy serial configuration](https://nfcpy.readthedocs.io/en/latest/topics/get-started.html)
 3. Use the full `vc4-kms-v3d` graphics driver and dedicate the HDMI output to the kiosk. Check the connected display with `kmsprint`. Keep console blanking disabled (`consoleblank=0` on the existing single kernel command line in `/boot/firmware/cmdline.txt`) so the kiosk owns the standby timer. Detect rotation automatically or set an override below. [Pi display configuration](https://www.raspberrypi.com/documentation/computers/configuration.html#set-the-kms-display-mode)
    To try 720p on a slower Pi with a compatible monitor, append `video=HDMI-A-1:1280x720@60` to the same line and reboot. Use the connector name reported by `kmsprint`.
 4. From this tool directory in the checkout, install the system libraries and service. The virtual environment inherits the distribution's Pillow, MongoDB driver, and KMS bindings. This avoids depending on ARMv7 binary wheels on the ARMv6 Zero. [Raspberry Pi KMS Python bindings](https://github.com/raspberrypi/pykms)
@@ -26,7 +26,7 @@ Select **Raspberry Pi OS (Legacy, 32-bit) Lite**, Debian 12 Bookworm. The offici
 sudo apt update
 sudo apt install python3-venv python3-kms++ kms++-utils python3-pil python3-pymongo \
   python3-dnspython python3-paho-mqtt python3-qrcode python3-serial python3-usb1 \
-  libusb-1.0-0 ca-certificates fonts-dejavu-core tzdata
+  libusb-1.0-0 i2c-tools ca-certificates fonts-dejavu-core tzdata
 sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin welcomepi
 sudo install -d /opt/welcomepi
 sudo cp -R welcomepi requirements.txt /opt/welcomepi/
@@ -37,7 +37,7 @@ sudoedit /etc/welcomepi.env
 sudo install -m 644 welcomepi.service /etc/systemd/system/welcomepi.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now welcomepi
-journalctl -u welcomepi -f
+journalctl -t welcomepi -f
 ```
 
 For an upgrade, replace the code and dependencies under `/opt/welcomepi`, install the updated unit, run `systemctl daemon-reload`, and restart `welcomepi`. Keep the configured environment file. Stop the kiosk with `sudo systemctl stop welcomepi`.
@@ -51,7 +51,9 @@ Set values in `/etc/welcomepi.env`. Restart the service after edits.
 | `MLAB_URI`, `LEDGER_URI` | Required. Read-only MongoDB URIs including the Rails source and Ledger database names respectively. Use the source database watched by ChangeStream2MQTT, normally `makerauth`. |
 | `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS` | Host required. TLS defaults to `true` with port 8883. Explicit `false` defaults to 1883. TLS verifies the broker against the OS trust store. |
 | `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_CLIENT_ID` | Broker credentials if required. The default client ID is `welcomepi-<hostname>`. Give each kiosk a unique ID. |
-| `WELCOMEPI_NFC_PORT` | Default `/dev/serial0`. Points to the PN532 serial device. |
+| `WELCOMEPI_I2C_BUS`, `WELCOMEPI_I2C_ADDRESSES` | Default `/dev/i2c-1` and `0x24`. For an address translator, list the mapped 7-bit addresses in probe order, separated by commas. |
+| `WELCOMEPI_NFC_PORT` | Default `/dev/serial0`. UART fallback when the I²C firmware probes fail or the adapter is absent. |
+| `WELCOMEPI_SYSLOG_HOST`, `WELCOMEPI_SYSLOG_PORT` | Set both to send application logs directly to a collector's IPv4 or IPv6 address and UDP port. Leave both unset for local syslog. |
 | `WELCOMEPI_ROTATION` | `auto` uses the active plane, connector orientation, kernel display settings, or console rotation. `left` rotates the rendered image counterclockwise, `right` clockwise, and `normal` uses no rotation. A monitor without orientation metadata needs an override if mounted sideways. |
 | `WELCOMEPI_OPPORTUNITIES` | Positive integer, default 5. The generic board lists up to 10. |
 | `EVENTBRITE_ORGANIZATION_IDS` | Match Rails' comma-separated organization IDs. Empty permits all synced organizations. |
@@ -65,7 +67,13 @@ Grant MongoDB **find** access on these collections only. Aggregations use the sa
 | Rails | `members`, `cards`, `checkins`, `reservations`, `shops`, `tools`, `tool_checkouts`, `volunteer_tasks`, `volunteer_events`, `volunteer_credits`, `fix_tickets`, `eventbrite_events`, `slack_users` |
 | Ledger | `ledger_participants`, `ledger_catalog`, `ledger_awards`, `ledger_evidence`, `ledger_avatars` |
 
-Grant the kiosk subscribe-only access to `checkins/insert` and each of `insert`, `update`, `replace`, `delete` under `members/` and `cards/`. Only the trusted publisher should be able to publish on these topics. The existing publisher sends **full member documents**, including sensitive fields. WelcomePi projects identity fields before queuing an event and keeps the directory, personal text, and private image bytes in process memory. Its diagnostics contain component names, error types, display geometry, and greeting timing.
+Grant the kiosk subscribe-only access to `checkins/insert` and each of `insert`, `update`, `replace`, `delete` under `members/` and `cards/`. Only the trusted publisher should be able to publish on these topics. The existing publisher sends **full member documents**, including sensitive fields. WelcomePi projects identity fields before queuing an event and keeps the directory, agenda, kudos, and private image bytes in RAM.
+
+**Application logs** use syslog's `daemon` facility and `welcomepi` tag. On the Pi the default destination is `/dev/log`. Follow it with `sudo journalctl -b -t welcomepi -f`. On systems without a syslog socket the service writes to the local journal via stderr. A configured remote collector receives UDP datagrams directly with the kiosk hostname. The Pi keeps the delivery queue in RAM. UDP carries member names in clear text, so select a collector and network approved for attendance records.
+
+- **INFO** records the selected PN532 interface and each distinct card presentation or fresh door arrival. A verified scan includes first and last name and the local transport/device or MQTT topic and reported door location. Local taps create no Rails check-in. Retained messages, duplicate arrivals, and a continuously held fob produce no additional scan records.
+- **WARNING** reports MQTT-only operation when neither reader responds. Every unverified scan also gets a warning explaining whether eligibility or a lookup failure prevented identification.
+- **ERROR** records MQTT socket/TLS, connection, subscription and keepalive failures, and MongoDB query, server-selection and heartbeat failures with their driver messages. Credentials and echoed MongoDB commands are filtered from application logs.
 
 ## Operation
 
@@ -89,8 +97,8 @@ On each target model, verify the following using test accounts and fobs.
 
 1. Boot with HDMI connected, then unplug and reconnect it. Check native resolution and landscape, left, and right orientation. Scan the QR at room distance, first while signed out and again with an existing portal session. Both should reach Home, with sign-in when required.
 2. Compare the PN532 UID against a known door scan through the resulting first-name welcome. Hold the card steady, remove and retap, then dismiss. Repeat starting at the door. Test a second member just before and after the 30-second handoff. Check that a local tap leaves door history unchanged.
-3. Verify the first frame with a warm directory, slow agenda reads, and a sleeping monitor. The journal's **Welcome frame submitted** duration measures scan recognition to frame submission. Target 500 ms or less on the awake screen. Measure the monitor's physical wake delay separately.
-4. Check a participant's current private avatar, rank-icon fallback, DM-only delivered kudos, and a checkout expiring today. Interrupt MongoDB, MQTT and the UART individually and restore each service. Verify that revoked cards and expired memberships stop opening personal pages.
+3. Verify the first frame with a warm directory, slow agenda reads, and a sleeping monitor. The **Welcome frame submitted** log duration measures scan recognition to frame submission. Target 500 ms or less on the awake screen. Measure the monitor's physical wake delay separately.
+4. Check a participant's current private avatar, rank-icon fallback, DM-only delivered kudos, and a checkout expiring today. Exercise I²C, UART and reader-absent boots. Verify a door welcome in MQTT-only mode. Interrupt MongoDB and MQTT individually, check the reported errors, and restore each service. Verify that revoked cards and expired memberships stop opening personal pages.
 5. Leave both inputs idle. Inspect the generic board after two minutes and monitor standby after four hours. Wake from standby independently with each input.
 
 The [wiki release patch](wiki-release.patch) updates **Check-In Activity** and **Troubleshooting** and adds **WelcomePi updates** for kiosk operators. Hold it until the entrance display and its updater are deployed. In a current WikiPages checkout, fetch `master`, apply the patch on a branch with `git apply --check` then `git apply`, and open the normal wiki pull request.

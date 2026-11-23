@@ -2,7 +2,7 @@
 
 ## WelcomePi entrance display
 
-The [WelcomePi entrance kiosk](WelcomePi/README.md) displays member agendas, Ledger character sheets, and the volunteer board on Raspberry Pi OS Lite. Its PN532 reader is local to the display. Door check-ins come from ChangeStream2MQTT.
+The [WelcomePi entrance kiosk](WelcomePi/README.md) displays member agendas, Ledger character sheets, and the volunteer board on Raspberry Pi OS Lite. It detects a PN532 over I²C or UART and can run from ChangeStream2MQTT door check-ins alone. Scan and driver logs go to local syslog or a configured remote UDP collector.
 
 An enrolled Zero W checks GitHub every five minutes for tested runtime changes on `master`. The [Pi setup guide](WelcomePi/setup-pi0.MD#8-enable-automatic-updates-from-master) covers enrollment, flash usage and rollback.
 

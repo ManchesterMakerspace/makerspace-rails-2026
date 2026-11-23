@@ -2,13 +2,15 @@
 from collections import OrderedDict
 from datetime import datetime
 import logging
-from pathlib import Path
+import sys
+from threading import RLock, Timer
 import time
 
 from bson import ObjectId, json_util
 from bson.errors import BSONError
 import paho.mqtt.client as mqtt
 
+from .logs import driver_detail
 from .state import CARD_FIELDS, MEMBER_FIELDS, PERSONAL_SECONDS, UTC, checkin_time
 
 
@@ -54,85 +56,138 @@ class DoorFeed:
         if key in self.seen:
             return None
         self.seen[key] = monotonic
-        return ("scan", document["uid"], False, monotonic)
+        where = document.get("where")
+        source = f"MQTT {topic}"
+        if isinstance(where, str) and where.strip():
+            source += f" ({where.strip()[:128]})"
+        return ("scan", document["uid"], False, monotonic, source)
+
+
+def reason_text(reason, legacy, properties=None):
+    code = getattr(reason, "value", reason)
+    description = str(reason) if hasattr(reason, "is_failure") else legacy(code)
+    message = getattr(properties, "ReasonString", None)
+    return f"{description} ({code})" + (f" — {message}" if message else "")
 
 
 def start_mqtt(settings, emit):
     feed = DoorFeed()
-    args = {"callback_api_version": mqtt.CallbackAPIVersion.VERSION2} if hasattr(mqtt, "CallbackAPIVersion") else {}
-    client = mqtt.Client(client_id=settings.mqtt_id, clean_session=True, **args)
-    if settings.mqtt_tls:
-        client.tls_set()
-    if settings.mqtt_user:
-        client.username_pw_set(settings.mqtt_user, settings.mqtt_password)
+    pending = None
+    timer = None
+    subscription_lock = RLock()
 
-    def connected(client, _data, _flags, rc, _properties=None):
+    def clear_subscription():
+        nonlocal pending, timer
+        with subscription_lock:
+            if timer:
+                timer.cancel()
+            pending = timer = None
+
+    def request_subscriptions(client):
+        nonlocal pending, timer
+        with subscription_lock:
+            clear_subscription()
+            rc, mid = client.subscribe(TOPICS)
+            if rc != mqtt.MQTT_ERR_SUCCESS:
+                LOG.error("MQTT subscribe failed: %s", reason_text(rc, mqtt.error_string))
+                emit("disconnected")
+                return
+            pending = mid
+
+            def timed_out():
+                with subscription_lock:
+                    if timer is deadline:
+                        LOG.error("MQTT subscription ACK timed out after 20 seconds (packet %s). Retrying.", mid)
+                        request_subscriptions(client)
+
+            deadline = Timer(20, timed_out)
+            deadline.daemon = True
+            timer = deadline
+            deadline.start()
+
+    def connected(client, _data, _flags, rc, properties=None):
         if rc == 0:
-            client.subscribe(TOPICS)
-
-    def subscribed(_client, _data, _mid, grants, _properties=None):
-        if len(grants) == len(TOPICS) and all(getattr(qos, "value", qos) in (0, 1, 2) for qos in grants):
-            emit("subscribed")
+            request_subscriptions(client)
         else:
-            LOG.warning("MQTT subscription refused; verify topic ACLs")
+            LOG.error("MQTT connection refused: %s", reason_text(rc, mqtt.connack_string, properties))
             emit("disconnected")
+
+    def connection_failed(_client, _data):
+        # Paho calls on_connect_fail inside its socket/TLS exception handler in 1.x and 2.x.
+        error = sys.exc_info()[1]
+        LOG.error("MQTT connection to %s:%s failed: %s", settings.mqtt_host, settings.mqtt_port,
+                  driver_detail(error) if error else "Paho reported a connection failure")
+
+    def subscribed(_client, _data, mid, grants, properties=None):
+        with subscription_lock:
+            if mid != pending:
+                return
+            clear_subscription()
+        refused = [f"{topic}: {reason_text(qos, lambda _: 'subscription refused', properties)}"
+                   for (topic, _), qos in zip(TOPICS, grants) if getattr(qos, "value", qos) not in (0, 1, 2)]
+        if len(grants) != len(TOPICS):
+            refused.append(f"received {len(grants)} of {len(TOPICS)} grants")
+        if refused:
+            LOG.error("MQTT subscription failed: %s", ", ".join(refused))
+            emit("disconnected")
+        else:
+            emit("subscribed")
+
+    def disconnected(_client, _data, flags_or_rc, reason=None, properties=None):
+        clear_subscription()
+        rc = flags_or_rc if reason is None else reason
+        if rc != 0:
+            LOG.error("MQTT disconnected: %s", reason_text(rc, mqtt.error_string, properties))
+        emit("disconnected")
 
     def received(_client, _data, msg):
         try:
             event = feed.message(msg.topic, msg.payload, msg.retain, datetime.now(UTC), time.monotonic())
-        except (BSONError, ValueError, KeyError, TypeError, OverflowError, AttributeError, OSError):
-            LOG.warning("Ignoring malformed MQTT message on %s", msg.topic)
+        except (BSONError, ValueError, KeyError, TypeError, OverflowError, AttributeError, OSError) as error:
+            # BSON decode errors can quote field values. These are payload errors, not driver errors.
+            LOG.warning("Malformed MQTT message on %s (%s)", msg.topic, type(error).__name__)
             event = ("resync",) if msg.topic.split("/")[0] in ("members", "cards") else None
         if event:
             emit(*event)
 
-    client.on_connect = connected
-    client.on_subscribe = subscribed
-    client.on_disconnect = lambda *_: emit("disconnected")
-    client.on_message = received
-    client.reconnect_delay_set(min_delay=1, max_delay=30)
-    client.connect_async(settings.mqtt_host, settings.mqtt_port, keepalive=30)
-    client.loop_start()
-    return client
+    def driver_log(_client, _data, level, message):
+        if level == mqtt.MQTT_LOG_ERR:
+            LOG.error("MQTT driver: %s", message)
+
+    try:
+        args = {"callback_api_version": mqtt.CallbackAPIVersion.VERSION2} if hasattr(mqtt, "CallbackAPIVersion") else {}
+        client = mqtt.Client(client_id=settings.mqtt_id, clean_session=True, **args)
+        if settings.mqtt_tls:
+            client.tls_set()
+        if settings.mqtt_user:
+            client.username_pw_set(settings.mqtt_user, settings.mqtt_password)
+        client.on_connect = connected
+        client.on_connect_fail = connection_failed
+        client.on_subscribe = subscribed
+        client.on_disconnect = disconnected
+        client.on_message = received
+        client.on_log = driver_log
+        client.reconnect_delay_set(min_delay=1, max_delay=30)
+        client.connect_async(settings.mqtt_host, settings.mqtt_port, keepalive=30)
+        rc = client.loop_start()
+        if rc not in (None, mqtt.MQTT_ERR_SUCCESS):  # Paho 1.x returns None on success.
+            raise RuntimeError(reason_text(rc, mqtt.error_string))
+        return client
+    except (OSError, ValueError, RuntimeError) as error:
+        LOG.error("MQTT startup failed: %s", driver_detail(error))
+        raise
 
 
-class CardPresence:
-    """Require an observed removal so a stationary card cannot cycle the display."""
-    def __init__(self):
-        self.held = None
-        self.last_seen = 0
-
-    def observe(self, uid, at):
-        if uid is None:
-            if at - self.last_seen >= 0.25:
-                self.held = None
-            return None
-        self.last_seen = at
-        if uid == self.held:
-            return None
-        self.held = uid
-        return uid
-
-
-def read_nfc(port, emit, stop):
-    import nfc
-    presence = CardPresence()
-    target = nfc.clf.RemoteTarget("106A")
+def listen_mqtt(settings, emit, stop):
     while not stop.is_set():
         try:
-            # /dev/serial0 can resolve to ttyAMA0 or ttyS0 on these Pi models.
-            tty = Path(port).resolve().name
-            if not tty.startswith("tty"):
-                raise OSError("No UART device")
-            with nfc.ContactlessFrontend("tty:" + tty[3:] + ":pn532") as reader:
-                while not stop.is_set():
-                    card = reader.sense(target)
-                    raw = card.sdd_res if card is not None else None
-                    at = time.monotonic()
-                    uid = presence.observe(raw.hex().upper() if raw else None, at)
-                    if uid:
-                        emit("scan", uid, True, at)
-                    stop.wait(0.08)
-        except (OSError, nfc.clf.Error) as error:
-            LOG.warning("NFC reader unavailable (%s); retrying", type(error).__name__)
-            stop.wait(3)
+            client = start_mqtt(settings, emit)
+        except (OSError, ValueError, RuntimeError):
+            stop.wait(5)
+            continue
+        try:
+            stop.wait()
+        finally:
+            client.disconnect()
+            client.loop_stop()
+        return

@@ -62,7 +62,7 @@ class Commissioning(unittest.TestCase):
             self.assertTrue(settings.mqtt_id.startswith("wpi-check-"))
             emit("subscribed")
             emit("change", "members", "update", {"firstname": "Private name"})
-            emit("scan", "00FA0001", False, 10)
+            emit("scan", "00FA0001", False, 10, "MQTT checkins/insert (Test door)")
             return client
         output = StringIO()
         with patch.object(check, "start_mqtt", side_effect=subscribe), redirect_stdout(output):

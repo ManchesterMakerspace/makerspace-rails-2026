@@ -31,7 +31,10 @@ job to check the release bytes a second time. Both are workflow-local.
 | `MQTT_TLS`, `MQTT_PORT` | No | TLS defaults to `true` and port 8883. Setting TLS to `false` uses port 1883 by default. Set the port explicitly to override either default. |
 | `MQTT_USERNAME`, `MQTT_PASSWORD` | Password | Optional credentials for the broker's subscribe-only kiosk account. |
 | `MQTT_CLIENT_ID` | No | Defaults to `welcomepi-<hostname>`. Use a unique ID for each running kiosk. |
-| `WELCOMEPI_NFC_PORT` | No | PN532 UART device path. Defaults to `/dev/serial0`. |
+| `WELCOMEPI_I2C_BUS` | No | Linux I²C adapter to probe for a PN532 when present. Defaults to `/dev/i2c-1`. |
+| `WELCOMEPI_I2C_ADDRESSES` | No | Comma-separated 7-bit addresses in probe order. Defaults to the standard `0x24`. Set additional addresses only for a known mapping. |
+| `WELCOMEPI_NFC_PORT` | No | PN532 UART device path, tried after I²C. Defaults to `/dev/serial0`. |
+| `WELCOMEPI_SYSLOG_HOST`, `WELCOMEPI_SYSLOG_PORT` | No | Leave both unset for local syslog. Set both to a collector IPv4 or IPv6 address and UDP port 1–65535 for direct remote-only application logs. |
 | `WELCOMEPI_ROTATION` | No | Defaults to `auto`. Accepted overrides are `left`, `right`, and `normal`. |
 | `WELCOMEPI_OPPORTUNITIES` | No | Positive integer. Defaults to five opportunities on the member agenda. |
 | `EVENTBRITE_ORGANIZATION_IDS` | No | Comma-separated organization IDs, matching the Rails sync configuration. Empty includes public occurrences from all synced organizations. |

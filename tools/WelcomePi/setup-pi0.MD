@@ -1,6 +1,6 @@
 # Bring up WelcomePi on a Pi Zero W at 720p
 
-Use the original Raspberry Pi Zero W, Raspberry Pi OS Lite **Bookworm 32-bit**, a PN532 in UART mode, and an HDMI monitor that accepts **1280×720 at 60 Hz**. Allow access from the Pi's network to your existing MongoDB databases and MQTT broker. Have a consenting member with a known working door fob available for the two acceptance checks.
+Use the original Raspberry Pi Zero W, Raspberry Pi OS Lite **Bookworm 32-bit**, a PN532 in I²C (IIC) or UART mode, and an HDMI monitor that accepts **1280×720 at 60 Hz**. Allow access from the Pi's network to your existing MongoDB databases and MQTT broker. Have a consenting member with a working door fob available for the two acceptance checks. You can also run the display from door check-ins alone.
 
 | Where | What to run |
 | --- | --- |
@@ -16,16 +16,18 @@ Use the original Raspberry Pi Zero W, Raspberry Pi OS Lite **Bookworm 32-bit**, 
 
 ## 2. Wire the PN532 while power is disconnected
 
-Set the breakout's switches or jumpers to **HSU / UART** using the markings or manual for that exact board. Switch positions vary. Use a soldered GPIO header on the Zero W. Pin numbers below are **physical header pins**.
+Set the breakout's switches or jumpers to **I²C** or **HSU / UART** using the markings for that exact board. Wire only the chosen interface. Use a soldered GPIO header on the Zero W. Pin numbers below are **physical header pins**.
 
 | Pi Zero W | PN532 breakout | Connection |
 | --- | --- | --- |
 | Pin 6, GND | GND | Common ground |
-| Pin 8, GPIO14 / TXD | RX / RXD | Pi transmits to reader |
-| Pin 10, GPIO15 / RXD | TX / TXD | Reader transmits to Pi |
+| Pin 3, GPIO2 / SDA | SDA | I²C data |
+| Pin 5, GPIO3 / SCL | SCL | I²C clock |
+| Pin 8, GPIO14 / TXD | RX / RXD | UART, Pi transmits to reader |
+| Pin 10, GPIO15 / RXD | TX / TXD | UART, reader transmits to Pi |
 | Pin 1, 3V3 | 3.3 V supply input | Use this connection only on a breakout rated for 3.3 V supply and within the Pi's supply budget. |
 
-Use **3.3 V logic** on both UART lines. If the breakout specifies a different VIN, power it according to its own manual and check its TX/RX logic levels. A 5 V UART output can damage the Pi's GPIO. Connect the monitor to the Zero's **mini HDMI** socket, select that input, insert the microSD, then connect the regulated 5 V supply to the micro-USB port marked **PWR IN**. [Pi UART electrical specifications](https://www.raspberrypi.com/documentation/computers/configuration.html#configure-uarts) · [Zero W ports and header](https://www.raspberrypi.com/documentation/computers/zero.html)
+Use **3.3 V logic** for both interfaces, including any SDA/SCL pull-ups. If the breakout specifies a different VIN, follow its manual for power and level shifting. Connect the monitor to the Zero's **mini HDMI** socket, select that input, insert the microSD, then connect the regulated 5 V supply to the micro-USB port marked **PWR IN**. [Pi GPIO specifications](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#gpio) · [Zero W ports and header](https://www.raspberrypi.com/documentation/computers/zero.html)
 
 ## 3. Copy the kiosk from the workstation
 
@@ -54,7 +56,9 @@ cd ~/WelcomePi
 sudo bash setup.sh install
 ```
 
-The installer uses `apt-get` for the full KMS bindings and `kmsprint`, Pillow, PyMongo and DNS support, Paho MQTT, QR generation, serial and USB libraries, fonts, CA certificates, time-zone data and Python venv support. It creates the service account, installs the code and unit, and creates a mode-0600 `/etc/welcomepi.env` on first install. MongoDB, ChangeStream2MQTT and the broker run on their existing hosts.
+The installer installs the full KMS bindings and `kmsprint`, Pillow, PyMongo and DNS support, Paho MQTT, QR generation, I²C tools, serial and USB libraries, fonts, CA certificates, time-zone data and Python venv support. It creates the service account, installs the unit with I²C and UART access, and creates a mode-0600 `/etc/welcomepi.env` on first install. MongoDB, ChangeStream2MQTT and the broker run on their existing hosts.
+
+**For an I²C reader**, run `sudo raspi-config nonint do_i2c 0` before the reboot in step 5. After reboot the default header bus appears as `/dev/i2c-1`. WelcomePi gets the chip's firmware identity at Linux address `0x24`. Some breakout manuals print the equivalent wire bytes `0x48` (write) and `0x49` (read). Linux configuration takes the 7-bit address. A UART-only or door-only installation can leave I²C disabled. [Raspberry Pi interface settings](https://www.raspberrypi.com/documentation/computers/configuration.html#i2c) · [NXP PN532 manual](https://www.nxp.com/docs/en/user-guide/141520.pdf)
 
 These are the virtual environment and dependency installation commands the installer runs from the staged source directory.
 
@@ -85,6 +89,8 @@ Replace the sample hostnames and every `REPLACE` value with site-provisioned set
 | `LEDGER_URI` | Read-only MongoDB URI with the actual Ledger database in its path. Include the correct `authSource` and TLS options where required in each URI. Percent-encode reserved characters in URI usernames and passwords. |
 | `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS`, `MQTT_USERNAME`, `MQTT_PASSWORD` | Broker and subscribe-only credentials for this Pi. The example uses TLS on port 8883. The OS trust store must trust the broker's certificate. |
 | `WELCOMEPI_NFC_PORT`, `WELCOMEPI_ROTATION` | Use `/dev/serial0` and `auto` for the initial setup. If the pixels need rotating for the physical mount, choose `left` or `right`. |
+| `WELCOMEPI_I2C_BUS`, `WELCOMEPI_I2C_ADDRESSES` | Defaults to `/dev/i2c-1` and `0x24`. For an address translator, enter its documented 7-bit addresses in probe order, separated by commas. |
+| `WELCOMEPI_SYSLOG_HOST`, `WELCOMEPI_SYSLOG_PORT` | Leave both unset for local syslog. For direct UDP delivery set both, for example `WELCOMEPI_SYSLOG_HOST=192.0.2.10` and `WELCOMEPI_SYSLOG_PORT=514`. Substitute your collector's IPv4 or IPv6 address and listening UDP port. |
 | `EVENTBRITE_ORGANIZATION_IDS`, `SLACKIDS_INELIGIBLE`, `WELCOMEPI_SLACK_TOKEN` | Match the site's Eventbrite organizations and Ledger exclusions. The optional Slack token enables private avatar images when it has access to the Ledger DM file. |
 
 Give the kiosk MongoDB **find** access on the collections in the [access table](README.md#configuration-and-access). Allow MQTT subscriptions to **checkins/insert** and to **insert**, **update**, **replace** and **delete** under both **members/** and **cards/**. The kiosk and the diagnostic use subscribe-only credentials. The diagnostic uses a separate client ID beginning with `wpi-check-` so it can run alongside the display. If broker policy binds credentials to one client ID, verify the live kiosk with the actual door scan and its journal.
@@ -95,32 +101,33 @@ sudo reboot
 
 ## 6. Check the hardware and start the generic board
 
-Reconnect from the workstation with `ssh makeradmin@welcomepi.local`. Check the clock, UART, display and connections before starting the service.
+Reconnect from the workstation with `ssh makeradmin@welcomepi.local`. Check the clock, available interfaces, display and connections before starting the service.
 
 ```sh
 cd ~/WelcomePi
 timedatectl status
+i2cdetect -l
 readlink -f /dev/serial0
 cat /sys/class/drm/card*-HDMI-A-1/status
 kmsprint
 sudo bash setup.sh check
 ```
 
-Look for the correct local time and a synchronized system clock, a UART device such as `/dev/ttyS0` (or `/dev/ttyAMA0` if remapped), **connected**, and an active **1280×720** mode. If `kmsprint` reports permission denied in the SSH login, run `sudo kmsprint`. The check opens the PN532 and reads its firmware handshake, performs read-only queries against Rails and Ledger, and waits for broker acknowledgment of all nine subscriptions. Each check prints **OK** or **FAIL**. When the kiosk is already running, it keeps ownership of the UART and the check reports that the local tap is the reader test.
+Look for a synchronized clock, **connected**, and an active **1280×720** mode. If `kmsprint` reports permission denied, run `sudo kmsprint`. The check prints the provisioned reader, for example `local PN532 I2C /dev/i2c-1@0x24` or `local PN532 UART /dev/serial0`. If both probes fail it reports **No PN532 found. Running MQTT-only** and continues checking the Rails and Ledger reads and all nine MQTT subscriptions. While the kiosk is running it owns the reader. Verify it with the local tap in step 7.
 
 ```sh
 sudo systemctl enable --now welcomepi.service
 sudo systemctl status welcomepi.service --no-pager
-sudo journalctl -b -u welcomepi.service -f
+sudo journalctl -b -t welcomepi -f
 ```
 
-The monitor should show today's date, the public board and the portal QR. The journal should contain **HDMI HDMI-A-1: 1280x720** with the detected rotation. Leave this SSH session following the journal. Use a second SSH session for the MQTT check below. **Ctrl+C** stops following the journal and leaves the service running.
+The monitor should show today's date, the public board and the portal QR. Look for **HDMI HDMI-A-1: 1280x720** with the detected rotation and the PN532 provisioning result. With remote syslog selected, follow the receiver's `welcomepi` records for this Pi. The application sends directly to that collector, without a local application log or a flash spool. UDP delivery is best effort. Use a second SSH session for the MQTT check below.
 
 ## 7. Verify each first welcome
 
 Use a fob with one active card record linked to an unmerged **activeMember** whose `expirationTime` is in the future. Start each test on the **generic board** so a same-member arrival is visibly a first welcome.
 
-1. **Local PN532.** Starting at the generic board, present the fob to the kiosk reader. Expect **Welcome, first name!**, active status and today's date, followed by the agenda. Hold the fob still briefly. The agenda should stay visible. Remove it. This local tap controls only the display. Note the journal's **Welcome frame submitted in … ms**. The warm-cache target is 500 ms from recognition to frame submission. The time for a sleeping monitor to light up is a separate measurement.
+1. **Local PN532.** Starting at the generic board, present the fob to the kiosk reader. Expect **Welcome, first name!**, active status and today's date, followed by the agenda. Hold the fob still briefly. The agenda should stay visible. Remove it. This local tap controls only the display. Look for **Welcome frame submitted in … ms** in the selected log. The warm-cache target is 500 ms from recognition to frame submission. The time for a sleeping monitor to light up is a separate measurement.
 2. **Return to the generic board.** Allow two minutes without eligible arrivals. To clear it sooner with a test member's consent, lift and present the same fob twice more on the local reader, removing it between presentations. The first opens shared-screen details, which can include private kudos. The second clears them.
 3. **Real door check-in via MQTT.** In the second SSH session run the following. Wait for **Listening** before presenting the fob at the **door reader**. Leave the kiosk reader untouched.
 
@@ -129,7 +136,7 @@ cd ~/WelcomePi
 sudo bash setup.sh watch-door
 ```
 
-The observer should report **Received a fresh checkins/insert**, and the kiosk should show the matching first-name welcome. The journal should record a new frame submission. This exercises the door, its recorded check-in, ChangeStream2MQTT, the broker and the kiosk together. The observer uses a read-only subscription and prints only the subscription and receipt results. A later door arrival for a member whose agenda is already visible refreshes activity on that page.
+The observer should report **Received a fresh checkins/insert**, and the kiosk should show the matching first-name welcome. In the selected log, confirm an **INFO** record with the member's name and the local I²C/UART interface for the first tap, and another with `MQTT checkins/insert` and the reported door for the second. A held fob or redelivered check-in produces one scan entry. An unrecognized fob produces an **INFO** scan and a **WARNING**. Broker and database failures appear at **ERROR** with the driver reason. The observer prints only receipt and subscription results.
 
 ## 8. Enable automatic updates from master
 
@@ -192,7 +199,9 @@ To return to the host's previous policy, remove that drop-in and restart `system
 | Cannot reach the Pi | Check power at PWR IN, the 2.4 GHz SSID, wireless country, SSH settings and the DHCP lease. |
 | Package or Python import fails | Confirm `bookworm` and `armhf`. Check package availability with `apt-cache policy python3-kms++ python3-pil` and confirm the venv interpreter under `/opt/welcomepi` is in use. Fix the package source or network and rerun `install`. |
 | Blank HDMI or wrong mode | Connect the powered monitor and select its input. Check `kmsprint`, the journal, and `grep -o 'video=HDMI-A-1:[^ ]*' /proc/cmdline`. The live kernel should report the 720p setting after reboot. For boot recovery, the workstation can copy the two `.welcomepi-backup` files back over their respective originals on the microSD boot partition. |
-| PN532 fails or the fob does nothing | Check power, ground, crossed TX/RX, HSU selection and `readlink -f /dev/serial0`. A GPIO UART listed in `/proc/consoles` is still a kernel console. For a standalone reader handshake, run `sudo systemctl stop welcomepi`, `sudo bash setup.sh check`, then `sudo systemctl start welcomepi`. Verify card and member eligibility if the handshake succeeds. [nfcpy serial reader setup](https://nfcpy.readthedocs.io/en/latest/topics/get-started.html) |
+| I²C reader falls back to UART or MQTT-only | Check the breakout's mode and power, 3.3 V SDA/SCL wiring, `i2cdetect -l`, and `ls -l /dev/i2c-1`. On an existing installation, repeat steps 3 and 4 to install the updated service group permissions. A PN532 can stretch SCL during wake-up. If the hardware adapter times out, the serial fallback or a Linux `i2c-gpio` adapter on separate pins can be used. Set `WELCOMEPI_I2C_BUS` to the resulting device. [PN532 I²C driver](https://github.com/nfc-tools/libnfc/blob/master/libnfc/drivers/pn532_i2c.c) · [Pi overlay parameters](https://github.com/raspberrypi/firmware/blob/master/boot/overlays/README) |
+| UART reader fails or the fob does nothing | Check power, common ground, crossed TX/RX, HSU mode and `readlink -f /dev/serial0`. A UART listed in `/proc/consoles` is still a kernel console. For either transport, stop `welcomepi`, run `sudo bash setup.sh check`, then restart the service. If the handshake works, check the scan warning and member eligibility. [nfcpy serial reader setup](https://nfcpy.readthedocs.io/en/latest/topics/get-started.html) |
+| No application logs on the remote collector | Check that both syslog settings are present, the address belongs to the collector, its UDP input is enabled, and its firewall accepts the configured port from the Pi. Restart `welcomepi` and look for the PN532 provisioning record at the collector. Remove both settings and restart to restore local app logging. |
 | Database read fails | Check the database name in each URI, credentials, `authSource`, DNS, network access and CA trust on the Pi. The diagnostic names the failed read and omits the URI. |
 | Local works but the door does not | Check the Pi's clock, TLS and broker ACLs, then wait for a new door entry with `watch-door`. A fresh, non-retained `checkins/insert` must come from ChangeStream2MQTT. Old records and redeliveries do not wake the kiosk. If the observer succeeds but the kiosk stays on the board, check eligibility, the kiosk's own broker client ID and its service journal. |
 

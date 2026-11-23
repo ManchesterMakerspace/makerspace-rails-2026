@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from ipaddress import ip_address
 import json
 import os
 import re
@@ -21,6 +22,9 @@ class Settings:
     organizations: tuple
     excluded: frozenset
     slack_token: str = field(repr=False)
+    syslog_server: tuple[str, int] | None = None
+    i2c_bus: str = "/dev/i2c-1"
+    i2c_addresses: tuple[int, ...] = (0x24,)
 
     @classmethod
     def load(cls, env=None):
@@ -46,10 +50,24 @@ class Settings:
         if not isinstance(ids, list) or any(not isinstance(s, str) or not re.fullmatch("[UW][A-Z0-9]+", s)
                                            for s in ids):
             raise ValueError("Invalid SLACKIDS_INELIGIBLE")
+        host = env.get("WELCOMEPI_SYSLOG_HOST", "").strip()
+        port = env.get("WELCOMEPI_SYSLOG_PORT", "").strip()
+        server = None
+        if host or port:
+            if not (host and port.isascii() and port.isdecimal() and 1 <= int(port) <= 65535):
+                raise ValueError("Set both WELCOMEPI_SYSLOG_HOST and WELCOMEPI_SYSLOG_PORT (1–65535)")
+            server = (str(ip_address(host)), int(port))
+        bus = env.get("WELCOMEPI_I2C_BUS", "/dev/i2c-1")
+        if not re.fullmatch(r"/dev/i2c-[0-9]+", bus):
+            raise ValueError("WELCOMEPI_I2C_BUS must name a Linux /dev/i2c-N adapter")
+        addresses = tuple(dict.fromkeys(int(addr.strip(), 0) for addr in
+                                        env.get("WELCOMEPI_I2C_ADDRESSES", "0x24").split(",")))
+        if not all(0x08 <= addr <= 0x77 for addr in addresses):
+            raise ValueError("WELCOMEPI_I2C_ADDRESSES must contain usable 7-bit I2C addresses")
         return cls(required("MLAB_URI"), required("LEDGER_URI"), required("MQTT_HOST"),
                    int(env.get("MQTT_PORT", "8883" if tls == "true" else "1883")), tls == "true",
                    env.get("MQTT_USERNAME"), env.get("MQTT_PASSWORD"),
                    env.get("MQTT_CLIENT_ID") or "welcomepi-" + socket.gethostname(),
                    env.get("WELCOMEPI_NFC_PORT", "/dev/serial0"), rotation, count,
                    tuple(part.strip() for part in env.get("EVENTBRITE_ORGANIZATION_IDS", "").split(",") if part.strip()),
-                   frozenset(ids), env.get("WELCOMEPI_SLACK_TOKEN", ""))
+                   frozenset(ids), env.get("WELCOMEPI_SLACK_TOKEN", ""), server, bus, addresses)

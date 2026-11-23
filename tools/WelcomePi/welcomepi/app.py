@@ -7,9 +7,13 @@ from queue import Empty, Queue
 from threading import Thread
 import time
 
+from pymongo.errors import PyMongoError
+
 from .data import RailsData, database_provider
-from .inputs import read_nfc, start_mqtt
+from .inputs import listen_mqtt
 from .ledger import Details, LedgerData
+from .logs import driver_detail
+from .reader import read_nfc
 from .render import render
 from .state import Directory, EASTERN, PERSONAL_SECONDS, Screen, UTC
 
@@ -62,7 +66,7 @@ class Kiosk:
         self.during_load = None
         self.next_snapshot = 0
         self.directory = Directory()
-        self.waiting.clear()
+        self.discard_scans(list(self.waiting), "identity cache reset")
         if self.screen.member:
             self.screen.show("board", self.clock())
         self.screen.pending = None
@@ -74,11 +78,10 @@ class Kiosk:
             # A tap observed before reassignment must never greet the new
             # owner. An unknown prior UID can affect any unresolved lookup.
             if previous is None and operation != "insert":
-                self.waiting.clear()
+                self.discard_scans(list(self.waiting), "card assignment changed")
             else:
-                if previous:
-                    self.waiting.pop(previous["uid"], None)
-                self.waiting.pop(doc.get("uid"), None)
+                self.discard_scans([previous["uid"] if previous else None, doc.get("uid")],
+                                   "card assignment changed")
         self.directory.update(collection, operation, doc)
         if self.during_load is not None:
             self.during_load[collection, doc["_id"]] = (collection, operation, doc)
@@ -97,10 +100,18 @@ class Kiosk:
             elif touches(self.screen.pending):
                 self.screen.pending = None
 
-    def accept(self, member, scans):
-        for seq, local, at in scans:
-            if (member is None or seq <= self.last_accepted or self.clock() - at >= PERSONAL_SECONDS
-                    or not member.valid(self.wall())):
+    def discard_scans(self, uids, reason):
+        for uid in uids:
+            self.accept(None, self.waiting.pop(uid, ()), reason)
+
+    def accept(self, member, scans, reason="card or membership is ineligible or unknown"):
+        for seq, local, at, source in scans:
+            if member is None or not member.valid(self.wall()):
+                LOG.info("Card scan at %s, member unknown", source)
+                LOG.warning("No valid member found at %s (%s)", source, reason)
+                continue
+            LOG.info("Card scan at %s, member %s", source, f"{member.first} {member.last}".strip())
+            if seq <= self.last_accepted or self.clock() - at >= PERSONAL_SECONDS:
                 continue
             self.last_accepted = seq
             self.screen.tick(at, self.wall())
@@ -123,8 +134,10 @@ class Kiosk:
             return
         error = future.exception()
         if error:
-            # Mongo errors can include a URI, Slack errors can include a private URL.
-            LOG.warning("%s temporarily unavailable (%s)", name, type(error).__name__)
+            if name == "avatar" and not isinstance(error, PyMongoError):
+                LOG.warning("Slack avatar unavailable (%s)", type(error).__name__)
+            else:
+                LOG.error("MongoDB %s failed: %s", name, driver_detail(error))
         value = None if error else future.result()
         if name == "snapshot":
             if tag != self.epoch or self.during_load is None:
@@ -143,6 +156,8 @@ class Kiosk:
                 return
             if revision != self.revision:
                 self.resolve(uid)
+            elif error:
+                self.discard_scans([uid], "MongoDB lookup failed")
             else:
                 self.accept(value, self.waiting.pop(uid))
         elif tag[:2] == self.screen_tag():
@@ -182,9 +197,9 @@ class Kiosk:
     def handle(self, event):
         kind, *args = event
         if kind == "scan":
-            uid, local, at = args
+            uid, local, at, source = args
             self.sequence += 1
-            self.waiting[uid].append((self.sequence, local, at))
+            self.waiting[uid].append((self.sequence, local, at, source))
             self.resolve(uid)
         elif kind == "change":
             self.change(*args)
@@ -258,6 +273,7 @@ class Kiosk:
             self.next_refresh = at + (60 if self.screen.page == "board" else 15)
 
     def close(self):
+        self.discard_scans(list(self.waiting), "kiosk stopped before verification")
         self.work.shutdown(wait=False, cancel_futures=True)
         self.identity_work.shutdown(wait=False, cancel_futures=True)
         if self.display.output:
@@ -272,12 +288,12 @@ def run(settings, display, stop):
     rails = RailsData(database_provider(settings.rails_uri), settings.organizations)
     ledger = LedgerData(database_provider(settings.ledger_uri), rails, settings.excluded, settings.slack_token)
     kiosk = Kiosk(settings, rails, ledger, display)
-    reader = Thread(target=read_nfc, args=(settings.nfc_port, kiosk.emit, stop), daemon=True, name="PN532")
-    client = None
+    reader = Thread(target=read_nfc, args=(settings, kiosk.emit, stop), daemon=True, name="PN532")
+    broker = Thread(target=listen_mqtt, args=(settings, kiosk.emit, stop), daemon=True, name="MQTT")
     try:
         kiosk.tick()
         reader.start()
-        client = start_mqtt(settings, kiosk.emit)
+        broker.start()
         while not stop.is_set():
             try:
                 event = kiosk.events.get(timeout=0.2)
@@ -289,6 +305,7 @@ def run(settings, display, stop):
     finally:
         stop.set()
         kiosk.close()
-        if client:
-            client.disconnect()
-            client.loop_stop()
+        if broker.is_alive():
+            broker.join(timeout=3)
+        if reader.is_alive():
+            reader.join(timeout=2)

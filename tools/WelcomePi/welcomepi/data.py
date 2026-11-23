@@ -6,6 +6,7 @@ from threading import Lock
 from bson import ObjectId
 from pymongo import MongoClient
 
+from .logs import MongoFailures
 from .state import CARD_FIELDS, EASTERN, MEMBER_FIELDS, UTC, Directory, checkin_time, day_bounds, identify
 
 
@@ -20,7 +21,7 @@ def database_provider(uri):
             if database is None:
                 client = MongoClient(uri, connect=False, tz_aware=True, appname="WelcomePi",
                                      serverSelectionTimeoutMS=3000, connectTimeoutMS=3000,
-                                     socketTimeoutMS=6000, maxPoolSize=8)
+                                     socketTimeoutMS=6000, maxPoolSize=8, event_listeners=[MongoFailures()])
                 database = client.get_default_database()
         return database
 

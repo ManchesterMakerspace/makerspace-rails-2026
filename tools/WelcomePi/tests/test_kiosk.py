@@ -8,8 +8,9 @@ from bson import ObjectId, json_util
 
 from welcomepi.app import Kiosk
 from welcomepi.config import Settings
-from welcomepi.inputs import CardPresence, DoorFeed, TOPICS, start_mqtt
+from welcomepi.inputs import DoorFeed, TOPICS, start_mqtt
 from welcomepi.ledger import Avatar, Details
+from welcomepi.reader import CardPresence
 from welcomepi.state import Directory, Screen, UTC
 
 
@@ -109,14 +110,18 @@ class Inputs(unittest.TestCase):
     def test_real_publisher_envelope_and_replay_guards(self):
         feed = DoorFeed()
         epoch = int(NOW.timestamp())
-        doc = {"_id": ObjectId(), "uid": "00AB", "timeOf": NOW, "holder": "Test Member"}
+        doc = {"_id": ObjectId(), "uid": "00AB", "timeOf": NOW, "holder": "Unverified",
+               "where": "Workshop door"}
         def msg(document=doc, published=epoch):
             return f'insert {published} {{"document": {json_util.dumps(document)} }}'.encode()
         self.assertIsNone(feed.message("checkins/insert", msg(), True, NOW, 8))
         self.assertIsNone(feed.message("checkins/insert", msg(published=epoch-121), False, NOW, 8))
         self.assertIsNone(feed.message("checkins/insert", msg({**doc, "timeOf": epoch-121}), False, NOW, 8))
-        self.assertEqual(feed.message("checkins/insert", msg(), False, NOW, 8), ("scan", "00AB", False, 8))
+        self.assertEqual(feed.message("checkins/insert", msg(), False, NOW, 8),
+                         ("scan", "00AB", False, 8, "MQTT checkins/insert (Workshop door)"))
         self.assertIsNone(feed.message("checkins/insert", msg(), False, NOW, 9))
+        self.assertEqual(feed.message("checkins/insert", msg({**doc, "_id": "other", "where": None}),
+                                      False, NOW, 9)[-1], "MQTT checkins/insert")
         with self.assertRaises(ValueError):
             feed.message("members/update", msg(), False, NOW, 9)
         member = {"_id": ObjectId(), "firstname": "Test", "otp_secret_encrypted": "discard"}
@@ -131,6 +136,8 @@ class Inputs(unittest.TestCase):
         settings = Settings.load({"MLAB_URI": "stub", "LEDGER_URI": "stub", "MQTT_HOST": "broker"})
         emit = Mock()
         with patch("welcomepi.inputs.mqtt.Client") as factory:
+            factory.return_value.loop_start.return_value = 0
+            factory.return_value.subscribe.return_value = (0, 1)
             client = start_mqtt(settings, emit)
         self.assertIs(client, factory.return_value)
         client.on_connect(client, None, None, 0)
@@ -191,8 +198,42 @@ class Controller(unittest.TestCase):
 
     def scan(self, uid, local=True):
         self.at += 1
-        self.k.handle(("scan", uid, local, self.at))
+        source = "local PN532 I2C /dev/i2c-1@0x24" if local else "MQTT checkins/insert (Door A)"
+        self.k.handle(("scan", uid, local, self.at, source))
         self.k.tick()
+
+    def test_audit_each_scan_with_verified_full_name_and_reader(self):
+        self.pairs[0][0]["lastname"] = "Example"
+        self.preload()
+        with self.assertLogs("welcomepi.app", level="INFO") as log:
+            self.scan("AA")
+            self.scan("AA", False)
+            self.scan("UNKNOWN")
+            self.finish("lookup", None)
+        info = [r.getMessage() for r in log.records if r.levelname == "INFO" and "Card scan" in r.getMessage()]
+        self.assertEqual(info, ["Card scan at local PN532 I2C /dev/i2c-1@0x24, member Mara Example",
+                                "Card scan at MQTT checkins/insert (Door A), member Mara Example",
+                                "Card scan at local PN532 I2C /dev/i2c-1@0x24, member unknown"])
+        warnings = [r.getMessage() for r in log.records if r.levelname == "WARNING"]
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("No valid member found at local PN532 I2C", warnings[0])
+        self.assertNotIn("UNKNOWN", str(log.output))
+
+    def test_pending_scans_each_logged_once_on_reassignment_or_database_timeout(self):
+        from pymongo.errors import ServerSelectionTimeoutError
+        with self.assertLogs("welcomepi.app", level="INFO") as log:
+            self.scan("AA")
+            self.scan("AA", False)
+            old_tag = next(t for n, t in self.k.jobs if n == "lookup")
+            self.k.handle(("change", "cards", "update", self.pairs[0][1]))
+            self.finish("lookup", self.cache.lookup("AA", NOW), tag=old_tag)
+            self.scan("BB")
+            self.finish("lookup", error=ServerSelectionTimeoutError("test-db:27017 timed out"))
+        self.assertEqual(sum(r.getMessage().startswith("Card scan") for r in log.records), 3)
+        self.assertEqual(sum(r.levelname == "WARNING" for r in log.records), 3)
+        self.assertIn("MongoDB lookup failed: ServerSelectionTimeoutError: test-db:27017 timed out",
+                      next(r.getMessage() for r in log.records if r.levelname == "ERROR"))
+        self.assertNotIn("Mara", str(log.output))
 
     def preload(self):
         self.k.handle(("subscribed",))

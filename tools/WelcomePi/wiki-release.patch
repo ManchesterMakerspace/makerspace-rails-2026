@@ -1,5 +1,5 @@
 diff --git a/digital-makerspace/members/check-in-activity.md b/digital-makerspace/members/check-in-activity.md
-index e7dea43..2ad3d3e 100644
+index e7dea43..e3972a2 100644
 --- a/digital-makerspace/members/check-in-activity.md
 +++ b/digital-makerspace/members/check-in-activity.md
 @@ -22,6 +22,16 @@ The list shows the newest scans first. For each one you see the **Timestamp**, t
@@ -8,7 +8,7 @@ index e7dea43..2ad3d3e 100644
 
 +## At the entrance display
 +
-+Your door check-in wakes WelcomePi and shows your first name and today's agenda. You can also tap your fob on the reader beside the display. A local tap operates the display only. The door reader records your arrival.
++Your door check-in wakes WelcomePi and shows your first name and today's agenda. You can also tap your fob on the reader beside the display. The door reader records your arrival. A local tap controls the display. The kiosk logs the member name and reader location for recognized scans.
 +
 +**Your reservations** covers the next 12 hours, including time already underway. Pending and unpaid reservations carry a label. **Volunteer opportunities** shows work you can claim. Tasks restricted to today's weekday get the first two places when available. Space permitting, the screen also shows today's Eventbrite classes and a QR code for the portal Home page.
 +
@@ -42,7 +42,7 @@ diff --git a/digital-makerspace/admin/welcomepi-updates.md b/digital-makerspace/
 new file mode 100644
 --- /dev/null
 +++ b/digital-makerspace/admin/welcomepi-updates.md
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,21 @@
 +---
 +title: WelcomePi updates
 +description: Install and check automatic entrance display updates on the Pi Zero W.
@@ -60,3 +60,7 @@ new file mode 100644
 +Run `systemctl list-timers welcomepi-update.timer` to see the next check. To check immediately, run `sudo systemctl start welcomepi-update.service`. A new app release briefly restarts the display and returns it to the generic board. The kiosk keeps running through a failed download and restores its previous version after a failed startup check.
 +
 +For an update problem, inspect `sudo journalctl -b -u welcomepi-update.service`. The setup guide covers held releases and pausing updates for host maintenance. After a successful update, confirm one welcome at the kiosk reader and another from a real door check-in.
++
++## Reader and scan logs
++
++After a restart, look for the PN532 provisioning entry in `sudo journalctl -b -t welcomepi` or on the kiosk's configured remote syslog collector. The kiosk tries I²C, then UART. If neither responds, door check-ins still operate the display. Each scan entry identifies the reader and, when verified, the member. A warning marks a scan with no valid member. MQTT and MongoDB errors include the driver reason. Use these records to investigate a reported scan at the time and door the member gives you.

@@ -4,7 +4,8 @@
 
 The standalone [WelcomePi systemd service](../tools/WelcomePi/welcomepi.service)
 runs `python -m welcomepi` on the entrance Pi. Install, start, stop, and inspect
-it on that host with `systemctl` and `journalctl -u welcomepi`.
+it on that host with `systemctl`. Follow local application logs with
+`journalctl -t welcomepi` or use the configured remote syslog collector.
 It subscribes to ChangeStream2MQTT check-ins and card/member changes, reads the
 local PN532, renders Pillow frames, and controls HDMI standby. Local taps only
 control the display. Database access is read-only. The optional Slack credential
@@ -15,9 +16,13 @@ personal pages on local taps. Two idle minutes clear personal content and four
 idle hours disable HDMI. While visible, the board refreshes every minute and at
 Eastern midnight. The directory rebuilds after MQTT subscription, after gaps,
 and periodically. During recovery, a personal greeting requires a direct
-database lookup. The UART reconnects independently, and failed sections retry
-on the next page refresh. The journal records frame submission latency and
-component failures. See the [operator guide](../tools/WelcomePi/README.md)
+database lookup. Reader discovery probes the enabled I²C adapter for PN532
+firmware, then tries UART. If neither responds it logs a warning and retries
+while the display handles door check-ins. Syslog records reader selection,
+frame submission latency and each scan's verified member name and source.
+Unresolved scans also produce a warning. MQTT and MongoDB errors and timeouts
+include driver details at ERROR. Failed sections retry on refresh.
+See the [operator guide](../tools/WelcomePi/README.md)
 for installation, permissions, and on-device acceptance.
 
 For a Pi Zero W at 720p, the [commissioning guide](../tools/WelcomePi/setup-pi0.MD)
@@ -25,7 +30,7 @@ uses `workstation/setup.sh` to transfer the deployable files by SSH. On the Pi,
 `sudo bash setup.sh install` installs packages and the unit, builds the venv,
 and backs up and edits the two boot files. It preserves existing credentials
 and restarts an already running service. After configuration and reboot,
-`sudo bash setup.sh check` tests the available UART, database reads and broker
+`sudo bash setup.sh check` reports the selected reader or MQTT-only operation, then tests database reads and broker
 subscriptions. `sudo bash setup.sh watch-door` waits up to 90 seconds for a
 fresh door event after subscribing. Both diagnostics use the service account
 and a separate MQTT client ID. They print results to the operator's terminal
@@ -36,7 +41,9 @@ runs on GitHub for changes under `tools/WelcomePi/**` on `master`, on manual
 dispatch for `master`, and daily at 05:17 UTC. It compares committed runtime
 bytes with the published checksum and tests changed releases. The publisher
 rechecks the runtime on `master` before advancing `welcomepi-deploy` with an
-archive and manifest in one commit. The GitHub Actions run records publication.
+archive and manifest in one commit. Pull requests touching the kiosk or its
+workflow run the same Linux tests with read-only permissions. The GitHub Actions
+run on master records publication.
 
 On a commissioned Pi, `sudo bash setup.sh enable-updates` installs the
 [update service](../tools/WelcomePi/deploy/welcomepi-update.service) and

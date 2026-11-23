@@ -27,7 +27,7 @@ case "$1" in
         fi
         # Let systemd parse the credentials just as it does for the kiosk.
         exec systemd-run --quiet --wait --pipe --collect \
-            -p User=welcomepi -p Group=welcomepi -p 'SupplementaryGroups=video dialout' \
+            -p User=welcomepi -p Group=welcomepi -p 'SupplementaryGroups=video dialout i2c' \
             -p EnvironmentFile=/etc/welcomepi.env -p WorkingDirectory="$app" -p LimitCORE=0 \
             "$app/.venv/bin/python" -B -u -m pi0.check "${args[@]}"
         ;;
@@ -84,9 +84,10 @@ apt-get update
 apt-get install -y --no-install-recommends \
     python3-venv python3-kms++ kms++-utils python3-pil python3-pymongo \
     python3-dnspython python3-paho-mqtt python3-qrcode python3-serial python3-usb1 \
-    libusb-1.0-0 ca-certificates fonts-dejavu-core tzdata
+    libusb-1.0-0 i2c-tools ca-certificates fonts-dejavu-core tzdata
 
 getent group welcomepi >/dev/null || groupadd --system welcomepi
+getent group i2c >/dev/null || groupadd --system i2c
 if ! id -u welcomepi >/dev/null 2>&1; then
     useradd --system --gid welcomepi --no-create-home --home-dir /nonexistent \
         --shell /usr/sbin/nologin welcomepi

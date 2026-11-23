@@ -11,7 +11,7 @@ HOME = "HTTPS://MEMBERS.MANCHESTERMAKERSPACE.ORG/HOME"
 PERSONAL_SECONDS = 120
 HANDOFF_SECONDS = 30
 SLEEP_SECONDS = 4 * 3600
-MEMBER_FIELDS = ("_id", "firstname", "status", "role", "expirationTime", "merged_at")
+MEMBER_FIELDS = ("_id", "firstname", "lastname", "status", "role", "expirationTime", "merged_at")
 CARD_FIELDS = ("_id", "uid", "member_id", "validity")
 
 
@@ -50,6 +50,7 @@ class Identity:
     first: str
     role: str
     expires_ms: int
+    last: str = ""
 
     def valid(self, now):
         return self.expires_ms > now.timestamp() * 1000
@@ -65,7 +66,7 @@ def identify(card, member, now):
     if not isinstance(expiry, int) or expiry <= now.timestamp() * 1000:
         return None
     return Identity(member["_id"], card["_id"], card["uid"], member.get("firstname") or "member",
-                    member.get("role") or "member", expiry)
+                    member.get("role") or "member", expiry, member.get("lastname") or "")
 
 
 class Directory:

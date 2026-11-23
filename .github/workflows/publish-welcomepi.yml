@@ -1,6 +1,9 @@
 name: Publish WelcomePi
 
 on:
+  pull_request:
+    branches: [master]
+    paths: ['tools/WelcomePi/**', '.github/workflows/publish-welcomepi.yml']
   push:
     branches: [master]
     paths: ['tools/WelcomePi/**']
@@ -12,12 +15,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-welcomepi-master
+  group: publish-welcomepi-${{ github.event.pull_request.number || 'master' }}
   cancel-in-progress: false
 
 jobs:
   verify:
-    if: github.ref == 'refs/heads/master'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.inspect.outputs.changed }}
@@ -26,17 +29,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: master
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'master' }}
           persist-credentials: false
       - id: inspect
+        if: github.event_name != 'pull_request'
         name: Compare tracked runtime to the last publication
         run: python3 -B tools/WelcomePi/deploy/publish.py check >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        if: steps.inspect.outputs.changed == 'true'
+        if: github.event_name == 'pull_request' || steps.inspect.outputs.changed == 'true'
         with:
           python-version: '3.11'
-      - name: Test the release
-        if: steps.inspect.outputs.changed == 'true'
+      - name: Test WelcomePi
+        if: github.event_name == 'pull_request' || steps.inspect.outputs.changed == 'true'
         working-directory: tools/WelcomePi
         run: |
           bash -n setup.sh
@@ -47,7 +51,7 @@ jobs:
 
   publish:
     needs: verify
-    if: needs.verify.outputs.changed == 'true'
+    if: github.event_name != 'pull_request' && needs.verify.outputs.changed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
