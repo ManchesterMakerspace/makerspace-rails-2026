@@ -2,6 +2,8 @@
 
 WelcomePi is a read-only entrance kiosk for Raspberry Pi OS Lite **Bookworm, 32-bit**. It draws directly to HDMI with Pillow and KMS. A successful door check-in or a tap on the local PN532 wakes the display and greets a member. Local taps only control this screen.
 
+For a **Pi Zero W at 720p**, follow the [step-by-step setup guide](setup-pi0.MD). It includes the workstation transfer, GPIO wiring, Pi installer, and separate first-welcome checks at the kiosk and the door.
+
 ## Choosing an older board
 
 | Board on hand | Fit for the kiosk |

@@ -20,6 +20,17 @@ on the next page refresh. The journal records frame submission latency and
 component failures. See the [operator guide](../tools/WelcomePi/README.md)
 for installation, permissions, and on-device acceptance.
 
+For a Pi Zero W at 720p, the [commissioning guide](../tools/WelcomePi/setup-pi0.MD)
+uses `workstation/setup.sh` to transfer the deployable files by SSH. On the Pi,
+`sudo bash setup.sh install` installs packages and the unit, builds the venv,
+and backs up and edits the two boot files. It preserves existing credentials
+and restarts an already running service. After configuration and reboot,
+`sudo bash setup.sh check` tests the available UART, database reads and broker
+subscriptions. `sudo bash setup.sh watch-door` waits up to 90 seconds for a
+fresh door event after subscribing. Both diagnostics use the service account
+and a separate MQTT client ID. They print results to the operator's terminal
+and exit unsuccessfully on a failed check.
+
 ## Daily reservation channel announcements
 
 `ReservationSlackAnnouncementJob` calls `Service::ReservationSlackAnnouncements`
