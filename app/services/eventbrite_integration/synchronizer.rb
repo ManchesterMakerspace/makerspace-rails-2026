@@ -28,6 +28,7 @@ module EventbriteIntegration
     end
 
     def event(id)
+      raise ArgumentError, 'Missing Eventbrite event ID' if id.blank?
       known = Configuration.scope_organizations(EventbriteEvent.where(eventbrite_id: id.to_s)).first
       known || import_event(@client.get("events/#{id}/"))
     end
@@ -57,7 +58,10 @@ module EventbriteIntegration
     end
 
     def import_order(data, action: nil, parent: nil)
-      parent = event(data.fetch('event_id')) if !parent || parent.eventbrite_id != data.fetch('event_id').to_s
+      # Event-scoped order listings can omit the redundant event_id. An explicit
+      # different ID still requires resolving the destination of a moved order.
+      event_id = data['event_id'].to_s.presence || parent&.eventbrite_id
+      parent = event(event_id) unless parent && parent.eventbrite_id == event_id
       refunded = refund_detected?(data)
       record = upsert(EventbriteOrder, parent.organization_id, data, {
         event_id: parent.eventbrite_id, name: data['name'], email: normalize(data['email']),

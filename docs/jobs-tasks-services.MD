@@ -1489,6 +1489,11 @@ the admin run-job API. Invocation, filters, resume, errors, credentials and
 deployment requirements: [Eventbrite operator guide](eventbrite.md).
 
 Order backfills use an unfiltered order listing with attendee/refund expansions.
+Event-scoped order rows with omitted/null/blank `event_id` reuse the listing's
+known parent, including expanded attendees. Explicit different IDs still resolve
+the moved order's destination; missing IDs without a parent fail locally before
+an empty API path can be requested. Existing failed runs resume through
+`RESUME_RUN_ID` without clearing records or successful page checkpoints.
 `Synchronizer` uses provider refund/changed timestamps for `refunded_at`, including
 attendee-driven refund evidence, leaving it nil when the provider date is unknown.
 Local invalidation and evidence persist independently; replay preserves a known

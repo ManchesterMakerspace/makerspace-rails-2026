@@ -184,6 +184,38 @@ RSpec.describe EventbriteIntegration::Synchronizer do
     order = sync.import_order({ 'id' => 'moved', 'event_id' => new_parent.eventbrite_id }, parent: old_parent)
     expect(order.event_id).to eq(new_parent.eventbrite_id)
   end
+
+  it 'uses the listing parent when an order omits or blanks its event ID' do
+    parent = sync.import_event(event_data)
+    expect(client).not_to receive(:get)
+    [nil, '', '  ', :omitted].each_with_index do |id, index|
+      data = { 'id' => "scoped-#{index}", 'event_id' => id,
+        'attendees' => [{ 'id' => "scoped-attendee-#{index}" }] }
+      data.delete('event_id') if id == :omitted
+      order = sync.import_order(data, parent: parent)
+      expect(order.event_id).to eq(parent.eventbrite_id)
+      expect(order.organization_id).to eq(parent.organization_id)
+      expect(EventbriteAttendee.find_by(eventbrite_id: "scoped-attendee-#{index}").event_id).to eq(parent.eventbrite_id)
+    end
+  end
+
+  it 'rejects an order without a known event before constructing an empty API path' do
+    expect(client).not_to receive(:get)
+    [nil, '', '  ', :omitted].each do |id|
+      data = { 'id' => 'unscoped', 'event_id' => id }
+      data.delete('event_id') if id == :omitted
+      expect { sync.import_order(data) }.to raise_error(ArgumentError, 'Missing Eventbrite event ID')
+    end
+    expect(EventbriteOrder.count).to eq(0)
+  end
+
+  it 'does not use the listing parent to bypass a different event organization restriction' do
+    parent = sync.import_event(event_data)
+    expect(client).to receive(:get).with('events/outside/').and_return(event_data.merge('id' => 'outside', 'organization_id' => 'forbidden'))
+    expect { sync.import_order({ 'id' => 'outside-order', 'event_id' => 'outside' }, parent: parent) }
+      .to raise_error(EventbriteIntegration::Client::ApiError, /ORGANIZATION_NOT_ALLOWED/)
+    expect(EventbriteOrder.count).to eq(0)
+  end
   it 'never transfers historical links when a ghost email is reused' do
     old = create(:member, email: 'reuse@example.com')
     attendee = EventbriteAttendee.create!(organization_id: 'org-1', eventbrite_id: 'old', email: old.email, member_id: old.id)
