@@ -29,6 +29,7 @@ job to check the release bytes a second time. Both are workflow-local.
 | `MLAB_URI`, `LEDGER_URI` | Yes | Both required. Include the Rails source database and Ledger database names in their respective MongoDB URIs. |
 | `MQTT_HOST` | No | Required broker hostname. |
 | `MQTT_TLS`, `MQTT_PORT` | No | TLS defaults to `true` and port 8883. Setting TLS to `false` uses port 1883 by default. Set the port explicitly to override either default. |
+| `MQTT_CAFILE` | No | Optional path on the Pi to a readable PEM CA bundle for verifying the MQTT broker. Unset or empty uses system trust. Used only when MQTT TLS is enabled. |
 | `MQTT_USERNAME`, `MQTT_PASSWORD` | Password | Optional credentials for the broker's subscribe-only kiosk account. |
 | `MQTT_CLIENT_ID` | No | Defaults to `welcomepi-<hostname>`. Use a unique ID for each running kiosk. |
 | `WELCOMEPI_LOCATION_PATTERNS` | No | Optional JSON array of case-insensitive regular expressions. A fresh MQTT arrival can trigger a welcome if any expression matches anywhere in its document location (`where`, then `reader`, then the literal `blank:` even when the activity topic identifies a sending reader). Unset allows all locations. An empty array `[]` makes all MQTT arrivals history-only. Local fob taps still work. |
@@ -38,6 +39,9 @@ job to check the release bytes a second time. Both are workflow-local.
 | `WELCOMEPI_SYSLOG_HOST`, `WELCOMEPI_SYSLOG_PORT` | No | Leave both unset for local syslog. Set both to a collector IPv4 or IPv6 address and UDP port 1–65535 for direct remote application logs. HDMI cable loss and recovery also appear on stderr in either mode. |
 | `WELCOMEPI_HDMI_PORT` | No | Defaults to `auto`, the first connected HDMI output. On Pi 4B and Pi 5, `0` selects the socket marked HDMI0 (HDMI-A-1) and `1` selects HDMI1 (HDMI-A-2). A fixed setting waits for that socket if its monitor disconnects. Restart the kiosk service after editing. |
 | `WELCOMEPI_ROTATION` | No | Defaults to `auto`. Accepted overrides are `left`, `right`, and `normal`. |
+| `WELCOMEPI_INSET` | No | Margin in whole pixels on all four edges of the upright picture. Defaults to 0. Use nonnegative values that leave room for content. |
+| `WELCOMEPI_INSET_LEFT`, `WELCOMEPI_INSET_TOP`, `WELCOMEPI_INSET_RIGHT`, `WELCOMEPI_INSET_BOTTOM` | No | Each replaces the global inset for that edge. An explicit 0 removes that edge's margin. |
+| `WELCOMEPI_FONT_STROKE` | No | Extra stroke width on all kiosk text, in whole pixels from 0 (default) to 3. |
 | `WELCOMEPI_LAYOUT_INTERVAL_MINUTES` | No | Positive whole minutes between layout and color changes while the public board stays visible. Defaults to 7. Greetings, agendas and details change layout on successive visits. |
 | `WELCOMEPI_DIM_AFTER_MINUTES` | No | Positive whole minutes since the last fresh door check-in or distinct local fob tap before the public board dims. Defaults to 15. Personal pages use normal brightness. The four-hour HDMI standby timer uses its own activity rules. |
 | `WELCOMEPI_OPPORTUNITIES` | No | Positive integer. Defaults to five opportunities on the member agenda. |

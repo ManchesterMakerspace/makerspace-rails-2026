@@ -8,7 +8,7 @@ import re
 import socket
 from urllib.parse import unquote_plus
 
-from pymongo import monitoring
+from pymongo import errors, monitoring
 from pymongo.errors import OperationFailure
 
 
@@ -30,6 +30,9 @@ def driver_detail(error):
 
 class MongoFailures(monitoring.CommandListener, monitoring.ServerHeartbeatListener):
     """Include failures that a later driver retry may hide from the caller."""
+
+    def __init__(self):
+        self.closing = False
     def started(self, event):
         pass
 
@@ -41,6 +44,9 @@ class MongoFailures(monitoring.CommandListener, monitoring.ServerHeartbeatListen
             operation, failure = event.command_name, event.failure
         else:
             operation, failure = "heartbeat", event.reply
+            # An in-flight heartbeat can report cancellation after MongoClient.close() returns.
+            if self.closing and isinstance(failure, getattr(errors, "_OperationCancelled", ())):
+                return
         logging.getLogger(__name__).error("MongoDB %s failed on %s: %s", operation,
                                           event.connection_id, driver_detail(failure))
 

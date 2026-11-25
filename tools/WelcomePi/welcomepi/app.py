@@ -347,7 +347,8 @@ class Kiosk:
                 output.standby()
             else:
                 image, self.page_count = render(output.size, self.screen, now, self.data, self.page,
-                                                variant=self.variant, dimmed=self.dimmed)
+                                                variant=self.variant, dimmed=self.dimmed,
+                                                insets=self.settings.insets, stroke=self.settings.font_stroke)
                 output.present(image)
                 if self.greeting_started is not None and self.screen.page in ("agenda", "welcome"):
                     LOG.info("Welcome frame submitted in %.0f ms", (self.clock() - self.greeting_started) * 1000)

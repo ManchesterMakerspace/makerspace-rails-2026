@@ -5,7 +5,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
+
+from pymongo.errors import NetworkTimeout, _OperationCancelled
 
 from pi0 import check, configure_boot
 from welcomepi.config import Settings
@@ -99,6 +101,27 @@ class BootProfile(unittest.TestCase):
 
 
 class Commissioning(unittest.TestCase):
+    def test_probe_logs_live_cancellation_and_timeout_but_skips_close_cancellation(self):
+        def provider(uri, listener):
+            def heartbeat(error):
+                listener.failed(SimpleNamespace(reply=error, connection_id=("db", 27017)))
+
+            db = MagicMock()
+            db["members"].find_one.side_effect = lambda *_: heartbeat(_OperationCancelled("live"))
+
+            def close():
+                heartbeat(_OperationCancelled("closing"))
+                heartbeat(NetworkTimeout("timed out"))
+
+            db.client.close.side_effect = close
+            return lambda: db
+
+        with patch.object(check, "database_provider", side_effect=provider), self.assertLogs("welcomepi.logs") as log:
+            check.read_collections("test", ["members"])
+        self.assertEqual(len(log.output), 2)
+        self.assertIn("live", log.output[0])
+        self.assertIn("timed out", log.output[1])
+
     def setUp(self):
         self.settings = Settings.load({"MLAB_URI": "test", "LEDGER_URI": "test", "MQTT_HOST": "broker",
                                        "MQTT_CLIENT_ID": "live-kiosk"})

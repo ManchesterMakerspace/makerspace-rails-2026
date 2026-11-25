@@ -44,7 +44,7 @@ diff --git a/digital-makerspace/admin/welcomepi-updates.md b/digital-makerspace/
 new file mode 100644
 --- /dev/null
 +++ b/digital-makerspace/admin/welcomepi-updates.md
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,43 @@
 +---
 +title: WelcomePi updates
 +description: Choose the entrance display output and manage automatic updates.
@@ -72,6 +72,8 @@ new file mode 100644
 +## Adjust screen layout and dimming
 +
 +The public board changes its colors and layout when it opens and every seven minutes while it stays visible. It alternates light and dark and moves the portal QR through all four corners. Greetings, agendas and details change layout on the next visit and stay at normal brightness. Set `WELCOMEPI_LAYOUT_INTERVAL_MINUTES` in `/etc/welcomepi.env` to change the board interval. Set `WELCOMEPI_DIM_AFTER_MINUTES` to change how long the board waits after the last fresh check-in or local fob tap before dimming. The default is 15 minutes. Use positive whole minutes for both settings and run `sudo systemctl restart welcomepi.service` after editing.
++
++If text is cut off, set `WELCOMEPI_INSET` in pixels for all edges, or adjust just the clipped edges with `WELCOMEPI_INSET_TOP`, `WELCOMEPI_INSET_RIGHT`, `WELCOMEPI_INSET_BOTTOM` and `WELCOMEPI_INSET_LEFT`. These settings follow the upright picture. For heavier text, start with `WELCOMEPI_FONT_STROKE=1`. Set these in `/etc/welcomepi.env` and restart `welcomepi.service`.
 +
 +A fresh check-in at any door or a distinct tap on the local reader restores normal brightness while HDMI is awake. This includes history-only doors and unrecognized local fobs. Normal welcome and membership rules still determine which page opens. Two minutes without qualifying activity clear personal details. After four hours without qualifying activity HDMI enters standby until a qualifying scan.
 +

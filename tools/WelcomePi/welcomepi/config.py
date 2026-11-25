@@ -24,6 +24,13 @@ def positive_minutes(env, key, default):
     return minutes
 
 
+def pixels(env, key, default=0):
+    value = env.get(key, str(default))
+    if not (value.isascii() and value.isdecimal()):
+        raise ValueError(f"{key} must be a nonnegative whole number of pixels")
+    return int(value)
+
+
 def parse_location_patterns(value):
     if value is None:
         return None
@@ -62,6 +69,9 @@ class Settings:
     location_patterns: tuple[re.Pattern[str], ...] | None = None
     layout_interval_minutes: int = 7
     dim_after_minutes: int = 15
+    mqtt_cafile: str | None = None
+    insets: tuple[int, int, int, int] = (0, 0, 0, 0)
+    font_stroke: int = 0
 
     def welcomes_location(self, location):
         return self.location_patterns is None or any(pattern.search(location) for pattern in self.location_patterns)
@@ -106,6 +116,11 @@ class Settings:
                                         env.get("WELCOMEPI_I2C_ADDRESSES", "0x24").split(",")))
         if not all(0x08 <= addr <= 0x77 for addr in addresses):
             raise ValueError("WELCOMEPI_I2C_ADDRESSES must contain usable 7-bit I2C addresses")
+        inset = pixels(env, "WELCOMEPI_INSET")
+        insets = tuple(pixels(env, f"WELCOMEPI_INSET_{edge}", inset) for edge in ("LEFT", "TOP", "RIGHT", "BOTTOM"))
+        stroke = pixels(env, "WELCOMEPI_FONT_STROKE")
+        if stroke > 3:
+            raise ValueError("WELCOMEPI_FONT_STROKE must be between 0 and 3 pixels")
         return cls(required("MLAB_URI"), required("LEDGER_URI"), required("MQTT_HOST"),
                    int(env.get("MQTT_PORT", "8883" if tls == "true" else "1883")), tls == "true",
                    env.get("MQTT_USERNAME"), env.get("MQTT_PASSWORD"),
@@ -115,4 +130,5 @@ class Settings:
                    frozenset(ids), env.get("WELCOMEPI_SLACK_TOKEN", ""), server, bus, addresses, hdmi_port,
                    parse_location_patterns(env.get("WELCOMEPI_LOCATION_PATTERNS")),
                    layout_interval_minutes=positive_minutes(env, "WELCOMEPI_LAYOUT_INTERVAL_MINUTES", 7),
-                   dim_after_minutes=positive_minutes(env, "WELCOMEPI_DIM_AFTER_MINUTES", 15))
+                   dim_after_minutes=positive_minutes(env, "WELCOMEPI_DIM_AFTER_MINUTES", 15),
+                   mqtt_cafile=env.get("MQTT_CAFILE") or None, insets=insets, font_stroke=stroke)

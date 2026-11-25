@@ -18,6 +18,10 @@ including when syslog goes to a remote collector. Local taps only
 control the display. Database access is read-only. The optional Slack credential
 reads the current Ledger avatar into RAM.
 
+The kiosk lays out every page within the configured `WELCOMEPI_INSET` margins,
+with individual edge overrides for monitor overscan. `WELCOMEPI_FONT_STROKE`
+adds weight to text on every page. [Display adjustments](../tools/WelcomePi/README.md#adjust-overscan-and-text-weight)
+
 The service starts on the public board. It seeds a rolling 16-hour arrival
 history from MongoDB at startup, merging MQTT arrivals received during the
 read. It keeps each member's latest check-in, up to ten members in RAM, and
@@ -76,9 +80,13 @@ mode. The installer preserves existing credentials
 and restarts an already running service. After configuration and reboot,
 `sudo bash setup.sh check` reports HDMI connection status and the selected
 reader or MQTT-only operation, then tests database reads and broker
-subscriptions. `sudo bash setup.sh watch-door` waits up to 90 seconds for a
+subscriptions. The database probes close their clients after reading. They suppress
+heartbeat cancellations during that shutdown and report live heartbeat failures.
+`sudo bash setup.sh watch-door` waits up to 90 seconds for a
 fresh door event at a matching location after subscribing. Both diagnostics use the service account
-and a separate MQTT client ID. They print results to the operator's terminal
+and a separate MQTT client ID. The kiosk and both diagnostics verify TLS brokers
+using the CA bundle specified by `MQTT_CAFILE` or the OS trust store by default.
+They print results to the operator's terminal
 and exit unsuccessfully on a failed check.
 
 The [Publish WelcomePi workflow](../.github/workflows/publish-welcomepi.yml)

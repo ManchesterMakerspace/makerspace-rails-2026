@@ -177,6 +177,17 @@ class MqttErrors(unittest.TestCase):
         self.assertIn("detailed Paho error", log.output[3])
         self.assertEqual(self.emit.call_count, 3)
 
+    def test_tls_uses_configured_ca_or_system_trust(self):
+        path = "/etc/welcomepi/broker-ca.pem"
+        for config, expected in (({}, None), ({"MQTT_CAFILE": ""}, None), ({"MQTT_CAFILE": path}, path)):
+            with self.subTest(config=config):
+                self.client.tls_set.reset_mock()
+                start_mqtt(settings(MQTT_TLS="true", **config), self.emit)
+                self.client.tls_set.assert_called_once_with(ca_certs=expected)
+        self.client.tls_set.reset_mock()
+        start_mqtt(settings(MQTT_TLS="false", MQTT_CAFILE=path), self.emit)
+        self.client.tls_set.assert_not_called()
+
     def test_v2_disconnect_preserves_broker_reason(self):
         reason = Mock(value=135, is_failure=True)
         reason.__str__ = lambda _: "Not authorized"

@@ -89,7 +89,8 @@ Replace the sample hostnames and every `REPLACE` value with site-provisioned set
 | --- | --- |
 | `MLAB_URI` | Read-only Rails MongoDB URI. Include the database watched by ChangeStream2MQTT in the URI path, commonly `/makerauth`. |
 | `LEDGER_URI` | Read-only MongoDB URI with the actual Ledger database in its path. Include the correct `authSource` and TLS options where required in each URI. Percent-encode reserved characters in URI usernames and passwords. |
-| `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS`, `MQTT_USERNAME`, `MQTT_PASSWORD` | Broker and subscribe-only credentials for this Pi. The example uses TLS on port 8883. The OS trust store must trust the broker's certificate. |
+| `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS`, `MQTT_USERNAME`, `MQTT_PASSWORD` | Broker and subscribe-only credentials for this Pi. The example uses TLS on port 8883 with the OS trust store. |
+| `MQTT_CAFILE` | For a private CA, set the path to its public PEM certificate or CA bundle on the Pi, readable by `welcomepi`. [MQTT configuration](MQTT.MD#configure-the-pi) |
 | `WELCOMEPI_LOCATION_PATTERNS` | To welcome only selected doors, set a JSON list of case-insensitive regexes, e.g. `WELCOMEPI_LOCATION_PATTERNS='["^Main Entrance$"]'`. Matching uses `where`, then `reader`, then `blank:`. Leave unset to welcome all locations. An empty list keeps MQTT arrivals history-only. |
 | `WELCOMEPI_NFC_PORT`, `WELCOMEPI_ROTATION` | Use `/dev/serial0` and `auto` for the initial setup. If the pixels need rotating for the physical mount, choose `left` or `right`. |
 | `WELCOMEPI_I2C_BUS`, `WELCOMEPI_I2C_ADDRESSES` | Defaults to `/dev/i2c-1` and `0x24`. For an address translator, enter its documented 7-bit addresses in probe order, separated by commas. |

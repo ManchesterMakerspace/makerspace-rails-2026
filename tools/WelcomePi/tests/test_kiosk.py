@@ -194,7 +194,7 @@ class Controller(unittest.TestCase):
         self.k.work = self.k.identity_work = ManualExecutor()
         self.k.tick()
 
-    def render(self, size, screen, now, data, page, *, variant, dimmed):
+    def render(self, size, screen, now, data, page, *, variant, dimmed, insets, stroke):
         self.frames.append(SimpleNamespace(page=screen.page, member=screen.member, greeting=screen.greeting,
                                            record_first=screen.record_first, data=dict(data), jobs=list(self.k.jobs),
                                            number=page, variant=variant, dimmed=dimmed))

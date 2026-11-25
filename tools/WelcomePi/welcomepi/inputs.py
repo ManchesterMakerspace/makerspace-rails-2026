@@ -196,7 +196,7 @@ def start_mqtt(settings, emit):
         args = {"callback_api_version": mqtt.CallbackAPIVersion.VERSION2} if hasattr(mqtt, "CallbackAPIVersion") else {}
         client = mqtt.Client(client_id=settings.mqtt_id, clean_session=True, **args)
         if settings.mqtt_tls:
-            client.tls_set()
+            client.tls_set(ca_certs=settings.mqtt_cafile)
         if settings.mqtt_user:
             client.username_pw_set(settings.mqtt_user, settings.mqtt_password)
         client.on_connect = connected

@@ -13,7 +13,7 @@ from welcomepi.config import Settings
 from welcomepi.data import database_provider
 from welcomepi.display import connected_hdmi
 from welcomepi.inputs import TOPICS, start_mqtt
-from welcomepi.logs import driver_detail, kiosk_logging
+from welcomepi.logs import MongoFailures, driver_detail, kiosk_logging
 from welcomepi.reader import discover_reader
 
 
@@ -25,11 +25,13 @@ class CheckFailed(Exception):
 
 
 def read_collections(uri, collections):
-    db = database_provider(uri)()
+    listener = MongoFailures()
+    db = database_provider(uri, listener)()
     try:
         for name in collections:
             db[name].find_one({}, {"_id": 1})
     finally:
+        listener.closing = True
         db.client.close()
 
 

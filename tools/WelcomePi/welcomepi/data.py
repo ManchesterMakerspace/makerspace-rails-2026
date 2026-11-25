@@ -12,7 +12,7 @@ from .state import (CARD_FIELDS, EASTERN, MEMBER_FIELDS, UTC, Directory, checkin
                     day_bounds, identify, uid_key)
 
 
-def database_provider(uri):
+def database_provider(uri, listener=None):
     """Connect on a worker, including SRV DNS and TLS initialization."""
     lock = Lock()
     database = None
@@ -23,7 +23,8 @@ def database_provider(uri):
             if database is None:
                 client = MongoClient(uri, connect=False, tz_aware=True, appname="WelcomePi",
                                      serverSelectionTimeoutMS=3000, connectTimeoutMS=3000,
-                                     socketTimeoutMS=6000, maxPoolSize=8, event_listeners=[MongoFailures()])
+                                     socketTimeoutMS=6000, maxPoolSize=8,
+                                     event_listeners=[listener if listener is not None else MongoFailures()])
                 database = client.get_default_database()
         return database
 

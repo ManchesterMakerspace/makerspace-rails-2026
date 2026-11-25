@@ -36,6 +36,20 @@ For a **Pi Zero W at 720p**, follow the [step-by-step setup guide](setup-pi0.MD)
 
 To switch sockets later, change `WELCOMEPI_HDMI_PORT` in `/etc/welcomepi.env` and run `sudo systemctl restart welcomepi.service`.
 
+### Adjust overscan and text weight
+
+If the monitor cuts off the top and right edges, try these values in `/etc/welcomepi.env`. Restart with `sudo systemctl restart welcomepi.service` and adjust the pixel counts to fit your monitor.
+
+```ini
+WELCOMEPI_INSET_TOP=16
+WELCOMEPI_INSET_RIGHT=24
+WELCOMEPI_FONT_STROKE=1
+```
+
+Set `WELCOMEPI_INSET` for a margin on all four sides (default 0). Each of `WELCOMEPI_INSET_TOP`, `WELCOMEPI_INSET_RIGHT`, `WELCOMEPI_INSET_BOTTOM` and `WELCOMEPI_INSET_LEFT` replaces that side's value, including when set to 0. Edges follow the upright picture on a rotated monitor. The kiosk lays out every page inside the remaining space and fills the margins with black.
+
+`WELCOMEPI_FONT_STROKE` thickens text on every screen. Start with 1 pixel for small labels. The supported range is 0 (default) through 3 pixels.
+
 ## Choosing an older board
 
 | Board on hand | Fit for the kiosk |
@@ -81,7 +95,8 @@ Set values in `/etc/welcomepi.env`. Restart the service after edits.
 | Variable | Use |
 | --- | --- |
 | `MLAB_URI`, `LEDGER_URI` | Required. Read-only MongoDB URIs including the Rails source and Ledger database names respectively. Use the source database watched by ChangeStream2MQTT, normally `makerauth`. |
-| `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS` | Host required. TLS defaults to `true` with port 8883. Explicit `false` defaults to 1883. TLS verifies the broker against the OS trust store. |
+| `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS` | Host required. TLS defaults to `true` with port 8883. Explicit `false` defaults to 1883. |
+| `MQTT_CAFILE` | Optional PEM CA bundle for verifying the broker. Leave unset to use the OS trust store. [MQTT configuration](MQTT.MD#configure-the-pi) |
 | `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_CLIENT_ID` | Broker credentials if required. The default client ID is `welcomepi-<hostname>`. Give each kiosk a unique ID. |
 | `WELCOMEPI_LOCATION_PATTERNS` | JSON array of case-insensitive regexes for door welcomes. For example, `WELCOMEPI_LOCATION_PATTERNS='["^Main Entrance$","^Lobby Reader-"]'` matches the entire first location or any location with the second prefix. Unanchored expressions match anywhere. Unset allows all locations. `[]` makes all MQTT arrivals history-only. |
 | `WELCOMEPI_I2C_BUS`, `WELCOMEPI_I2C_ADDRESSES` | Default `/dev/i2c-1` and `0x24`. For an address translator, list the mapped 7-bit addresses in probe order, separated by commas. |
