@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# On the Raspberry Pi Zero W. See setup-pi0.MD for the wiring and first boot.
+# Run on the Pi. See setup-pi0.MD for the wiring and first boot.
 set -euo pipefail
 
 usage() {
     echo "Usage: sudo bash setup.sh install | check | watch-door | enable-updates"
-    echo "  install     Configure the Zero W and install the service files"
-    echo "  check       Check the reader, database reads and broker subscriptions"
+    echo "  install     Configure a Pi Zero W, Pi 4 Model B or Pi 5 and install the service files"
+    echo "  check       Report HDMI status and check the reader, database reads and broker subscriptions"
     echo "  watch-door  Wait for a fresh door check-in beside the running kiosk"
     echo "  enable-updates  Enroll this installation for automatic updates from master"
 }
@@ -35,13 +35,7 @@ esac
 
 source_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
 [[ -r "$source_dir/welcomepi/__main__.py" ]] || die "The WelcomePi source directory is incomplete."
-[[ -r /proc/device-tree/model ]] || die "Run the installer on the Raspberry Pi Zero W."
-model=$(tr -d '\0' </proc/device-tree/model)
-[[ $model == "Raspberry Pi Zero W"* ]] || die "This 720p boot profile is for a Pi Zero W. Found $model."
-# shellcheck source=/dev/null
-. /etc/os-release
-[[ ${VERSION_CODENAME:-} == bookworm && $(dpkg --print-architecture) == armhf ]] ||
-    die "Install Raspberry Pi OS Lite, 32-bit Bookworm, before running setup."
+board=$(/usr/bin/python3 -I "$source_dir/pi0/configure_boot.py" --check-platform)
 
 exec 9>/run/lock/welcomepi-setup.lock
 flock 9
@@ -107,6 +101,10 @@ else
 fi
 if [[ ! -e /etc/welcomepi.env ]]; then
     install -m 0600 "$source_dir/welcomepi.env.example" /etc/welcomepi.env
+    if [[ $board == pi5 ]]; then
+        # The Pi 5's /dev/serial0 uses the debug header, separate from GPIO 14/15.
+        sed -i 's|^WELCOMEPI_NFC_PORT=/dev/serial0$|WELCOMEPI_NFC_PORT=/dev/ttyAMA0|' /etc/welcomepi.env
+    fi
 fi
 /usr/bin/python3 -I "$source_dir/pi0/configure_boot.py"
 install -m 0644 "$source_dir/welcomepi.service" /etc/systemd/system/welcomepi.service

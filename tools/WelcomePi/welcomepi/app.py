@@ -14,8 +14,9 @@ from .inputs import listen_mqtt
 from .ledger import Details, LedgerData
 from .logs import driver_detail
 from .reader import read_nfc
-from .render import render
-from .state import Directory, EASTERN, PERSONAL_SECONDS, Screen, UTC
+from .recent import RecentCheckins
+from .render import agenda_ready, render
+from .state import Directory, EASTERN, PERSONAL_SECONDS, Screen, UTC, uid_key
 
 
 LOG = logging.getLogger(__name__)
@@ -32,12 +33,17 @@ class Kiosk:
         self.jobs = {}
         self.screen = Screen(clock())
         self.directory = Directory()
+        self.recent = RecentCheckins()
+        # Subscribe before reading history when possible. A disconnected broker
+        # must not prevent the startup board from showing the MongoDB seed.
+        self.recent_seed_due = clock() + 5
         self.connected = self.trusted = False
         self.epoch = self.revision = 0
         self.during_load = None
         self.next_snapshot = 0
         self.waiting = defaultdict(list)
         self.sequence = self.last_accepted = 0
+        self.latest_uid = self.preview_sequence = None
         self.day = wall().astimezone(EASTERN).date()
         self.drawn_generation = -1
         self.data = {}
@@ -46,6 +52,7 @@ class Kiosk:
         self.next_page = self.next_refresh = 0
         self.dirty = True
         self.greeting_started = None
+        self.uids_after_paint = set()
 
     def emit(self, *event):
         self.events.put(event)
@@ -86,7 +93,10 @@ class Kiosk:
         if self.during_load is not None:
             self.during_load[collection, doc["_id"]] = (collection, operation, doc)
         if self.trusted:
-            self.screen.reconcile(self.directory, self.wall(), self.clock())
+            now = self.wall()
+            self.recent.resolve(self.directory, now)
+            self.update_recent_board(now)
+            self.screen.reconcile(self.directory, now, self.clock())
         else:
             # A direct lookup may have opened a page before the snapshot finished.
             def touches(member):
@@ -94,7 +104,7 @@ class Kiosk:
                     return False
                 if collection == "members":
                     return doc["_id"] == member.member_id
-                return doc["_id"] == member.card_id or doc.get("uid") == member.uid
+                return doc["_id"] == member.card_id or uid_key(doc.get("uid")) == uid_key(member.uid)
             if touches(self.screen.member):
                 self.screen.show("board", self.clock())
             elif touches(self.screen.pending):
@@ -102,19 +112,30 @@ class Kiosk:
 
     def discard_scans(self, uids, reason):
         for uid in uids:
-            self.accept(None, self.waiting.pop(uid, ()), reason)
+            self.accept(None, self.waiting.pop(uid_key(uid), ()), reason)
 
     def accept(self, member, scans, reason="card or membership is ineligible or unknown"):
-        for seq, local, at, source in scans:
-            if member is None or not member.valid(self.wall()):
+        for seq, local, at, source, record in scans:
+            now = self.wall()
+            if member is None or not member.valid(now):
                 LOG.info("Card scan at %s, member unknown", source)
                 LOG.warning("No valid member found at %s (%s)", source, reason)
                 continue
             LOG.info("Card scan at %s, member %s", source, f"{member.first} {member.last}".strip())
-            if seq <= self.last_accepted or self.clock() - at >= PERSONAL_SECONDS:
+            if record is not None:
+                self.recent.add(record.with_member(member), now)
+                self.update_recent_board(now)
+            if seq < self.last_accepted or self.clock() - at >= PERSONAL_SECONDS:
+                continue
+            if self.screen.page == "welcome" and seq == self.preview_sequence:
+                # This lookup belongs to the record whose large greeting was painted.
+                self.screen.enrich_greeting(member)
+                self.preview_sequence = None
+                self.load_agenda(self.screen_tag(), member, now)
+                self.next_refresh = self.clock() + 15
                 continue
             self.last_accepted = seq
-            self.screen.tick(at, self.wall())
+            self.screen.tick(at, now)
             generation = self.screen.generation
             self.screen.scan(member, local, at)
             if generation != self.screen.generation and self.screen.page == "agenda":
@@ -147,9 +168,17 @@ class Kiosk:
                     value.update(*change)
                 self.directory, self.trusted = value, True
                 self.revision += 1
-                self.screen.reconcile(value, self.wall(), self.clock())
+                now = self.wall()
+                self.recent.resolve(value, now)
+                self.update_recent_board(now)
+                self.screen.reconcile(value, now, self.clock())
             self.during_load = None
             self.next_snapshot = self.clock() + (300 if value is not None else 5)
+        elif name == "recent":
+            now = self.wall()
+            for record in value or ():
+                self.recent.add(record.with_directory(self.directory) if self.trusted else record, now)
+            self.update_recent_board(now)
         elif name == "lookup":
             uid, revision = tag
             if uid not in self.waiting:
@@ -189,18 +218,70 @@ class Kiosk:
                 if self.data.get(name) == rows:
                     return
                 self.data[name] = rows
+                if self.screen.greeting:
+                    if not agenda_ready(self.data):
+                        return
+                    self.screen.greeting = False
             self.dirty = True
 
     def screen_tag(self):
         return self.screen.generation, self.screen.member.member_id if self.screen.member else None
 
+    def update_recent_board(self, now):
+        if self.screen.page == "board":
+            rows = self.recent.rows(now)
+            if self.data.get("recent") != rows:
+                self.data["recent"] = rows
+                self.dirty = True
+
+    def scan(self, uid, local, at, source, record=None, *, after_paint=False):
+        uid = uid_key(uid)
+        self.sequence += 1
+        # A new card supersedes older lookups, even if it supplies no display name.
+        # Consecutive local taps on the same card still run in their original order.
+        if uid != self.latest_uid or after_paint:
+            self.last_accepted = self.sequence
+        self.latest_uid = uid
+        self.preview_sequence = self.sequence if after_paint else None
+        self.waiting[uid].append((self.sequence, local, at, source, record))
+        if after_paint:
+            self.uids_after_paint.add(uid)
+        else:
+            self.resolve(uid)
+
+    def checkin(self, record, at, topic, fresh):
+        now = self.wall()
+        self.recent.add(record.with_directory(self.directory if self.trusted else None, live=fresh), now)
+        self.update_recent_board(now)
+        source = f"MQTT {topic} ({record.location})"
+        if not self.settings.welcomes_location(record.location):
+            LOG.info("Check-in at %s, recorded name %s, time %s: welcome skipped by location filter",
+                     source, record.name or "unknown", record.at.isoformat())
+            return
+        if not fresh or self.clock() - at >= PERSONAL_SECONDS:
+            return
+        self.screen.tick(at, now)
+        generation = self.screen.generation
+        same_card = self.screen.member and uid_key(self.screen.member.uid) == uid_key(record.uid)
+        preview = bool(record.name) and not same_card and self.screen.greet_record(record.name, at)
+        if preview:
+            if self.screen.generation != generation:
+                self.greeting_started = at
+            LOG.info("First-name welcome at %s for %s", source, self.screen.record_first)
+            if not record.uid:
+                # An older pending lookup cannot identify this new arrival, even for namesakes.
+                self.sequence += 1
+                self.last_accepted = self.sequence
+                self.latest_uid = self.preview_sequence = None
+        if record.uid:
+            self.scan(record.uid, False, at, source, record, after_paint=preview)
+
     def handle(self, event):
         kind, *args = event
         if kind == "scan":
-            uid, local, at, source = args
-            self.sequence += 1
-            self.waiting[uid].append((self.sequence, local, at, source))
-            self.resolve(uid)
+            self.scan(*args)
+        elif kind == "checkin":
+            self.checkin(*args)
         elif kind == "change":
             self.change(*args)
         elif kind in ("subscribed", "disconnected", "resync"):
@@ -208,18 +289,20 @@ class Kiosk:
         elif kind == "result":
             self.result(*args)
 
+    def load_agenda(self, tag, member, now):
+        self.submit("reservations", tag, self.rails.reservations, member, now)
+        self.submit("events", tag, self.rails.eventbrite, now)
+        self.submit("opportunities", tag, self.rails.opportunities, member, now, self.settings.opportunity_count)
+
     def refresh(self, now):
         tag, member = self.screen_tag(), self.screen.member
         if member and not self.trusted:
             self.submit("verify", tag, self.rails.identity, member.uid, now, identity=True)
         if self.screen.page == "agenda":
-            self.submit("reservations", tag, self.rails.reservations, member, now)
-            self.submit("events", tag, self.rails.eventbrite, now)
-            self.submit("opportunities", tag, self.rails.opportunities, member, now, self.settings.opportunity_count)
+            self.load_agenda(tag, member, now)
         elif self.screen.page == "details":
             self.submit("details", tag, self.ledger.details, member, now)
         elif self.screen.page == "board":
-            self.submit("recent", tag, self.rails.recent, now)
             self.submit("leaders", tag, self.rails.leaderboard)
             self.submit("opportunities", tag, self.rails.opportunities, None, now, 10)
 
@@ -235,7 +318,7 @@ class Kiosk:
             else:
                 image, self.page_count = render(output.size, self.screen, now, self.data, self.page)
                 output.present(image)
-                if self.greeting_started is not None and self.screen.page == "agenda":
+                if self.greeting_started is not None and self.screen.page in ("agenda", "welcome"):
                     LOG.info("Welcome frame submitted in %.0f ms", (self.clock() - self.greeting_started) * 1000)
             self.dirty = False
             self.greeting_started = None
@@ -253,18 +336,27 @@ class Kiosk:
             self.screen.generation += 1
         if self.drawn_generation != self.screen.generation:
             for (name, tag), task in list(self.jobs.items()):
-                if name not in ("snapshot", "lookup") and tag[:2] != self.screen_tag():
+                if name not in ("snapshot", "lookup", "recent") and tag[:2] != self.screen_tag():
                     task.cancel()
             self.drawn_generation = self.screen.generation
             self.data = {}
             self.page, self.page_count, self.dirty = 0, 1, True
             self.next_page, self.next_refresh = at + 8, at
+        if self.screen.page == "board" and at >= self.next_refresh:
+            self.update_recent_board(now)
         if self.page_count > 1 and at >= self.next_page:
             self.page = (self.page + 1) % self.page_count
             self.dirty = True
             self.next_page = at + 8
-        # Submit the welcome header before scheduling any agenda reads.
+        # Present the first-name greeting before scheduling any agenda reads.
         self.paint(at, now)
+        for uid in self.uids_after_paint:
+            if uid in self.waiting:
+                self.resolve(uid)
+        self.uids_after_paint.clear()
+        if self.recent_seed_due is not None and (self.connected or at >= self.recent_seed_due):
+            self.recent_seed_due = None
+            self.submit("recent", (), self.rails.recent, now)
         if self.connected and self.during_load is None and at >= self.next_snapshot:
             self.during_load = {}
             self.submit("snapshot", self.epoch, self.rails.directory, identity=True)

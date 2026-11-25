@@ -13,7 +13,7 @@ def main():
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
     with kiosk_logging(settings):
-        run(settings, Display(settings.rotation), stop)
+        run(settings, Display(settings.rotation, settings.hdmi_port), stop)
 
 
 if __name__ == "__main__":

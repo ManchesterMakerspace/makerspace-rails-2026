@@ -15,10 +15,20 @@ MEMBER_FIELDS = ("_id", "firstname", "lastname", "status", "role", "expirationTi
 CARD_FIELDS = ("_id", "uid", "member_id", "validity")
 
 
+def uid_key(uid):
+    if isinstance(uid, str) and uid and all(c in "0123456789ABCDEFabcdef" for c in uid):
+        return uid.upper()
+    return uid
+
+
 def day_bounds(now):
     today = now.astimezone(EASTERN).date()
     start = datetime.combine(today, time.min, EASTERN)
     return start.astimezone(UTC), (start + timedelta(days=1)).astimezone(UTC)
+
+
+def clock_label(value):
+    return value.astimezone(EASTERN).strftime("%I:%M %p").lstrip("0")
 
 
 def checkin_time(doc):
@@ -57,16 +67,16 @@ class Identity:
 
 
 def identify(card, member, now):
-    if not card or card.get("validity") != "activeMember" or not member:
+    if not card or not member or card.get("validity") != "activeMember" or card.get("member_id") != member["_id"]:
         return None
-    if (card.get("member_id") != member["_id"] or member.get("merged_at") is not None
-            or member.get("status") != "activeMember"):
+    if member.get("merged_at") is not None or member.get("status") != "activeMember":
         return None
     expiry = member.get("expirationTime")
     if not isinstance(expiry, int) or expiry <= now.timestamp() * 1000:
         return None
-    return Identity(member["_id"], card["_id"], card["uid"], member.get("firstname") or "member",
-                    member.get("role") or "member", expiry, member.get("lastname") or "")
+    return Identity(member["_id"], card["_id"], card["uid"],
+                    member.get("firstname") or "member", member.get("role") or "member", expiry,
+                    member.get("lastname") or "")
 
 
 class Directory:
@@ -85,36 +95,58 @@ class Directory:
             return
         previous = self.cards.pop(key, None)
         if previous:
-            ids = self.by_uid[previous["uid"]]
+            key_uid = uid_key(previous["uid"])
+            ids = self.by_uid[key_uid]
             ids.discard(key)
             if not ids:
-                del self.by_uid[previous["uid"]]
+                del self.by_uid[key_uid]
         if operation != "delete" and isinstance(doc.get("uid"), str) and doc["uid"]:
             self.cards[key] = doc
-            self.by_uid[doc["uid"]].add(key)
+            self.by_uid[uid_key(doc["uid"])].add(key)
 
-    def lookup(self, uid, now):
-        ids = self.by_uid.get(uid)
+    def card_for_uid(self, uid):
+        ids = self.by_uid.get(uid_key(uid))
         if not ids or len(ids) != 1:
             return None
-        card = self.cards[next(iter(ids))]
-        return identify(card, self.members.get(card.get("member_id")), now)
+        return self.cards[next(iter(ids))]
+
+    def lookup(self, uid, now):
+        card = self.card_for_uid(uid)
+        if card:
+            return identify(card, self.members.get(card.get("member_id")), now)
 
 
 class Screen:
-    """Only validated input can move the activity clock. Times are monotonic."""
+    """A door greeting can show a first name. Personal pages require an identity."""
 
     def __init__(self, started):
         self.page = "board"
+        self.greeting = False
+        self.record_first = ""
         self.member = None
         self.pending = None
         self.generation = 0
         self.entered = self.last_activity = started
 
-    def show(self, page, at, member=None):
+    def show(self, page, at, member=None, *, record_first=""):
         self.page, self.member, self.entered = page, member, at
+        self.record_first = record_first
+        self.greeting = page == "agenda"
         self.pending = None
         self.generation += 1
+
+    def greet_record(self, name, at):
+        first = name.split()[0]
+        if self.page == "details":
+            return False
+        self.last_activity = max(at, self.last_activity)
+        if self.page != "welcome" or self.record_first != first:
+            self.show("welcome", at, record_first=first)
+        return True
+
+    def enrich_greeting(self, member):
+        """Keep the first frame and its activity clock while the agenda loads."""
+        self.page, self.member, self.greeting = "agenda", member, True
 
     def scan(self, member, local, at):
         self.last_activity = max(at, self.last_activity)
@@ -135,7 +167,8 @@ class Screen:
         if idle >= SLEEP_SECONDS:
             if self.page != "sleep":
                 self.show("sleep", at)
-        elif self.member and (idle >= PERSONAL_SECONDS or not self.member.valid(now)):
+        elif ((self.page in ("welcome", "agenda", "details") and idle >= PERSONAL_SECONDS)
+              or (self.member and not self.member.valid(now))):
             self.show("board", at)
         elif self.pending and at >= self.entered + HANDOFF_SECONDS:
             arrival, self.pending = self.pending, None

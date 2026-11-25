@@ -9,9 +9,10 @@ import unittest
 from unittest.mock import Mock, patch
 from urllib.request import Request
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
-from welcomepi.display import Display, Output, orientation
+from welcomepi.config import Settings
+from welcomepi.display import Display, Output, orientation, scanout
 from welcomepi.ledger import Avatar, Details, PrivateFileRedirect, fetch_avatar
 from welcomepi.render import Canvas, font, qr_image, qr_modules, render, section_pages, wrap
 from welcomepi.state import HOME, Identity, Screen, UTC
@@ -19,6 +20,61 @@ from welcomepi.state import HOME, Identity, Screen, UTC
 
 class Layout(unittest.TestCase):
     now = datetime(2026, 11, 23, 3, tzinfo=UTC)
+
+    def test_first_greeting_fits_the_full_name_on_landscape_and_portrait_displays(self):
+        for size, first in (((1280, 720), "I"), ((320, 240), "Alexandria"),
+                            ((320, 480), "María José"), ((480, 320), "W" * 64)):
+            with self.subTest(size=size, first=first):
+                screen = Screen(0)
+                screen.show("agenda", 0, Identity(1, 2, "01", first, "member", 10**15))
+                draw_name = ImageDraw.ImageDraw.multiline_text
+                with patch.object(ImageDraw.ImageDraw, "multiline_text", autospec=True, side_effect=draw_name) as drawn:
+                    image, count = render(size, screen, self.now, {})
+                self.assertEqual((image.size, count), (size, 1))
+                draw, xy, text = drawn.call_args.args
+                face = drawn.call_args.kwargs["font"]
+                spacing = drawn.call_args.kwargs["spacing"]
+                self.assertEqual("".join(text.split()), first.replace(" ", "") + "!")
+                left, top, right, bottom = draw.multiline_textbbox(xy, text, font=face, spacing=spacing, align="center")
+                canvas = Canvas(size)
+                self.assertGreaterEqual(min(left, top), canvas.pad)
+                self.assertLessEqual(right, size[0] - canvas.pad)
+                self.assertLessEqual(bottom, size[1] - 2 * canvas.pad - canvas.small.size)
+                if first == "I":
+                    self.assertGreater(bottom - top, size[1] // 2)
+                elif first == "Alexandria":
+                    self.assertGreater(font(face.size + 1, True).getbbox(text)[2], canvas.width)
+                else:
+                    self.assertIn("\n", text)
+
+    def test_large_greeting_changes_to_compact_header_with_loaded_agenda(self):
+        screen = Screen(0)
+        screen.show("agenda", 0, Identity(1, 2, "01", "Sam", "member", 10**15))
+        size = (720, 1280)
+        with patch.object(ImageDraw.ImageDraw, "multiline_text", autospec=True) as initial:
+            render(size, screen, self.now, {"events": []})
+        with patch.object(Canvas, "text", autospec=True) as agenda:
+            render(size, screen, self.now, {"reservations": [("Wood shop", "9 AM")]})
+        headline = next(c for c in agenda.call_args_list if c.args[3] == "Welcome, Sam!")
+        self.assertGreater(initial.call_args.kwargs["font"].size, 2 * headline.args[4].size)
+        self.assertTrue(any("Wood shop" in c.args[3] for c in agenda.call_args_list))
+
+    def test_record_only_greeting_uses_the_first_name_and_full_size_layout(self):
+        screen = Screen(0)
+        screen.greet_record("River Example", 1)
+        with patch.object(Canvas, "greeting", autospec=True) as greeting:
+            _, pages = render((800, 480), screen, self.now, {})
+        self.assertEqual(greeting.call_args.args[1], "River")
+        self.assertEqual(pages, 1)
+
+    def test_greeting_supports_legacy_and_oversized_first_names(self):
+        for first, expected in ((42, "42!"), ("  ", "member!"), ("A " * 1000, "…!")):
+            with self.subTest(expected=expected):
+                screen = Screen(0)
+                screen.show("agenda", 0, Identity(1, 2, "01", first, "member", 10**15))
+                with patch.object(ImageDraw.ImageDraw, "multiline_text", autospec=True) as painted:
+                    render((320, 240), screen, self.now, {})
+                self.assertTrue(painted.call_args.args[2].endswith(expected))
 
     def test_board_has_intact_qr_on_every_page(self):
         board = {"recent": [(f"First{i}", "8:15 PM") for i in range(5)],
@@ -99,24 +155,136 @@ class Layout(unittest.TestCase):
 
 
 class Hardware(unittest.TestCase):
+    def monitors(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(patch.dict("sys.modules", pykms=Mock()))
+        self.enterContext(patch("welcomepi.display.DRM_CLASS", root))
+        self.output = self.enterContext(patch("welcomepi.display.Output"))
+        paths = [root / ("card2-" + name) / "status" for name in ("HDMI-A-1", "HDMI-A-2")]
+        for status in paths:
+            status.parent.mkdir()
+            status.write_text("connected\n")
+        return paths
+
+    def test_hdmi_port_setting(self):
+        env = {"MLAB_URI": "test", "LEDGER_URI": "test", "MQTT_HOST": "broker"}
+        self.assertEqual(Settings.load(env).hdmi_port, "auto")
+        for port in ("auto", "0", "1"):
+            self.assertEqual(Settings.load({**env, "WELCOMEPI_HDMI_PORT": port}).hdmi_port, port)
+        for port in ("2", "", "HDMI-A-1", "*"):
+            with self.assertRaisesRegex(ValueError, "WELCOMEPI_HDMI_PORT"):
+                Settings.load({**env, "WELCOMEPI_HDMI_PORT": port})
+
+    def test_dual_hdmi_selection_disconnect_and_reconnect(self):
+        first, second = self.monitors()
+        for port, name, status in (("auto", "HDMI-A-1", first), ("0", "HDMI-A-1", first), ("1", "HDMI-A-2", second)):
+            with self.subTest(port=port), self.assertLogs("welcomepi.display.cable", "INFO") as logs:
+                display = Display("left", port)
+                self.assertTrue(display.probe(0))
+                self.output.assert_called_once_with(display.kms, "/dev/dri/card2", name, "left")
+                self.output.reset_mock()
+                status.write_text("disconnected\n")
+                self.assertTrue(display.probe(2))
+                if port == "auto":
+                    self.output.assert_called_once_with(display.kms, "/dev/dri/card2", "HDMI-A-2", "left")
+                    self.output.reset_mock()
+                else:
+                    self.assertIsNone(display.output)
+                    self.assertFalse(display.probe(4))
+                    self.output.assert_not_called()
+                status.write_text("connected\n")
+                self.assertTrue(display.probe(6))
+                self.output.assert_called_once_with(display.kms, "/dev/dri/card2", name, "left")
+                self.output.reset_mock()
+                self.assertEqual([r.levelname for r in logs.records], ["WARNING", "INFO"])
+                self.assertTrue(all(name in r.getMessage() for r in logs.records))
+
+    def test_missing_preferred_port_at_startup_and_recovery_are_reported_once(self):
+        _, selected = self.monitors()
+        selected.write_text("disconnected\n")
+        display = Display("auto", "1")
+        with self.assertLogs("welcomepi.display.cable", "INFO") as logs:
+            self.assertFalse(display.probe(0))
+            self.assertFalse(display.probe(2))
+            selected.write_text("connected\n")
+            self.assertTrue(display.probe(4))
+            self.assertFalse(display.probe(6))
+        loss, recovery = logs.records
+        self.assertEqual(loss.levelname, "WARNING")
+        self.assertIn("Preferred HDMI1 (HDMI-A-2) is disconnected. Check the HDMI cable", loss.getMessage())
+        self.assertEqual(recovery.levelname, "INFO")
+        self.assertIn("Preferred HDMI1 (HDMI-A-2) HDMI cable connection restored", recovery.getMessage())
+
+    def test_auto_tracks_lost_connector_across_close_and_failover(self):
+        first, second = self.monitors()
+        first.write_text("disconnected\n")
+        display = Display("auto")
+        with self.assertNoLogs("welcomepi.display.cable", "INFO"):
+            self.assertTrue(display.probe(0))
+            display.close()  # Simulate a failed frame submission before the next poll.
+        first.write_text("connected\n")
+        second.write_text("disconnected\n")
+        with self.assertLogs("welcomepi.display.cable", "INFO") as logs:
+            self.assertTrue(display.probe(2))
+            self.assertEqual(display.port, "card2-HDMI-A-1")
+            second.write_text("connected\n")
+            self.assertFalse(display.probe(4))  # HDMI1 recovered while HDMI0 remains in use.
+        loss, recovery = logs.records
+        self.assertIn("HDMI1 (HDMI-A-2) is disconnected", loss.getMessage())
+        self.assertIn("HDMI1 (HDMI-A-2) HDMI cable connection restored", recovery.getMessage())
+
+    def test_cloned_or_unassigned_hdmi_only_uses_an_independent_crtc_and_plane(self):
+        shared, spare = SimpleNamespace(id=10), SimpleNamespace(id=11)
+        selected, other = Mock(id=1), Mock(id=2)
+        other.get_prop_value.return_value = shared.id
+        selected.get_possible_crtcs.return_value = [shared, spare]
+        def primary(owner):
+            plane = Mock()
+            plane.get_prop_value.side_effect = {"type": 1, "CRTC_ID": owner}.__getitem__
+            return plane
+        busy_plane, free_plane, current_plane = primary(shared.id), primary(0), primary(spare.id)
+        card = SimpleNamespace(connectors=[selected, other], planes=[busy_plane, free_plane, current_plane])
+        for active in (shared, None):
+            self.assertEqual(scanout(card, selected, active), (spare, current_plane))
+        card.planes.remove(current_plane)
+        self.assertEqual(scanout(card, selected, None), (spare, free_plane))
+        card.planes.remove(free_plane)
+        with self.assertRaises(OSError):
+            scanout(card, selected, None)
+
     def test_standby_keeps_restore_mode_until_hotplug_returns(self):
-        path = Path("/sys/class/drm/card0-HDMI-A-1/status")
-        with patch.dict("sys.modules", pykms=Mock()), patch.object(Path, "glob", return_value=[path]), \
-                patch("welcomepi.display.read_text") as status, patch("welcomepi.display.Output") as output:
-            display = Display("auto")
-            status.return_value = "connected"
+        _, selected = self.monitors()
+        with self.assertNoLogs("welcomepi.display.cable", "INFO"):
+            display = Display("auto", "1")
             self.assertTrue(display.probe(0))
             old = display.output
             old.active = False
-            status.return_value = "disconnected"
+            selected.write_text("disconnected\n")  # HDMI0 remains connected throughout.
             self.assertFalse(display.probe(2))
             self.assertIs(display.output, old)
             old.active = True  # The wake frame was submitted with the stored mode.
             self.assertFalse(display.probe(4))
-            status.return_value = "connected"
+            selected.write_text("connected\n")
             self.assertTrue(display.probe(6))
-            self.assertEqual(output.call_count, 2)
+            self.assertEqual(self.output.call_count, 2)
+            self.assertTrue(all(c.args[2] == "HDMI-A-2" for c in self.output.call_args_list))
             old.close.assert_called_once()
+
+    def test_auto_does_not_switch_to_second_monitor_in_standby(self):
+        first, _ = self.monitors()
+        with self.assertNoLogs("welcomepi.display.cable", "INFO"):
+            display = Display("auto")
+            self.assertTrue(display.probe(0))
+            display.output.active = False
+            first.write_text("disconnected\n")
+            self.assertFalse(display.probe(2))
+            self.output.assert_called_once_with(display.kms, "/dev/dri/card2", "HDMI-A-1", "auto")
+            display.output.active = True
+            self.assertFalse(display.probe(4))  # Give a sleeping monitor time to reassert hotplug.
+        with self.assertLogs("welcomepi.display.cable", "WARNING") as logs:
+            self.assertTrue(display.probe(6))
+            self.assertEqual(display.port, "card2-HDMI-A-2")
+        self.assertIn("HDMI0 (HDMI-A-1) is disconnected", logs.records[0].getMessage())
 
     def test_rotation_metadata_and_override(self):
         conn = "HDMI-A-1"
@@ -133,9 +301,10 @@ class Hardware(unittest.TestCase):
         crtc = SimpleNamespace(id=11, mode=mode)
         conn = Mock(id=12, fullname="HDMI-A-1")
         conn.get_current_crtc.return_value = crtc
+        conn.get_possible_crtcs.return_value = [crtc]
         conn.has_prop.return_value = False
         plane = Mock()
-        plane.get_prop_value.side_effect = lambda name: 1
+        plane.get_prop_value.side_effect = {"type": 1, "CRTC_ID": crtc.id, "rotation": 1}.__getitem__
         card = SimpleNamespace(connectors=[conn], planes=[plane])
         files, requests = [], []
         def framebuffer(card, w, h, fourcc):

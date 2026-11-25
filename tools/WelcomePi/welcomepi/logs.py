@@ -13,6 +13,7 @@ from pymongo.errors import OperationFailure
 
 
 LOCAL_SYSLOG = Path("/dev/log")
+HDMI_CABLE_LOG = logging.getLogger("welcomepi.display.cable")
 
 
 def driver_detail(error):
@@ -68,6 +69,7 @@ class KioskFormatter(logging.Formatter):
 
 @contextmanager
 def kiosk_logging(settings):
+    stderr = logging.StreamHandler()
     if settings.syslog_server:
         sink = SysLogHandler(address=settings.syslog_server, socktype=socket.SOCK_DGRAM,
                              facility=SysLogHandler.LOG_DAEMON)
@@ -75,8 +77,9 @@ def kiosk_logging(settings):
     elif LOCAL_SYSLOG.is_socket():
         sink = SysLogHandler(address=str(LOCAL_SYSLOG), facility=SysLogHandler.LOG_DAEMON)
     else:
-        sink = logging.StreamHandler()  # Local journal/console on hosts without a syslog socket.
-    sink.setFormatter(KioskFormatter(settings))
+        sink = stderr  # Local journal/console on hosts without a syslog socket.
+    formatter = KioskFormatter(settings)
+    sink.setFormatter(formatter)
     queue = SimpleQueue()
     handler = QueueHandler(queue)
     listener = QueueListener(queue, sink)
@@ -90,9 +93,15 @@ def kiosk_logging(settings):
     root.setLevel(logging.INFO)
     logging.raiseExceptions = False  # A failed remote send must not echo the record to local stderr.
     listener.start()
+    if sink is not stderr:
+        stderr.setFormatter(formatter)
+        HDMI_CABLE_LOG.addHandler(stderr)
     try:
         yield
     finally:
+        if sink is not stderr:
+            HDMI_CABLE_LOG.removeHandler(stderr)
+            stderr.close()
         root.handlers[:] = old_handlers
         root.setLevel(old_level)
         listener.stop()

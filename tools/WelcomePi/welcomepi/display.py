@@ -5,8 +5,12 @@ from pathlib import Path
 
 from PIL import Image
 
+from .config import HDMI_CONNECTORS, hdmi_connector
+from .logs import HDMI_CABLE_LOG
+
 
 LOG = logging.getLogger(__name__)
+DRM_CLASS = Path("/sys/class/drm")
 TRANSPOSE = {90: Image.Transpose.ROTATE_90, 180: Image.Transpose.ROTATE_180,
              270: Image.Transpose.ROTATE_270}
 
@@ -35,6 +39,33 @@ def read_text(path):
         return ""
 
 
+def connected_outputs(port):
+    connector = hdmi_connector(port) or "HDMI-*"
+    statuses = sorted(DRM_CLASS.glob(f"card*-{connector}/status"))
+    return (p.parent.name for p in statuses if read_text(p) == "connected")
+
+
+def connected_hdmi(port):
+    """Find the first connected sysfs output (cardN-connector) matching the setting."""
+    return next(connected_outputs(port), None)
+
+
+def scanout(card, connector, active):
+    # A boot console can clone two connectors onto one CRTC. Move the kiosk
+    # to its own CRTC before presenting or switching that CRTC into standby.
+    occupied = {c.get_prop_value("CRTC_ID") for c in card.connectors if c.id != connector.id}
+    candidates = ([active] if active else []) + connector.get_possible_crtcs()
+    for crtc in candidates:
+        if crtc.id in occupied:
+            continue
+        planes = {p.get_prop_value("CRTC_ID"): p for p in card.planes
+                  if p.supports_crtc(crtc) and p.get_prop_value("type") == 1}
+        plane = planes.get(crtc.id) or planes.get(0)
+        if plane is not None:
+            return crtc, plane
+    raise OSError(f"No independent HDMI scanout available for {connector.fullname}")
+
+
 class Output:
     def __init__(self, kms, card_path, name, setting):
         self.kms = kms
@@ -43,7 +74,7 @@ class Output:
         if self.conn is None:
             raise OSError("HDMI connector unavailable")
         active = self.conn.get_current_crtc()
-        self.crtc = active or self.conn.get_possible_crtcs()[0]
+        self.crtc, self.plane = scanout(self.card, self.conn, active)
         mode = active.mode if active else None
         if not mode or not mode.hdisplay or not mode.vdisplay:
             # DRM_MODE_TYPE_PREFERRED is bit 3. Older panels may mark no mode.
@@ -51,8 +82,6 @@ class Output:
         if not mode.hdisplay or not mode.vdisplay:
             raise OSError("HDMI has no usable mode")
         self.blob = mode.to_blob(self.card)
-        self.plane = next(p for p in self.card.planes if p.supports_crtc(self.crtc)
-                          and p.get_prop_value("type") == 1)
         panel = self.conn.get_prop_value("panel orientation") if self.conn.has_prop("panel orientation") else None
         self.has_rotation = self.plane.has_prop("rotation")
         plane_rotation = self.plane.get_prop_value("rotation") if self.has_rotation else 1
@@ -98,24 +127,54 @@ class Output:
 
 
 class Display:
-    def __init__(self, setting):
+    def __init__(self, setting, hdmi_port="auto"):
         import pykms
         self.kms = pykms
         self.setting = setting
+        self.hdmi_port = hdmi_port
+        self.expected_connector = hdmi_connector(hdmi_port)
+        self.missing_connectors = set()
+        self.was_asleep = False
         self.output = self.port = None
         self.lost_signal = False
         self.next_probe = 0
+
+    def port_label(self, name):
+        prefix = "Preferred " if self.hdmi_port != "auto" else ""
+        for port, connector in HDMI_CONNECTORS.items():
+            if name == connector:
+                return f"{prefix}HDMI{port} ({name})"
+        return name
+
+    def report_cables(self, outputs, suppress_loss):
+        connected = {p.split("-", 1)[1] for p in outputs}
+        for name in sorted(self.missing_connectors & connected):
+            HDMI_CABLE_LOG.info("%s HDMI cable connection restored.", self.port_label(name))
+            self.missing_connectors.remove(name)
+        name = self.expected_connector
+        if name and not suppress_loss and name not in connected and name not in self.missing_connectors:
+            HDMI_CABLE_LOG.warning("%s is disconnected. Check the HDMI cable and monitor power.", self.port_label(name))
+            self.missing_connectors.add(name)
 
     def probe(self, at):
         if at < self.next_probe:
             return False
         self.next_probe = at + 2
-        paths = sorted(Path("/sys/class/drm").glob("card*-HDMI-*/status"))
-        port = next((p.parent.name for p in paths if read_text(p) == "connected"), None)
-        if port is None and self.output and (not self.output.active or self.lost_signal):
-            # Some monitors deassert hotplug detect in standby. Retain the
-            # mode and connector so the first fresh frame can restore signal.
-            self.lost_signal = True
+        outputs = list(connected_outputs(self.hdmi_port))
+        asleep = self.output is not None and not self.output.active
+        # Monitors can deassert hotplug in standby. Allow one polling interval
+        # on wake before reporting a loss or handing the kiosk to another port.
+        waking = self.output is not None and self.was_asleep and not asleep
+        self.was_asleep = asleep
+        self.report_cables(outputs, suppress_loss=asleep or waking)
+        port = next(iter(outputs), None)
+        if self.output and (asleep or waking):
+            port = self.port if self.port in outputs else None
+            if port is None:
+                self.lost_signal = True
+                return False
+        if port is None and self.lost_signal:
+            # Keep the stored mode available for a monitor that is slow to wake.
             return False
         if self.port == port and not self.lost_signal:
             return False
@@ -124,6 +183,7 @@ class Display:
             device, name = port.split("-", 1)
             self.output = Output(self.kms, "/dev/dri/" + device, name, self.setting)
             self.port = port
+            self.expected_connector = name
         return True
 
     def close(self):

@@ -11,7 +11,8 @@ from pymongo.errors import PyMongoError
 
 from welcomepi.config import Settings
 from welcomepi.data import database_provider
-from welcomepi.inputs import start_mqtt
+from welcomepi.display import connected_hdmi
+from welcomepi.inputs import TOPICS, start_mqtt
 from welcomepi.logs import driver_detail, kiosk_logging
 from welcomepi.reader import discover_reader
 
@@ -43,21 +44,25 @@ def probe_reader(settings):
 def probe_mqtt(settings, watch):
     events = Queue()
 
-    def receive(kind, *_):
-        if kind in ("subscribed", "disconnected", "scan"):
-            events.put(kind)
+    def receive(kind, *args):
+        if kind == "checkin":
+            record, _, topic, fresh = args
+            if fresh and settings.welcomes_location(record.location):
+                events.put((kind, topic, bool(record.uid)))
+        elif kind in ("subscribed", "disconnected"):
+            events.put((kind,))
 
     def wait_for(kind, seconds, timeout_message):
         deadline = time.monotonic() + seconds
         while True:
             try:
-                event = events.get(timeout=max(0, deadline - time.monotonic()))
+                event, *details = events.get(timeout=max(0, deadline - time.monotonic()))
             except Empty:
                 if kind == "subscribed":
                     LOG.error("MQTT commissioning timed out: %s", timeout_message)
                 raise CheckFailed(timeout_message) from None
             if event == kind:
-                return
+                return details
             if event == "disconnected":
                 raise CheckFailed("Broker disconnected or refused a subscription. Check TLS and broker ACLs.")
 
@@ -66,11 +71,18 @@ def probe_mqtt(settings, watch):
     client = start_mqtt(settings, receive)
     try:
         wait_for("subscribed", 20, "No subscription acknowledgment in 20 seconds. Check the broker and its ACLs.")
-        print("MQTT acknowledged all nine kiosk subscriptions.", flush=True)
+        print(f"MQTT acknowledged all {len(TOPICS)} kiosk subscriptions.", flush=True)
         if watch:
-            print("Listening. Make a genuine door check-in within 90 seconds.", flush=True)
-            wait_for("scan", 90, "No fresh checkins/insert arrived in 90 seconds. Check the door, publisher and clock.")
-            print("Received a fresh checkins/insert. Confirm the matching welcome on HDMI.")
+            print("Listening. Check in at a door that matches this kiosk's location settings within 90 seconds.",
+                  flush=True)
+            topic, has_uid = wait_for("checkin", 90, "No fresh check-in from a matching location in 90 seconds. "
+                                                     "Check the location patterns, door, publisher and clock.")
+            print(f"Received a fresh door check-in from a matching location on {topic}.")
+            if has_uid:
+                print("The record includes a card UID. Confirm the eligible member's agenda on HDMI.")
+            else:
+                print("Name-only record. Check for the large first-name greeting on HDMI. "
+                      "The agenda opens after a fresh check-in or local tap supplies an eligible card UID.")
     finally:
         client.disconnect()
         client.loop_stop()
@@ -93,6 +105,11 @@ def main():
 def run_checks(settings, args):
     checks = []
     if args.mode == "check":
+        port = settings.hdmi_port
+        connector = connected_hdmi(port)
+        selection = "automatic selection" if port == "auto" else f"selected HDMI{port}"
+        status = f"connected on {connector}" if connector else "waiting for a connected monitor"
+        print(f"HDMI ({selection}): {status}.")
         if args.reader_in_use:
             print("The kiosk owns reader discovery. Verify the selected reader with a local tap.")
         else:

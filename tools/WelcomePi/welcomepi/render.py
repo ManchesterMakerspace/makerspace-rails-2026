@@ -29,7 +29,7 @@ def font(size, bold=False):
     raise OSError("Install fonts-dejavu-core or fonts-roboto")
 
 
-def wrap(text, face, width):
+def wrap(text, face, width, *, break_words=True):
     words = str(text).split()
     lines, line = [], ""
     for word in words:
@@ -39,7 +39,7 @@ def wrap(text, face, width):
             continue
         if line:
             lines.append(line)
-        if face.getlength(word) <= width:
+        if not break_words or face.getlength(word) <= width:
             line = word
             continue
         line = ""
@@ -85,6 +85,23 @@ def paired(row):
     return f"{label}  ·  {detail}" if detail else label
 
 
+def agenda_complete(data):
+    return all(key in data for key in ("reservations", "opportunities", "events"))
+
+
+def agenda_ready(data):
+    return bool(data.get("reservations") or data.get("opportunities") or agenda_complete(data))
+
+
+def display_name(first):
+    # MongoDB can hold legacy, unbounded values. Keep font measurements on a
+    # small Pi bounded even if the first-name field contains a pasted document.
+    text = str(first or "").strip()
+    if len(text) > 256:
+        text = text[:255].rstrip() + "…"
+    return " ".join(text.split()) or "member"
+
+
 def section_pages(sections, face, width, capacity):
     """Keep headings with at least one line and repeat them after a page break."""
     pages = [[]]
@@ -119,6 +136,49 @@ class Canvas:
     def text(self, x, y, text, face, color=INK):
         self.draw.text((x, y), text, font=face, fill=color, anchor="lt")
 
+    def greeting(self, first, date):
+        self.draw.rectangle((0, 0, self.w, self.h), fill=INK)
+        status = fit(f"Active member  ·  {date}", self.small, self.width)
+        self.draw.text((self.w // 2, self.h - self.pad), status, font=self.small, fill=LIGHT, anchor="mb")
+        bottom = self.h - 2 * self.pad - self.small.size
+        gap = self.pad // 2
+        greeting_name = f"{display_name(first)}!"
+        # Prefer whole words, except when doing so would shrink a long name
+        # below even the regular agenda text size.
+        break_words = any(self.bold.getlength(word) > self.width for word in greeting_name.split())
+
+        def layout(size):
+            # Reuse the resolved typeface. Searching installed fonts at each
+            # trial size would slow the first frame on a Pi Zero.
+            face = self.bold.font_variant(size=size)
+            name = "\n".join(wrap(greeting_name, face, self.width, break_words=break_words))
+            box = self.draw.multiline_textbbox((0, 0), name, font=face, spacing=gap, align="center")
+            welcome = self.bold.font_variant(size=max(1, min(size // 2, self.w // 8, self.h // 7)))
+            welcome_height = welcome.getbbox("Welcome,", anchor="lt")[3]
+            height = welcome_height + gap + box[3] - box[1]
+            return face, name, box, welcome, height
+
+        # Keep words intact as the name grows. Fit both the ink (including
+        # accents and descenders) and the space above it for the salutation.
+        low, high = 1, max(1, 2 * bottom)
+        while low < high:
+            trial = (low + high + 1) // 2
+            _, _, box, _, height = layout(trial)
+            if box[2] - box[0] <= self.width and height <= bottom - self.pad:
+                low = trial
+            else:
+                high = trial - 1
+        face, name, box, welcome, height = layout(low)
+        if box[2] - box[0] > self.width or height > bottom - self.pad:
+            name = fit(greeting_name, face, self.width)
+            box = face.getbbox(name)
+            height = welcome.getbbox("Welcome,", anchor="lt")[3] + gap + box[3] - box[1]
+        top = self.pad + (bottom - self.pad - height) // 2
+        self.draw.text((self.w // 2, top), "Welcome,", font=welcome, fill=LIGHT, anchor="mt")
+        x = (self.w - (box[2] - box[0])) // 2 - box[0]
+        y = top + height - box[3]
+        self.draw.multiline_text((x, y), name, font=face, fill="white", spacing=gap, align="center")
+
     def heading(self, x, y, title, width):
         side = self.bold.size
         stroke = max(1, side // 9)
@@ -144,9 +204,7 @@ class Canvas:
         inset = side + side//2
         self.text(x + inset, y, fit(title, self.bold, width - inset), self.bold, ACCENT)
 
-    def header(self, screen, now, details=None, avatar=None):
-        today = now.astimezone(EASTERN)
-        date = f"{today:%A, %B} {today.day}"
+    def header(self, screen, today, date, details=None, avatar=None):
         board = screen.page == "board"
         height = min(self.title.size + self.small.size + 3 * self.pad, max(80, self.h // 3))
         if board:
@@ -163,7 +221,8 @@ class Canvas:
                 headline = f"{today:%a, %b} {today.day}"
         else:
             kicker = f"Active member  ·  {date}"
-            headline = f"Welcome, {screen.member.first}!" if screen.page == "agenda" else screen.member.first
+            first = display_name(screen.member.first)
+            headline = f"Welcome, {first}!" if screen.page == "agenda" else first
             if details and details.rank is not None:
                 side = height - self.pad
                 x, y = self.w - self.pad - side, (height - side) // 2
@@ -254,7 +313,7 @@ class Canvas:
             else:
                 self.text(self.pad, y, line, self.body)
             y += self.line
-        if page_name == "agenda" and p == len(pages) - 1 and all(key in data for key in ("reservations", "opportunities", "events")):
+        if page_name == "agenda" and p == len(pages) - 1 and agenda_complete(data):
             events = data["events"]
             if events and bottom - y >= 2 * self.line:
                 self.heading(self.pad, y, "Today on Eventbrite", self.width)
@@ -276,7 +335,15 @@ class Canvas:
 
 def render(size, screen, now, data, page=0):
     canvas = Canvas(size)
-    top = canvas.header(screen, now, data.get("details"), data.get("avatar"))
+    today = now.astimezone(EASTERN)
+    date = f"{today:%A, %B} {today.day}"
+    if screen.page == "welcome":
+        canvas.greeting(screen.record_first, date)
+        return canvas.image, 1
+    if screen.greeting and not agenda_ready(data):
+        canvas.greeting(screen.member.first, date)
+        return canvas.image, 1
+    top = canvas.header(screen, today, date, data.get("details"), data.get("avatar"))
     count = (canvas.board(data, top, page) if screen.page == "board"
              else canvas.personal(screen.page, data, top, page))
     if count > 1:

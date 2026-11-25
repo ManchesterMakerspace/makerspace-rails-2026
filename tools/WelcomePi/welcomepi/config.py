@@ -6,6 +6,31 @@ import re
 import socket
 
 
+HDMI_CONNECTORS = {"auto": None, "0": "HDMI-A-1", "1": "HDMI-A-2"}
+
+
+def hdmi_connector(port):
+    try:
+        return HDMI_CONNECTORS[port]
+    except KeyError:
+        raise ValueError("WELCOMEPI_HDMI_PORT must be auto, 0 or 1") from None
+
+
+def parse_location_patterns(value):
+    if value is None:
+        return None
+    try:
+        patterns = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise ValueError("WELCOMEPI_LOCATION_PATTERNS must be a JSON array of regex strings") from error
+    if not isinstance(patterns, list) or any(not isinstance(pattern, str) for pattern in patterns):
+        raise ValueError("WELCOMEPI_LOCATION_PATTERNS must be a JSON array of regex strings")
+    try:
+        return tuple(re.compile(pattern, re.IGNORECASE) for pattern in patterns)
+    except (re.error, OverflowError) as error:
+        raise ValueError(f"Invalid regex in WELCOMEPI_LOCATION_PATTERNS: {error}") from error
+
+
 @dataclass(frozen=True)
 class Settings:
     rails_uri: str = field(repr=False)
@@ -25,6 +50,11 @@ class Settings:
     syslog_server: tuple[str, int] | None = None
     i2c_bus: str = "/dev/i2c-1"
     i2c_addresses: tuple[int, ...] = (0x24,)
+    hdmi_port: str = "auto"
+    location_patterns: tuple[re.Pattern[str], ...] | None = None
+
+    def welcomes_location(self, location):
+        return self.location_patterns is None or any(pattern.search(location) for pattern in self.location_patterns)
 
     @classmethod
     def load(cls, env=None):
@@ -40,6 +70,8 @@ class Settings:
         rotation = env.get("WELCOMEPI_ROTATION", "auto")
         if rotation not in ("auto", "normal", "left", "right"):
             raise ValueError("Invalid WELCOMEPI_ROTATION")
+        hdmi_port = env.get("WELCOMEPI_HDMI_PORT", "auto")
+        hdmi_connector(hdmi_port)
         count = int(env.get("WELCOMEPI_OPPORTUNITIES", "5"))
         if count < 1:
             raise ValueError("WELCOMEPI_OPPORTUNITIES must be positive")
@@ -70,4 +102,5 @@ class Settings:
                    env.get("MQTT_CLIENT_ID") or "welcomepi-" + socket.gethostname(),
                    env.get("WELCOMEPI_NFC_PORT", "/dev/serial0"), rotation, count,
                    tuple(part.strip() for part in env.get("EVENTBRITE_ORGANIZATION_IDS", "").split(",") if part.strip()),
-                   frozenset(ids), env.get("WELCOMEPI_SLACK_TOKEN", ""), server, bus, addresses)
+                   frozenset(ids), env.get("WELCOMEPI_SLACK_TOKEN", ""), server, bus, addresses, hdmi_port,
+                   parse_location_patterns(env.get("WELCOMEPI_LOCATION_PATTERNS")))

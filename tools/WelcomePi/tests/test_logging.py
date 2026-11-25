@@ -17,7 +17,7 @@ from pymongo.monitoring import CommandFailedEvent
 
 from welcomepi.config import Settings
 from welcomepi.inputs import TOPICS, start_mqtt
-from welcomepi.logs import MongoFailures, driver_detail, kiosk_logging
+from welcomepi.logs import HDMI_CABLE_LOG, MongoFailures, driver_detail, kiosk_logging
 
 
 def settings(**extra):
@@ -26,7 +26,46 @@ def settings(**extra):
                           "MQTT_TLS": "false", **extra})
 
 
+class LocationSettings(unittest.TestCase):
+    def test_location_welcome_defaults_and_patterns(self):
+        self.assertTrue(settings().welcomes_location("blank:"))
+        self.assertFalse(settings(WELCOMEPI_LOCATION_PATTERNS="[]").welcomes_location("Main door"))
+        config = settings(WELCOMEPI_LOCATION_PATTERNS='["^main door$", "lobby", "^blank:$"]')
+        for place in ("MAIN DOOR", "North Lobby Reader", "blank:"):
+            self.assertTrue(config.welcomes_location(place))
+        self.assertFalse(config.welcomes_location("main doors"))
+        self.assertFalse(config.welcomes_location("workshop"))
+
+    def test_malformed_location_patterns_are_configuration_errors(self):
+        for value in ("", "not JSON", '"literal"', "null", "[1]", '["("]'):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "WELCOMEPI_LOCATION_PATTERNS"):
+                settings(WELCOMEPI_LOCATION_PATTERNS=value)
+
+
 class SyslogTests(unittest.TestCase):
+    def test_hdmi_cable_events_reach_stderr_once_with_every_log_destination(self):
+        remote = settings(WELCOMEPI_SYSLOG_HOST="192.0.2.1", WELCOMEPI_SYSLOG_PORT="514")
+        for destination, config in (("local syslog", settings()), ("remote syslog", remote), ("stderr", settings())):
+            stderr = StringIO()
+            with self.subTest(destination=destination), redirect_stderr(stderr), \
+                    patch("welcomepi.logs.LOCAL_SYSLOG") as local, \
+                    patch("welcomepi.logs.SysLogHandler") as syslog:
+                local.is_socket.return_value = destination == "local syslog"
+                with kiosk_logging(config):
+                    HDMI_CABLE_LOG.warning("HDMI1 cable disconnected")
+                    HDMI_CABLE_LOG.info("HDMI1 cable reconnected")
+                    logging.getLogger("welcomepi.inputs").info("member scan")
+                lines = stderr.getvalue().splitlines()
+                self.assertEqual(sum("WARNING HDMI1 cable disconnected" in line for line in lines), 1)
+                self.assertEqual(sum("INFO HDMI1 cable reconnected" in line for line in lines), 1)
+                if destination == "stderr":
+                    syslog.assert_not_called()
+                else:
+                    self.assertEqual(len(lines), 2)
+                    records = [call.args[0] for call in syslog.return_value.handle.call_args_list]
+                    self.assertEqual([r.getMessage() for r in records],
+                                     ["HDMI1 cable disconnected", "HDMI1 cable reconnected", "member scan"])
+
     def test_configuration_defaults_ipv6_and_invalid_pairs(self):
         self.assertIsNone(settings().syslog_server)
         self.assertEqual(settings().i2c_addresses, (0x24,))

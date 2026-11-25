@@ -1,5 +1,6 @@
-"""Input adapters. Only projected identity changes and scan identifiers enter the UI queue."""
-from collections import OrderedDict
+"""Input adapters. Project check-in and identity messages before queuing them."""
+from collections import deque
+from dataclasses import dataclass
 from datetime import datetime
 import logging
 import sys
@@ -10,57 +11,94 @@ from bson import ObjectId, json_util
 from bson.errors import BSONError
 import paho.mqtt.client as mqtt
 
+from .checkin_payload import parse_checkin
 from .logs import driver_detail
-from .state import CARD_FIELDS, MEMBER_FIELDS, PERSONAL_SECONDS, UTC, checkin_time
+from .recent import COPY_INTERVAL, Checkin, compatible_names
+from .state import CARD_FIELDS, MEMBER_FIELDS, PERSONAL_SECONDS, UTC, uid_key
 
 
 LOG = logging.getLogger(__name__)
 MUTATIONS = ("insert", "update", "replace", "delete")
-TOPICS = [("checkins/insert", 2)] + [(f"{c}/{op}", 2) for c in ("members", "cards") for op in MUTATIONS]
+ACTIVITY = "activity/checkins/#"
+TOPICS = [("checkins/insert", 2), (ACTIVITY, 2)] + [(f"{c}/{op}", 2) for c in ("members", "cards") for op in MUTATIONS]
+
+
+@dataclass
+class Arrival:
+    received: float
+    record: Checkin
+    door_time: datetime
+    ids: set
+    sources: set
 
 
 class DoorFeed:
     def __init__(self):
-        self.seen = OrderedDict()
+        self.seen = deque()
+        self.last_public = None
+
+    def first_delivery(self, record, source, identifier, door_time, monotonic):
+        while self.seen and self.seen[0].received <= monotonic - PERSONAL_SECONDS - 10:
+            self.seen.popleft()
+        for arrival in reversed(self.seen):
+            previous = arrival.record
+            if record.location.casefold() != previous.location.casefold():
+                continue
+            if record.uid:
+                # A name-only greeting may precede the first verifiable UID.
+                if uid_key(record.uid) != uid_key(previous.uid):
+                    continue
+            elif not previous.name or not compatible_names(record.name, previous.name):
+                continue
+            # Copies from the activity and change-stream feeds may have unrelated
+            # IDs and timestamps a few seconds apart. Pair each format once so
+            # another genuine, rapid tap on the same reader can still wake it.
+            other_format = source not in arrival.sources and abs(door_time - arrival.door_time) <= COPY_INTERVAL
+            if identifier in arrival.ids or other_format:
+                arrival.sources.add(source)
+                arrival.ids.add(identifier)
+                if record.uid and record.name and not previous.name:
+                    # A name-only welcome may have displaced the first UID-only
+                    # lookup. Give this fuller, independently credentialed copy
+                    # one chance to complete the public greeting.
+                    arrival.record = record
+                    public = self.last_public
+                    return (public is not None and public.location.casefold() == record.location.casefold()
+                            and abs(door_time - public.at) <= COPY_INTERVAL
+                            and compatible_names(record.name, public.name))
+                return False
+        self.seen.append(Arrival(monotonic, record, door_time, {identifier}, {source}))
+        return True
 
     def message(self, topic, payload, retained, now, monotonic):
-        collection, operation = topic.split("/")
+        if topic == "checkins/insert" or mqtt.topic_matches_sub(ACTIVITY, topic):
+            record, operation, published, identifier, door_time = parse_checkin(payload)
+            fresh = bool(record.uid or record.name) and not retained and all(
+                -10 <= (now - stamp).total_seconds() < PERSONAL_SECONDS for stamp in (published, record.at))
+            if fresh:
+                fresh = self.first_delivery(record, (topic, operation), identifier, door_time, monotonic)
+                if fresh:
+                    self.last_public = None if record.uid else record
+            return ("checkin", record, monotonic, topic, fresh)
         if (topic, 2) not in TOPICS:
             return None
+        collection, operation = topic.split("/")
         if retained:
-            return None if collection == "checkins" else ("resync",)
-        prefix, published, body = payload.decode("utf-8").split(" ", 2)
+            return ("resync",)
+        prefix, published, body = payload.decode("utf-8").split(None, 2)
         if prefix != operation:
             raise ValueError("Operation differs from topic")
-        published = int(published)
+        int(published)
         document = json_util.loads(body)["document"]
         if not isinstance(document, dict) or not isinstance(document.get("_id"), (ObjectId, str, int)):
-            return ("resync",) if collection != "checkins" else None
-        if collection != "checkins":
-            # updateLookup can yield only documentKey when a full document
-            # could not be supplied. Never install a patch as a complete record.
-            if operation in ("update", "replace") and ("uid" if collection == "cards" else "status") not in document:
-                return ("resync",)
-            fields = MEMBER_FIELDS if collection == "members" else CARD_FIELDS
-            projected = {k: document[k] for k in fields if k in document}
-            return ("change", collection, operation, projected)
-        stamp = checkin_time(document)
-        if not stamp or not isinstance(document.get("uid"), str) or not document["uid"]:
-            return None
-        for value in (published, stamp.timestamp()):
-            if not -10 <= now.timestamp() - value < PERSONAL_SECONDS:
-                return None
-        while self.seen and next(iter(self.seen.values())) <= monotonic - PERSONAL_SECONDS - 10:
-            self.seen.popitem(last=False)
-        key = document["_id"]
-        if key in self.seen:
-            return None
-        self.seen[key] = monotonic
-        where = document.get("where")
-        source = f"MQTT {topic}"
-        if isinstance(where, str) and where.strip():
-            source += f" ({where.strip()[:128]})"
-        return ("scan", document["uid"], False, monotonic, source)
+            return ("resync",)
+        # updateLookup can yield only documentKey when a full document
+        # could not be supplied. Never install a patch as a complete record.
+        if operation in ("update", "replace") and ("uid" if collection == "cards" else "status") not in document:
+            return ("resync",)
+        fields = MEMBER_FIELDS if collection == "members" else CARD_FIELDS
+        projected = {k: document[k] for k in fields if k in document}
+        return ("change", collection, operation, projected)
 
 
 def reason_text(reason, legacy, properties=None):
@@ -143,7 +181,7 @@ def start_mqtt(settings, emit):
     def received(_client, _data, msg):
         try:
             event = feed.message(msg.topic, msg.payload, msg.retain, datetime.now(UTC), time.monotonic())
-        except (BSONError, ValueError, KeyError, TypeError, OverflowError, AttributeError, OSError) as error:
+        except (BSONError, ValueError, KeyError, TypeError, OverflowError, AttributeError, OSError, RecursionError) as error:
             # BSON decode errors can quote field values. These are payload errors, not driver errors.
             LOG.warning("Malformed MQTT message on %s (%s)", msg.topic, type(error).__name__)
             event = ("resync",) if msg.topic.split("/")[0] in ("members", "cards") else None

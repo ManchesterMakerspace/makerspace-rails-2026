@@ -1,13 +1,15 @@
 """Projected, read-only queries against the makerspace Rails collections."""
 from datetime import datetime, time, timedelta
-from heapq import nlargest
+import re
 from threading import Lock
 
 from bson import ObjectId
 from pymongo import MongoClient
 
 from .logs import MongoFailures
-from .state import CARD_FIELDS, EASTERN, MEMBER_FIELDS, UTC, Directory, checkin_time, day_bounds, identify
+from .recent import Checkin, RECENT_WINDOW, RecentCheckins
+from .state import (CARD_FIELDS, EASTERN, MEMBER_FIELDS, UTC, Directory, checkin_time, clock_label,
+                    day_bounds, identify, uid_key)
 
 
 def database_provider(uri):
@@ -40,8 +42,11 @@ def names(collection, ids):
         {"_id": {"$in": list(ids)}}, ["name"]) if row.get("name")}
 
 
-def clock_label(value):
-    return value.astimezone(EASTERN).strftime("%I:%M %p").lstrip("0")
+def uid_filter(uid):
+    # Door records and the local NFC reader can use different hex letter casing.
+    if re.fullmatch(r"[0-9A-Fa-f]+", uid) and not uid.isdecimal():
+        return re.compile(r"^" + uid + r"$", re.I)
+    return uid
 
 
 def points(value):
@@ -66,8 +71,10 @@ class RailsData:
         return cache
 
     def identity(self, uid, now):
-        cards = list(self.db.cards.find({"uid": uid}, list(CARD_FIELDS)).limit(2))
-        if len(cards) != 1:
+        if not isinstance(uid, str) or not uid.strip():
+            return None
+        cards = list(self.db.cards.find({"uid": uid_filter(uid)}, list(CARD_FIELDS)).limit(2))
+        if len(cards) != 1 or uid_key(cards[0]["uid"]) != uid_key(uid):
             return None
         member = self.db.members.find_one({"_id": cards[0].get("member_id"), "merged_at": None},
                                           list(MEMBER_FIELDS))
@@ -197,28 +204,42 @@ class RailsData:
         return rows
 
     def recent(self, now):
-        start, end = day_bounds(now)
+        end = now.astimezone(UTC)
+        start = end - RECENT_WINDOW
         seconds, finish = start.timestamp(), end.timestamp()
         # Both legacy fields contain seconds, milliseconds and BSON dates.
         # ISO strings may carry a different zone; normalize before the final cut.
         ranges = [(seconds, finish), (seconds * 1000, finish * 1000), (start, end),
                   (str(int(seconds)), str(int(finish))), (str(int(seconds * 1000)), str(int(finish * 1000))),
                   ((start - timedelta(days=1)).date().isoformat(), (end + timedelta(days=2)).date().isoformat())]
-        query = {"$or": [{field: {"$gte": low, "$lt": high}}
-                         for field in ("timeOf", "time") for low, high in ranges]}
-        records = self.db.checkins.find(query, ["timeOf", "time", "holder", "name", "uid"])
-        dated = ((stamp, row) for row in records if (stamp := checkin_time(row)) and start <= stamp < end)
-        recent = nlargest(5, dated, key=lambda pair: (pair[0], str(pair[1]["_id"])))
-        result = []
-        for stamp, row in recent:
-            name = (row.get("holder") or row.get("name") or "").split()
-            if name:
-                first = name[0]
-            else:
-                # Some reader versions recorded only a UID.
-                card = self.db.cards.find_one({"uid": row.get("uid")}, ["member_id"]) if row.get("uid") else None
-                member = self.db.members.find_one({"_id": card["member_id"], "merged_at": None},
-                                                  ["firstname"]) if card and card.get("member_id") else None
-                first = (member or {}).get("firstname") or "Member"
-            result.append((first, clock_label(stamp)))
-        return result
+        query = {"$or": [{field: {"$gte": low, "$lte": high}}
+                         for field in ("timeOf", "time", "_id") for low, high in ranges]}
+        fields = ["timeOf", "time", "holder", "name", "uid", "cardUID", "member_id", "where", "reader"]
+        candidates = {}
+        for doc in self.db.checkins.find(query, fields):
+            stamp = checkin_time(doc) or checkin_time({"time": doc["_id"]})
+            if stamp is None or not start <= stamp <= end:
+                continue
+            event = Checkin.from_document(doc, stamp)
+            key = event.member_id, uid_key(event.uid), event.name.casefold()
+            if key not in candidates or event.order() > candidates[key].order():
+                candidates[key] = event
+
+        # Resolve cards in bulk once, including multiple cards assigned to the
+        # same member. Name-only history remains usable without a current card.
+        directory = Directory()
+        uids = {uid_key(event.uid) for event in candidates.values() if event.uid}
+        member_ids = {event.member_id for event in candidates.values() if event.member_id}
+        if uids:
+            for card in self.db.cards.find({"uid": {"$in": [uid_filter(uid) for uid in uids]}}, ["uid", "member_id"]):
+                directory.update("cards", "insert", card)
+                if card.get("member_id"):
+                    member_ids.add(card["member_id"])
+        if member_ids:
+            for member in self.db.members.find({"_id": {"$in": list(member_ids)}, "merged_at": None},
+                                               ["firstname", "lastname"]):
+                directory.update("members", "insert", member)
+        history = RecentCheckins()
+        for event in sorted(candidates.values(), key=Checkin.order, reverse=True):
+            history.add(event.with_directory(directory), end)
+        return history.entries

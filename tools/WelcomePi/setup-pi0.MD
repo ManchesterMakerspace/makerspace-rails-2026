@@ -1,5 +1,7 @@
 # Bring up WelcomePi on a Pi Zero W at 720p
 
+For a dual-HDMI board, follow [Install on a Pi 4 or Pi 5](README.md#install-on-a-pi-4-or-pi-5).
+
 Use the original Raspberry Pi Zero W, Raspberry Pi OS Lite **Bookworm 32-bit**, a PN532 in I²C (IIC) or UART mode, and an HDMI monitor that accepts **1280×720 at 60 Hz**. Allow access from the Pi's network to your existing MongoDB databases and MQTT broker. Have a consenting member with a working door fob available for the two acceptance checks. You can also run the display from door check-ins alone.
 
 | Where | What to run |
@@ -88,12 +90,13 @@ Replace the sample hostnames and every `REPLACE` value with site-provisioned set
 | `MLAB_URI` | Read-only Rails MongoDB URI. Include the database watched by ChangeStream2MQTT in the URI path, commonly `/makerauth`. |
 | `LEDGER_URI` | Read-only MongoDB URI with the actual Ledger database in its path. Include the correct `authSource` and TLS options where required in each URI. Percent-encode reserved characters in URI usernames and passwords. |
 | `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS`, `MQTT_USERNAME`, `MQTT_PASSWORD` | Broker and subscribe-only credentials for this Pi. The example uses TLS on port 8883. The OS trust store must trust the broker's certificate. |
+| `WELCOMEPI_LOCATION_PATTERNS` | To welcome only selected doors, set a JSON list of case-insensitive regexes, e.g. `WELCOMEPI_LOCATION_PATTERNS='["^Main Entrance$"]'`. Matching uses `where`, then `reader`, then `blank:`. Leave unset to welcome all locations. An empty list keeps MQTT arrivals history-only. |
 | `WELCOMEPI_NFC_PORT`, `WELCOMEPI_ROTATION` | Use `/dev/serial0` and `auto` for the initial setup. If the pixels need rotating for the physical mount, choose `left` or `right`. |
 | `WELCOMEPI_I2C_BUS`, `WELCOMEPI_I2C_ADDRESSES` | Defaults to `/dev/i2c-1` and `0x24`. For an address translator, enter its documented 7-bit addresses in probe order, separated by commas. |
 | `WELCOMEPI_SYSLOG_HOST`, `WELCOMEPI_SYSLOG_PORT` | Leave both unset for local syslog. For direct UDP delivery set both, for example `WELCOMEPI_SYSLOG_HOST=192.0.2.10` and `WELCOMEPI_SYSLOG_PORT=514`. Substitute your collector's IPv4 or IPv6 address and listening UDP port. |
 | `EVENTBRITE_ORGANIZATION_IDS`, `SLACKIDS_INELIGIBLE`, `WELCOMEPI_SLACK_TOKEN` | Match the site's Eventbrite organizations and Ledger exclusions. The optional Slack token enables private avatar images when it has access to the Ledger DM file. |
 
-Give the kiosk MongoDB **find** access on the collections in the [access table](README.md#configuration-and-access). Allow MQTT subscriptions to **checkins/insert** and to **insert**, **update**, **replace** and **delete** under both **members/** and **cards/**. The kiosk and the diagnostic use subscribe-only credentials. The diagnostic uses a separate client ID beginning with `wpi-check-` so it can run alongside the display. If broker policy binds credentials to one client ID, verify the live kiosk with the actual door scan and its journal.
+Give the kiosk MongoDB **find** access on the collections in the [access table](README.md#configuration-and-access). Allow MQTT subscriptions to `activity/checkins/#`, `checkins/insert`, and to **insert**, **update**, **replace** and **delete** under both **members/** and **cards/**. The kiosk and the diagnostic use subscribe-only credentials. The diagnostic uses a separate client ID beginning with `wpi-check-` so it can run alongside the display. If broker policy binds credentials to one client ID, verify the live kiosk with the actual door scan and its journal.
 
 ```sh
 sudo reboot
@@ -113,7 +116,7 @@ kmsprint
 sudo bash setup.sh check
 ```
 
-Look for a synchronized clock, **connected**, and an active **1280×720** mode. If `kmsprint` reports permission denied, run `sudo kmsprint`. The check prints the provisioned reader, for example `local PN532 I2C /dev/i2c-1@0x24` or `local PN532 UART /dev/serial0`. If both probes fail it reports **No PN532 found. Running MQTT-only** and continues checking the Rails and Ledger reads and all nine MQTT subscriptions. While the kiosk is running it owns the reader. Verify it with the local tap in step 7.
+Look for a synchronized clock, **connected**, and an active **1280×720** mode. If `kmsprint` reports permission denied, run `sudo kmsprint`. The check prints the provisioned reader, for example `local PN532 I2C /dev/i2c-1@0x24` or `local PN532 UART /dev/serial0`. If both probes fail it reports **No PN532 found. Running MQTT-only** and continues checking the Rails and Ledger reads and all ten MQTT subscriptions. While the kiosk is running it owns the reader. Verify it with the local tap in step 7.
 
 ```sh
 sudo systemctl enable --now welcomepi.service
@@ -121,13 +124,13 @@ sudo systemctl status welcomepi.service --no-pager
 sudo journalctl -b -t welcomepi -f
 ```
 
-The monitor should show today's date, the public board and the portal QR. Look for **HDMI HDMI-A-1: 1280x720** with the detected rotation and the PN532 provisioning result. With remote syslog selected, follow the receiver's `welcomepi` records for this Pi. The application sends directly to that collector, without a local application log or a flash spool. UDP delivery is best effort. Use a second SSH session for the MQTT check below.
+The monitor should show today's date, the public board and the portal QR. Look for **HDMI HDMI-A-1: 1280x720** with the detected rotation and the PN532 provisioning result. With remote syslog selected, follow the receiver's `welcomepi` records for this Pi. HDMI cable warnings and recovery messages also go to stderr. Follow them on the Pi with `sudo journalctl -b -u welcomepi.service -f`. UDP delivery is best effort. Use a second SSH session for the MQTT check below.
 
 ## 7. Verify each first welcome
 
 Use a fob with one active card record linked to an unmerged **activeMember** whose `expirationTime` is in the future. Start each test on the **generic board** so a same-member arrival is visibly a first welcome.
 
-1. **Local PN532.** Starting at the generic board, present the fob to the kiosk reader. Expect **Welcome, first name!**, active status and today's date, followed by the agenda. Hold the fob still briefly. The agenda should stay visible. Remove it. This local tap controls only the display. Look for **Welcome frame submitted in … ms** in the selected log. The warm-cache target is 500 ms from recognition to frame submission. The time for a sleeping monitor to light up is a separate measurement.
+1. **Local PN532.** Starting at the generic board, present the fob to the kiosk reader. Look for a large welcome with the member's first name. As agenda results arrive, the welcome becomes a smaller header above the agenda. Check the active status and today's date. Hold the fob still briefly. The agenda should stay visible. Remove it. This local tap controls only the display. Look for **Welcome frame submitted in … ms** in the selected log. The warm-cache target is 500 ms from recognition to frame submission. The time for a sleeping monitor to light up is a separate measurement.
 2. **Return to the generic board.** Allow two minutes without eligible arrivals. To clear it sooner with a test member's consent, lift and present the same fob twice more on the local reader, removing it between presentations. The first opens shared-screen details, which can include private kudos. The second clears them.
 3. **Real door check-in via MQTT.** In the second SSH session run the following. Wait for **Listening** before presenting the fob at the **door reader**. Leave the kiosk reader untouched.
 
@@ -136,7 +139,7 @@ cd ~/WelcomePi
 sudo bash setup.sh watch-door
 ```
 
-The observer should report **Received a fresh checkins/insert**, and the kiosk should show the matching first-name welcome. In the selected log, confirm an **INFO** record with the member's name and the local I²C/UART interface for the first tap, and another with `MQTT checkins/insert` and the reported door for the second. A held fob or redelivered check-in produces one scan entry. An unrecognized fob produces an **INFO** scan and a **WARNING**. Broker and database failures appear at **ERROR** with the driver reason. The observer prints only receipt and subscription results.
+At a door included by the kiosk's location settings, the observer should report **Received a fresh door check-in from a matching location**. From the generic board, confirm the large first-name greeting on HDMI. The observer prints the received MQTT topic and reports whether the document included a card UID. On an activity topic, the final segment identifies the sending reader. A name-only arrival shows the large first name immediately. When the check-in includes the card UID, or a fuller record of the same tap supplies it, confirm that the agenda opens for the member assigned to that card. A member can also open their agenda by tapping their active fob on the kiosk reader. A name-only arrival leaves an open private details page in place. In the selected log, look for the member's name and the local I²C/UART interface for the first tap, then the MQTT source and resolved location for the door scan. If you configured a location filter, a scan at an excluded door should be logged and update **Recent check-ins** without opening a welcome. Broker and database failures appear at **ERROR** with the driver reason. The observer omits member names and card IDs.
 
 ## 8. Enable automatic updates from master
 
@@ -203,6 +206,6 @@ To return to the host's previous policy, remove that drop-in and restart `system
 | UART reader fails or the fob does nothing | Check power, common ground, crossed TX/RX, HSU mode and `readlink -f /dev/serial0`. A UART listed in `/proc/consoles` is still a kernel console. For either transport, stop `welcomepi`, run `sudo bash setup.sh check`, then restart the service. If the handshake works, check the scan warning and member eligibility. [nfcpy serial reader setup](https://nfcpy.readthedocs.io/en/latest/topics/get-started.html) |
 | No application logs on the remote collector | Check that both syslog settings are present, the address belongs to the collector, its UDP input is enabled, and its firewall accepts the configured port from the Pi. Restart `welcomepi` and look for the PN532 provisioning record at the collector. Remove both settings and restart to restore local app logging. |
 | Database read fails | Check the database name in each URI, credentials, `authSource`, DNS, network access and CA trust on the Pi. The diagnostic names the failed read and omits the URI. |
-| Local works but the door does not | Check the Pi's clock, TLS and broker ACLs, then wait for a new door entry with `watch-door`. A fresh, non-retained `checkins/insert` must come from ChangeStream2MQTT. Old records and redeliveries do not wake the kiosk. If the observer succeeds but the kiosk stays on the board, check eligibility, the kiosk's own broker client ID and its service journal. |
+| Local works but the door does not | Check the Pi's clock, TLS and broker ACLs for both `activity/checkins/#` and `checkins/insert`. Compare the document location in the log (`where`, then `reader`, then `blank:`) with `WELCOMEPI_LOCATION_PATTERNS`, then run `watch-door` and scan at a matching door. Retained, stale and duplicate records do not wake the kiosk. If the large first name stays on screen, check for a check-in record carrying the card UID and for a card or member lookup error in the journal. Confirm the fob is assigned to an active, unexpired member. The member can also tap their own eligible fob locally to open the agenda. If the kiosk stays on the board, check membership eligibility, the kiosk's broker client ID and its service journal. |
 
 After editing `/etc/welcomepi.env`, run `sudo systemctl restart welcomepi.service`. For manually managed kiosks, repeat the workstation copy and Pi install for an update. The installer keeps the configured environment and the original boot backups, and restarts a previously running instance. Reboot to activate any new boot settings.

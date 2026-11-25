@@ -39,14 +39,28 @@ class Reads(TestCase):
 
     def test_exact_unique_card_and_unexpired_unmerged_member(self):
         self.assertEqual(self.member, self.source.directory().lookup(self.uid, self.now))
+        self.assertEqual(self.member, self.source.directory().lookup(self.uid.lower(), self.now))
+        self.assertEqual(self.member, self.source.identity(self.uid.lower(), self.now))
         self.assertIsNone(self.source.identity("04B0", self.now))
         self.assertIsNone(self.source.identity(self.uid, self.now + timedelta(days=1)))
         self.db.members.update_one({"_id": self.id}, {"$set": {"merged_at": self.now}})
         self.assertIsNone(self.source.identity(self.uid, self.now))
         self.db.members.update_one({"_id": self.id}, {"$unset": {"merged_at": ""}})
-        self.db.cards.insert_one({"uid": self.uid, "validity": "lost"})
+        self.db.cards.insert_one({"uid": self.uid.lower(), "validity": "lost"})
         self.assertIsNone(self.source.identity(self.uid, self.now))
         self.assertIsNone(self.source.directory().lookup(self.uid, self.now))
+
+    def test_card_uid_selects_the_assigned_member_even_with_identical_names(self):
+        other_id = ObjectId()
+        self.db.members.insert_one({"_id": other_id, "firstname": "Robin", "lastname": "Demo",
+                                    "status": "activeMember", "expirationTime": self.member.expires_ms})
+        self.db.cards.insert_one({"uid": "0004A0", "member_id": other_id, "validity": "activeMember"})
+        directory = self.source.directory()
+        for lookup in (directory.lookup, self.source.identity):
+            self.assertEqual(lookup("0004A0", self.now).member_id, other_id)
+            self.assertEqual(lookup(self.uid, self.now).member_id, self.id)
+            for missing in (None, "", "Robin Demo"):
+                self.assertIsNone(lookup(missing, self.now))
 
     def test_held_reservations_overlap_half_open_window(self):
         shop = self.db.shops.insert_one({"name": "Wood"}).inserted_id
@@ -146,16 +160,31 @@ class Reads(TestCase):
                 self.db.members.insert_one({"_id": missing, "merged_at": self.now})
         self.assertEqual(self.source.leaderboard(), [("Robin D.", "4.5 pts")])
 
-    def test_recent_five_normalize_before_sort_and_ignore_old_fallback(self):
-        t = int(self.now.timestamp())
-        start, end = day_bounds(self.now)
-        for i, value in enumerate([t - 5, (t - 4) * 1000, self.now - timedelta(seconds=3),
-                                   (self.now - timedelta(seconds=2)).isoformat(), str(t - 1), str(t * 1000)]):
-            self.db.checkins.insert_one({"uid": self.uid, "holder": f"Demo{i} Example" if i != 5 else "",
-                                         ("time" if i % 2 else "timeOf"): value})
-        self.db.checkins.insert_one({"holder": "Wrong date", "timeOf": start - timedelta(seconds=1), "time": t})
-        self.db.checkins.insert_one({"holder": "Tomorrow", "timeOf": end})
-        self.assertEqual([r[0] for r in self.source.recent(self.now)], ["Robin", "Demo4", "Demo3", "Demo2", "Demo1"])
+    def test_recent_seed_normalizes_legacy_times_and_includes_exact_window_edges(self):
+        end = self.now.replace(hour=13)  # The 16-hour window crosses local midnight.
+        start = end - timedelta(hours=16)
+        t = int(end.timestamp())
+        for i, value in enumerate([t, (t - 1) * 1000, end - timedelta(seconds=2),
+                                   (end - timedelta(seconds=3)).isoformat(), str(t - 4), str((t - 5) * 1000)]):
+            self.db.checkins.insert_one({"holder": f"Demo{i} Example", ("time" if i % 2 else "timeOf"): value})
+        self.db.checkins.insert_one({"_id": int(start.timestamp()), "name": "At cutoff"})
+        self.db.checkins.insert_one({"holder": "Old", "timeOf": start - timedelta(seconds=1), "time": t})
+        self.db.checkins.insert_one({"holder": "Future", "timeOf": end + timedelta(milliseconds=1)})
+        self.assertEqual([event.name for event in self.source.recent(end)],
+                         [f"Demo{i} Example" for i in range(6)] + ["At cutoff"])
+
+    def test_recent_seed_resolves_multiple_cards_before_taking_ten_unique_members(self):
+        self.db.cards.insert_one({"uid": "00EE", "member_id": self.id})
+        for i in range(12):
+            self.db.checkins.insert_one({"name": f"Guest{i}", "timeOf": self.now - timedelta(minutes=i + 1)})
+        for i in range(18):
+            card = {"uid": self.uid.lower()} if i % 2 else {"cardUID": "00ee"}
+            self.db.checkins.insert_one({**card, "reader": "entry", "timeOf": self.now - timedelta(seconds=i)})
+        entries = self.source.recent(self.now)
+        self.assertEqual([r.name for r in entries], ["Robin Demo"] + [f"Guest{i}" for i in range(9)])
+        self.assertEqual((entries[0].member_id, entries[0].at, entries[0].location), (self.id, self.now, "entry"))
+
+    def test_local_day_bounds_follow_daylight_saving_time(self):
         for instant, hours in [(datetime(2026, 3, 8, 14, tzinfo=UTC), 23), (datetime(2026, 11, 1, 14, tzinfo=UTC), 25)]:
             begin, finish = day_bounds(instant)
             self.assertEqual(finish - begin, timedelta(hours=hours))
