@@ -120,19 +120,23 @@ class Kiosk:
         for uid in uids:
             self.accept(None, self.waiting.pop(uid_key(uid), ()), reason)
 
-    def accept(self, member, scans, reason="card or membership is ineligible or unknown"):
+    def accept(self, member, scans, reason="card or membership is ineligible", *, unidentified=False):
         for seq, local, at, source, record in scans:
             now = self.wall()
             if member is None or not member.valid(now):
-                LOG.info("Card scan at %s, member unknown", source)
-                LOG.warning("No valid member found at %s (%s)", source, reason)
+                if local:
+                    LOG.info("Card scan at %s, member unknown", source)
+                level = logging.ERROR if not local and unidentified else logging.WARNING
+                LOG.log(level, "No valid member found at %s (%s)", source, reason)
                 continue
-            LOG.info("Card scan at %s, member %s", source, f"{member.first} {member.last}".strip())
             if record is not None:
                 self.recent.add(record.with_member(member), now)
                 self.update_recent_board(now)
             if seq < self.last_accepted or self.clock() - at >= PERSONAL_SECONDS:
+                LOG.warning("Card scan at %s ignored: %s", source,
+                            "superseded by a newer scan" if seq < self.last_accepted else "expired during lookup")
                 continue
+            LOG.info("Card scan at %s, member %s", source, f"{member.first} {member.last}".strip())
             if self.screen.page == "welcome" and seq == self.preview_sequence:
                 # This lookup belongs to the record whose large greeting was painted.
                 self.screen.enrich_greeting(member)
@@ -154,7 +158,7 @@ class Kiosk:
             del self.waiting[uid]
             self.accept(member, scans)
         else:
-            self.submit("lookup", (uid, self.revision), self.rails.identity, uid, self.wall(), identity=True)
+            self.submit("lookup", (uid, self.revision), self.rails.scan_identity, uid, self.wall(), identity=True)
 
     def result(self, name, tag, future):
         if self.jobs.pop((name, tag), None) is not future or future.cancelled():
@@ -192,9 +196,12 @@ class Kiosk:
             if revision != self.revision:
                 self.resolve(uid)
             elif error:
-                self.discard_scans([uid], "MongoDB lookup failed")
+                self.accept(None, self.waiting.pop(uid), "MongoDB lookup failed", unidentified=True)
             else:
-                self.accept(value, self.waiting.pop(uid))
+                member, known = value
+                self.accept(member, self.waiting.pop(uid),
+                            "card or membership is ineligible" if known else "card could not be linked to a member",
+                            unidentified=not known)
         elif tag[:2] == self.screen_tag():
             if name == "verify":
                 if self.trusted:
@@ -262,14 +269,15 @@ class Kiosk:
         self.recent.add(record.with_directory(self.directory if self.trusted else None, live=fresh), now)
         self.update_recent_board(now)
         source = f"MQTT {topic} ({record.location})"
-        timely = fresh and self.clock() - at < PERSONAL_SECONDS
-        if timely:
-            self.last_display_activity = max(at, self.last_display_activity)
-        if not self.settings.welcomes_location(record.location):
-            LOG.info("Check-in at %s, recorded name %s, time %s: welcome skipped by location filter",
-                     source, record.name or "unknown", record.at.isoformat())
+        if not fresh:
+            return  # The receiver logged the reason. History can still use this record.
+        if self.clock() - at >= PERSONAL_SECONDS:
+            LOG.warning("Check-in at %s ignored: expired in the kiosk queue", source)
             return
-        if not timely:
+        self.last_display_activity = max(at, self.last_display_activity)
+        if not self.settings.welcomes_location(record.location):
+            LOG.warning("Check-in at %s, recorded name %s, time %s: welcome skipped by location filter",
+                     source, record.name or "unknown", record.at.isoformat())
             return
         self.screen.tick(at, now)
         generation = self.screen.generation
@@ -286,6 +294,10 @@ class Kiosk:
                 self.latest_uid = self.preview_sequence = None
         if record.uid:
             self.scan(record.uid, False, at, source, record, after_paint=preview)
+        else:
+            if not preview:
+                LOG.warning("Check-in at %s ignored for welcome: private details page is active", source)
+            LOG.error("Check-in at %s cannot identify a member: no verifiable card UID", source)
 
     def handle(self, event):
         kind, *args = event

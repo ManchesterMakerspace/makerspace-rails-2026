@@ -71,5 +71,7 @@ Configure the bridge credentials on the **ChangeStream2MQTT host** using `MQTT_U
 
 ## Verify delivery
 
+At the kiosk's configured syslog destination, **DEBUG** marks receipt on either check-in feed before parsing. **INFO** marks a greeting or accepted scan. **WARNING** explains skipped welcomes. **ERROR** marks a failed member identification. A name-only public greeting may produce both a greeting entry and an identification error. [Kiosk logging](README.md)
+
 1. On the Pi, from the transferred WelcomePi directory, run `sudo bash setup.sh check`. The expected acknowledgment is **MQTT acknowledged all 10 kiosk subscriptions.**
 2. Run `sudo bash setup.sh watch-door`, wait for **Listening**, then use a working fob at a matching door. The observer waits up to 90 seconds and reports the received topic and whether the record included a UID. This checks actual delivery with the kiosk account. [Door commissioning procedure](setup-pi0.MD)

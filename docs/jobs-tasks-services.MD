@@ -65,7 +65,10 @@ before opening the agenda. Reader discovery probes the enabled I²C adapter for 
 firmware, then tries UART. If neither responds it logs a warning and retries
 while the display handles door check-ins. Syslog records reader selection,
 frame submission latency and each scan's verified member name and source.
-Unresolved scans also produce a warning. MQTT and MongoDB errors and timeouts
+Each MQTT check-in emits a DEBUG receipt before parsing. Acted-on welcomes and
+verified scans log at INFO. Skipped welcomes log their reason at WARNING, and
+failed MQTT member identification logs at ERROR. Unverified local taps log at
+WARNING. MQTT and MongoDB errors and timeouts
 include driver details at ERROR. Failed sections retry on refresh.
 See the [operator guide](../tools/WelcomePi/README.md)
 for installation, permissions, and on-device acceptance.

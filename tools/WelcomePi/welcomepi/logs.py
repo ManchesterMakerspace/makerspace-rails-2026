@@ -97,6 +97,9 @@ def kiosk_logging(settings):
         logger.setLevel(logging.WARNING)
     root.handlers[:] = [handler]
     root.setLevel(logging.INFO)
+    checkins = logging.getLogger("welcomepi.inputs.checkin")
+    old_checkin_level = checkins.level
+    checkins.setLevel(logging.DEBUG)
     logging.raiseExceptions = False  # A failed remote send must not echo the record to local stderr.
     listener.start()
     if sink is not stderr:
@@ -110,6 +113,7 @@ def kiosk_logging(settings):
             stderr.close()
         root.handlers[:] = old_handlers
         root.setLevel(old_level)
+        checkins.setLevel(old_checkin_level)
         listener.stop()
         sink.close()
         handler.close()
