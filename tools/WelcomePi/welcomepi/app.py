@@ -15,7 +15,7 @@ from .ledger import Details, LedgerData
 from .logs import driver_detail
 from .reader import read_nfc
 from .recent import RecentCheckins
-from .render import agenda_ready, render
+from .render import VARIANT_COUNT, agenda_ready, render
 from .state import Directory, EASTERN, PERSONAL_SECONDS, Screen, UTC, uid_key
 
 
@@ -50,6 +50,12 @@ class Kiosk:
         self.page = 0
         self.page_count = 1
         self.next_page = self.next_refresh = 0
+        self.last_display_activity = self.screen.last_activity
+        self.visible_visit = None
+        self.next_variant = {"board": 0, "welcome": 1, "agenda": 2, "details": 3}
+        self.variant = 0
+        self.layout_started = self.screen.entered
+        self.dimmed = False
         self.dirty = True
         self.greeting_started = None
         self.uids_after_paint = set()
@@ -235,6 +241,8 @@ class Kiosk:
                 self.dirty = True
 
     def scan(self, uid, local, at, source, record=None, *, after_paint=False):
+        if local:
+            self.last_display_activity = max(at, self.last_display_activity)
         uid = uid_key(uid)
         self.sequence += 1
         # A new card supersedes older lookups, even if it supplies no display name.
@@ -254,11 +262,14 @@ class Kiosk:
         self.recent.add(record.with_directory(self.directory if self.trusted else None, live=fresh), now)
         self.update_recent_board(now)
         source = f"MQTT {topic} ({record.location})"
+        timely = fresh and self.clock() - at < PERSONAL_SECONDS
+        if timely:
+            self.last_display_activity = max(at, self.last_display_activity)
         if not self.settings.welcomes_location(record.location):
             LOG.info("Check-in at %s, recorded name %s, time %s: welcome skipped by location filter",
                      source, record.name or "unknown", record.at.isoformat())
             return
-        if not fresh or self.clock() - at >= PERSONAL_SECONDS:
+        if not timely:
             return
         self.screen.tick(at, now)
         generation = self.screen.generation
@@ -306,17 +317,37 @@ class Kiosk:
             self.submit("leaders", tag, self.rails.leaderboard)
             self.submit("opportunities", tag, self.rails.opportunities, None, now, 10)
 
+    def update_appearance(self, at):
+        # Name-only welcomes and a verified member's loading greeting are one
+        # visible layout, including when the first record gains an identity.
+        view = "welcome" if self.screen.greeting else self.screen.page
+        visit = (view, self.screen.visit)
+        if visit != self.visible_visit or (view == "board" and
+                                           at - self.layout_started >= self.settings.layout_interval_minutes * 60):
+            self.visible_visit = visit
+            self.variant = self.next_variant[view]
+            self.next_variant[view] = (self.variant + 1) % VARIANT_COUNT
+            self.layout_started = at
+            self.dirty = True
+        dimmed = view == "board" and at - self.last_display_activity >= self.settings.dim_after_minutes * 60
+        if self.dimmed != dimmed:
+            self.dimmed = dimmed
+            self.dirty = True
+
     def paint(self, at, now):
         try:
             if self.display.probe(at):
                 self.dirty = True
             output = self.display.output
+            if output and self.screen.page != "sleep":
+                self.update_appearance(at)
             if not output or not self.dirty:
                 return
             if self.screen.page == "sleep":
                 output.standby()
             else:
-                image, self.page_count = render(output.size, self.screen, now, self.data, self.page)
+                image, self.page_count = render(output.size, self.screen, now, self.data, self.page,
+                                                variant=self.variant, dimmed=self.dimmed)
                 output.present(image)
                 if self.greeting_started is not None and self.screen.page in ("agenda", "welcome"):
                     LOG.info("Welcome frame submitted in %.0f ms", (self.clock() - self.greeting_started) * 1000)
