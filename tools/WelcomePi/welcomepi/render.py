@@ -1,5 +1,6 @@
 """Resolution-aware Pillow layouts. Only the current page gets a pixel buffer."""
 from dataclasses import dataclass
+from datetime import datetime
 from functools import lru_cache
 from itertools import zip_longest
 
@@ -162,13 +163,14 @@ class Canvas:
             x += width - face.getlength(text)
         self.text(x, y, text, face, color)
 
-    def greeting(self, first, date):
+    def greeting(self, first, date, expires_ms=None):
         status = fit(f"Active member  ·  {date}", self.small, self.width)
         status_x = self.w - self.pad if self.media_left else self.pad
         status_y = self.pad if self.lower_header else self.h - self.pad
         anchor = ("r" if self.media_left else "l") + ("t" if self.lower_header else "b")
         self.text(status_x, status_y, status, self.small, self.palette.muted, anchor=anchor)
-        room = self.h - 3 * self.pad - self.small.size
+        # Reserve the date line from the first frame so adding it never moves the name.
+        room = self.h - 3 * self.pad - self.small.size - self.line
         start_y = 2 * self.pad + self.small.size if self.lower_header else self.pad
         gap = self.pad // 2
         greeting_name = f"{display_name(first)}!"
@@ -211,6 +213,16 @@ class Canvas:
         y = top + height - box[3]
         self.draw.multiline_text((x, y), name, font=face, fill=self.palette.ink, spacing=gap, align="center",
                                  stroke_width=self.stroke)
+        if expires_ms is not None:
+            try:
+                expires = datetime.fromtimestamp(expires_ms / 1000, EASTERN)
+            except (OSError, ValueError, OverflowError):
+                return  # A legacy out-of-range timestamp cannot supply a calendar date.
+            label = f"Member through {expires:%B} {expires.day}, {expires.year}"
+            face = self.body
+            while face.size > 1 and face.getlength(label) + 2 * self.stroke > self.width:
+                face = font(face.size - 1)
+            self.text(self.w // 2, top + height + gap, label, face, self.palette.ink, anchor="mt")
 
     def heading(self, x, y, title, width):
         side = self.bold.size
@@ -399,8 +411,9 @@ def draw_page(canvas, screen, now, data, page):
     if screen.page == "welcome":
         canvas.greeting(screen.record_first, date)
         return 1
-    if screen.greeting and not agenda_ready(data):
-        canvas.greeting(screen.member.first, date)
+    if screen.greeting:
+        expires_ms = screen.member.expires_ms if screen.welcome_presented_at is not None else None
+        canvas.greeting(screen.member.first, date, expires_ms)
         return 1
     bounds = canvas.header(screen, today, date, data.get("details"), data.get("avatar"))
     count = (canvas.board(data, bounds, page) if screen.page == "board"

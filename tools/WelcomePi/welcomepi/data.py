@@ -135,7 +135,7 @@ class RailsData:
                 self.db.eventbrite_events.find(query, ["name", "starts_at"]).sort([("starts_at", 1), ("_id", 1)])
                 if row.get("name")]
 
-    def opportunities(self, member, now, limit):
+    def opportunities(self, member, now, limit, min_points=1.0):
         today = now.astimezone(EASTERN).date()
         date_key = datetime.combine(today, time.min, UTC)
         weekday = (today.weekday() + 1) % 7
@@ -185,6 +185,8 @@ class RailsData:
         for event in self.db.volunteer_events.find(events_query, fields + ["event_date"]):
             if qualified(event):
                 candidates.append((event, "event", False))
+        if member:
+            candidates = [c for c in candidates if c[0].get("credit_value", 1) >= min_points]
         candidates.sort(key=lambda c: (-c[0].get("credit_value", 1), c[0]["title"].casefold(),
                                        str(c[0]["_id"]), c[1]))
         promoted = [c for c in candidates if c[2]][:min(limit, 2 if member else 3)]
