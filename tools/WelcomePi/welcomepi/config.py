@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from ipaddress import ip_address
 import json
+import math
 import os
 import re
 import socket
@@ -72,6 +73,7 @@ class Settings:
     mqtt_cafile: str | None = None
     insets: tuple[int, int, int, int] = (0, 0, 0, 0)
     font_stroke: int = 0
+    opportunity_min_points: float = 1.0
 
     def welcomes_location(self, location):
         return self.location_patterns is None or any(pattern.search(location) for pattern in self.location_patterns)
@@ -93,6 +95,12 @@ class Settings:
         hdmi_port = env.get("WELCOMEPI_HDMI_PORT", "auto")
         hdmi_connector(hdmi_port)
         count = int(env.get("WELCOMEPI_OPPORTUNITIES", "5"))
+        try:
+            minimum = float(env.get("WELCOMEPI_OPPORTUNITY_MIN_POINTS", "1.0"))
+        except ValueError:
+            raise ValueError("WELCOMEPI_OPPORTUNITY_MIN_POINTS must be numeric") from None
+        if not math.isfinite(minimum) or minimum < 0:
+            raise ValueError("WELCOMEPI_OPPORTUNITY_MIN_POINTS must be a finite, nonnegative point value")
         if count < 1:
             raise ValueError("WELCOMEPI_OPPORTUNITIES must be positive")
         excluded = env.get("SLACKIDS_INELIGIBLE", "").strip() or "[]"
@@ -131,4 +139,5 @@ class Settings:
                    parse_location_patterns(env.get("WELCOMEPI_LOCATION_PATTERNS")),
                    layout_interval_minutes=positive_minutes(env, "WELCOMEPI_LAYOUT_INTERVAL_MINUTES", 7),
                    dim_after_minutes=positive_minutes(env, "WELCOMEPI_DIM_AFTER_MINUTES", 15),
-                   mqtt_cafile=env.get("MQTT_CAFILE") or None, insets=insets, font_stroke=stroke)
+                   mqtt_cafile=env.get("MQTT_CAFILE") or None, insets=insets, font_stroke=stroke,
+                   opportunity_min_points=minimum)

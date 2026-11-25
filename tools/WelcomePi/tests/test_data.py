@@ -123,6 +123,16 @@ class Reads(TestCase):
         self.assertEqual(self.ranked(self.member), ["Again", "Released", "Tomorrow"])
         self.assertIn("Already joined", self.ranked(None))
 
+    def test_personal_point_floor_applies_before_weekday_promotion_and_limit(self):
+        self.task("Small task", 0.5, day_of_week=0)
+        self.event("Small event", 0.75)
+        self.event("Standard event", 1.0)
+        self.task("Larger task", 1.5)
+        self.assertEqual(self.ranked(self.member), ["Larger task", "Standard event"])
+        self.assertEqual(self.source.opportunities(self.member, self.now, 2, 1.5), [("Larger task", "1.5 pts")])
+        self.assertEqual(len(self.source.opportunities(self.member, self.now, 5, 0)), 4)
+        self.assertEqual(len(self.ranked(None)), 4)
+
     def test_bounty_restrictions_and_staff_prerequisite_exemptions(self):
         tool = ObjectId()
         self.task("Staff or trained", 3, prerequisite_tool_ids=[str(tool)])

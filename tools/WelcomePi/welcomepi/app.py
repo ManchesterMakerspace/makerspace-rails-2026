@@ -232,9 +232,7 @@ class Kiosk:
                     return
                 self.data[name] = rows
                 if self.screen.greeting:
-                    if not agenda_ready(self.data):
-                        return
-                    self.screen.greeting = False
+                    return  # tick advances the welcome after the minimum visible time.
             self.dirty = True
 
     def screen_tag(self):
@@ -315,7 +313,8 @@ class Kiosk:
     def load_agenda(self, tag, member, now):
         self.submit("reservations", tag, self.rails.reservations, member, now)
         self.submit("events", tag, self.rails.eventbrite, now)
-        self.submit("opportunities", tag, self.rails.opportunities, member, now, self.settings.opportunity_count)
+        self.submit("opportunities", tag, self.rails.opportunities, member, now, self.settings.opportunity_count,
+                    self.settings.opportunity_min_points)
 
     def refresh(self, now):
         tag, member = self.screen_tag(), self.screen.member
@@ -352,6 +351,12 @@ class Kiosk:
                 self.dirty = True
             output = self.display.output
             if output and self.screen.page != "sleep":
+                if self.screen.greeting and self.screen.welcome_presented_at is not None:
+                    if not self.screen.dated_welcome_presented:
+                        self.dirty = True
+                    elif at - self.screen.welcome_presented_at >= 3 and agenda_ready(self.data):
+                        self.screen.greeting = False
+                        self.dirty = True
                 self.update_appearance(at)
             if not output or not self.dirty:
                 return
@@ -362,6 +367,11 @@ class Kiosk:
                                                 variant=self.variant, dimmed=self.dimmed,
                                                 insets=self.settings.insets, stroke=self.settings.font_stroke)
                 output.present(image)
+                if self.screen.page == "welcome" or self.screen.greeting:
+                    if self.screen.welcome_presented_at is None:
+                        self.screen.welcome_presented_at = self.clock()
+                    elif self.screen.greeting:
+                        self.screen.dated_welcome_presented = True
                 if self.greeting_started is not None and self.screen.page in ("agenda", "welcome"):
                     LOG.info("Welcome frame submitted in %.0f ms", (self.clock() - self.greeting_started) * 1000)
             self.dirty = False

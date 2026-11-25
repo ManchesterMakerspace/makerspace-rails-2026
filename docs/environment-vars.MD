@@ -45,6 +45,7 @@ job to check the release bytes a second time. Both are workflow-local.
 | `WELCOMEPI_LAYOUT_INTERVAL_MINUTES` | No | Positive whole minutes between layout and color changes while the public board stays visible. Defaults to 7. Greetings, agendas and details change layout on successive visits. |
 | `WELCOMEPI_DIM_AFTER_MINUTES` | No | Positive whole minutes since the last fresh door check-in or distinct local fob tap before the public board dims. Defaults to 15. Personal pages use normal brightness. The four-hour HDMI standby timer uses its own activity rules. |
 | `WELCOMEPI_OPPORTUNITIES` | No | Positive integer. Defaults to five opportunities on the member agenda. |
+| `WELCOMEPI_OPPORTUNITY_MIN_POINTS` | No | Inclusive minimum credit value for volunteer tasks and events on the member agenda. Defaults to `1.0`. Accepts finite nonnegative numbers, including fractions. The public board lists opportunities of any value. |
 | `EVENTBRITE_ORGANIZATION_IDS` | No | Comma-separated organization IDs, matching the Rails sync configuration. Empty includes public occurrences from all synced organizations. |
 | `SLACKIDS_INELIGIBLE` | No | Match Ledger's excluded Slack user IDs. Accepts a JSON array or quoted brace-delimited set. Defaults to empty. |
 | `WELCOMEPI_SLACK_TOKEN` | Yes | Optional. Reading the private 512-pixel Ledger JPEG requires `files:read` and access to its DM. Without a usable image the kiosk draws the rank icon. |

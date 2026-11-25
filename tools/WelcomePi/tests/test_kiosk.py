@@ -343,6 +343,8 @@ class Controller(unittest.TestCase):
             self.scan("AA")
             variants["welcome"].append(self.frames[-1].variant)
             self.finish("reservations", [("Lathe", "4 PM")])
+            self.at += 3
+            self.k.tick()
             variants["agenda"].append(self.frames[-1].variant)
             self.scan("AA")
             variants["details"].append(self.frames[-1].variant)
@@ -423,6 +425,12 @@ class Controller(unittest.TestCase):
         self.assertTrue(frame.greeting)
         self.assertFalse(any(n == "reservations" for n, _ in frame.jobs))
         self.finish("reservations", [("Lathe", "4:00 PM")])
+        self.assertTrue(self.k.screen.dated_welcome_presented)
+        self.at += 2.99
+        self.k.tick()
+        self.assertTrue(self.frames[-1].greeting)
+        self.at = self.k.screen.welcome_presented_at + 3
+        self.k.tick()
         self.assertFalse(self.frames[-1].greeting)
         self.assertEqual(set(self.frames[-1].data), {"reservations"})
         self.scan("AA")
@@ -443,7 +451,9 @@ class Controller(unittest.TestCase):
         first_frame = self.frames[-1]
         self.finish("events", [])
         self.finish("opportunities", [])
-        self.assertIs(self.frames[-1], first_frame)
+        self.at += 5
+        self.k.tick()
+        self.assertTrue(self.frames[-1].greeting)
         self.assertTrue(first_frame.greeting)
         self.finish("reservations", [])
         self.assertFalse(self.frames[-1].greeting)
@@ -574,6 +584,8 @@ class Controller(unittest.TestCase):
         self.assertFalse(any(name == "lookup" for name, _ in self.k.jobs))
         rows = [("Wood shop", "3:00 PM")]
         self.finish("reservations", rows)
+        self.at += 3
+        self.k.tick()
         self.assertEqual((self.frames[-1].greeting, self.frames[-1].data["reservations"]), (False, rows))
         self.scan("BB")
         self.assertEqual((self.k.screen.page, self.k.screen.member.uid), ("details", "BB"))
@@ -591,6 +603,8 @@ class Controller(unittest.TestCase):
         self.assertEqual(self.k.screen.member.member_id, self.pairs[1][0]["_id"])
         rows = [("Assembly bench", "9:00 AM")]
         self.finish("reservations", rows)
+        self.at += 3
+        self.k.tick()
         frame = self.frames[-1]
         self.assertEqual((frame.page, frame.member.first, frame.greeting, frame.data["reservations"]),
                          ("agenda", "Lee", False, rows))

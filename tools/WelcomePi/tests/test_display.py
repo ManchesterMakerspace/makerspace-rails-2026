@@ -82,10 +82,20 @@ class Layout(unittest.TestCase):
 
     def test_large_greeting_changes_to_compact_header_with_loaded_agenda(self):
         screen = Screen(0)
-        screen.show("agenda", 0, Identity(1, 2, "01", "Sam", "member", 10**15))
+        # January 12 UTC is still January 11 in Manchester.
+        expiry = int(datetime(2027, 1, 12, 2, tzinfo=UTC).timestamp() * 1000)
+        screen.show("agenda", 0, Identity(1, 2, "01", "Sam", "member", expiry))
         size = (720, 1280)
         with patch.object(ImageDraw.ImageDraw, "multiline_text", autospec=True) as initial:
             render(size, screen, self.now, {"events": []})
+        screen.welcome_presented_at = 0
+        with patch.object(Canvas, "text", autospec=True) as labels, \
+                patch.object(ImageDraw.ImageDraw, "multiline_text", autospec=True) as dated:
+            render(size, screen, self.now, {})
+        self.assertEqual(initial.call_args.args[1:], dated.call_args.args[1:])
+        self.assertEqual(initial.call_args.kwargs["font"].size, dated.call_args.kwargs["font"].size)
+        self.assertIn("Member through January 11, 2027", [call.args[3] for call in labels.call_args_list])
+        screen.greeting = False
         with patch.object(Canvas, "text", autospec=True) as agenda:
             render(size, screen, self.now, {"reservations": [("Wood shop", "9 AM")]})
         headline = next(c for c in agenda.call_args_list if c.args[3] == "Welcome, Sam!")
@@ -206,6 +216,7 @@ class Layout(unittest.TestCase):
         member = Identity(1, 2, "01", "Test", "member", 10**15)
         s = Screen(0)
         s.show("agenda", 5, member)
+        s.greeting = False
         data = {"reservations": [], "opportunities": [], "events": []}
         positions = set()
         for variant in range(4):
@@ -247,6 +258,15 @@ class Layout(unittest.TestCase):
 
 
 class Hardware(unittest.TestCase):
+    def test_personal_volunteer_point_minimum(self):
+        env = {"MLAB_URI": "test", "LEDGER_URI": "test", "MQTT_HOST": "broker"}
+        key = "WELCOMEPI_OPPORTUNITY_MIN_POINTS"
+        self.assertEqual(Settings.load(env).opportunity_min_points, 1.0)
+        self.assertEqual(Settings.load({**env, key: "0.75"}).opportunity_min_points, 0.75)
+        for invalid in ("", "many", "-1", "NaN", "Infinity"):
+            with self.assertRaisesRegex(ValueError, key):
+                Settings.load({**env, key: invalid})
+
     def test_display_pixel_settings(self):
         env = {"MLAB_URI": "test", "LEDGER_URI": "test", "MQTT_HOST": "broker"}
         defaults = Settings.load(env)

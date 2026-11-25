@@ -43,9 +43,12 @@ private details from an agenda requires the member's own eligible local fob tap.
 In MQTT logs, the final activity topic segment identifies the
 sending reader. The numeric prefix after the operation is its publication timestamp.
 The service uses only the document's location fields for location matching.
-The kiosk sizes the name to fit the welcome screen and switches to a smaller header
-when there are reservations or volunteer opportunities to show, or when all
-three agenda reads finish, including an empty agenda. Local taps advance the
+The kiosk presents the large name first, then adds the verified member's expiration
+date beneath it in Manchester time. Automatic transition to the smaller header waits
+for at least three seconds from the first submitted welcome frame and for reservations
+or volunteer opportunities to show, or completion of all three reads for an empty agenda.
+Personal volunteer listings apply `WELCOMEPI_OPPORTUNITY_MIN_POINTS` (default 1.0)
+before reserving weekday slots and limiting the results. Local taps advance the
 personal pages.
 Two idle minutes clear personal content and four idle hours disable HDMI.
 To reduce monitor burn-in, the public board alternates light and dark colors
