@@ -16,6 +16,14 @@ def hdmi_connector(port):
         raise ValueError("WELCOMEPI_HDMI_PORT must be auto, 0 or 1") from None
 
 
+def positive_minutes(env, key, default):
+    value = env.get(key, str(default))
+    minutes = int(value) if value.isascii() and value.isdecimal() else 0
+    if minutes < 1:
+        raise ValueError(f"{key} must be a positive whole number of minutes")
+    return minutes
+
+
 def parse_location_patterns(value):
     if value is None:
         return None
@@ -52,6 +60,8 @@ class Settings:
     i2c_addresses: tuple[int, ...] = (0x24,)
     hdmi_port: str = "auto"
     location_patterns: tuple[re.Pattern[str], ...] | None = None
+    layout_interval_minutes: int = 7
+    dim_after_minutes: int = 15
 
     def welcomes_location(self, location):
         return self.location_patterns is None or any(pattern.search(location) for pattern in self.location_patterns)
@@ -103,4 +113,6 @@ class Settings:
                    env.get("WELCOMEPI_NFC_PORT", "/dev/serial0"), rotation, count,
                    tuple(part.strip() for part in env.get("EVENTBRITE_ORGANIZATION_IDS", "").split(",") if part.strip()),
                    frozenset(ids), env.get("WELCOMEPI_SLACK_TOKEN", ""), server, bus, addresses, hdmi_port,
-                   parse_location_patterns(env.get("WELCOMEPI_LOCATION_PATTERNS")))
+                   parse_location_patterns(env.get("WELCOMEPI_LOCATION_PATTERNS")),
+                   layout_interval_minutes=positive_minutes(env, "WELCOMEPI_LAYOUT_INTERVAL_MINUTES", 7),
+                   dim_after_minutes=positive_minutes(env, "WELCOMEPI_DIM_AFTER_MINUTES", 15))

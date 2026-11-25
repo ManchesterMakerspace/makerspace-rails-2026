@@ -126,6 +126,7 @@ class Screen:
         self.member = None
         self.pending = None
         self.generation = 0
+        self.visit = 0  # Stable across data invalidation and greeting enrichment.
         self.entered = self.last_activity = started
 
     def show(self, page, at, member=None, *, record_first=""):
@@ -134,6 +135,7 @@ class Screen:
         self.greeting = page == "agenda"
         self.pending = None
         self.generation += 1
+        self.visit += 1
 
     def greet_record(self, name, at):
         first = name.split()[0]

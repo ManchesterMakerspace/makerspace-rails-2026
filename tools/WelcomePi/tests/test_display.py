@@ -1,6 +1,7 @@
 from datetime import datetime
 from hashlib import sha256
 from io import BytesIO
+from itertools import product
 import json
 from pathlib import Path
 import tempfile
@@ -9,7 +10,7 @@ import unittest
 from unittest.mock import Mock, patch
 from urllib.request import Request
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageColor, ImageDraw
 
 from welcomepi.config import Settings
 from welcomepi.display import Display, Output, orientation, scanout
@@ -22,24 +23,32 @@ class Layout(unittest.TestCase):
     now = datetime(2026, 11, 23, 3, tzinfo=UTC)
 
     def test_first_greeting_fits_the_full_name_on_landscape_and_portrait_displays(self):
-        for size, first in (((1280, 720), "I"), ((320, 240), "Alexandria"),
-                            ((320, 480), "María José"), ((480, 320), "W" * 64)):
-            with self.subTest(size=size, first=first):
+        cases = [((1280, 720), "I"), ((320, 240), "Alexandria"),
+                 ((320, 480), "María José"), ((480, 320), "W" * 64)]
+        for (size, first), variant in product(cases, range(4)):
+            with self.subTest(size=size, first=first, variant=variant):
                 screen = Screen(0)
                 screen.show("agenda", 0, Identity(1, 2, "01", first, "member", 10**15))
                 draw_name = ImageDraw.ImageDraw.multiline_text
                 with patch.object(ImageDraw.ImageDraw, "multiline_text", autospec=True, side_effect=draw_name) as drawn:
-                    image, count = render(size, screen, self.now, {})
+                    image, count = render(size, screen, self.now, {}, variant=variant)
                 self.assertEqual((image.size, count), (size, 1))
                 draw, xy, text = drawn.call_args.args
                 face = drawn.call_args.kwargs["font"]
                 spacing = drawn.call_args.kwargs["spacing"]
+                background = sum(image.getpixel((0, 0)))
+                name_ink = sum(ImageColor.getrgb(drawn.call_args.kwargs["fill"]))
+                self.assertEqual(background > name_ink, variant % 2 == 0)
                 self.assertEqual("".join(text.split()), first.replace(" ", "") + "!")
                 left, top, right, bottom = draw.multiline_textbbox(xy, text, font=face, spacing=spacing, align="center")
                 canvas = Canvas(size)
                 self.assertGreaterEqual(min(left, top), canvas.pad)
                 self.assertLessEqual(right, size[0] - canvas.pad)
-                self.assertLessEqual(bottom, size[1] - 2 * canvas.pad - canvas.small.size)
+                if variant % 2:
+                    self.assertGreaterEqual(top, 2 * canvas.pad + canvas.small.size)
+                    self.assertLessEqual(bottom, size[1] - canvas.pad)
+                else:
+                    self.assertLessEqual(bottom, size[1] - 2 * canvas.pad - canvas.small.size)
                 if first == "I":
                     self.assertGreater(bottom - top, size[1] // 2)
                 elif first == "Alexandria":
@@ -76,32 +85,72 @@ class Layout(unittest.TestCase):
                     render((320, 240), screen, self.now, {})
                 self.assertTrue(painted.call_args.args[2].endswith(expected))
 
+    def assert_intact_qr(self, image, dimmed):
+        # Only the QR modules are pure black on these pages of text and icons.
+        # The three finder patterns touch the outer rows and columns of modules.
+        ink_bounds = image.convert("L").point(lambda v: 0 if v else 255).getbbox()
+        self.assertIsNotNone(ink_bounds, "No QR modules found in the frame")
+        x, y, right, bottom = ink_bounds
+        modules = qr_modules()
+        scale, remainder = divmod(right - x, modules.width - 8)
+        self.assertEqual((remainder, bottom - y), (0, right - x))
+        self.assertGreaterEqual(scale, 3)
+        quiet = 4 * scale
+        box = (x - quiet, y - quiet, right + quiet, bottom + quiet)
+        self.assertGreaterEqual(min(box[:2]), 0)
+        self.assertLessEqual(box[2], image.width)
+        self.assertLessEqual(box[3], image.height)
+        crop = image.crop(box)
+        white = crop.getpixel((0, 0))[0]
+        self.assertGreaterEqual(white, 128)
+        if dimmed:
+            self.assertLess(white, 255)
+        expected = modules.resize(crop.size, Image.Resampling.NEAREST).point(lambda v: white if v else 0)
+        self.assertEqual(crop.tobytes(), expected.tobytes())
+        return box
+
     def test_board_has_intact_qr_on_every_page(self):
         board = {"recent": [(f"First{i}", "8:15 PM") for i in range(5)],
                  "leaders": [(f"Member {i}.", "32 pts") for i in range(10)],
                  "opportunities": [(f"Weekly task {i}", "2 pts") for i in range(10)]}
-        for wh in [(320, 240), (480, 320), (320, 480), (1280, 720), (720, 1280), (1920, 1080)]:
-            with self.subTest(size=wh):
-                count = render(wh, Screen(0), self.now, board)[1]
-                if wh in ((1280, 720), (1920, 1080)):
-                    self.assertEqual(count, 1)
-                if wh == (480, 320):
-                    self.assertGreater(count, 1)
-                for p in range(count):
-                    image, _ = render(wh, Screen(0), self.now, board, p)
-                    # White occurs only in the header title/QR; locate the QR
-                    # square from its clean top-right quiet zone.
-                    w, h = wh
-                    x = next(x for x in range(w-1, w//2, -1)
-                             if any(image.getpixel((x,y)) == (255,255,255) for y in range(h//4)))
-                    y = next(y for y in range(h//4) if image.getpixel((x, y)) == (255,255,255))
-                    left = x
-                    while left > 0 and image.getpixel((left-1, y)) == (255,255,255):
-                        left -= 1
-                    size = x-left+1
-                    expected = qr_image(size)
-                    self.assertIsNotNone(expected)
-                    self.assertEqual(image.crop((left, y, x+1, y+size)).tobytes(), expected.tobytes())
+        for size in [(320, 240), (480, 320), (320, 480), (1280, 720), (720, 1280), (1920, 1080)]:
+            count = render(size, Screen(0), self.now, board)[1]
+            if size in ((1280, 720), (1920, 1080)):
+                self.assertEqual(count, 1)
+            if size == (480, 320):
+                self.assertGreater(count, 1)
+            for dimmed in (False, True):
+                corners = set()
+                for variant in range(4):
+                    positions = set()
+                    for page in range(count):
+                        with self.subTest(size=size, dimmed=dimmed, variant=variant, page=page):
+                            image, pages = render(size, Screen(0), self.now, board, page,
+                                                  variant=variant, dimmed=dimmed)
+                            self.assertEqual(pages, count)
+                            box = self.assert_intact_qr(image, dimmed)
+                            positions.add(box)
+                            corners.add((box[0] + box[2] < size[0], box[1] + box[3] < size[1]))
+                    self.assertEqual(len(positions), 1)
+                self.assertEqual(len(corners), 4)
+
+    def test_each_palette_keeps_text_readable_and_dim_mode_reduces_peak_brightness(self):
+        def luminance(color):
+            rgb = [value / 255 for value in ImageColor.getrgb(color)]
+            linear = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in rgb]
+            return sum(weight * v for weight, v in zip((0.2126, 0.7152, 0.0722), linear))
+
+        for variant in range(4):
+            peaks = []
+            for dimmed in (False, True):
+                palette = Canvas((320, 240), variant=variant, dimmed=dimmed).palette
+                for fg, bg in ((palette.ink, palette.paper), (palette.muted, palette.paper),
+                               (palette.accent, palette.paper), (palette.title, palette.band),
+                               (palette.kicker, palette.band)):
+                    low, high = sorted((luminance(fg), luminance(bg)))
+                    self.assertGreaterEqual((high + 0.05) / (low + 0.05), 4.5, (variant, dimmed, fg, bg))
+                peaks.append(max(luminance(c) for c in (palette.paper, palette.ink, palette.title, palette.band)))
+            self.assertLess(peaks[1], peaks[0])
 
     def test_required_rows_survive_on_a_short_display(self):
         names = [f"Person{i}" for i in range(5)]
@@ -109,32 +158,39 @@ class Layout(unittest.TestCase):
         jobs = [(f"Task{i}", "2 pts") for i in range(10)]
         board = {"recent": [(name, "8:15 PM") for name in names], "leaders": leaders, "opportunities": jobs}
         size = (320, 240)
-        with patch.object(Canvas, "text", autospec=True) as printed:
-            count = render(size, Screen(0), self.now, board)[1]
-            for page in range(1, count):
-                render(size, Screen(0), self.now, board, page)
-        lines = []
-        for call in printed.call_args_list:
-            _, x, y, line, face, *_ = call.args
-            self.assertLessEqual(y + face.size, size[1])
-            self.assertLessEqual(x + face.getlength(line), size[0])
-            lines.append(line)
-        text = " ".join(lines)
-        for name in names + [row[0] for row in leaders + jobs]:
-            self.assertIn(name, text)
+        for variant in range(4):
+            with self.subTest(variant=variant), patch.object(Canvas, "text", autospec=True) as printed:
+                count = render(size, Screen(0), self.now, board, variant=variant)[1]
+                for page in range(1, count):
+                    render(size, Screen(0), self.now, board, page, variant=variant)
+                lines = []
+                for call in printed.call_args_list:
+                    _, x, y, line, face, *_ = call.args
+                    self.assertGreaterEqual(min(x, y), 0)
+                    self.assertLessEqual(y + face.size, size[1])
+                    self.assertLessEqual(x + face.getlength(line), size[0])
+                    lines.append(line)
+                text = " ".join(lines)
+                for name in names + [row[0] for row in leaders + jobs]:
+                    self.assertIn(name, text)
 
     def test_only_complete_optional_sections_use_free_agenda_space(self):
         member = Identity(1, 2, "01", "Test", "member", 10**15)
         s = Screen(0)
         s.show("agenda", 5, member)
         data = {"reservations": [], "opportunities": [], "events": []}
+        positions = set()
+        for variant in range(4):
+            image, pages = render((800, 480), s, self.now, data, variant=variant)
+            self.assertEqual(pages, 1)
+            box = self.assert_intact_qr(image, dimmed=False)
+            positions.add(box[0] + box[2] < image.width)
+        self.assertEqual(positions, {True, False})
+        data["opportunities"] = [(f"Sort workshop materials {i}", "1 pt") for i in range(80)]
         with patch("welcomepi.render.qr_image", wraps=qr_image) as qr:
-            render((800, 480), s, self.now, data)
-            self.assertGreaterEqual(qr.call_args.args[0], 3*qr_modules().width)
-            qr.reset_mock()
-            data["opportunities"] = [(f"Sort workshop materials {i}", "1 pt") for i in range(80)]
-            _, count = render((480, 320), s, self.now, data)
-            self.assertGreater(count, 1)
+            for variant in range(4):
+                _, count = render((480, 320), s, self.now, data, variant=variant)
+                self.assertGreater(count, 1)
             qr.assert_not_called()
 
     def test_all_private_text_survives_wrapping_and_pagination(self):
@@ -148,13 +204,32 @@ class Layout(unittest.TestCase):
         self.assertTrue(all(face.getlength(line) <= 225 for line in wrap("W"*100, face, 225)))
         s = Screen(0)
         s.show("details", 5, Identity(1, 2, "01", "Test", "member", 10**15))
-        for thumbnail in [None, Image.new("RGB", (512, 512), "red")]:
-            image, count = render((480, 320), s, self.now, {"details": Details(sections, 2), "avatar": thumbnail})
+        corners = set()
+        for variant, thumbnail in product(range(4), (None, Image.new("RGB", (512, 512), "red"))):
+            image, count = render((480, 320), s, self.now, {"details": Details(sections, 2), "avatar": thumbnail},
+                                  variant=variant)
             self.assertEqual(image.size, (480, 320))
             self.assertGreater(count, 1)
+            if thumbnail is not None:
+                # The test avatar is the only fully saturated red on this page.
+                x, y, right, bottom = image.getchannel("R").point(lambda v: 255 if v == 255 else 0).getbbox()
+                self.assertEqual(right - x, bottom - y)
+                corners.add((x + right < image.width, y + bottom < image.height))
+        self.assertEqual(len(corners), 4)
 
 
 class Hardware(unittest.TestCase):
+    def test_board_appearance_intervals(self):
+        env = {"MLAB_URI": "test", "LEDGER_URI": "test", "MQTT_HOST": "broker"}
+        settings = Settings.load(env)
+        self.assertEqual((settings.layout_interval_minutes, settings.dim_after_minutes), (7, 15))
+        for key, field in (("WELCOMEPI_LAYOUT_INTERVAL_MINUTES", "layout_interval_minutes"),
+                           ("WELCOMEPI_DIM_AFTER_MINUTES", "dim_after_minutes")):
+            self.assertEqual(getattr(Settings.load({**env, key: "3"}), field), 3)
+            for invalid in ("0", "-1", "1.5", "", "never"):
+                with self.subTest(key=key, invalid=invalid), self.assertRaisesRegex(ValueError, key):
+                    Settings.load({**env, key: invalid})
+
     def monitors(self):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(patch.dict("sys.modules", pykms=Mock()))

@@ -38,6 +38,8 @@ job to check the release bytes a second time. Both are workflow-local.
 | `WELCOMEPI_SYSLOG_HOST`, `WELCOMEPI_SYSLOG_PORT` | No | Leave both unset for local syslog. Set both to a collector IPv4 or IPv6 address and UDP port 1–65535 for direct remote application logs. HDMI cable loss and recovery also appear on stderr in either mode. |
 | `WELCOMEPI_HDMI_PORT` | No | Defaults to `auto`, the first connected HDMI output. On Pi 4B and Pi 5, `0` selects the socket marked HDMI0 (HDMI-A-1) and `1` selects HDMI1 (HDMI-A-2). A fixed setting waits for that socket if its monitor disconnects. Restart the kiosk service after editing. |
 | `WELCOMEPI_ROTATION` | No | Defaults to `auto`. Accepted overrides are `left`, `right`, and `normal`. |
+| `WELCOMEPI_LAYOUT_INTERVAL_MINUTES` | No | Positive whole minutes between layout and color changes while the public board stays visible. Defaults to 7. Greetings, agendas and details change layout on successive visits. |
+| `WELCOMEPI_DIM_AFTER_MINUTES` | No | Positive whole minutes since the last fresh door check-in or distinct local fob tap before the public board dims. Defaults to 15. Personal pages use normal brightness. The four-hour HDMI standby timer uses its own activity rules. |
 | `WELCOMEPI_OPPORTUNITIES` | No | Positive integer. Defaults to five opportunities on the member agenda. |
 | `EVENTBRITE_ORGANIZATION_IDS` | No | Comma-separated organization IDs, matching the Rails sync configuration. Empty includes public occurrences from all synced organizations. |
 | `SLACKIDS_INELIGIBLE` | No | Match Ledger's excluded Slack user IDs. Accepts a JSON array or quoted brace-delimited set. Defaults to empty. |

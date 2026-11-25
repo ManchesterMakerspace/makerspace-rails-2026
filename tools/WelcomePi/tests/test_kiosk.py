@@ -1,4 +1,5 @@
 from concurrent.futures import Future
+from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 import unittest
@@ -179,6 +180,7 @@ class Controller(unittest.TestCase):
         self.display.probe.return_value = False
         self.display.output.size = (800, 480)
         self.frames = []
+        self.page_count = 1
         self.renderer = patch("welcomepi.app.render", side_effect=self.render)
         self.renderer.start()
         self.addCleanup(self.renderer.stop)
@@ -192,10 +194,11 @@ class Controller(unittest.TestCase):
         self.k.work = self.k.identity_work = ManualExecutor()
         self.k.tick()
 
-    def render(self, size, screen, now, data, page):
+    def render(self, size, screen, now, data, page, *, variant, dimmed):
         self.frames.append(SimpleNamespace(page=screen.page, member=screen.member, greeting=screen.greeting,
-                                           record_first=screen.record_first, data=dict(data), jobs=list(self.k.jobs)))
-        return Mock(), 1
+                                           record_first=screen.record_first, data=dict(data), jobs=list(self.k.jobs),
+                                           number=page, variant=variant, dimmed=dimmed))
+        return Mock(), self.page_count
 
     def finish(self, name, value=None, error=None, tag=None):
         tag = next(t for n, t in self.k.jobs if n == name) if tag is None else tag
@@ -260,6 +263,125 @@ class Controller(unittest.TestCase):
         self.k.tick()
         self.finish("snapshot", self.cache)
 
+    def test_single_page_board_rotates_and_dims_without_refreshing_or_extending_activity(self):
+        self.at = 419
+        self.k.tick()
+        first = self.frames[-1]
+        tag, data, jobs = self.k.screen_tag(), self.k.data, dict(self.k.jobs)
+        with patch.object(self.k, "refresh") as refresh:
+            self.at = 420
+            self.k.tick()
+            rotated = self.frames[-1]
+            self.assertNotEqual(first.variant, rotated.variant)
+            self.assertFalse(rotated.dimmed)
+            self.k.tick()
+            self.assertIs(self.frames[-1], rotated)
+            refresh.assert_not_called()
+        self.assertEqual((self.k.screen_tag(), self.k.jobs, self.k.screen.last_activity), (tag, jobs, 0))
+        self.assertIs(self.k.data, data)
+        self.at = 840
+        self.k.tick()
+        normal = self.frames[-1]
+        self.assertNotEqual(normal.variant, rotated.variant)
+        self.assertFalse(normal.dimmed)
+        self.at = 900
+        self.k.tick()
+        self.assertEqual((self.frames[-1].dimmed, self.frames[-1].variant), (True, normal.variant))
+        self.at = 1260
+        self.k.tick()
+        self.assertTrue(self.frames[-1].dimmed)
+        self.assertNotEqual(self.frames[-1].variant, normal.variant)
+        self.at = 14400
+        self.k.tick()
+        self.display.output.standby.assert_called_once_with()
+        count = len(self.frames)
+        self.at += 420
+        self.k.tick()
+        self.assertEqual(len(self.frames), count)
+        self.display.output.standby.assert_called_once_with()
+
+    def test_custom_dim_delay_can_precede_the_first_layout_change(self):
+        self.k.settings = replace(self.k.settings, layout_interval_minutes=3, dim_after_minutes=1)
+        first = self.frames[-1]
+        for at, dimmed, rotated in ((59, False, False), (60, True, False), (179, True, False), (180, True, True)):
+            with self.subTest(at=at):
+                self.at = at
+                self.k.tick()
+                frame = self.frames[-1]
+                self.assertEqual((frame.dimmed, frame.variant != first.variant), (dimmed, rotated))
+
+    def test_pagination_and_data_updates_keep_the_current_layout_and_page_deadline(self):
+        self.page_count = 3
+        self.finish("leaders", [("Example", "1 pt")])
+        first = self.frames[-1]
+        self.at = 415
+        self.k.tick()
+        self.assertEqual((self.frames[-1].number, self.frames[-1].variant), (1, first.variant))
+        self.at = 420
+        self.k.tick()
+        rotated = self.frames[-1]
+        self.assertEqual(rotated.number, 1)
+        self.assertNotEqual(rotated.variant, first.variant)
+        self.finish("opportunities", [("New task", "")])
+        self.assertEqual((self.frames[-1].number, self.frames[-1].variant), (1, rotated.variant))
+        self.at = 423
+        self.k.tick()
+        self.assertEqual((self.frames[-1].number, self.frames[-1].variant), (2, rotated.variant))
+
+    def test_repeated_member_visits_cycle_each_view_independently_of_refreshes(self):
+        self.preload()
+        variants = {view: [] for view in ("welcome", "agenda", "details", "board")}
+        for _ in range(4):
+            self.scan("AA")
+            variants["welcome"].append(self.frames[-1].variant)
+            self.finish("reservations", [("Lathe", "4 PM")])
+            variants["agenda"].append(self.frames[-1].variant)
+            self.scan("AA")
+            variants["details"].append(self.frames[-1].variant)
+            self.finish("details", Details([("Character sheet", [("Example", "")])]))
+            self.assertEqual(self.frames[-1].variant, variants["details"][-1])
+            self.scan("AA")
+            variants["board"].append(self.frames[-1].variant)
+        for sequence in variants.values():
+            self.assertEqual(set(sequence), set(range(4)))
+        self.assertEqual(len({variants[view][0] for view in ("welcome", "agenda", "details")}), 3)
+
+    def test_filtered_arrivals_and_unknown_local_taps_brighten_only_the_awake_board(self):
+        def door_event(fresh):
+            record = Checkin(self.k.wall(), name="Example", location="Side door")
+            self.k.handle(("checkin", record, self.at, "activity/checkins/side", fresh))
+            self.k.tick()
+
+        self.at = 900
+        self.k.tick()
+        self.at += 1
+        door_event(False)
+        self.assertTrue(self.frames[-1].dimmed)
+        self.at += 1
+        door_event(True)
+        self.assertEqual((self.frames[-1].page, self.frames[-1].dimmed), ("board", False))
+        self.at += 900
+        self.k.tick()
+        self.assertTrue(self.frames[-1].dimmed)
+        self.scan("UNKNOWN")
+        self.assertEqual((self.frames[-1].page, self.frames[-1].dimmed), ("board", False))
+        with self.assertLogs("welcomepi.app", "WARNING"):
+            self.finish("lookup", None)
+        self.assertEqual(self.k.screen.last_activity, 0)
+        self.at = 14400
+        self.k.tick()
+        count = len(self.frames)
+        self.at += 1
+        door_event(True)
+        self.scan("UNKNOWN")
+        with self.assertLogs("welcomepi.app", "WARNING"):
+            self.finish("lookup", None)
+        self.assertEqual((self.k.screen.page, len(self.frames)), ("sleep", count))
+        self.display.output.standby.assert_called_once_with()
+        self.scan("AA")
+        self.finish("lookup", self.cache.lookup("AA", self.k.wall()))
+        self.assertEqual((self.frames[-1].page, self.frames[-1].dimmed), ("agenda", False))
+
     def test_snapshot_race_and_reconnect(self):
         self.k.handle(("subscribed",))
         self.k.tick()
@@ -317,12 +439,14 @@ class Controller(unittest.TestCase):
         self.assertTrue(first_frame.greeting)
         self.finish("reservations", [])
         self.assertFalse(self.frames[-1].greeting)
+        agenda_variant = self.frames[-1].variant
 
         updated = {**self.pairs[1][0], "firstname": "Leigh"}
         self.k.handle(("change", "members", "update", updated))
         self.k.tick()
         self.assertEqual(self.frames[-1].member.first, "Leigh")
         self.assertFalse(self.frames[-1].greeting)
+        self.assertEqual(self.frames[-1].variant, agenda_variant)
 
     def test_late_uncached_lookup_does_not_replace_newer_member(self):
         self.preload()
@@ -422,6 +546,10 @@ class Controller(unittest.TestCase):
         self.k.tick()
         self.assertEqual((self.k.screen.page, self.k.screen.member.uid), ("agenda", "BB"))
         self.assertEqual(self.k.recent.rows(now), [("Lee", "10:00 AM")])
+        self.k.dirty = True
+        self.k.tick()
+        self.assertTrue(self.frames[-1].greeting)
+        self.assertEqual(self.frames[-1].variant, first.variant)
 
     def test_uid_selects_its_owner_even_when_a_namesakes_full_name_is_in_the_record(self):
         self.pairs[0][0].update(firstname="Lee", lastname="Brook")

@@ -25,7 +25,8 @@ displays the newest five. Minute refreshes read this history from RAM.
 After startup MQTT supplies arrivals, including after broker reconnects.
 Door locations use `where`, then `reader`, then `blank:`.
 A location excluded by `WELCOMEPI_LOCATION_PATTERNS` is logged and contributes
-to history without waking or changing the personal display. A fresh, matching
+to history. It can brighten an awake display while leaving the current page
+and HDMI standby timer in place. A fresh, matching
 check-in with a name displays the first name in large type before the card lookup.
 To load the agenda, the kiosk uses the card UID from the check-in (`uid` or
 `cardUID`) or local fob tap to find the active card, then looks up the card’s
@@ -43,6 +44,16 @@ when there are reservations or volunteer opportunities to show, or when all
 three agenda reads finish, including an empty agenda. Local taps advance the
 personal pages.
 Two idle minutes clear personal content and four idle hours disable HDMI.
+To reduce monitor burn-in, the public board alternates light and dark colors
+and cycles the portal QR through four corners. It advances to the next layout
+when it reopens or after seven minutes on screen by default. Each greeting,
+agenda and details page also cycles layouts across visits. Its colors and positions
+stay fixed while the member reads. Only the public board dims, by default after
+15 minutes without a fresh check-in or distinct local fob tap. A fresh arrival
+at any door or a local tap, including an unrecognized fob, restores normal
+brightness on the awake board. Background refreshes and replayed arrivals
+leave the dimming timer alone. The kiosk uses its existing eligibility rules
+to open a personal page or wake HDMI from standby.
 While visible, the board refreshes every minute and at
 Eastern midnight. The directory rebuilds after MQTT subscription, after gaps,
 and periodically. During recovery, the kiosk looks up the member in MongoDB
