@@ -96,6 +96,35 @@ def qr_image(space, dimmed=False):
     return base.resize((base.width * scale, base.height * scale), Image.Resampling.NEAREST)
 
 
+class BoardQR:
+    """Largest corner-anchored square clear of the content on every board page."""
+
+    def __init__(self, canvas, side, width_limit, edge):
+        self.canvas = canvas
+        self.side = side
+        self.edge = edge
+        self.limit = min(side * 2, width_limit, canvas.h - 2 * edge)
+        self.next_size = side + qr_modules(canvas.dimmed).width
+
+    @property
+    def can_grow(self):
+        return self.limit >= self.next_size
+
+    def avoid(self, left, top, right, bottom):
+        c = self.canvas
+        # The square may grow until it reaches the obstacle on both axes.
+        horizontal = left - c.pad if c.media_left else c.w - c.pad - right
+        vertical = c.h - self.edge - bottom if c.lower_header else top - self.edge
+        self.limit = min(self.limit, max(horizontal, vertical))
+
+    def paint(self):
+        c = self.canvas
+        qr = qr_image(max(self.side, int(self.limit)), c.dimmed)
+        x = c.pad if c.media_left else c.w - c.pad - qr.width
+        y = c.h - self.edge - qr.height if c.lower_header else self.edge
+        c.image.paste(qr, (x, y))
+
+
 def paired(row):
     label, detail = row
     return f"{label}  ·  {detail}" if detail else label
@@ -258,6 +287,7 @@ class Canvas:
     def header(self, screen, today, date, details=None, avatar=None, *, spare=0):
         board = screen.page == "board"
         height = self.header_height(board)
+        board_qr = None
         available = self.width
         if board:
             modules = qr_modules(self.dimmed).width
@@ -284,17 +314,16 @@ class Canvas:
         headline = fit(headline, face, available)
         if board:
             text_width = ceil(max(self.small.getlength(kicker), face.getlength(headline))) + 2 * self.stroke
-            qr_room = min(self.width - self.pad - text_width, height + spare - self.pad)
+            width_limit = self.width - self.pad - text_width
+            qr_room = min(width_limit, height + spare - self.pad)
             qr_side = max(qr_side, qr_room // modules * modules)
             height = max(height, qr_side + self.pad)
+            board_qr = BoardQR(self, qr_side, width_limit, (height - qr_side) // 2)
+            # Both labels are anchored to the edge opposite the QR.
             available = self.width - qr_side - self.pad
         top = self.h - height if self.lower_header else 0
         self.draw.rectangle((0, top, self.w, top + height - 1), fill=self.palette.band)
-        if board:
-            qr = qr_image(qr_side, self.dimmed)
-            x = self.pad if self.media_left else self.w - self.pad - qr_side
-            self.image.paste(qr, (x, top + (height - qr_side) // 2))
-        elif details and details.rank is not None:
+        if not board and details and details.rank is not None:
             x = self.pad if self.media_left else self.w - self.pad - side
             y = top + (height - side) // 2
             if avatar:
@@ -306,7 +335,8 @@ class Canvas:
         self.aligned_text(x, top + self.pad, available, kicker, self.small, self.palette.kicker)
         self.aligned_text(x, top + self.pad + self.small.size + self.pad // 2, available,
                           headline, face, self.palette.title)
-        return (self.pad, top - self.pad) if self.lower_header else (height + self.pad, self.h - self.pad)
+        bounds = (self.pad, top - self.pad) if self.lower_header else (height + self.pad, self.h - self.pad)
+        return bounds, board_qr
 
     def reserve_footer(self, bounds, height, gap=0):
         """Return the body limits and the cue origin opposite the header."""
@@ -340,8 +370,7 @@ class Canvas:
         capacity = max(1, list_space // self.line - 1)
         count = max(1, arrival_pages + (len(rows) + capacity - 1) // capacity)
         p = page % count
-        # Keep page boundaries fixed. Only the space left on the fullest page
-        # can enlarge a header shared across the page cycle.
+        # Preserve the body clearance used by the existing page layout.
         volunteer_height = (1 + min(capacity, len(rows))) * self.line
         if separate:
             used = max(self.line + min(arrival_rows, arrival_capacity) * arrival_height,
@@ -350,35 +379,69 @@ class Canvas:
             used = checkin_height + volunteer_height
             if arrivals and rows and body_height - used >= self.line:
                 used += self.line
-        bounds = self.header(screen, today, date, spare=max(0, body_height - used))
+        bounds, qr = self.header(screen, today, date, spare=max(0, body_height - used))
         top, bottom, _ = self.reserve_footer(bounds, self.small.size)
-        if not separate or p < arrival_pages:
-            self.heading(self.pad, top, "Recent check-ins", self.width)
-            start = p * per_arrival_page if separate else 0
-            for i, (first, clock) in enumerate(arrivals[start:start + per_arrival_page]):
-                x = self.pad + i % columns * cell_width
-                cy = top + self.line + i // columns * arrival_height
-                name = fit(first, self.bold, cell_width - 5)
-                self.aligned_text(x, cy, cell_width - 5, name, self.bold)
-                self.aligned_text(x, cy + self.bold.size + 2, cell_width - 5, clock, self.small, self.palette.muted)
-            if separate:
-                return count
-        offset = (p - arrival_pages) * capacity
-        page_rows = rows[offset:offset + capacity]
-        list_top = top if separate else top + checkin_height
-        if not separate and arrivals and page_rows and bottom - list_top >= (len(page_rows) + 2) * self.line:
-            list_top += self.line
-        y = list_top
+        if count > 1:
+            # The page counter is at the opposite end of the same screen edge.
+            qr.avoid(0, 0 if self.lower_header else bottom, self.w, top if self.lower_header else self.h)
         right_x = self.pad + width + self.pad
         leader_x, work_x = (right_x, self.pad) if self.media_left else (self.pad, right_x)
-        self.heading(leader_x, y, "Volunteer leaders", width)
-        self.heading(work_x, y, "Open volunteering", width)
-        y += self.line
-        for left, right in page_rows:
-            self.text(leader_x, y, left, self.body)
-            self.text(work_x, y, right, self.body)
-            y += self.line
-        self.draw.line((right_x - self.pad // 2, list_top, right_x - self.pad // 2, y), fill=self.palette.line)
+
+        # Walk the page layouts once, drawing only the requested page. Text
+        # bounds include the configured stroke and the actual glyph overhang.
+        def label(x, y, text, face, draw, *, align_width=None, color=None):
+            if not text:
+                return
+            if align_width is not None and self.media_left:
+                x += align_width - face.getlength(text)
+            if qr.can_grow:
+                left, top, right, bottom = face.getbbox(text, anchor="lt", stroke_width=self.stroke)
+                qr.avoid(x + left, y + top, x + right, y + bottom)
+            if draw:
+                self.text(x, y, text, face, color)
+
+        def section(x, y, title, room, draw):
+            if qr.can_grow:
+                inset = self.bold.size + self.bold.size // 2
+                qr.avoid(x, y, x + self.bold.size, y + self.bold.size)
+                label(x + inset, y, fit(title, self.bold, room - inset), self.bold, False)
+            if draw:
+                self.heading(x, y, title, room)
+
+        for other in range(count):
+            draw = other == p
+            if not draw and not qr.can_grow:
+                continue
+            if not separate or other < arrival_pages:
+                section(self.pad, top, "Recent check-ins", self.width, draw)
+                start = other * per_arrival_page if separate else 0
+                for i, (first, clock) in enumerate(arrivals[start:start + per_arrival_page]):
+                    x = self.pad + i % columns * cell_width
+                    y = top + self.line + i // columns * arrival_height
+                    name = fit(first, self.bold, cell_width - 5)
+                    label(x, y, name, self.bold, draw, align_width=cell_width - 5)
+                    label(x, y + self.bold.size + 2, clock, self.small, draw, align_width=cell_width - 5,
+                          color=self.palette.muted)
+                if separate:
+                    continue
+            offset = (other - arrival_pages) * capacity
+            page_rows = rows[offset:offset + capacity]
+            list_top = top if separate else top + checkin_height
+            if not separate and arrivals and page_rows and bottom - list_top >= (len(page_rows) + 2) * self.line:
+                list_top += self.line
+            y = list_top
+            section(leader_x, y, "Volunteer leaders", width, draw)
+            section(work_x, y, "Open volunteering", width, draw)
+            for left, right in page_rows:
+                y += self.line
+                label(leader_x, y, left, self.body, draw)
+                label(work_x, y, right, self.body, draw)
+            divider = right_x - self.pad // 2
+            end = y + self.line
+            qr.avoid(divider, list_top, divider + 1, end + 1)
+            if draw:
+                self.draw.line((divider, list_top, divider, end), fill=self.palette.line)
+        qr.paint()
         return count
 
     def personal(self, page_name, data, bounds, page):
@@ -451,7 +514,7 @@ def draw_page(canvas, screen, now, data, page):
     if screen.page == "board":
         count = canvas.board(screen, today, date, data, page)
     else:
-        bounds = canvas.header(screen, today, date, data.get("details"), data.get("avatar"))
+        bounds, _ = canvas.header(screen, today, date, data.get("details"), data.get("avatar"))
         count = canvas.personal(screen.page, data, bounds, page)
     if count > 1:
         x = canvas.pad if canvas.media_left else canvas.w - canvas.pad

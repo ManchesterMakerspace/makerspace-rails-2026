@@ -53,8 +53,9 @@ personal pages.
 Two idle minutes clear personal content and four idle hours disable HDMI.
 To reduce monitor burn-in, the public board alternates light and dark colors
 and cycles the portal QR through four corners. Pages with room add one blank row
-between check-ins and volunteer lists. The QR uses the space available on the fullest
-page and holds its size and position as pages advance. The board advances to the next layout
+between check-ins and volunteer lists. The QR can grow to twice its fitted width and
+height, extending beyond the colored title bar into space that is clear on every page.
+It holds its size and position as pages advance. The board advances to the next layout
 when it reopens or after seven minutes on screen by default. Each greeting,
 agenda and details page also cycles layouts across visits. Its colors and positions
 stay fixed while the member reads. Only the public board dims, by default after

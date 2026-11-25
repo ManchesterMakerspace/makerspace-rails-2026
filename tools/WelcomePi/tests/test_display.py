@@ -15,7 +15,7 @@ from PIL import Image, ImageColor, ImageDraw
 from welcomepi.config import Settings
 from welcomepi.display import Display, Output, orientation, scanout
 from welcomepi.ledger import Avatar, Details, PrivateFileRedirect, fetch_avatar
-from welcomepi.render import Canvas, font, qr_image, qr_modules, render, section_pages, wrap
+from welcomepi.render import BoardQR, Canvas, font, qr_image, qr_modules, render, section_pages, wrap
 from welcomepi.state import HOME, Identity, Screen, UTC
 
 
@@ -199,9 +199,8 @@ class Layout(unittest.TestCase):
                 screen = Screen(0)
                 date = "Sunday, November 22"
                 with patch.object(canvas, "aligned_text", wraps=canvas.aligned_text) as labels:
-                    canvas.header(screen, self.now, date)
+                    _, base_qr = canvas.header(screen, self.now, date)
                 baseline = [(c.args[3], c.args[4].size) for c in labels.call_args_list]
-                original = self.assert_intact_qr(canvas.image, dimmed)
                 with patch.object(canvas, "heading", wraps=canvas.heading) as headings, \
                         patch.object(canvas, "aligned_text", wraps=canvas.aligned_text) as labels:
                     self.assertEqual(canvas.board(screen, self.now, date, data, 0), 1)
@@ -210,7 +209,52 @@ class Layout(unittest.TestCase):
                 self.assertEqual(leaders - checkins, 3 * canvas.line + canvas.small.size)
                 self.assertEqual(work, leaders)
                 enlarged = self.assert_intact_qr(canvas.image, dimmed)
-                self.assertGreater(enlarged[2] - enlarged[0], original[2] - original[0])
+                self.assertGreater(enlarged[2] - enlarged[0], base_qr.side)
+
+    def test_idle_qr_doubles_in_a_free_corner_and_clears_text_on_other_pages(self):
+        size = (800, 480)
+        canvas = Canvas(size, stroke=1)
+        header = canvas.header_height(True)
+        original = qr_image(header - canvas.pad).width
+        body_height = canvas.h - header - 2 * canvas.pad - canvas.small.size
+        checkins_height = 2 * canvas.line + canvas.small.size
+        capacity = (body_height - checkins_height) // canvas.line - 1
+        column_width = (canvas.width - canvas.pad) // 2
+        long_label = "W" * int(column_width / canvas.body.getlength("W"))
+        # Fill two pages. A single wide label on the second page limits both.
+        for variant, wide_row in ((0, capacity), (3, 2 * capacity - 1)):
+            palette = Canvas(size, variant=variant).palette
+            band, paper = (ImageColor.getrgb(value) for value in (palette.band, palette.paper))
+            for crowded in (False, True):
+                rows = [(long_label if crowded and i == wide_row else "I", "") for i in range(2 * capacity)]
+                data = {"recent": [("Sam", "8 AM")], "opportunities": rows}
+                boxes = []
+                for page in (0, 1):
+                    with self.subTest(variant=variant, crowded=crowded, page=page):
+                        args = (size, Screen(0), self.now, data, page)
+                        image, pages = render(*args, variant=variant, stroke=1)
+                        self.assertEqual(pages, 2)
+                        box = self.assert_intact_qr(image, dimmed=False)
+                        boxes.append(box)
+                        side = box[2] - box[0]
+                        if not crowded:
+                            self.assertEqual(side, 2 * original)
+                            boundary = header if variant == 0 else size[1] - header
+                            self.assertLess(box[1], boundary)
+                            self.assertGreater(box[3], boundary)
+                            self.assertEqual(image.getpixel((0, boundary - 1)), band if variant == 0 else paper)
+                            self.assertEqual(image.getpixel((0, boundary)), paper if variant == 0 else band)
+                        elif variant == 0:
+                            self.assertLess(original, side)
+                            self.assertLess(side, 2 * original)
+                        else:
+                            self.assertEqual(side, original)
+                        # Removing the QR must reveal only the two background colors.
+                        with patch.object(BoardQR, "paint"):
+                            background, _ = render(*args, variant=variant, stroke=1)
+                        under_qr = background.crop(box).getcolors(side * side)
+                        self.assertLessEqual({color for _, color in under_qr}, {band, paper})
+                self.assertEqual(boxes[0], boxes[1])
 
     def test_each_palette_keeps_text_readable_and_dim_mode_reduces_peak_brightness(self):
         def luminance(color):
