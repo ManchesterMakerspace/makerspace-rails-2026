@@ -212,7 +212,8 @@ class Layout(unittest.TestCase):
                 self.assertGreater(enlarged[2] - enlarged[0], base_qr.side)
 
     def test_idle_qr_doubles_in_a_free_corner_and_clears_text_on_other_pages(self):
-        size = (800, 480)
+        # Leave room beside “Open volunteering” for the doubled QR even with DejaVu Sans Bold.
+        size = (960, 480)
         canvas = Canvas(size, stroke=1)
         header = canvas.header_height(True)
         original = qr_image(header - canvas.pad).width
