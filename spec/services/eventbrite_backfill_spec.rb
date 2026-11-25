@@ -67,6 +67,42 @@ RSpec.describe EventbriteIntegration::Backfill do
     expect(run.completed_at).to be_nil
     expect(run.failed).to eq(1)
   end
+
+  it 'resumes a failed order page with blank event IDs using its listing parent' do
+    allow(EventbriteIntegration::Synchronizer).to receive(:new).and_call_original
+    event_data = { 'id' => 'event-1', 'organization_id' => 'org', 'status' => 'live' }
+    allow(client).to receive(:each_page).with('organizations/org/events/', anything, continuation: nil)
+      .and_yield({ 'events' => [event_data] }, nil)
+    params = { 'expand' => 'attendees,refund_requests' }
+    expect(client).to receive(:each_page).with('events/event-1/orders/', params, continuation: nil) do |_, _, **_, &block|
+      block.call({ 'orders' => [{ 'id' => 'first', 'event_id' => 'event-1' }] }, 'order-page-2')
+      raise EventbriteIntegration::Client::ApiError.new(503, 'ERROR')
+    end
+    backfill = described_class.new('orders', {})
+    expect { backfill.call }.to raise_error(EventbriteIntegration::Client::ApiError)
+    run = backfill.run.reload
+    expect(run.progress['org']['order_cursor']).to eq('order-page-2')
+    expect(run.completed_at).to be_nil
+
+    orders = [
+      { 'id' => 'null-event', 'event_id' => nil, 'status' => 'refunded', 'changed' => '2026-10-03T12:00:00Z',
+        'attendees' => [{ 'id' => 'refunded-attendee', 'refunded' => true }] },
+      { 'id' => 'empty-event', 'event_id' => '' },
+      { 'id' => 'missing-event' }
+    ]
+    expect(client).not_to receive(:get)
+    expect(client).to receive(:each_page).with('events/event-1/orders/', params, continuation: 'order-page-2')
+      .and_yield({ 'orders' => orders }, nil)
+    described_class.new('orders', { 'RESUME_RUN_ID' => run.id.to_s }).call
+    expect(run.reload.completed_at).to be_present
+    expect(run.processed).to eq(4)
+    expect(run.last_error).to be_nil
+    expect(EventbriteOrder.count).to eq(4)
+    expect(EventbriteOrder.distinct(:event_id)).to eq(['event-1'])
+    expect(EventbriteOrder.distinct(:organization_id)).to eq(['org'])
+    expect(EventbriteOrder.find_by(eventbrite_id: 'null-event').refunded_at).to eq(Time.utc(2026, 10, 3, 12))
+    expect(EventbriteAttendee.find_by(eventbrite_id: 'refunded-attendee').event_id).to eq('event-1')
+  end
   it 'combines literal positive/negative case-insensitive name filters' do
     allow(client).to receive(:each_page).and_yield({ 'events' => [
       { 'id' => '1', 'name' => { 'text' => 'WELDING Basics' } },

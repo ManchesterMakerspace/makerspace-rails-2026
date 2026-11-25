@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Admin::AnalyticsController, type: :controller do
   set_devise_mapping
-  let(:admin) { create(:member, :admin) }
+  let(:admin) { create(:member, :admin, startDate: Time.utc(2023, 12, 31)) }
 
   before do
     sign_in admin

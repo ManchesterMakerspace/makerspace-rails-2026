@@ -323,6 +323,11 @@ not run the updated release task, run
 on the reminder age indexes. Deployments stop for operator review when existing
 duplicate data prevents either constraint from being created.
 
+The Rails startup check warns when it cannot verify the case-insensitive unique
+Tool index on `(shop_id, name)` or when that index is missing. An asset-only
+`bundle exec rails assets:precompile` skips this database read. The release
+task and normal Rails startup still check the index.
+
 The Tool index keeps the equality-scoped shop and case-insensitive name ordering
 before the availability inequalities. A test-database `executionStats` comparison
 with 6,000 synthetic tools across ten shops returned the same 343 tools with both
@@ -1277,6 +1282,35 @@ job, defer automatic credit creation, or change ledger or discount calculations.
 
 Repair-ticket delivery skips missing optional shop destinations, and scopes central reply receipts to the current Slack thread so recovery can republish pending events after root deletion.
 
+### Volunteer Home recommendations and form validation
+
+`MemberHome#available_volunteer_opportunities` is a synchronous, read-only
+current-member query. For `activeMember` members it ranks up to five eligible,
+unclaimed multi-use tasks matching today's weekday in `America/New_York`, then
+up to five other eligible tasks and future volunteer events. Each group sorts
+by credits descending, then case-insensitive title and ID. The response is one
+flat list, with every weekday-priority candidate excluded from the second group
+before either five-item limit is applied. Existing reusable-claim history,
+in-progress claims, checkouts, repair-ticket restrictions, event attendance, and
+shop redaction still govern eligibility. Other member statuses receive no
+recommendations. The reader neither claims work nor enqueues notifications.
+
+`VolunteerValidationErrors` is the controller concern used by the admin task
+and event forms. Mongoid validation failures return HTTP 422 with the existing
+`status`, `error: unprocessable_content`, and `message` envelope; `message`
+contains the human validation messages, and additive `errors` contains field
+message arrays. The existing validation-alert logging/queue path remains in
+place. No credit is awarded and failed form values are not persisted.
+Ordinary task creation retains its configured credit cap; existing task edits
+and volunteer events retain their uncapped credit rules. These synchronous
+helpers add no recurring job, admin job key, or schedule.
+
+`Service::VolunteerSlackCanvas` uses the same weekday-aware claimable scope
+when rebuilding its saved Slack canvas. An already published canvas is a
+snapshot and adopts a weekday change on its next existing refresh; no new
+midnight refresh schedule is introduced. Direct claim requests always recheck
+the live Eastern weekday, even when a saved canvas still shows an older row.
+
 ### Volunteer task and repair-ticket visibility
 
 Volunteer task Slack listings and claim-error messages apply the viewer's catalog
@@ -1455,6 +1489,11 @@ the admin run-job API. Invocation, filters, resume, errors, credentials and
 deployment requirements: [Eventbrite operator guide](eventbrite.md).
 
 Order backfills use an unfiltered order listing with attendee/refund expansions.
+Event-scoped order rows with omitted/null/blank `event_id` reuse the listing's
+known parent, including expanded attendees. Explicit different IDs still resolve
+the moved order's destination; missing IDs without a parent fail locally before
+an empty API path can be requested. Existing failed runs resume through
+`RESUME_RUN_ID` without clearing records or successful page checkpoints.
 `Synchronizer` uses provider refund/changed timestamps for `refunded_at`, including
 attendee-driven refund evidence, leaving it nil when the provider date is unknown.
 Local invalidation and evidence persist independently; replay preserves a known

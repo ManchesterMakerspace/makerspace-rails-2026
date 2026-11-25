@@ -29,13 +29,15 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
   around { |example| Time.use_zone('America/New_York') { travel_to(now) { example.run } } }
 
   before do
+    # RSpec resolves the original Rails autoloads when saving constants to restore.
+    # Load those models with their real concerns before stubbing dependencies.
+    stub_const('VolunteerEvent', Class.new)
+    stub_const('VolunteerTask', Class.new)
     # These concerns/types have separate integration coverage. The tested task
     # methods come from the full model source, never extracted or reimplemented.
     stub_const('FixTicketBounty', Module.new)
     stub_const('SanitizesUserInput', Module.new)
     stub_const('FixTicketId', String)
-    stub_const('VolunteerEvent', Class.new)
-    stub_const('VolunteerTask', Class.new)
     stub_const('Error::Forbidden', Class.new(StandardError)) unless defined?(Error::Forbidden)
     stub_const('Service::SlackConnector', Module.new do
       def self.message_destination_mode; end
@@ -68,11 +70,14 @@ RSpec.describe 'Volunteer lifecycle and status notification integration' do
     load File.expand_path('../../app/models/volunteer_task.rb', __dir__)
     load File.expand_path('../../app/models/volunteer_event.rb', __dir__)
 
-    stub_const('ApplicationJob', Class.new do
-      def self.queue_as(_queue); end
-    end)
-    stub_const('VolunteerEventReminderJob', Class.new(ApplicationJob))
-    load File.expand_path('../../app/jobs/volunteer_event_reminder_job.rb', __dir__)
+    # Rails registers an autoload for the real job. Keep its ApplicationJob superclass.
+    unless defined?(VolunteerEventReminderJob)
+      stub_const('ApplicationJob', Class.new do
+        def self.queue_as(_queue); end
+      end)
+      stub_const('VolunteerEventReminderJob', Class.new(ApplicationJob))
+      load File.expand_path('../../app/jobs/volunteer_event_reminder_job.rb', __dir__)
+    end
 
     # Criteria are inspected without execution; fail before any accidental socket.
     allow(Mongo::Client).to receive(:new).and_raise('This unit spec must not connect to MongoDB')

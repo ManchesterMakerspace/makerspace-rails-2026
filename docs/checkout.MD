@@ -683,8 +683,10 @@ annotations inline and links to `/tools/:id/request-checkout`. Returning to Home
 refreshes the list. Requests still undergo the existing server-side validation.
 
 The same Home response includes `availableVolunteerOpportunities`: up to five
-randomly sampled tasks/future events for `activeMember` members, after existing
-claim eligibility checks. Child tasks, unavailable/cooling-down tasks, reusable
+eligible multi-use tasks matching today's Eastern weekday, followed by up to five
+other tasks/future events for `activeMember` members. Each group sorts by credits
+descending, title, and ID; the flat list has no duplicates, and all weekday-priority
+candidates are excluded from the second group. Child tasks, unavailable/cooling-down tasks, reusable
 tasks previously claimed, and in-progress repeatable/recurring claims are omitted.
 Events must be open, dated after today, and not already joined. Non-active members
 receive an empty list. The portal omits an empty volunteer section; claim/join

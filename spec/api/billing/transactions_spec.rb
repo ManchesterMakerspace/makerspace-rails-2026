@@ -29,11 +29,11 @@ describe 'Billing::Transactions API', type: :request do
       parameter name: :paymentMethodToken, in: :query, schema: { type: :array, items: { type: :string } }, required: false
 
       response '200', 'transactions found' do
-        let(:t1) { build(:credit_card_transaction, member_id: customer) }
+        let(:t1) { build(:credit_card_transaction, member_id: customer, id: 'credit01') }
         let(:i1) { create(:invoice, member: customer, transaction_id: t1.id) }
-        let(:t2) { build(:credit_card_transaction, member_id: customer) }
+        let(:t2) { build(:credit_card_transaction, member_id: customer, id: 'credit02') }
         let(:i2) { create(:invoice, member: customer, transaction_id: t2.id) }
-        let(:t3) { build(:paypal_transaction, member_id: customer) }
+        let(:t3) { build(:paypal_transaction, member_id: customer, id: 'paypal01') }
         let(:i3) { create(:invoice, member: customer, transaction_id: t3.id) }
 
         before do

@@ -15,12 +15,12 @@ RSpec.describe BraintreeService::Notification, type: :model do
   let(:incoming_dispute_notification) { double(kind: ::Braintree::WebhookNotification::Kind::DisputeOpened, dispute: dispute, timestamp: Time.now) }
   let(:dispute) { build(:dispute) }
 
-  describe "Mongoid validations" do
-    it { is_expected.to be_mongoid_document }
-    it { is_expected.to be_stored_in(collection: 'braintree__notifications') }
+  it 'defines its Mongoid collection and fields', :aggregate_failures do
+    expect(described_class).to be_mongoid_document
+    expect(described_class).to be_stored_in(collection: 'braintree__notifications')
 
-    it { is_expected.to have_fields(:kind, :payload).of_type(String) }
-    it { is_expected.to have_field(:timestamp).of_type(Date) }
+    expect(described_class).to have_fields(:kind, :payload).of_type(String)
+    expect(described_class).to have_field(:timestamp).of_type(Date)
   end
 
   it "has a factory" do
@@ -518,16 +518,6 @@ RSpec.describe BraintreeService::Notification, type: :model do
 
       expect(BillingMailer).to have_received(:failed_payment).with(member.email, invoice.id.to_s, "past_due", "insufficient funds")
       expect(BraintreeService::Notification).to have_received(:enque_message).with(/past due\. Reason: insufficient funds\./, "UMEMBER", anything)
-    end
-
-    it "does not carry a stored reason into the next billing cycle's invoice" do
-      invoice.update!(last_failed_transaction_id: "tx_declined", last_failure_type: "hard_declined", last_failure_message: "the card has expired", settled_at: Time.now)
-
-      invoice.build_next_invoice
-
-      next_invoice = Invoice.where(subscription_id: invoice.subscription_id, settled_at: nil).ne(id: invoice.id).first
-      expect(next_invoice&.last_failure_type).to be_nil
-      expect(next_invoice&.last_failure_message).to be_nil
     end
   end
 

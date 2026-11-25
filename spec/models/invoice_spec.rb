@@ -2,30 +2,25 @@ require 'rails_helper'
 
 RSpec.describe Invoice, type: :model do
 
-  describe "Mongoid validations" do
-    it { is_expected.to be_mongoid_document }
-    it { is_expected.to be_stored_in(collection: 'invoices') }
+  it 'defines its Mongoid collection and fields', :aggregate_failures do
+    expect(described_class).to be_mongoid_document
+    expect(described_class).to be_stored_in(collection: 'invoices')
 
-    it { is_expected.to have_fields(:name,
-                                    :description,
-                                    :resource_id,
-                                    :resource_class,
-                                    :plan_id,
-                                    :transaction_id,
-                                    :last_failed_transaction_id,
-                                    :subscription_id,
-                                    :discount_id).of_type(String) }
-    it { is_expected.to have_field(:amount).of_type(Float) }
-    it { is_expected.to have_fields(:settled_at, :refund_requested).of_type(Time) }
-    it { is_expected.to have_field(:due_date).of_type(nil) }
-    it { is_expected.to have_field(:created_at).of_type(Time) }
-    it "sets created_at properly" do
-      # within 1 hour since initializatino times can vary
-      expect(build(:invoice).created_at.to_i).to be_within(60 * 60).of(Time.now.to_i)
-    end
-    it { is_expected.to have_field(:quantity).of_type(Integer).with_default_value_of(1) }
-    it { is_expected.to have_field(:refunded).of_type(Mongoid::Boolean).with_default_value_of(false) }
-    it { is_expected.to have_field(:operation).of_type(String).with_default_value_of('renew=') }
+    expect(described_class).to have_fields(
+      :name, :description, :resource_id, :resource_class, :plan_id, :transaction_id,
+      :last_failed_transaction_id, :subscription_id, :discount_id
+    ).of_type(String)
+    expect(described_class).to have_field(:amount).of_type(Float)
+    expect(described_class).to have_fields(:settled_at, :refund_requested).of_type(Time)
+    expect(described_class).to have_field(:due_date).of_type(nil)
+    expect(described_class).to have_field(:created_at).of_type(Time)
+    expect(described_class).to have_field(:quantity).of_type(Integer).with_default_value_of(1)
+    expect(described_class).to have_field(:refunded).of_type(Mongoid::Boolean).with_default_value_of(false)
+    expect(described_class).to have_field(:operation).of_type(String).with_default_value_of('renew=')
+  end
+
+  it "sets created_at properly" do
+    expect(build(:invoice).created_at.to_i).to be_within(60 * 60).of(Time.now.to_i)
   end
 
   describe "ActiveModel validations" do
@@ -83,24 +78,6 @@ RSpec.describe Invoice, type: :model do
           resource_class: "member"
         )
         expect(second_invoice).to_not be_valid
-      end
-
-      it "prevents duplicate unused member invoices without deleting the existing invoice" do
-        first_invoice = create(
-          :invoice, 
-          member: member, 
-          resource_id: member.id, 
-          resource_class: "member",
-        )
-        second_invoice = build(
-          :invoice, 
-          member: member, 
-          resource_id: member.id, 
-          resource_class: "member"
-        )
-        expect(second_invoice).to_not be_valid
-        expect(Invoice.where(resource_id: member.id).size).to eq(1)
-        expect(Invoice.find(first_invoice.id)).to be_truthy
       end
 
       it "does not restrict to one per rental" do
@@ -234,23 +211,21 @@ RSpec.describe Invoice, type: :model do
       end
 
       describe "build_next_invoice" do
-        it "copys the calling invoice and resets with updated dates" do
-          base_invoice = create(:invoice, settled_at: Time.now, refunded: true, due_date: Time.now, created_at: Time.now - 1.month)
+        it "copies the invoice and clears settlement, refund, and payment failure state" do
+          base_invoice = create(
+            :invoice, settled_at: Time.current, refunded: true, due_date: Time.current,
+            created_at: 1.month.ago, last_failed_transaction_id: "txn-that-failed",
+            last_failure_type: "hard_declined", last_failure_message: "the card has expired"
+          )
           base_invoice.build_next_invoice
-          new_invoice = Invoice.last
+          new_invoice = Invoice.where(subscription_id: base_invoice.subscription_id).ne(id: base_invoice.id).first
           expect(new_invoice.settled).to be_falsey
           expect(new_invoice.refunded).to be_falsey
           expect(new_invoice.past_due).to be_falsey
           expect(new_invoice.quantity).to eq(base_invoice.quantity)
-        end
-
-        it "does not carry a failed-payment flag from this cycle into the next" do
-          # A transient failure on this cycle (later paid successfully) must
-          # not cause a later, unrelated cancellation of next cycle's invoice
-          # to be misreported as payment-related.
-          base_invoice = create(:invoice, due_date: Time.now, settled_at: Time.now, last_failed_transaction_id: "txn-that-failed")
-          base_invoice.build_next_invoice
-          expect(Invoice.last.last_failed_transaction_id).to be_nil
+          expect(new_invoice.last_failed_transaction_id).to be_nil
+          expect(new_invoice.last_failure_type).to be_nil
+          expect(new_invoice.last_failure_message).to be_nil
         end
       end
     end
@@ -677,8 +652,7 @@ RSpec.describe Invoice, type: :model do
         "Please pay outstanding annual membership invoice for $65.50 dated 01/02/2026"
       )
 
-      # Non-destructive — the original invoice must still exist
-      expect(Invoice.find(first.id)).to be_present
+      expect(Invoice.where(resource_id: member.id).pluck(:id)).to eq([first.id])
     end
 
     it "allows a member invoice to be created even if the member has an existing unpaid fee invoice" do

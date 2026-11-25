@@ -159,20 +159,45 @@ costs appear in the live-agenda freshness measurements below.
 
 | Operation | Rows/channels | Read commands | BSON reply bytes | Total p50 | Total p95 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Order history, warm metadata | 50 rows | 102 → 3 | 346,470 → 11,698 | 1,613.21 → 78.29 | 1,624.91 → 79.10 |
-| Attendee history, warm metadata | 50 rows | 102 → 2 | 362,316 → 10,824 | 1,612.97 → 110.75 | 1,630.21 → 130.74 |
-| Canvas markdown | 50 rows | 102 → 4 | 131,195 → 14,008 | 1,628.52 → 79.59 | 1,645.64 → 93.64 |
-| Announcer, unchanged | 1 channel | 13 → 10 | 17,040 → 8,710 | 235.99 → 191.78 | 238.04 → 207.06 |
-| Announcer, canvas refresh | 1 channel | 40 → 18 | 51,538 → 16,210 | 773.92 → 424.93 | 784.72 → 441.80 |
-| Announcer, unchanged | 4 channels | 31 → 25 | 127,389 → 35,299 | 644.30 → 557.88 | 652.95 → 601.43 |
-| Announcer, canvas refresh | 4 channels | 139 → 57 | 332,845 → 69,223 | 2,716.11 → 1,442.29 | 2,810.34 → 1,492.45 |
+| Order history, warm metadata | 50 rows | 102 → 3 | 346,470 → 11,698 | 1,613.21 → 63.07 | 1,624.91 → 77.17 |
+| Attendee history, warm metadata | 50 rows | 102 → 2 | 362,316 → 10,824 | 1,612.97 → 75.25 | 1,630.21 → 102.11 |
+| Canvas markdown | 50 rows | 102 → 4 | 131,195 → 14,008 | 1,628.52 → 82.56 | 1,645.64 → 92.66 |
+| Announcer, unchanged | 1 channel | 13 → 10 | 17,040 → 8,710 | 235.99 → 188.42 | 238.04 → 201.19 |
+| Announcer, canvas refresh | 1 channel | 40 → 18 | 51,538 → 16,210 | 773.92 → 421.21 | 784.72 → 441.33 |
+| Announcer, unchanged | 4 channels | 31 → 25 | 127,389 → 35,299 | 644.30 → 539.15 | 652.95 → 585.39 |
+| Announcer, canvas refresh | 4 channels | 139 → 57 | 332,845 → 69,223 | 2,716.11 → 1,404.13 | 2,810.34 → 1,436.73 |
 
 Both 50-row cold history pages used four MongoDB reads after the change (order
-113.84 ms; attendee 163.40 ms), versus 102 before. The one-row canvas stayed at
-four reads. Small history pages show the extra Redis round trips: one-row warm
-order/attendee p50 changed from 63.50/62.79 ms to 79.27/95.40 ms despite fewer MongoDB
-reads. Cache benefits therefore depend on data size, repeated metadata and actual
-Redis/MongoDB latency; the table is not a production latency guarantee.
+96.66 ms; attendee 113.54 ms), versus 102 before. The one-row canvas stayed at
+four reads. Each warm metadata category uses one atomic Redis read, including its
+generation check. One-row warm order/attendee p50 remained roughly unchanged
+(63.50/62.79 ms before; 62.79/63.27 ms after). Cold fills still pay cache-publication
+overhead. Benefits depend on data size, repeated metadata and actual Redis/MongoDB
+latency; the table is not a production latency guarantee.
+
+### Live-agenda freshness (2026-11-21)
+
+Announcement reconciliation now refreshes linked canvases and repeats the live
+snapshot before comparing the final message fingerprint. Overnight carryover
+edits and cancellations therefore refresh the agenda even when today's starting
+rows are unchanged, including shops with only tool-users destinations. Successful
+unchanged-message runs also clear receipt retry state. Only the Slack message
+write is skipped; canvas rendering and I/O still run under the channel lease.
+
+The two announcer benchmark examples were rerun on the same local service versions
+and fixture sizes, with five measurements per path. Current costs are:
+
+| Operation | Channels | Read commands | Returned documents | BSON reply bytes | Total p50 (ms) | Total p95 (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Announcer, unchanged message | 1 | 18 | 52 | 16,279 | 426.55 | 502.71 |
+| Announcer, message update | 1 | 18 | 52 | 16,210 | 437.60 | 473.70 |
+| Announcer, unchanged message | 4 | 57 | 256 | 69,499 | 1,421.01 | 1,470.29 |
+| Announcer, message update | 4 | 57 | 256 | 69,223 | 1,438.52 | 1,473.54 |
+
+Unchanged-message reads rise from the historical 10/25 to 18/57 for one/four
+channels because the agenda and post-I/O snapshot can no longer be skipped.
+Changed-message read counts remain 18/57. Slack network calls are mocked, so
+these timings exclude real canvas latency and rate limits.
 
 ### Live-agenda freshness (2026-11-21)
 
@@ -215,6 +240,18 @@ Apply the indexes with `bundle exec rake data:ensure_unique_indexes` before
 deploying optimized readers. No environment variables, public schemas, client
 publication, React changes or wiki flow changes are needed for this optimization.
 
+### Validation
+
+Before the live-agenda freshness correction, the four-worker RSpec run completed
+4,504 examples with zero failures and
+three existing pending examples: the optional `SLACK_PROFILE_STATUS` and
+`SLACK_PROFILE_FULLNAME` fixtures were absent, and the secondary-household
+password-reset mail example remains disabled with `xit`. Strict transaction mode
+was enabled; no transaction examples were skipped, and the independent probe
+verified real commit and rollback. The opt-in read/index benchmarks passed all
+eight examples. A separate 42-example follow-up passed the current versions of
+three test files edited while the full run was active. These results cover the
+combined Rails workspace, including the accompanying volunteer weekday changes.
 ### Canvas refresh validation
 
 The live-agenda correction passed 136 related service, canvas, job and model

@@ -1,19 +1,19 @@
 require 'rails_helper'
 
 RSpec.describe Location, type: :model do
-  describe "Mongoid validations" do
-    it { is_expected.to be_mongoid_document }
-    it { is_expected.to be_stored_in(collection: 'locations') }
+  it 'defines its Mongoid collection and fields', :aggregate_failures do
+    expect(described_class).to be_mongoid_document
+    expect(described_class).to be_stored_in(collection: 'locations')
 
-    it { is_expected.to have_field(:name).of_type(String) }
-    it { is_expected.to have_field(:kind).of_type(String) }
-    it { is_expected.to have_field(:parent_id).of_type(BSON::ObjectId) }
-    it { is_expected.to have_field(:svg_element_id).of_type(String) }
-    it { is_expected.to have_field(:x_pct).of_type(Float) }
-    it { is_expected.to have_field(:y_pct).of_type(Float) }
-    it { is_expected.to have_field(:shape_points).of_type(Array) }
-    it { is_expected.to have_field(:floor_name).of_type(String) }
-    it { is_expected.to have_field(:icon).of_type(String) }
+    expect(described_class).to have_field(:name).of_type(String)
+    expect(described_class).to have_field(:kind).of_type(String)
+    expect(described_class).to have_field(:parent_id).of_type(BSON::ObjectId)
+    expect(described_class).to have_field(:svg_element_id).of_type(String)
+    expect(described_class).to have_field(:x_pct).of_type(Float)
+    expect(described_class).to have_field(:y_pct).of_type(Float)
+    expect(described_class).to have_field(:shape_points).of_type(Array)
+    expect(described_class).to have_field(:floor_name).of_type(String)
+    expect(described_class).to have_field(:icon).of_type(String)
   end
 
   describe "ActiveModel validations" do

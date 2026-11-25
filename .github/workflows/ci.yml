@@ -239,7 +239,7 @@ jobs:
       OTP_SECRET_KEY: fZ4zRjsUzonEkqfj1zEB1NuxGcLR1VviOY5Oit5CtqI=
       APP_DOMAIN: http://localhost:3035
       RAILS_SERVE_STATIC_FILES: 'true'
-      SLACK_ADMIN_TOKEN: dummy
+      SLACK_ADMIN_TOKEN: ''
       SLACK_SIGNING_SECRET: dummy
       FIREBASE_API_KEY: dummy
       FIREBASE_PROJECT_ID: dummy
@@ -250,6 +250,7 @@ jobs:
       SMTP_FROM: dummy@example.com
       HONEYBADGER_API_KEY: dummy
       HONEYBADGER_ENV: test
+      HONEYBADGER_REPORT_DATA: 'false'
       BT_ENV: sandbox
       BT_MERCHANT_ID: ${{ secrets.BT_MERCHANT_ID }}
       BT_PUBLIC_KEY: ${{ secrets.BT_PUBLIC_KEY }}
@@ -319,10 +320,50 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright tests
+        id: playwright_primary
         working-directory: ui
         env:
           RAILS_DIR: ${{ github.workspace }}
+          SKIP_DB_RESET: 'true'
         run: npx playwright test
+
+      - name: Run Playwright backups for failed consolidated tests
+        if: ${{ failure() && steps.playwright_primary.outcome == 'failure' }}
+        env:
+          PORT: 3036
+          MLAB_URI: mongodb://localhost:27017/makerspace_test_playwright_backups?replicaSet=rs0
+          REDIS_URL: redis://localhost:6379/1
+          APP_DOMAIN: http://localhost:3036
+          APP_URL: http://localhost:3036
+          RAILS_DIR: ${{ github.workspace }}
+          RAILS_LOG_TO_STDOUT: 'true'
+          SKIP_DB_RESET: 'true'
+        run: |
+          if [[ ! -f ui/scripts/select-playwright-backups.cjs || ! -f ui/playwright.backups.config.ts ]]; then
+            echo 'The selected React ref has no Playwright backup configuration.'
+            exit 0
+          fi
+          selected="$(node ui/scripts/select-playwright-backups.cjs)"
+          if [[ -z "$selected" ]]; then
+            exit 0
+          fi
+          mapfile -t backup_specs <<< "$selected"
+
+          bundle exec ruby scripts/ci/verify-mongo-transactions.rb
+          bundle exec rake db:db_reset
+          bundle exec rails s -b 127.0.0.1 -p "$PORT" --pid tmp/pids/playwright-backup.pid > log/e2e_rails_backup.log 2>&1 &
+          backup_pid=$!
+          trap 'kill "$backup_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent --max-time 3 "$APP_URL/api/config" > /dev/null; then
+              (cd ui && npx playwright test --config=playwright.backups.config.ts "${backup_specs[@]}")
+              exit $?
+            fi
+            kill -0 "$backup_pid" 2>/dev/null || break
+            sleep 3
+          done
+          echo 'Rails did not become ready for the Playwright backups.'
+          exit 1
 
       - name: MongoDB logs on failure
         if: failure()
@@ -336,6 +377,9 @@ jobs:
           path: |
             ui/tmp/playwright-results/
             ui/tmp/playwright-report/
+            ui/tmp/playwright-primary.json
+            ui/tmp/playwright-backup-results/
+            ui/tmp/playwright-backup-report/
           retention-days: 7
 
       - name: Upload Rails server log
@@ -343,5 +387,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: rails-server-log
-          path: log/e2e_rails_server.log
+          path: |
+            log/e2e_rails_server.log
+            log/e2e_rails_backup.log
           retention-days: 7

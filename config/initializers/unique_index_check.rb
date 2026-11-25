@@ -1,4 +1,8 @@
 Rails.application.config.after_initialize do
+  # Compiling static assets does not use the tools collection.
+  next if defined?(Rake) && Rake.respond_to?(:application) &&
+    Rake.application.top_level_tasks == ['assets:precompile']
+
   begin
     tool_indexes = begin
       Mongoid.default_client[:tools].indexes.to_a

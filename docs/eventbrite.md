@@ -142,6 +142,15 @@ replace it with an active-only filter, which could hide refunded history. The
 backfill imports every order returned by the unfiltered listing. Verify known
 refunded orders against the live response before relying on historical completeness;
 provider-side default exclusions cannot be established by mocked tests.
+Orders returned by an event-scoped listing reuse that listing's known event when
+their `event_id` is omitted, null or blank; expanded attendees inherit the same
+event. An explicit different ID still resolves the destination event, preserving
+order transfers and organization restrictions. Without either a known parent or
+an event ID, synchronization fails before constructing an empty API path.
+If an order backfill stopped with `shape=events//; flags=repeated_slash`, deploy
+this parent-event fallback and resume its existing run with `RESUME_RUN_ID`.
+Completed page checkpoints are retained; replay within the failed page is
+idempotent, though processed counters can include replayed orders.
 When the organization allowlist is blank, each new run discovers organizations
 through the paginated `users/me/organizations/` API using the same throttled client.
 With an allowlist, new runs use those configured IDs instead.

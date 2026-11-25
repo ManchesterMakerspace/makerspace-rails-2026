@@ -204,10 +204,18 @@ conditions are included where they are part of the index contract.
 | `tools` | `Tool` | Tool catalog, shop ownership, Safety Checkout prerequisites, and reservation rules. | Unique case-insensitive `{ shop_id: 1, name: 1 }` with `en` strength-2 collation, partial when `name` is a string; `{ shop_id: 1, name: 1, _id: 1, disabled: 1 }` with the same collation |
 | `volunteer_credits` | `VolunteerCredit` | Volunteer credit awards, approvals, discounts, and reversals. | `{ member_id: 1 }` (also enforced as non-unique by the deployment task); `{ status: 1 }`; `{ created_at: 1 }`; unique `{ tool_checkout_id: 1 }`, partial when `tool_checkout_id` is an object ID |
 | `volunteer_events` | `VolunteerEvent` | Volunteer events, attendees, eligibility prerequisites, and open/closed state. | `{ status: 1 }`; `{ status: 1, event_date: 1 }` (deployment task); unique `{ event_number: 1 }`; `{ shop_id: 1 }` |
-| `volunteer_tasks` | `VolunteerTask` | Volunteer bounties/tasks, claims, verification, recurrence, and credit values. | `{ status: 1 }`; `{ status: 1, completed_at: 1 }` (deployment task); `{ claimed_by_id: 1 }`; `{ parent_task_id: 1 }`; `{ shop_id: 1 }`; unique `{ task_number: 1 }` |
+| `volunteer_tasks` | `VolunteerTask` | Volunteer bounties/tasks, claims, verification, recurrence, credit values, and optional parent-task weekday restrictions (`day_of_week`). | `{ status: 1 }`; `{ status: 1, completed_at: 1 }` (deployment task); `{ claimed_by_id: 1 }`; `{ parent_task_id: 1 }`; `{ shop_id: 1 }`; unique `{ task_number: 1 }` |
 
 `EarnedMembership::ReportRequirement` is not listed as a collection because it
 is embedded inside `earned_membership__report` documents.
+
+`volunteer_tasks.day_of_week` is an optional integer, `0` (Sunday) through `6`
+(Saturday), defaulting to null. Missing legacy values also mean any day. It
+restricts new claims only on top-level `reusable`, `repeatable`, and `recurring`
+tasks, using the date in `America/New_York`. Child claims do not inherit the
+restriction. Retained metadata on single-use or cancelled tasks is ignored, so
+existing claims and lifecycle updates remain available. This adds no collection,
+index, backfill, or change to the existing recurring cooldown fields.
 
 ## Volunteer approval reminder receipts
 

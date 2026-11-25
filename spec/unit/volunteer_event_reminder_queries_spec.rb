@@ -9,11 +9,14 @@ RSpec.describe 'Volunteer approval reminder job query selection' do
   let(:job) { VolunteerEventReminderJob.new }
 
   before do
-    stub_const('ApplicationJob', Class.new do
-      def self.queue_as(_queue); end
-    end)
-    stub_const('VolunteerEventReminderJob', Class.new(ApplicationJob))
-    load File.expand_path('../../app/jobs/volunteer_event_reminder_job.rb', __dir__)
+    # Rails registers an autoload for the real job. Keep its ApplicationJob superclass.
+    unless defined?(VolunteerEventReminderJob)
+      stub_const('ApplicationJob', Class.new do
+        def self.queue_as(_queue); end
+      end)
+      stub_const('VolunteerEventReminderJob', Class.new(ApplicationJob))
+      load File.expand_path('../../app/jobs/volunteer_event_reminder_job.rb', __dir__)
+    end
 
     %w[VolunteerTask VolunteerEvent].each do |name|
       model_class = Class.new do

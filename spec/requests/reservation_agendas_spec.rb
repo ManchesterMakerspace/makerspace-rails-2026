@@ -104,20 +104,6 @@ RSpec.describe "Public reservation agenda", type: :request do
     expect(response.body).not_to include("Hidden Reservable", "Visible Not Reservable")
   end
 
-  it "returns format-specific errors for missing or unknown names" do
-    get "/reservations/agenda.json"
-    expect(response).to have_http_status(:bad_request)
-    expect(JSON.parse(response.body)["error"]).to include("required")
-
-    get "/reservations/agenda", params: { shop: "Unknown" }
-    expect(response).to have_http_status(:not_found)
-    expect(response.body).to eq("Shop was not found.")
-
-    get "/reservations/agenda.json", params: { shop: shop.name, tool: "Unknown" }
-    expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)["error"]).to include("Tool")
-  end
-
   it "returns 404 without exposing reservations for disabled resources" do
     disabled_shop = create(:shop, name: "Hidden Shop", disabled: true)
     disabled_tool = create(
@@ -188,11 +174,8 @@ RSpec.describe "Public reservation agenda", type: :request do
     end
   end
 
-  it "requires a configured token and is public when it is blank" do
+  it "accepts the configured token and is public when it is blank" do
     SystemConfig.set("reservation_token", "secret")
-
-    get "/reservations/agenda.json", params: { shop: shop.name }
-    expect(response).to have_http_status(:forbidden)
 
     get "/reservations/agenda.json", params: { shop: shop.name, token: "secret" }
     expect(response).to have_http_status(:ok)

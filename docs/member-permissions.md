@@ -259,6 +259,21 @@ assignments or manager permissions, revoke records, or change member status.
 An eligible owner may request renewal; unresolved revoked checkouts still need
 admin/board reinstatement. Superseded history grants no checkout-derived rights.
 
+## Volunteer task weekdays
+
+An optional weekday limits new claims on top-level reusable, repeatable, and
+recurring tasks to that weekday in `America/New_York`. The server checks the
+current date again when claiming, including for Admin, Board, and Resource
+Manager roles; a privileged prerequisite exemption does not bypass the weekday.
+Existing membership, shop, prerequisite, repair-ticket, and cooldown rules still
+apply. A blank weekday permits any day.
+
+Task lists, public bounty feeds, Home recommendations, and Slack listings use
+the same claimable scope. Existing claims may still be completed, released, and
+reviewed on another day through their existing authorized flows. Single-use
+tasks and existing child claims are not restricted by stored weekday metadata. No member
+status or permission record is added or changed by this option.
+
 ## Eventbrite history
 
 Resource Managers, Board and Admins can read imported Eventbrite events, orders,

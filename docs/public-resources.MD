@@ -49,6 +49,7 @@ document that follows the structure below.
 
 | Route pattern | HTTP method | Intended audience/device | Authentication or token behavior | Supported formats | Required parameters | Optional parameters | Owning controller | Feature document |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `/api/config` | `GET` | Portal browser/PWA/native clients before login | No member session | JSON | None | None | `ClientConfigController#index` | [Runtime configuration](#public-runtime-configuration), [environment variables](environment-vars.MD) |
 | `/api/members/sign_in` | `POST` | Portal browser/PWA/native clients | Password authentication or existing session/remember cookie; CSRF protected; TOTP may be required | JSON | `member.email`, `member.password` for credential login; empty body for restoration | `member.rememberMe` (default false, phones only) | `SessionsController#create` | [Authentication](authentication.md) |
 | `/api/auth/firebase_login` | `POST` | Portal provider-login clients | Verified Firebase credential; CSRF protected; TOTP may be required | JSON | `id_token` | `rememberMe` (default false, phones only) | `FirebaseAuthController#login` | [Authentication](authentication.md) |
 | `/manifest.webmanifest`, `/service-worker.js`, `/offline.html`, `/pwa-icon.png`, `/pwa-icon-192.png`, `/pwa-icon-512.png` | `GET` | Installable member portal | Public static files; manifest references 192×192 and 512×512 PNG icons; offline page contains no member data | Manifest JSON, JS, HTML, PNG | None | None | Static public file server | [NFC/mobile deployment](../../makerspace-react-2026/docs/nfc-mobile.md) |
@@ -57,6 +58,45 @@ document that follows the structure below.
 | `/api/rental_spots/:id/public` | `GET` | QR/deep-link visitors and Member Portal pre-login landing pages | No member session or token | JSON | `id` (path; MongoDB ID or spot number) | None | `RentalSpotsController#public_show` | [Public rental spots](rental-spots.MD) |
 | `/volunteer/bounties` | `GET` | Public displays, integrations, and prospective volunteers | No member session; shared `token` required only when volunteer token gating is enabled | HTML, JSON, XML | None | `shop`, `token` (query); `.json`/`.xml` extension or matching `Accept` header | `Volunteer::BountiesController#index` | [Public volunteer resources](volunteer-public-resources.MD#bounties) |
 | `/volunteer/leaderboard` | `GET` | Public displays, browsers, and integrations | No member session; shared `token` required only when volunteer token gating is enabled | HTML, JSON | None | `token` (query); `.json` extension or JSON `Accept` header | `Volunteer::LeaderboardController#index` | [Public volunteer resources](volunteer-public-resources.MD#leaderboard) |
+
+## Public runtime configuration
+
+`GET /api/config` includes numeric `volunteer_task_max_credit`, the effective
+ordinary task-creation maximum from the portal setting or existing environment
+fallback (default `2.0`). This is safe public form guidance; the server remains
+authoritative. Existing task edits and volunteer events remain uncapped, and
+linked repair-bounty creation retains its separate maximum. Existing public
+Firebase, wiki, app-domain, and optional Turnstile settings are unchanged; no
+credential or private provider payload is added. See the executable
+[configuration contract](../spec/api/client_config_spec.rb).
+
+## Volunteer task weekdays and Home opportunities
+
+Authenticated task JSON adds nullable integer `dayOfWeek` (`0` Sunday through
+`6` Saturday). Admin task create/update accepts `day_of_week` (or normal camel
+JSON input); omission preserves the existing value on update, while null/blank
+clears it. The restriction applies only to new claims on multi-use parent tasks
+and uses `America/New_York`; role authorization, CSRF, prerequisites, and
+existing-claim actions are unchanged. The public `/volunteer/bounties` JSON/XML
+feeds add snake-case `day_of_week` and omit tasks unavailable on the current
+Eastern weekday. See [public volunteer feeds](volunteer-public-resources.MD).
+
+`GET /api/home` still requires the current member's completed session/TOTP and
+returns `private, no-store`. `availableVolunteerOpportunities` is one flat array
+of up to five eligible tasks matching today's weekday, followed by up to five
+other eligible tasks/events; each group sorts by credits descending, title, and
+ID. All weekday-priority candidates are removed from the second pool, including
+those beyond its first five. Existing active-member and claim/attendance
+eligibility applies. The recommendation item shape is unchanged; no extra
+weekday field or separator is added to this Home array.
+
+Admin task/event validation errors preserve HTTP 422 and
+`{status, error: "unprocessable_content", message}`, with concise human
+`message` and additive `errors` field arrays. Task creation still enforces its
+existing maximum; existing task edits and event credits remain uncapped. See
+[task](../spec/api/volunteer_task_responses_spec.rb),
+[event](../spec/api/volunteer_event_responses_spec.rb), and
+[Home](../spec/api/home_spec.rb) executable contracts.
 
 ## Repository boundary
 

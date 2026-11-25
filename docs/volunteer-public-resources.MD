@@ -54,6 +54,9 @@ characters, such as `shop=Metal%20Shop`.
 
 Only currently claimable, parent-level tasks are returned. Child tasks spawned
 from multi-use claims and recurring tasks that are cooling down are excluded.
+An optional weekday on reusable, repeatable, or recurring parents further
+restricts the feed to that weekday in `America/New_York`; null or a missing
+legacy value permits any day. This filtering applies to HTML, JSON, and XML.
 Results are ordered by task number. JSON and XML expose these public task
 fields:
 
@@ -67,6 +70,7 @@ fields:
 - `prerequisite_tools`
 - `claimed_at`
 - `next_available`
+- `day_of_week` — nullable integer `0` (Sunday) through `6` (Saturday)
 
 An empty set is a successful response, not a not-found error. Task descriptions
 and shop/tool associations are public through these feeds, so private volunteer
@@ -148,3 +152,11 @@ Authenticated task projections also redact hidden IDs/names unless the viewer
 has catalog-management permission. These display rules do not remove stored
 prerequisites or change checkout requirements. Linked legacy bounties never
 expose creator identity when that creator is the anonymous ticket reporter.
+
+### Held wiki update
+
+The unpublished [weekday/Home wiki patch](wiki-volunteer-weekdays.patch)
+updates the management, volunteer-credit, Home/navigation, and troubleshooting
+pages. Hold it until the matching Rails and React changes are deployed; refresh
+it against current WikiPages `master` and publish through the normal review
+workflow. This local patch has not changed the live wiki.

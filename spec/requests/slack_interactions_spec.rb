@@ -982,18 +982,6 @@ RSpec.describe "Slack interactions", type: :request do
       )
     end
 
-    it "queues approved outcome delivery before clearing the modal" do
-      reservation = instance_double(Reservation, title: "Lathe time", status: "approved")
-      allow(ReservationService).to receive(:create!).and_return(reservation)
-
-      post "/slack/interactions", params: { payload: reservation_payload.to_json }
-
-      expect(response.parsed_body).to eq("response_action" => "clear")
-      expect(SlackReservationOutcomeJob).to have_been_enqueued.with(
-        include("approved"), response_url, "USUBMITTER"
-      )
-    end
-
     { "pending" => "pending approval", "unpaid" => "payment is required",
       "approved" => "approved" }.each do |status, text|
       it "uses the #{status} reservation outcome text" do

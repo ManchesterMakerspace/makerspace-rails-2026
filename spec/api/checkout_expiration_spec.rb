@@ -142,7 +142,7 @@ RSpec.describe 'Checkout expiration API', type: :request do
         schema type: :object, required: ['message'], properties: { message: { type: :string } }
         context 'checkout expiration notices' do
           before { allow(CheckoutExpirationNoticeJob).to receive(:perform_later) }
-          run_test! { expect(CheckoutExpirationNoticeJob).to have_received(:perform_later) }
+          run_test! { expect(CheckoutExpirationNoticeJob).to have_received(:perform_later).once }
         end
         context 'reservation announcements run by an Admin' do
           let(:body) { { key: 'reservation_slack_announcements' } }
@@ -157,7 +157,8 @@ RSpec.describe 'Checkout expiration API', type: :request do
       response '403', 'Only Admins and Board may run jobs; checkout expiration notices are admin-only' do
         context 'Board member running checkout expiration notices' do
           let(:actor) { create(:member, :board_member, :current) }
-          run_test!
+          before { allow(CheckoutExpirationNoticeJob).to receive(:perform_later) }
+          run_test! { expect(CheckoutExpirationNoticeJob).not_to have_received(:perform_later) }
         end
         %w[resource_manager member].each do |role|
           context "#{role} running reservation announcements" do
@@ -184,15 +185,6 @@ RSpec.describe 'Checkout expiration API', type: :request do
   end
 
   describe 'expiration notice administration' do
-    it 'permits admin execution and rejects board execution' do
-      expect(CheckoutExpirationNoticeJob).to receive(:perform_later).once
-      post '/api/admin/system_configs/run_job', params: { key: 'checkout_expiration_notice' }
-      expect(response).to have_http_status(:ok)
-      sign_in create(:member, :board_member, :current)
-      post '/api/admin/system_configs/run_job', params: { key: 'checkout_expiration_notice' }
-      expect(response).to have_http_status(:forbidden)
-    end
-
     it 'validates notice days and retains the default' do
       %w[3 0 -1 4.5 text].each do |value|
         put '/api/admin/system_configs/update_setting', params: { key: 'checkout_expiration_notice_days', value: value }

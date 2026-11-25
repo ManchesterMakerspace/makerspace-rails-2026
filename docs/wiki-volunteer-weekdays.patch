@@ -1,0 +1,100 @@
+diff --git a/digital-makerspace/members/home-and-navigation.md b/digital-makerspace/members/home-and-navigation.md
+index 8b8a2a1..f1fdcb1 100644
+--- a/digital-makerspace/members/home-and-navigation.md
++++ b/digital-makerspace/members/home-and-navigation.md
+@@ -32,6 +32,8 @@ Under it you may see a note asking you to accept your Slack invite (check your e
+ 
+ Tasks and events you can take part in to help run the makerspace. Volunteer activities earn points, and each opportunity shows what it is worth (the portal labels this "volunteer credit"). Use **Claim Task** to take a task, or **Join Event** to sign up for an event. When you finish a task, mark it complete in the **Volunteer** tab on your profile. Points are added after the work is reviewed.
+ 
++The list starts with up to five eligible, unclaimed bounty tasks assigned to today's weekday, using Eastern time. Up to five other eligible opportunities follow in the same list. Each group runs from highest to lowest credit value. Tasks scheduled for another weekday, tasks you cannot claim and events you have already joined are left out. Existing claims remain under **My Active Claims** on your profile, including on other weekdays.
++
+ ### Available safety checkouts
+ 
+ The tools you can ask to be checked out on. Each shows the tool and its shop, any note from the shop's Resource Manager, and a **Request Safety Checkout** button. See [Request a Tool Checkout](/digital-makerspace/members/request-a-checkout).
+diff --git a/digital-makerspace/troubleshooting.md b/digital-makerspace/troubleshooting.md
+index 6bbd6bb..9b08e8b 100644
+--- a/digital-makerspace/troubleshooting.md
++++ b/digital-makerspace/troubleshooting.md
+@@ -82,6 +82,14 @@ You need an active membership and no past-due invoices. See [Rent a Storage Spac
+ 
+ ## Volunteering
+ 
++### A new bounty task's credit value exceeds the maximum
++
++The message names the maximum allowed for a new task. Lower **Credit Value** to that value or less, then choose **Submit** again. Your other entries stay in the form. Ask an admin to review the configured limit if necessary. Existing task edits and volunteer events have no upper credit limit; all credit values must be positive.
++
++### A weekday task is missing or cannot be claimed
++
++Reusable, repeatable and recurring tasks with a **Day of week** appear and accept new claims only on that weekday, using Eastern time. Recurring cooldowns and prerequisite checkouts still apply. Home shows at most five matching weekday tasks and five other opportunities. If you already claimed the task, open **My Profile**, then **Volunteer** and **My Active Claims** to finish it, even on another weekday.
++
+ ### My volunteer work does not show yet
+ 
+ Points are added after the work is reviewed. If you completed a task, mark it complete in the **Volunteer** tab on your profile, then ask in #discuss-talk-to-the-board if it has not been recognized after a few days.
+diff --git a/volunteer-credit.md b/volunteer-credit.md
+index 3cd994b..1420d27 100644
+--- a/volunteer-credit.md
++++ b/volunteer-credit.md
+@@ -26,6 +26,8 @@ Bounties are tasks the makerspace wants done. They are displayed on the TVs arou
+ 
+ Some tasks can only be claimed once, some can be repeated, and some come back on a schedule. The task description tells you which.
+ 
++Reusable, repeatable and recurring tasks can also be assigned a **Day of week**. They appear among available tasks and accept new claims only on that weekday, using Eastern time. Prerequisite checkouts and recurring cooldowns still apply. After claiming a task, you can find it under **My Active Claims** and mark it complete on another day.
++
+ See [Bounties](/volunteer-credit/open-projects) for the kinds of jobs that come up.
+ 
+ ## Monthly volunteer and cleanup days
+diff --git a/volunteer-credit/management.md b/volunteer-credit/management.md
+index cdf92ec..42df0e5 100644
+--- a/volunteer-credit/management.md
++++ b/volunteer-credit/management.md
+@@ -26,14 +26,15 @@ The **Bounty Tasks** tab lists each task with its number, title, description, po
+ 
+ 1. Choose **Create Task**.
+ 2. Fill in the **Title** and **Description**, both required.
+-3. Set the **Credit Value**, which is the points the task is worth. Task creation allows 0.5 to 2 in steps of 0.5.
++3. Set the **Credit Value**, which is the points the task is worth. Enter a positive value. The form shows the current maximum for new tasks; if you exceed it, the message names the maximum and you can correct the value without re-entering the other fields.
+ 4. Choose the **Task Type**:
+    - **Standard (one-time)**: one member does it once.
+    - **Reusable (any member once)**: each member can do it once.
+    - **Repeatable (any member, unlimited)**: members can do it as often as they like.
+    - **Recurring (repeatable with cooldown)**: it can be done again after a number of days. You enter the **Recurrence Interval (days)**.
+-5. Optionally choose a **Shop**, and **Prerequisite tool checkouts** that a member needs before they can claim it.
+-6. Choose **Submit**.
++5. For a reusable, repeatable or recurring task, optionally set **Day of week**. **Any day** leaves it unrestricted. Choosing a weekday makes new claims available only on that weekday, using Eastern time. Recurring cooldowns and prerequisite checkouts still apply.
++6. Optionally choose a **Shop**, and **Prerequisite tool checkouts** that a member needs before they can claim it.
++7. Choose **Submit**.
+ 
+ ### Task statuses
+ 
+@@ -50,7 +51,7 @@ The **Bounty Tasks** tab lists each task with its number, title, description, po
+ 
+ Tick a task to see what you can do:
+ 
+-- **Edit** changes the title, description, recurrence interval and points value. Admin and board edits to the value have no upper limit, and every edit is recorded in the audit log.
++- **Edit** changes the title, description, recurrence interval, day of week and points value. Admin and board edits to the value have no upper limit, and every edit is recorded in the audit log. Changing the weekday affects new claims; members can still finish existing claims on another day.
+ - **Cancel** withdraws a task that is still open.
+ - **Delete** removes a completed task.
+ 
+@@ -73,6 +74,8 @@ The list shows each event with its points, attendee count and status. **Filter b
+ 
+ Members join an event from their Home page with **Join Event**.
+ 
++Events require a positive credit value and have no upper credit limit. The maximum shown for creating a bounty task does not apply to events.
++
+ ## The Credits tab
+ 
+ This tab is the log of every award. **Filter by Status** shows all, pending, approved, rejected or reversed entries. Each entry shows the member, what it was for, the points and the status: **Approved**, **Pending**, **Rejected** or **Reversed**.
+@@ -88,9 +91,10 @@ Some entries are added automatically. For example, an approver's work on a tool
+ 
+ | Problem | What to check |
+ | --- | --- |
+-| A member cannot claim a task | They may not meet the prerequisite checkouts, or they reported the task themselves. |
+-| A task is not on the Home page | It may be claimed, cancelled or outside the member's shop. |
++| A member cannot claim a task | Check its **Day of week**, recurring cooldown and prerequisite checkouts. A weekday restriction also applies to admins, board members and Resource Managers. |
++| A task is not on the Home page | It may be claimed, cancelled, ineligible for the member or scheduled for another weekday. Home shows at most five matching weekday tasks, then five other opportunities. |
++| Credit value exceeds the maximum | Reduce the new task's value to the maximum named in the message. An admin can review the configured limit if it needs changing. Your other form entries are kept. |
+ | Points are missing | The task may still be **Pending Verification**, or the event may not be closed yet. |
+ | Points were awarded by mistake | Use **Reverse Credit** and give a reason. |
+ 
+-*Last reviewed: October 2026*
++*Last reviewed: November 2026*

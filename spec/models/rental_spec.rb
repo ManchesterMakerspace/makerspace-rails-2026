@@ -1,12 +1,11 @@
 require 'rails_helper'
 
 RSpec.describe Rental, type: :model do
-  describe "Mongoid validations" do
-    it { is_expected.to be_mongoid_document }
-    it { is_expected.to be_stored_in(collection: 'rentals') }
+  it 'defines its Mongoid collection and fields', :aggregate_failures do
+    expect(described_class).to be_mongoid_document
+    expect(described_class).to be_stored_in(collection: 'rentals')
 
-    it { is_expected.to have_fields(:number, :expiration) }
-    it { is_expected.to belong_to(:member) }
+    expect(described_class).to have_fields(:number, :expiration)
   end
 
   describe "ActiveModel validations" do

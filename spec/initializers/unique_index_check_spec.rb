@@ -1,4 +1,5 @@
 require 'rails_helper'
+require 'rake'
 
 RSpec.describe 'Tool unique index startup check' do
   def run_check(indexes)
@@ -21,5 +22,13 @@ RSpec.describe 'Tool unique index startup check' do
     indexes = [{ 'key' => { 'name' => 1 }, 'unique' => true,
                  'collation' => { 'locale' => 'en', 'strength' => 2 } }]
     expect { run_check(indexes) }.to output(/tools\.\(shop_id, name\) is missing/).to_stderr
+  end
+
+  it 'precompiles assets without opening a MongoDB connection for the index check' do
+    allow(Rake.application).to receive(:top_level_tasks).and_return(['assets:precompile'])
+    allow(Rails.application.config).to receive(:after_initialize).and_yield
+    expect(Mongoid).not_to receive(:default_client)
+
+    load Rails.root.join('config/initializers/unique_index_check.rb')
   end
 end
