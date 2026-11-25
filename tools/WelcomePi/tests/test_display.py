@@ -31,6 +31,7 @@ class Layout(unittest.TestCase):
             box = (5, 19, w - 31, h - 8)
             self.assertEqual((frame.size, frame.getbbox(), pages), ((w, h), box, count))
             self.assertEqual(frame.crop(box).tobytes(), expected.tobytes())
+            self.assert_intact_qr(frame.crop(box), dimmed=True)
         with self.assertRaisesRegex(ValueError, "no visible area"):
             render((800, 480), Screen(0), self.now, {}, insets=(400, 0, 400, 0))
 
@@ -167,6 +168,49 @@ class Layout(unittest.TestCase):
                             corners.add((box[0] + box[2] < size[0], box[1] + box[3] < size[1]))
                     self.assertEqual(len(positions), 1)
                 self.assertEqual(len(corners), 4)
+
+    def test_spare_row_before_volunteers_preserves_page_contents_and_qr_position(self):
+        size = (800, 480)
+        canvas = Canvas(size)
+        # Baseline capacity for a single check-in row and the two section headings.
+        available = size[1] - canvas.header_height(True) - 2 * canvas.pad - canvas.small.size
+        checkins_height = 2 * canvas.line + canvas.small.size
+        capacity = (available - checkins_height) // canvas.line - 1
+        names = [f"Leader{i}" for i in range(capacity + 1)]
+        data = {"recent": [("Sam", "8 AM")], "leaders": [(name, "") for name in names]}
+        boxes = []
+        for page, expected_gap in enumerate((0, canvas.line)):
+            with patch.object(canvas, "heading", wraps=canvas.heading) as headings, \
+                    patch.object(canvas, "text", wraps=canvas.text) as text:
+                self.assertEqual(canvas.board(Screen(0), self.now, "November 23", data, page), 2)
+            checkins, leaders, work = [call.args[1] for call in headings.call_args_list]
+            self.assertEqual(leaders - checkins - checkins_height, expected_gap)
+            self.assertEqual(work, leaders)
+            visible = [call.args[2] for call in text.call_args_list if call.args[2] in names]
+            self.assertEqual(visible, names[page * capacity:(page + 1) * capacity])
+            boxes.append(self.assert_intact_qr(canvas.image, dimmed=False))
+        self.assertEqual(boxes[0], boxes[1])
+
+    def test_roomy_board_grows_qr_after_reserving_a_blank_row(self):
+        for size in ((1280, 720), (720, 1280)):
+            for variant, dimmed in product(range(4), (False, True)):
+                canvas = Canvas(size, variant=variant, dimmed=dimmed, stroke=1)
+                data = {"recent": [("Sam", "8 AM")], "opportunities": [("Sweep", "1 pt")]}
+                screen = Screen(0)
+                date = "Sunday, November 22"
+                with patch.object(canvas, "aligned_text", wraps=canvas.aligned_text) as labels:
+                    canvas.header(screen, self.now, date)
+                baseline = [(c.args[3], c.args[4].size) for c in labels.call_args_list]
+                original = self.assert_intact_qr(canvas.image, dimmed)
+                with patch.object(canvas, "heading", wraps=canvas.heading) as headings, \
+                        patch.object(canvas, "aligned_text", wraps=canvas.aligned_text) as labels:
+                    self.assertEqual(canvas.board(screen, self.now, date, data, 0), 1)
+                self.assertEqual([(c.args[3], c.args[4].size) for c in labels.call_args_list[:2]], baseline)
+                checkins, leaders, work = [call.args[1] for call in headings.call_args_list]
+                self.assertEqual(leaders - checkins, 3 * canvas.line + canvas.small.size)
+                self.assertEqual(work, leaders)
+                enlarged = self.assert_intact_qr(canvas.image, dimmed)
+                self.assertGreater(enlarged[2] - enlarged[0], original[2] - original[0])
 
     def test_each_palette_keeps_text_readable_and_dim_mode_reduces_peak_brightness(self):
         def luminance(color):

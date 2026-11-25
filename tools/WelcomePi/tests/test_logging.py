@@ -117,7 +117,8 @@ class SyslogTests(unittest.TestCase):
                 packet = server.recv(9000).decode()
                 if "[udp-test]" in packet:
                     messages.append(packet)
-        self.assertEqual(stderr.getvalue(), "")
+        # Apply the same isolation to stderr as to the UDP packets above.
+        self.assertNotIn("[udp-test]", stderr.getvalue())
         for line, prefix in zip(messages, ("<30>", "<28>", "<27>", "<31>")):
             self.assertTrue(line.startswith(prefix), line)
             self.assertIn("welcomepi[", line)
