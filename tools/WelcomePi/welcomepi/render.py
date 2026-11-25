@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
 from itertools import zip_longest
+from math import ceil
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import qrcode
@@ -250,20 +251,18 @@ class Canvas:
         inset = side + side//2
         self.text(x + inset, y, fit(title, self.bold, width - inset), self.bold, accent)
 
-    def header(self, screen, today, date, details=None, avatar=None):
-        board = screen.page == "board"
+    def header_height(self, board):
         height = min(self.title.size + self.small.size + 3 * self.pad, max(80, self.h // 3))
-        if board:
-            height = max(height, qr_modules(self.dimmed).width * 3 + self.pad)
-        top = self.h - height if self.lower_header else 0
-        self.draw.rectangle((0, top, self.w, top + height - 1), fill=self.palette.band)
+        return max(height, qr_modules(self.dimmed).width * 3 + self.pad) if board else height
+
+    def header(self, screen, today, date, details=None, avatar=None, *, spare=0):
+        board = screen.page == "board"
+        height = self.header_height(board)
         available = self.width
         if board:
-            qr = qr_image(height - self.pad, self.dimmed)
-            if qr:
-                x = self.pad if self.media_left else self.w - self.pad - qr.width
-                self.image.paste(qr, (x, top + (height - qr.height) // 2))
-                available -= qr.width + self.pad
+            modules = qr_modules(self.dimmed).width
+            qr_side = (height - self.pad) // modules * modules
+            available -= qr_side + self.pad
             kicker, headline = "Manchester Makerspace", date
             if self.bold.getlength(headline) > available:
                 headline = f"{today:%a, %b} {today.day}"
@@ -273,23 +272,40 @@ class Canvas:
             headline = f"Welcome, {first}!" if screen.page == "agenda" else first
             if details and details.rank is not None:
                 side = height - self.pad
-                x = self.pad if self.media_left else self.w - self.pad - side
-                y = top + (height - side) // 2
-                if avatar:
-                    self.image.paste(avatar.resize((side, side), Image.Resampling.LANCZOS), (x, y))
-                else:
-                    self.draw.regular_polygon(((x + side / 2, y + side / 2), side * 0.45), 6, fill=self.palette.kicker)
-                    self.text(x + side / 2, y + side / 2, str(details.rank), self.title, self.palette.band, anchor="mm")
                 available -= side + self.pad
             if self.small.getlength(kicker) > available:
                 kicker = f"Active member  ·  {today:%b} {today.day}"
-        x = self.w - self.pad - available if self.media_left else self.pad
-        self.aligned_text(x, top + self.pad, available, fit(kicker, self.small, available), self.small, self.palette.kicker)
+
+        # Preserve the original labels and font sizes when enlarging the QR.
         face = self.title
         while face.size > self.bold.size and face.getlength(headline) > available:
             face = font(face.size - 2, True)
+        kicker = fit(kicker, self.small, available)
+        headline = fit(headline, face, available)
+        if board:
+            text_width = ceil(max(self.small.getlength(kicker), face.getlength(headline))) + 2 * self.stroke
+            qr_room = min(self.width - self.pad - text_width, height + spare - self.pad)
+            qr_side = max(qr_side, qr_room // modules * modules)
+            height = max(height, qr_side + self.pad)
+            available = self.width - qr_side - self.pad
+        top = self.h - height if self.lower_header else 0
+        self.draw.rectangle((0, top, self.w, top + height - 1), fill=self.palette.band)
+        if board:
+            qr = qr_image(qr_side, self.dimmed)
+            x = self.pad if self.media_left else self.w - self.pad - qr_side
+            self.image.paste(qr, (x, top + (height - qr_side) // 2))
+        elif details and details.rank is not None:
+            x = self.pad if self.media_left else self.w - self.pad - side
+            y = top + (height - side) // 2
+            if avatar:
+                self.image.paste(avatar.resize((side, side), Image.Resampling.LANCZOS), (x, y))
+            else:
+                self.draw.regular_polygon(((x + side / 2, y + side / 2), side * 0.45), 6, fill=self.palette.kicker)
+                self.text(x + side / 2, y + side / 2, str(details.rank), self.title, self.palette.band, anchor="mm")
+        x = self.w - self.pad - available if self.media_left else self.pad
+        self.aligned_text(x, top + self.pad, available, kicker, self.small, self.palette.kicker)
         self.aligned_text(x, top + self.pad + self.small.size + self.pad // 2, available,
-                          fit(headline, face, available), face, self.palette.title)
+                          headline, face, self.palette.title)
         return (self.pad, top - self.pad) if self.lower_header else (height + self.pad, self.h - self.pad)
 
     def reserve_footer(self, bounds, height, gap=0):
@@ -299,14 +315,14 @@ class Canvas:
             return top + height + gap, bottom, top
         return top, bottom - height - gap, bottom - height
 
-    def board(self, data, bounds, page):
-        top, bottom, _ = self.reserve_footer(bounds, self.small.size)
+    def board(self, screen, today, date, data, page):
+        body_height = self.h - self.header_height(True) - 2 * self.pad - self.small.size
         arrivals = data.get("recent", [])
         columns = max(1, min(5, self.width // (self.small.size * 8)))
         cell_width = self.width // columns
         arrival_height = self.line + self.small.size
         arrival_rows = (len(arrivals) + columns - 1) // columns
-        below_arrivals = top + self.line + arrival_rows * arrival_height
+        checkin_height = self.line + arrival_rows * arrival_height
         width = (self.width - self.pad) // 2
         rows = []
         for left, right in zip_longest(data.get("leaders", []), data.get("opportunities", [])):
@@ -316,13 +332,26 @@ class Canvas:
 
         # Keep useful groups of rankings together. Very short displays can
         # page the arrivals themselves before showing the paired lists.
-        separate = below_arrivals > bottom or (rows and bottom - below_arrivals < 4 * self.line)
-        per_arrival_page = max(1, (bottom - top - self.line) // arrival_height) * columns
+        separate = checkin_height > body_height or (rows and body_height - checkin_height < 4 * self.line)
+        arrival_capacity = max(1, (body_height - self.line) // arrival_height)
+        per_arrival_page = arrival_capacity * columns
         arrival_pages = max(1, (len(arrivals) + per_arrival_page - 1) // per_arrival_page) if separate else 0
-        list_top = top if separate else below_arrivals
-        capacity = max(1, (bottom - list_top) // self.line - 1)
+        list_space = body_height if separate else body_height - checkin_height
+        capacity = max(1, list_space // self.line - 1)
         count = max(1, arrival_pages + (len(rows) + capacity - 1) // capacity)
         p = page % count
+        # Keep page boundaries fixed. Only the space left on the fullest page
+        # can enlarge a header shared across the page cycle.
+        volunteer_height = (1 + min(capacity, len(rows))) * self.line
+        if separate:
+            used = max(self.line + min(arrival_rows, arrival_capacity) * arrival_height,
+                       volunteer_height if rows else 0)
+        else:
+            used = checkin_height + volunteer_height
+            if arrivals and rows and body_height - used >= self.line:
+                used += self.line
+        bounds = self.header(screen, today, date, spare=max(0, body_height - used))
+        top, bottom, _ = self.reserve_footer(bounds, self.small.size)
         if not separate or p < arrival_pages:
             self.heading(self.pad, top, "Recent check-ins", self.width)
             start = p * per_arrival_page if separate else 0
@@ -334,14 +363,18 @@ class Canvas:
                 self.aligned_text(x, cy + self.bold.size + 2, cell_width - 5, clock, self.small, self.palette.muted)
             if separate:
                 return count
+        offset = (p - arrival_pages) * capacity
+        page_rows = rows[offset:offset + capacity]
+        list_top = top if separate else top + checkin_height
+        if not separate and arrivals and page_rows and bottom - list_top >= (len(page_rows) + 2) * self.line:
+            list_top += self.line
         y = list_top
         right_x = self.pad + width + self.pad
         leader_x, work_x = (right_x, self.pad) if self.media_left else (self.pad, right_x)
         self.heading(leader_x, y, "Volunteer leaders", width)
         self.heading(work_x, y, "Open volunteering", width)
         y += self.line
-        offset = (p - arrival_pages) * capacity
-        for left, right in rows[offset:offset + capacity]:
+        for left, right in page_rows:
             self.text(leader_x, y, left, self.body)
             self.text(work_x, y, right, self.body)
             y += self.line
@@ -415,9 +448,11 @@ def draw_page(canvas, screen, now, data, page):
         expires_ms = screen.member.expires_ms if screen.welcome_presented_at is not None else None
         canvas.greeting(screen.member.first, date, expires_ms)
         return 1
-    bounds = canvas.header(screen, today, date, data.get("details"), data.get("avatar"))
-    count = (canvas.board(data, bounds, page) if screen.page == "board"
-             else canvas.personal(screen.page, data, bounds, page))
+    if screen.page == "board":
+        count = canvas.board(screen, today, date, data, page)
+    else:
+        bounds = canvas.header(screen, today, date, data.get("details"), data.get("avatar"))
+        count = canvas.personal(screen.page, data, bounds, page)
     if count > 1:
         x = canvas.pad if canvas.media_left else canvas.w - canvas.pad
         y = canvas.pad if canvas.lower_header else canvas.h - canvas.pad
