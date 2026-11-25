@@ -11,6 +11,39 @@ folder, spreadsheet, customer, project, and Slack channel/team IDs are treated
 as identifiers rather than credentials. An optional variable can still be
 required to use the feature or task named in its purpose.
 
+## WelcomePi entrance kiosk
+
+The Pi's systemd service reads `/etc/welcomepi.env`. Its read-only database and
+broker accounts are provisioned independently of Rails. See the
+[example environment](../tools/WelcomePi/welcomepi.env.example) and
+[installation guide](../tools/WelcomePi/README.md).
+
+Automatic updates use anonymous HTTPS on the Pi and require no additional
+kiosk environment values. In GitHub Actions, `GITHUB_TOKEN` is the
+automatically issued job credential. Only the WelcomePi publishing job requests
+`contents: write`. The workflow supplies `TESTED_SHA256` from its verification
+job to check the release bytes a second time. Both are workflow-local.
+
+| Variable | Secret? | Requirement and default |
+| --- | --- | --- |
+| `MLAB_URI`, `LEDGER_URI` | Yes | Both required. Include the Rails source database and Ledger database names in their respective MongoDB URIs. |
+| `MQTT_HOST` | No | Required broker hostname. |
+| `MQTT_TLS`, `MQTT_PORT` | No | TLS defaults to `true` and port 8883. Setting TLS to `false` uses port 1883 by default. Set the port explicitly to override either default. |
+| `MQTT_USERNAME`, `MQTT_PASSWORD` | Password | Optional credentials for the broker's subscribe-only kiosk account. |
+| `MQTT_CLIENT_ID` | No | Defaults to `welcomepi-<hostname>`. Use a unique ID for each running kiosk. |
+| `WELCOMEPI_LOCATION_PATTERNS` | No | Optional JSON array of case-insensitive regular expressions. A fresh MQTT arrival can trigger a welcome if any expression matches anywhere in its document location (`where`, then `reader`, then the literal `blank:` even when the activity topic identifies a sending reader). Unset allows all locations. An empty array `[]` makes all MQTT arrivals history-only. Local fob taps still work. |
+| `WELCOMEPI_I2C_BUS` | No | Linux I²C adapter to probe for a PN532 when present. Defaults to `/dev/i2c-1`. |
+| `WELCOMEPI_I2C_ADDRESSES` | No | Comma-separated 7-bit addresses in probe order. Defaults to the standard `0x24`. Set additional addresses only for a known mapping. |
+| `WELCOMEPI_NFC_PORT` | No | PN532 UART device path, tried after I²C. The application default is `/dev/serial0`. A fresh Pi 5 install sets `/dev/ttyAMA0` for the 40-pin header. |
+| `WELCOMEPI_SYSLOG_HOST`, `WELCOMEPI_SYSLOG_PORT` | No | Leave both unset for local syslog. Set both to a collector IPv4 or IPv6 address and UDP port 1–65535 for direct remote application logs. HDMI cable loss and recovery also appear on stderr in either mode. |
+| `WELCOMEPI_HDMI_PORT` | No | Defaults to `auto`, the first connected HDMI output. On Pi 4B and Pi 5, `0` selects the socket marked HDMI0 (HDMI-A-1) and `1` selects HDMI1 (HDMI-A-2). A fixed setting waits for that socket if its monitor disconnects. Restart the kiosk service after editing. |
+| `WELCOMEPI_ROTATION` | No | Defaults to `auto`. Accepted overrides are `left`, `right`, and `normal`. |
+| `WELCOMEPI_OPPORTUNITIES` | No | Positive integer. Defaults to five opportunities on the member agenda. |
+| `EVENTBRITE_ORGANIZATION_IDS` | No | Comma-separated organization IDs, matching the Rails sync configuration. Empty includes public occurrences from all synced organizations. |
+| `SLACKIDS_INELIGIBLE` | No | Match Ledger's excluded Slack user IDs. Accepts a JSON array or quoted brace-delimited set. Defaults to empty. |
+| `WELCOMEPI_SLACK_TOKEN` | Yes | Optional. Reading the private 512-pixel Ledger JPEG requires `files:read` and access to its DM. Without a usable image the kiosk draws the rank icon. |
+| `WELCOMEPI_TEST_MONGO_PORT` | No | Test suite only. When set, run synthetic data tests on a disposable loopback MongoDB instance using randomly named test databases. Omit for in-memory tests. |
+
 ## Mandatory variables
 
 Checkout Required sheet generation also consumes the existing `APP_DOMAIN`

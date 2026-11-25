@@ -1,0 +1,65 @@
+name: Publish WelcomePi
+
+on:
+  pull_request:
+    branches: [master]
+    paths: ['tools/WelcomePi/**', '.github/workflows/publish-welcomepi.yml']
+  push:
+    branches: [master]
+    paths: ['tools/WelcomePi/**']
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-welcomepi-${{ github.event.pull_request.number || 'master' }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.inspect.outputs.changed }}
+      source: ${{ steps.inspect.outputs.source }}
+      sha256: ${{ steps.inspect.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'master' }}
+          persist-credentials: false
+      - id: inspect
+        if: github.event_name != 'pull_request'
+        name: Compare tracked runtime to the last publication
+        run: python3 -B tools/WelcomePi/deploy/publish.py check >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: github.event_name == 'pull_request' || steps.inspect.outputs.changed == 'true'
+        with:
+          python-version: '3.11'
+      - name: Test WelcomePi
+        if: github.event_name == 'pull_request' || steps.inspect.outputs.changed == 'true'
+        working-directory: tools/WelcomePi
+        run: |
+          bash -n setup.sh
+          bash -n workstation/setup.sh
+          systemd-analyze verify deploy/welcomepi-update.service deploy/welcomepi-update.timer
+          python -m pip install -r requirements-test.txt
+          python -B -m unittest discover -v -s tests
+
+  publish:
+    needs: verify
+    if: github.event_name != 'pull_request' && needs.verify.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.verify.outputs.source }}
+      - name: Publish the tested archive and manifest together
+        env:
+          TESTED_SHA256: ${{ needs.verify.outputs.sha256 }}
+        run: python3 -B tools/WelcomePi/deploy/publish.py publish "$TESTED_SHA256"

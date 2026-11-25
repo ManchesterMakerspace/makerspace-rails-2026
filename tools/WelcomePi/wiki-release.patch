@@ -1,0 +1,80 @@
+diff --git a/digital-makerspace/members/check-in-activity.md b/digital-makerspace/members/check-in-activity.md
+index e7dea43..b563da6 100644
+--- a/digital-makerspace/members/check-in-activity.md
++++ b/digital-makerspace/members/check-in-activity.md
+@@ -22,6 +22,16 @@ The list shows the newest scans first. For each one you see the **Timestamp**, t
+
+ Scans include both successful entries and refused ones. If a scan was refused, the validity column is the first place to look. If you still cannot get in, see [Troubleshooting](/digital-makerspace/troubleshooting).
+
++## At the entrance display
++
++When you check in at a door configured to welcome members on this kiosk, or tap your fob on the reader beside the display, WelcomePi greets you with your first name in large letters. If the door sends your name first, the display shows it immediately. Once the kiosk receives your fob’s card ID for the check-in and verifies your membership, your agenda opens automatically and your name moves into a smaller heading. If only your name appears, tap your active fob on the kiosk reader to open your agenda. The door reader records your arrival. A local tap controls the display. The kiosk logs the member name and reader location for recognized scans.
++
++**Your reservations** covers the next 12 hours, including time already underway. Pending and unpaid reservations carry a label. **Volunteer opportunities** shows work you can claim. Tasks restricted to today's weekday get the first two places when available. Space permitting, the screen also shows today's Eventbrite classes and a QR code for the portal Home page.
++
++**Everyone near the screen can see your personal information if you open it.** While your agenda is on screen, tap your own active fob on the kiosk reader to open your details. Ledger participants see their character sheet and current avatar or rank icon. Other members see the text of kudos they have received, including private messages, followed by their current tool checkouts. Tap once more to clear your details.
++
++A different local fob starts its owner's welcome immediately. On the details screen you have 30 seconds before a waiting arrival with a verified fob takes over. A name-only arrival leaves your details on screen. After two minutes without a qualifying scan, the display returns to the five most recently checked-in members from the past 16 hours, lifetime volunteer point leaders, available work, and the portal QR code. Each member appears once at their latest arrival time, including arrivals at doors that do not open a welcome on this kiosk. After four hours it sleeps until the next qualifying scan.
++
+ ## For admins
+
+ Admins can open the tab on a member's profile. For admins it also lists **Additional Details** for each scan, such as the **Card Holder**, plus the validity and location. Use it to help a member whose fob does not work: find their recent scans and read the validity of the refused ones. Open it only for a real need, such as a member asking for help, and do not share what you see with others.
+diff --git a/digital-makerspace/troubleshooting.md b/digital-makerspace/troubleshooting.md
+index 6bbd6bb..ce36dc4 100644
+--- a/digital-makerspace/troubleshooting.md
++++ b/digital-makerspace/troubleshooting.md
+@@ -42,6 +42,14 @@ A fob works only while your membership is active and not expired, and only if it
+
+ Look at **Subscriptions** in the portal menu. If you pay by subscription, the date moves forward after each successful payment. If something does not look right, tell the board.
+
++### The entrance display did not show my agenda
++
++Some doors update the Recent check-ins list without opening a welcome on this kiosk. A door that sends only your name can show the large first-name greeting immediately. Your agenda opens when the kiosk receives your fob’s card ID and verifies your membership. If the greeting stays on screen, tap your own active fob on the reader beside the display. Check your expiration date on the portal Home page and your door scans in [Check-In Activity](/digital-makerspace/members/check-in-activity). If the local tap or a welcome-enabled door still fails, tell the board which reader you used and when.
++
++### The entrance display showed another welcome while I was reading
++
++A door arrival can replace an agenda immediately. A local tap that opens your character sheet or kudos gives you 30 seconds before a waiting arrival with a verified fob takes over. A name-only arrival leaves that view on screen. Tap your fob to open your agenda again. You can also scan the portal QR code and use your own phone.
++
+ ## Payments
+
+ ### My payment failed
+diff --git a/digital-makerspace/admin/welcomepi-updates.md b/digital-makerspace/admin/welcomepi-updates.md
+new file mode 100644
+--- /dev/null
++++ b/digital-makerspace/admin/welcomepi-updates.md
+@@ -0,0 +1,35 @@
++---
++title: WelcomePi updates
++description: Choose the entrance display output and manage automatic updates.
++published: true
++date: 2026-11-24T00:00:00.000Z
++tags: admin, kiosk
++editor: markdown
++dateCreated: 2026-11-23T00:00:00.000Z
++---
++
++# WelcomePi updates
++
++## Choose the HDMI socket on a Pi 4B or Pi 5
++
++Run `sudoedit /etc/welcomepi.env` on the kiosk. Set `WELCOMEPI_HDMI_PORT=0` for the socket marked **HDMI0** or `WELCOMEPI_HDMI_PORT=1` for **HDMI1**. Save the file and run `sudo systemctl restart welcomepi.service`. The default, `auto`, uses the first connected HDMI display. [Pi 4 and Pi 5 installation](https://github.com/ManchesterMakerspace/makerspace-rails-2026/blob/master/tools/WelcomePi/README.md#install-on-a-pi-4-or-pi-5)
++
++If the board stays blank, check its input and cable. Follow `sudo journalctl -b -u welcomepi.service -f` on the Pi for a warning naming the disconnected socket and a recovery message when its connection returns. These messages also reach the configured syslog destination. From `~/WelcomePi`, run `sudo bash setup.sh check` for the current HDMI status.
++
++## Choose which doors open a welcome
++
++On the kiosk, edit `/etc/welcomepi.env` and restart `welcomepi.service` after saving. Set `WELCOMEPI_LOCATION_PATTERNS` to a JSON list of case-insensitive regexes, for example `WELCOMEPI_LOCATION_PATTERNS='["^Main Entrance$","^Lobby Reader-"]'`. A fresh name-only check-in from a matching location shows the large first name immediately. When the check-in or a fuller record of that tap supplies the card UID, the kiosk looks up the card in its directory or queries MongoDB in the background. It uses the card’s assigned member ID to open the eligible member’s agenda automatically. If the greeting stays on screen, the member can tap their own active fob locally. Private details require that local tap. The final segment of an activity topic identifies the sending reader. The number after the payload's operation is its publication timestamp. An open private details page keeps priority over a name-only greeting. For the location match the kiosk reads the document's `where` field, then `reader`, then `blank:` if both are missing, even when the sending reader is known. Leave the setting unset to allow every door, or set it to `[]` to keep all MQTT arrivals history-only.
++
++Every location contributes to the rolling 16-hour history. A filtered door is logged and can update the member’s time on **Recent check-ins**. Local fob taps still open eligible welcomes. Give the kiosk broker account read access to `activity/checkins/#` and `checkins/insert` before rollout. Run `sudo bash setup.sh watch-door` from `~/WelcomePi` and check in at a matching door to confirm the installation.
++
++## Enable automatic updates
++
++Kiosk operators can enroll a working entrance display in automatic updates. Complete a local fob tap and a door check-in first. On the Pi, run `sudo bash setup.sh enable-updates` from `~/WelcomePi`. The Pi checks for a tested release about every five minutes. [Update enrollment and recovery guide](https://github.com/ManchesterMakerspace/makerspace-rails-2026/blob/master/tools/WelcomePi/setup-pi0.MD#8-enable-automatic-updates-from-master)
++
++Run `systemctl list-timers welcomepi-update.timer` to see the next check. To check immediately, run `sudo systemctl start welcomepi-update.service`. A new app release briefly restarts the display and returns it to the generic board. The kiosk keeps running through a failed download and restores its previous version after a failed startup check.
++
++For an update problem, inspect `sudo journalctl -b -u welcomepi-update.service`. The setup guide covers held releases and pausing updates for host maintenance. After a successful update, confirm one welcome at the kiosk reader and another from a real door check-in.
++
++## Reader and scan logs
++
++After a restart, look for the PN532 provisioning entry in `sudo journalctl -b -t welcomepi` or on the kiosk's configured remote syslog collector. The kiosk tries I²C, then UART. If neither responds, door check-ins still operate the display. Each scan entry identifies the reader and, when verified, the member. A warning marks a scan with no valid member. MQTT and MongoDB errors include the driver reason. Use these records to investigate a reported scan at the time and door the member gives you.

@@ -41,6 +41,12 @@ and in the future. Expiration is therefore independent of `status`:
 only where full activation, rather than general membership eligibility, is
 required.
 
+The [WelcomePi entrance display](../tools/WelcomePi/README.md) applies this
+condition and requires a unique active card linked to an unmerged member.
+Expiration, card invalidation, and membership changes clear an ineligible
+personal display. Local taps control the screen without recording door events
+or changing member status.
+
 ## Pending-member exceptions
 
 Reservations and member-initiated Safety Checkout requests apply narrower

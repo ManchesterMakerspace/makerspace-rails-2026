@@ -1,5 +1,96 @@
 # Production jobs, tasks, and services
 
+## WelcomePi entrance display
+
+The standalone [WelcomePi systemd service](../tools/WelcomePi/welcomepi.service)
+runs `python -m welcomepi` on the entrance Pi. Install, start, stop, and inspect
+it on that host with `systemctl`. Follow local application logs with
+`journalctl -t welcomepi` or use the configured remote syslog collector.
+It subscribes to `checkins/insert`, `activity/checkins/#` and card/member changes, reads the
+local PN532, renders Pillow frames, and controls standby on the selected HDMI
+output. On dual-HDMI boards, `WELCOMEPI_HDMI_PORT` in `/etc/welcomepi.env`
+selects a socket by its board label (`0` or `1`), or `auto` for the first
+connected output. When a fixed socket loses its monitor, the service keeps
+listening for scans and resumes on that socket after reconnection. Cable loss
+produces one warning naming the port. Reconnection produces an INFO entry.
+Both also go to stderr, visible in `journalctl -b -u welcomepi.service`,
+including when syslog goes to a remote collector. Local taps only
+control the display. Database access is read-only. The optional Slack credential
+reads the current Ledger avatar into RAM.
+
+The service starts on the public board. It seeds a rolling 16-hour arrival
+history from MongoDB at startup, merging MQTT arrivals received during the
+read. It keeps each member's latest check-in, up to ten members in RAM, and
+displays the newest five. Minute refreshes read this history from RAM.
+After startup MQTT supplies arrivals, including after broker reconnects.
+Door locations use `where`, then `reader`, then `blank:`.
+A location excluded by `WELCOMEPI_LOCATION_PATTERNS` is logged and contributes
+to history without waking or changing the personal display. A fresh, matching
+check-in with a name displays the first name in large type before the card lookup.
+To load the agenda, the kiosk uses the card UID from the check-in (`uid` or
+`cardUID`) or local fob tap to find the active card, then looks up the card’s
+`member_id` in its directory or queries MongoDB in the background. The linked
+member must be unmerged with an active, unexpired membership. A name-only
+greeting stays public while the kiosk waits for a fresh UID-bearing check-in
+or a local tap.
+An open private details page takes priority over a name-only arrival. Opening
+private details from an agenda requires the member's own eligible local fob tap.
+In MQTT logs, the final activity topic segment identifies the
+sending reader. The numeric prefix after the operation is its publication timestamp.
+The service uses only the document's location fields for location matching.
+The kiosk sizes the name to fit the welcome screen and switches to a smaller header
+when there are reservations or volunteer opportunities to show, or when all
+three agenda reads finish, including an empty agenda. Local taps advance the
+personal pages.
+Two idle minutes clear personal content and four idle hours disable HDMI.
+While visible, the board refreshes every minute and at
+Eastern midnight. The directory rebuilds after MQTT subscription, after gaps,
+and periodically. During recovery, the kiosk looks up the member in MongoDB
+before opening the agenda. Reader discovery probes the enabled I²C adapter for PN532
+firmware, then tries UART. If neither responds it logs a warning and retries
+while the display handles door check-ins. Syslog records reader selection,
+frame submission latency and each scan's verified member name and source.
+Unresolved scans also produce a warning. MQTT and MongoDB errors and timeouts
+include driver details at ERROR. Failed sections retry on refresh.
+See the [operator guide](../tools/WelcomePi/README.md)
+for installation, permissions, and on-device acceptance.
+
+The [Pi Zero W guide](../tools/WelcomePi/setup-pi0.MD) and
+[Pi 4B and Pi 5 guide](../tools/WelcomePi/README.md#install-on-a-pi-4-or-pi-5)
+use `workstation/setup.sh` to transfer the deployable files by SSH. On the Pi,
+`sudo bash setup.sh install` installs packages and the unit, builds the venv,
+and backs up and edits the two boot files. The Zero W uses 720p.
+The Pi 4B and Pi 5 use the monitor's advertised mode or its configured kernel
+mode. The installer preserves existing credentials
+and restarts an already running service. After configuration and reboot,
+`sudo bash setup.sh check` reports HDMI connection status and the selected
+reader or MQTT-only operation, then tests database reads and broker
+subscriptions. `sudo bash setup.sh watch-door` waits up to 90 seconds for a
+fresh door event at a matching location after subscribing. Both diagnostics use the service account
+and a separate MQTT client ID. They print results to the operator's terminal
+and exit unsuccessfully on a failed check.
+
+The [Publish WelcomePi workflow](../.github/workflows/publish-welcomepi.yml)
+runs on GitHub for changes under `tools/WelcomePi/**` on `master`, on manual
+dispatch for `master`, and daily at 05:17 UTC. It compares committed runtime
+bytes with the published checksum and tests changed releases. The publisher
+rechecks the runtime on `master` before advancing `welcomepi-deploy` with an
+archive and manifest in one commit. Pull requests touching the kiosk or its
+workflow run the same Linux tests with read-only permissions. The GitHub Actions
+run on master records publication.
+
+On a commissioned Pi, `sudo bash setup.sh enable-updates` installs the
+[update service](../tools/WelcomePi/deploy/welcomepi-update.service) and
+[timer](../tools/WelcomePi/deploy/welcomepi-update.timer). It polls the public
+GitHub ref two minutes after boot and five minutes after each check finishes.
+`sudo systemctl start welcomepi-update.service` checks immediately. Equal
+checksums skip activation. A changed release reuses the venv or builds new
+dependencies as `welcomepi-build`. After a successful import check it switches
+the active release and restarts the kiosk. Startup failures roll back and hold
+the failed revision. Wi-Fi failures retry and interrupted activation recovers
+locally. Use `journalctl -b -u welcomepi-update.service` and the
+[maintenance procedure](../tools/WelcomePi/setup-pi0.MD#recovery-and-maintenance).
+
 ## Daily reservation channel announcements
 
 `ReservationSlackAnnouncementJob` calls `Service::ReservationSlackAnnouncements`

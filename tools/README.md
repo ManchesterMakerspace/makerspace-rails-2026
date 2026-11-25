@@ -1,11 +1,19 @@
-# Reservation-to-MQTT daemon
+# Makerspace tools
+
+## WelcomePi entrance display
+
+The [WelcomePi entrance kiosk](WelcomePi/README.md) displays member agendas, Ledger character sheets, and the volunteer board on Raspberry Pi OS Lite. It detects a PN532 over I²C or UART and can run from ChangeStream2MQTT door check-ins alone. Scan and driver logs go to local syslog or a configured remote UDP collector.
+
+On a [Pi 4B or Pi 5](WelcomePi/README.md#install-on-a-pi-4-or-pi-5), operators can assign the kiosk to either micro-HDMI socket. An enrolled kiosk checks GitHub every five minutes for tested runtime changes on `master`. The [Pi setup guide](WelcomePi/setup-pi0.MD#8-enable-automatic-updates-from-master) covers enrollment, flash usage and rollback.
+
+## Reservation-to-MQTT daemon
 
 `res2mqtt.py` polls MongoDB for approved shop and tool reservations and publishes
 ongoing reservations plus retained `UpNext` messages. It refreshes its eight-hour
 cache every 30 minutes by default and also publishes a reservation when its start
 time arrives.
 
-## Setup and use
+### Setup and use
 
 ```sh
 python3 -m venv .venv
