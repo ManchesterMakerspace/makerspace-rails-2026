@@ -12,19 +12,21 @@ from welcomepi.config import Settings
 
 
 class BootProfile(unittest.TestCase):
-    def test_supported_board_models_and_bookworm_images(self):
+    def test_supported_board_models_and_os_images(self):
         models = (("Raspberry Pi Zero W Rev 1.1\0", "armhf", "pi0w"),
                   ("Raspberry Pi 4 Model B Rev 1.5\0", "armhf", "pi4"),
                   ("Raspberry Pi 4 Model B Rev 1.5\0", "arm64", "pi4"),
                   ("Raspberry Pi 5 Model B Rev 1.0\0", "arm64", "pi5"),
                   ("Raspberry Pi 5\0", "arm64", "pi5"))
         for model, arch, board in models:
-            with self.subTest(model=model, architecture=arch):
-                self.assertEqual(configure_boot.board_profile(model, "bookworm", arch), board)
+            for codename in ("bookworm", "trixie"):
+                with self.subTest(model=model, architecture=arch, codename=codename):
+                    self.assertEqual(configure_boot.board_profile(model, codename, arch), board)
         unsupported = (("Raspberry Pi 400 Rev 1.0", "bookworm", "arm64"),
                        ("Raspberry Pi 500 Rev 1.0", "bookworm", "arm64"),
                        ("Raspberry Pi 5", "bookworm", "armhf"),
-                       ("Raspberry Pi 5", "trixie", "arm64"))
+                       ("Raspberry Pi 5", "trixie", "armhf"),
+                       ("Raspberry Pi 5", "bullseye", "arm64"))
         for values in unsupported:
             with self.subTest(platform=values), self.assertRaises(ValueError):
                 configure_boot.board_profile(*values)

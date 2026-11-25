@@ -1,12 +1,12 @@
 # WelcomePi
 
-WelcomePi is a read-only entrance kiosk for Raspberry Pi OS Lite **Bookworm**. It draws directly to one HDMI display with Pillow and KMS. A successful door check-in or a tap on the local PN532 wakes the display and greets a member. Local taps only control this screen.
+WelcomePi is a read-only entrance kiosk for Raspberry Pi OS Lite **Trixie or Bookworm**. It draws directly to one HDMI display with Pillow and KMS. A successful door check-in or a tap on the local PN532 wakes the display and greets a member. Local taps only control this screen.
 
 For a **Pi Zero W at 720p**, follow the [step-by-step setup guide](setup-pi0.MD). It covers the workstation transfer, GPIO wiring, Pi installer and separate first-welcome checks at the kiosk and the door. A working kiosk can [enroll for automatic updates from master](setup-pi0.MD#8-enable-automatic-updates-from-master).
 
 ## Install on a Pi 4 or Pi 5
 
-1. In Raspberry Pi Imager, choose your board and **Raspberry Pi OS (Legacy, 64-bit) Lite**, Debian 12 Bookworm. Both Pi 4 Model B and Pi 5 support this image. Pi 4B can also use 32-bit Bookworm Lite. Enable SSH and configure networking. With the Pi powered off, connect the monitor to the micro-HDMI socket marked **HDMI0** or **HDMI1**. [Raspberry Pi OS images](https://www.raspberrypi.com/software/operating-systems/)
+1. In Raspberry Pi Imager, choose your board and **Raspberry Pi OS Lite (64-bit)** for Debian 13 (Trixie) or the Legacy Lite image for Debian 12 (Bookworm). Both Pi 4 Model B and Pi 5 support this image. Pi 4B can also use 32-bit Lite on either release. Enable SSH and configure networking. With the Pi powered off, connect the monitor to the micro-HDMI socket marked **HDMI0** or **HDMI1**. [Raspberry Pi OS images](https://www.raspberrypi.com/software/operating-systems/)
 2. If using a PN532, choose I²C or UART and follow the [40-pin header wiring table](setup-pi0.MD#2-wire-the-pn532-while-power-is-disconnected). For I²C, run `sudo raspi-config nonint do_i2c 0` on the Pi before reboot. For GPIO UART, a fresh install sets `WELCOMEPI_NFC_PORT=/dev/serial0` on Pi 4B and `/dev/ttyAMA0` on Pi 5. Check this setting when reusing an environment file on another board. On a stock Pi 5, `/dev/serial0` points to the dedicated debug header. [Raspberry Pi UART configuration](https://www.raspberrypi.com/documentation/computers/configuration.html#configure-uarts)
 3. From the workstation, transfer the kiosk and connect to the Pi. Substitute your SSH login and hostname.
 
@@ -44,7 +44,7 @@ To switch sockets later, change `WELCOMEPI_HDMI_PORT` in `/etc/welcomepi.env` an
 | Pi 1, 512 MB | Oldest candidate to try. A later 2012 Model B or a Model B+ has a 700 MHz single-core ARM11 and built-in Ethernet. Start at 1280×720 and measure the greeting on that board. Some Pi 1 revisions have only 256 MB. Look up the value from `grep '^Revision' /proc/cpuinfo` before choosing one. [Board specifications](https://www.raspberrypi.com/documentation/computers/sbcs.html) · [Revision table](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#raspberry-pi-revision-codes) |
 | Pi 2 Model B, 1 GB | Wired option with four CPU cores and more room for a 1080p portrait display. [Board specifications](https://www.raspberrypi.com/documentation/computers/sbcs.html) |
 
-Select **Raspberry Pi OS (Legacy, 32-bit) Lite**, Debian 12 Bookworm. The official download lists Zero W, 1B+, and 2B for this image. The earliest 256 MB Pi 1 boards are experimental for this kiosk. At 720p the two HDMI buffers occupy about 7 MiB, rising to 16 MiB at 1080p, before Pillow's working images, Python, the member cache, and the OS. The 500 ms greeting target and monitor wake behavior require on-device measurement. [Raspberry Pi OS downloads](https://www.raspberrypi.com/software/operating-systems/)
+Select **Raspberry Pi OS Lite (32-bit)** for Trixie or **Legacy Lite (32-bit)** for Bookworm. The earliest 256 MB Pi 1 boards are experimental for this kiosk. At 720p the two HDMI buffers occupy about 7 MiB, rising to 16 MiB at 1080p, before Pillow's working images, Python, the member cache, and the OS. The 500 ms greeting target and monitor wake behavior require on-device measurement. [Raspberry Pi OS downloads](https://www.raspberrypi.com/software/operating-systems/)
 
 ## Install on a Pi Zero or Pi 3B+
 
