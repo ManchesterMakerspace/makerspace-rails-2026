@@ -1,4 +1,4 @@
-"""Bookworm updater installed by setup.sh. Runs independently of the kiosk venv."""
+"""WelcomePi updater installed by setup.sh. Runs independently of the kiosk venv."""
 
 import argparse
 import json

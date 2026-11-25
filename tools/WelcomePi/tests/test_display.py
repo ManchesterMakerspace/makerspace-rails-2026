@@ -22,6 +22,30 @@ from welcomepi.state import HOME, Identity, Screen, UTC
 class Layout(unittest.TestCase):
     now = datetime(2026, 11, 23, 3, tzinfo=UTC)
 
+    def test_asymmetric_insets_reflow_the_board_in_viewer_coordinates(self):
+        for w, h in ((800, 480), (480, 800)):
+            inset = (5, 19, 31, 8)
+            size = (w - 36, h - 27)
+            expected, count = render(size, Screen(0), self.now, {}, variant=2, dimmed=True)
+            frame, pages = render((w, h), Screen(0), self.now, {}, variant=2, dimmed=True, insets=inset)
+            box = (5, 19, w - 31, h - 8)
+            self.assertEqual((frame.size, frame.getbbox(), pages), ((w, h), box, count))
+            self.assertEqual(frame.crop(box).tobytes(), expected.tobytes())
+        with self.assertRaisesRegex(ValueError, "no visible area"):
+            render((800, 480), Screen(0), self.now, {}, insets=(400, 0, 400, 0))
+
+    def test_font_stroke_thickens_text_and_preserves_the_board_qr(self):
+        canvas = Canvas((320, 240))
+        heavy = Canvas((320, 240), stroke=1)
+        for target in (canvas, heavy):
+            target.text(20, 20, "Recent check-ins", target.body)
+        ink = ImageColor.getrgb(canvas.palette.ink)
+        def ink_pixels(image):
+            return sum(count for count, color in image.getcolors(320 * 240) if color == ink)
+        self.assertGreater(ink_pixels(heavy.image), ink_pixels(canvas.image))
+        image, _ = render((800, 480), Screen(0), self.now, {}, stroke=1)
+        self.assert_intact_qr(image, dimmed=False)
+
     def test_first_greeting_fits_the_full_name_on_landscape_and_portrait_displays(self):
         cases = [((1280, 720), "I"), ((320, 240), "Alexandria"),
                  ((320, 480), "María José"), ((480, 320), "W" * 64)]
@@ -166,6 +190,10 @@ class Layout(unittest.TestCase):
                 lines = []
                 for call in printed.call_args_list:
                     _, x, y, line, face, *_ = call.args
+                    if call.kwargs.get("anchor", "lt").startswith("r"):
+                        x -= face.getlength(line)
+                    if call.kwargs.get("anchor", "lt").endswith("b"):
+                        y -= face.size
                     self.assertGreaterEqual(min(x, y), 0)
                     self.assertLessEqual(y + face.size, size[1])
                     self.assertLessEqual(x + face.getlength(line), size[0])
@@ -219,6 +247,19 @@ class Layout(unittest.TestCase):
 
 
 class Hardware(unittest.TestCase):
+    def test_display_pixel_settings(self):
+        env = {"MLAB_URI": "test", "LEDGER_URI": "test", "MQTT_HOST": "broker"}
+        defaults = Settings.load(env)
+        self.assertEqual((defaults.insets, defaults.font_stroke), ((0, 0, 0, 0), 0))
+        env.update(WELCOMEPI_INSET="12", WELCOMEPI_INSET_RIGHT="32", WELCOMEPI_INSET_TOP="0",
+                   WELCOMEPI_FONT_STROKE="1")
+        settings = Settings.load(env)
+        self.assertEqual((settings.insets, settings.font_stroke), ((12, 0, 32, 12), 1))
+        for key, value in (("WELCOMEPI_INSET", "-1"), ("WELCOMEPI_INSET_BOTTOM", "1.5"),
+                           ("WELCOMEPI_FONT_STROKE", "4")):
+            with self.assertRaisesRegex(ValueError, key):
+                Settings.load({**env, key: value})
+
     def test_board_appearance_intervals(self):
         env = {"MLAB_URI": "test", "LEDGER_URI": "test", "MQTT_HOST": "broker"}
         settings = Settings.load(env)

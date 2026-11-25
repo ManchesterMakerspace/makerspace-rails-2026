@@ -1,4 +1,4 @@
-"""Configure a stock Raspberry Pi OS Bookworm boot partition for WelcomePi."""
+"""Configure a stock Raspberry Pi OS boot partition for WelcomePi."""
 import argparse
 import os
 from pathlib import Path
@@ -9,8 +9,8 @@ import tempfile
 
 
 def board_profile(model, codename, architecture):
-    if codename != "bookworm":
-        raise ValueError("Install Raspberry Pi OS Lite (Bookworm) before running setup.")
+    if codename not in ("bookworm", "trixie"):
+        raise ValueError("Setup requires Raspberry Pi OS Lite (Bookworm or Trixie).")
     # Device-tree model strings can include a revision after the model name.
     name = model.rstrip("\0\n").partition(" Rev ")[0]
     if name == "Raspberry Pi Zero W" and architecture == "armhf":

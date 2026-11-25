@@ -42,6 +42,8 @@ class Reads(TestCase):
         self.assertEqual(self.member, self.source.directory().lookup(self.uid.lower(), self.now))
         self.assertEqual(self.member, self.source.identity(self.uid.lower(), self.now))
         self.assertIsNone(self.source.identity("04B0", self.now))
+        self.assertEqual(self.source.scan_identity("04B0", self.now), (None, False))
+        self.assertEqual(self.source.scan_identity(self.uid, self.now + timedelta(days=1)), (None, True))
         self.assertIsNone(self.source.identity(self.uid, self.now + timedelta(days=1)))
         self.db.members.update_one({"_id": self.id}, {"$set": {"merged_at": self.now}})
         self.assertIsNone(self.source.identity(self.uid, self.now))

@@ -9,6 +9,10 @@ from .recent import Checkin
 from .state import checkin_time
 
 
+class CheckinFormatError(ValueError):
+    """A diagnostic reason safe to log without echoing the check-in payload."""
+
+
 def shell_value(node):
     """Decode data literals and the scalar constructors used in mongosh output."""
     if isinstance(node, ast.Dict):
@@ -16,7 +20,7 @@ def shell_value(node):
         for key, value in zip(node.keys, node.values):
             field = key.id if isinstance(key, ast.Name) else shell_value(key)
             if not isinstance(field, str):
-                raise ValueError("Expected a check-in field name")
+                raise CheckinFormatError("Expected a check-in field name")
             result[field] = shell_value(value)
         return result
     if isinstance(node, ast.Constant) and type(node.value) in (str, int, float, bool, type(None)):
@@ -34,18 +38,18 @@ def shell_value(node):
         arg = node.args[0]
         if constructor and isinstance(arg, ast.Constant) and type(arg.value) in (str, int, float):
             return constructor(arg.value)
-    raise ValueError("Unsupported check-in literal")
+    raise CheckinFormatError("Unsupported check-in literal")
 
 
 def shell_document(body):
     # A check-in has a handful of scalar fields. Bound the parser's work
     # on a small Pi before asking Python to construct a literal syntax tree.
     if len(body) > 16 * 1024:
-        raise ValueError("Shell check-in document is too large")
+        raise CheckinFormatError("Shell check-in document is too large")
     try:
         return shell_value(ast.parse(body, mode="eval").body)
     except (SyntaxError, RecursionError) as error:
-        raise ValueError("Malformed check-in document") from error
+        raise CheckinFormatError("Malformed check-in document") from error
 
 
 def document_body(body, operation):
@@ -68,7 +72,7 @@ def document_body(body, operation):
     if isinstance(decoded, dict):
         decoded = decoded.get("document", decoded)
     if not isinstance(decoded, dict):
-        raise ValueError("Expected a check-in document")
+        raise CheckinFormatError("Expected a check-in document")
     return decoded
 
 
@@ -78,24 +82,24 @@ def parse_checkin(payload):
     text = re.sub(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d:\d{3}\\?\r?\n", "", text)
     operation, epoch, body = text.removeprefix("&#x20;").split(None, 2)
     if operation not in ("welcome", "processed", "insert"):
-        raise ValueError("Unexpected check-in operation")
+        raise CheckinFormatError("Unexpected check-in operation")
     published = checkin_time({"time": int(epoch)})
     if published is None:
-        raise ValueError("Invalid check-in publication timestamp")
+        raise CheckinFormatError("Invalid check-in publication timestamp")
     document = document_body(body, operation)
     identifier = document.get("_id")
     if not isinstance(identifier, (ObjectId, str, int)) or isinstance(identifier, bool):
-        raise ValueError("Missing check-in record ID")
+        raise CheckinFormatError("Missing check-in record ID")
     stamp = checkin_time(document)
     if stamp is None and operation in ("welcome", "processed"):
         # The small welcome payload uses Unix time as its ID. Some devices
         # supply the publication time only.
         stamp = checkin_time({"time": str(identifier)}) or published
     if stamp is None:
-        raise ValueError("Missing check-in timestamp")
+        raise CheckinFormatError("Missing check-in timestamp")
     record = Checkin.from_document(document, stamp)
     if not (record.uid or record.name or record.member_id):
-        raise ValueError("Missing check-in identity")
+        raise CheckinFormatError("Missing check-in identity")
     # Different publishers can set timeOf when inserting into Mongo. The door's
     # own time is shared by the processed and inserted copies of the same tap.
     door_time = checkin_time({"time": document.get("time")}) or stamp

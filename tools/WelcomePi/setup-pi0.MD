@@ -2,7 +2,7 @@
 
 For a dual-HDMI board, follow [Install on a Pi 4 or Pi 5](README.md#install-on-a-pi-4-or-pi-5).
 
-Use the original Raspberry Pi Zero W, Raspberry Pi OS Lite **Bookworm 32-bit**, a PN532 in I²C (IIC) or UART mode, and an HDMI monitor that accepts **1280×720 at 60 Hz**. Allow access from the Pi's network to your existing MongoDB databases and MQTT broker. Have a consenting member with a working door fob available for the two acceptance checks. You can also run the display from door check-ins alone.
+Use the original Raspberry Pi Zero W, Raspberry Pi OS Lite **32-bit (Trixie or Bookworm)**, a PN532 in I²C (IIC) or UART mode, and an HDMI monitor that accepts **1280×720 at 60 Hz**. Allow access from the Pi's network to your existing MongoDB databases and MQTT broker. Have a consenting member with a working door fob available for the two acceptance checks. You can also run the display from door check-ins alone.
 
 | Where | What to run |
 | --- | --- |
@@ -12,7 +12,7 @@ Use the original Raspberry Pi Zero W, Raspberry Pi OS Lite **Bookworm 32-bit**, 
 ## 1. Flash the microSD card on the workstation
 
 1. Install **Raspberry Pi Imager**. The transfer script needs Bash, OpenSSH and tar. On Windows, use **Git Bash** from Git for Windows. On macOS or Linux, use a terminal with those commands available. Check with `bash --version`, `ssh -V` and `tar --version`. [Raspberry Pi Imager](https://www.raspberrypi.com/software/) · [Git for Windows](https://gitforwindows.org/)
-2. Insert a microSD card. A 16 GB card gives the OS, virtual environment and package updates room. In Imager select the **Zero W** or Zero family, then **Raspberry Pi OS (Legacy, 32-bit) Lite**. Confirm the description says **Debian 12 (Bookworm)** and **no desktop**. If Imager lists a different Debian release, download the official **32-bit Bookworm Lite** `.img.xz` and select **Use custom**. [Official OS images](https://www.raspberrypi.com/software/operating-systems/)
+2. Insert a microSD card. A 16 GB card gives the OS, virtual environment and package updates room. In Imager select the **Zero W** or Zero family, then **Raspberry Pi OS Lite (32-bit)** for Debian 13 (Trixie) or **Legacy Lite (32-bit)** for Debian 12 (Bookworm). Confirm the description says **no desktop**. [Official OS images](https://www.raspberrypi.com/software/operating-systems/)
 3. In OS customisation, use hostname **welcomepi**, create the operator login **makeradmin**, and set a password. Enable SSH and select your public key or password authentication. Reserve the separate username `welcomepi` for the installed service. Configure your **2.4 GHz** Wi-Fi SSID and password, the correct wireless country, and timezone **America/New_York**. Substitute your chosen operator name and hostname in the commands below. [Imager setup](https://www.raspberrypi.com/documentation/computers/getting-started.html) · [Zero W networking](https://www.raspberrypi.com/documentation/computers/zero.html)
 4. Select the microSD by **capacity and device name**. Writing erases that card. Write the image, let Imager verify it, and eject it.
 
@@ -39,7 +39,7 @@ Let the first boot finish. From the workstation, connect once to confirm the SSH
 ssh makeradmin@welcomepi.local
 ```
 
-At the Pi prompt, run `cat /proc/device-tree/model; echo`, `grep VERSION_CODENAME /etc/os-release` and `dpkg --print-architecture`. Expect **Raspberry Pi Zero W**, **bookworm** and **armhf**. Run `exit` to return to the workstation.
+At the Pi prompt, run `cat /proc/device-tree/model; echo`, `grep VERSION_CODENAME /etc/os-release` and `dpkg --print-architecture`. Expect **Raspberry Pi Zero W**, either **trixie** or **bookworm**, and **armhf**. Run `exit` to return to the workstation.
 
 From the **makerspace-rails-2026 checkout containing this guide**, run the transfer. It places the deployable sources, scripts and example configuration in the operator's `~/WelcomePi` on the Pi. You can repeat it to send an updated checkout.
 
@@ -89,7 +89,8 @@ Replace the sample hostnames and every `REPLACE` value with site-provisioned set
 | --- | --- |
 | `MLAB_URI` | Read-only Rails MongoDB URI. Include the database watched by ChangeStream2MQTT in the URI path, commonly `/makerauth`. |
 | `LEDGER_URI` | Read-only MongoDB URI with the actual Ledger database in its path. Include the correct `authSource` and TLS options where required in each URI. Percent-encode reserved characters in URI usernames and passwords. |
-| `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS`, `MQTT_USERNAME`, `MQTT_PASSWORD` | Broker and subscribe-only credentials for this Pi. The example uses TLS on port 8883. The OS trust store must trust the broker's certificate. |
+| `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS`, `MQTT_USERNAME`, `MQTT_PASSWORD` | Broker and subscribe-only credentials for this Pi. The example uses TLS on port 8883 with the OS trust store. |
+| `MQTT_CAFILE` | For a private CA, set the path to its public PEM certificate or CA bundle on the Pi, readable by `welcomepi`. [MQTT configuration](MQTT.MD#configure-the-pi) |
 | `WELCOMEPI_LOCATION_PATTERNS` | To welcome only selected doors, set a JSON list of case-insensitive regexes, e.g. `WELCOMEPI_LOCATION_PATTERNS='["^Main Entrance$"]'`. Matching uses `where`, then `reader`, then `blank:`. Leave unset to welcome all locations. An empty list keeps MQTT arrivals history-only. |
 | `WELCOMEPI_NFC_PORT`, `WELCOMEPI_ROTATION` | Use `/dev/serial0` and `auto` for the initial setup. If the pixels need rotating for the physical mount, choose `left` or `right`. |
 | `WELCOMEPI_I2C_BUS`, `WELCOMEPI_I2C_ADDRESSES` | Defaults to `/dev/i2c-1` and `0x24`. For an address translator, enter its documented 7-bit addresses in probe order, separated by commas. |
@@ -185,7 +186,7 @@ GitHub publishes only the runtime ZIP and manifest, together in one commit. A da
 
 ### Optional RAM journal for a dedicated kiosk
 
-Bookworm can keep the **whole host's journal** in RAM, including systemd's routine timer messages. Entries in this journal disappear at reboot. Enable this only if that retention suits the site. [Bookworm journald settings](https://manpages.debian.org/bookworm/systemd/journald.conf.5.en.html)
+You can keep the **whole host's journal** in RAM, including systemd's routine timer messages. Entries in this journal disappear at reboot. Enable this only if that retention suits the site. [Bookworm journald settings](https://manpages.debian.org/bookworm/systemd/journald.conf.5.en.html)
 
 ```sh
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
@@ -200,7 +201,7 @@ To return to the host's previous policy, remove that drop-in and restart `system
 | Symptom | What to check |
 | --- | --- |
 | Cannot reach the Pi | Check power at PWR IN, the 2.4 GHz SSID, wireless country, SSH settings and the DHCP lease. |
-| Package or Python import fails | Confirm `bookworm` and `armhf`. Check package availability with `apt-cache policy python3-kms++ python3-pil` and confirm the venv interpreter under `/opt/welcomepi` is in use. Fix the package source or network and rerun `install`. |
+| Package or Python import fails | Confirm the codename is `trixie` or `bookworm` and the architecture is `armhf`. Check package availability with `apt-cache policy python3-kms++ python3-pil` and confirm the venv interpreter under `/opt/welcomepi` is in use. Fix the package source or network and rerun `install`. |
 | Blank HDMI or wrong mode | Connect the powered monitor and select its input. Check `kmsprint`, the journal, and `grep -o 'video=HDMI-A-1:[^ ]*' /proc/cmdline`. The live kernel should report the 720p setting after reboot. For boot recovery, the workstation can copy the two `.welcomepi-backup` files back over their respective originals on the microSD boot partition. |
 | I²C reader falls back to UART or MQTT-only | Check the breakout's mode and power, 3.3 V SDA/SCL wiring, `i2cdetect -l`, and `ls -l /dev/i2c-1`. On an existing installation, repeat steps 3 and 4 to install the updated service group permissions. A PN532 can stretch SCL during wake-up. If the hardware adapter times out, the serial fallback or a Linux `i2c-gpio` adapter on separate pins can be used. Set `WELCOMEPI_I2C_BUS` to the resulting device. [PN532 I²C driver](https://github.com/nfc-tools/libnfc/blob/master/libnfc/drivers/pn532_i2c.c) · [Pi overlay parameters](https://github.com/raspberrypi/firmware/blob/master/boot/overlays/README) |
 | UART reader fails or the fob does nothing | Check power, common ground, crossed TX/RX, HSU mode and `readlink -f /dev/serial0`. A UART listed in `/proc/consoles` is still a kernel console. For either transport, stop `welcomepi`, run `sudo bash setup.sh check`, then restart the service. If the handshake works, check the scan warning and member eligibility. [nfcpy serial reader setup](https://nfcpy.readthedocs.io/en/latest/topics/get-started.html) |

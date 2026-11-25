@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from itertools import zip_longest
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 import qrcode
 
 from .state import EASTERN, HOME
@@ -134,8 +134,9 @@ def section_pages(sections, face, width, capacity):
 
 
 class Canvas:
-    def __init__(self, size, *, variant=0, dimmed=False):
+    def __init__(self, size, *, variant=0, dimmed=False, stroke=0):
         self.w, self.h = size
+        self.stroke = stroke
         # Top-right, bottom-left, top-left, bottom-right for the QR or avatar.
         self.lower_header = variant % 2 == 1
         self.media_left = variant % VARIANT_COUNT in (1, 2)
@@ -153,8 +154,8 @@ class Canvas:
         self.line = round(size * 1.55)
         self.width = self.w - 2 * self.pad
 
-    def text(self, x, y, text, face, color=None):
-        self.draw.text((x, y), text, font=face, fill=color or self.palette.ink, anchor="lt")
+    def text(self, x, y, text, face, color=None, *, anchor="lt"):
+        self.draw.text((x, y), text, font=face, fill=color or self.palette.ink, anchor=anchor, stroke_width=self.stroke)
 
     def aligned_text(self, x, y, width, text, face, color=None):
         if self.media_left:
@@ -166,7 +167,7 @@ class Canvas:
         status_x = self.w - self.pad if self.media_left else self.pad
         status_y = self.pad if self.lower_header else self.h - self.pad
         anchor = ("r" if self.media_left else "l") + ("t" if self.lower_header else "b")
-        self.draw.text((status_x, status_y), status, font=self.small, fill=self.palette.muted, anchor=anchor)
+        self.text(status_x, status_y, status, self.small, self.palette.muted, anchor=anchor)
         room = self.h - 3 * self.pad - self.small.size
         start_y = 2 * self.pad + self.small.size if self.lower_header else self.pad
         gap = self.pad // 2
@@ -181,11 +182,12 @@ class Canvas:
             face = self.bold.font_variant(size=size)
             name = (fit(greeting_name, face, self.width) if truncate else
                     "\n".join(wrap(greeting_name, face, self.width, break_words=break_words)))
-            box = self.draw.multiline_textbbox((0, 0), name, font=face, spacing=gap, align="center")
+            box = self.draw.multiline_textbbox((0, 0), name, font=face, spacing=gap, align="center",
+                                               stroke_width=self.stroke)
             welcome = self.bold.font_variant(size=max(1, min(size // 2, self.w // 8, self.h // 7)))
-            left, _, right, welcome_height = welcome.getbbox("Welcome,", anchor="mt")
+            left, welcome_top, right, welcome_bottom = welcome.getbbox("Welcome,", anchor="mt", stroke_width=self.stroke)
             width = max(box[2] - box[0], 2 * max(-left, right))
-            height = welcome_height + gap + box[3] - box[1]
+            height = welcome_bottom - welcome_top + gap + box[3] - box[1]
             return face, name, box, welcome, width, height
 
         # Keep words intact as the name grows. Fit both the ink (including
@@ -204,10 +206,11 @@ class Canvas:
         # Move only within the spare room left by the largest fitting name.
         top = start_y + (room - height) * (3 if self.lower_header else 1) // 4
         center = self.pad + (self.width - width) * (1 if self.media_left else 3) // 4 + width // 2
-        self.draw.text((center, top), "Welcome,", font=welcome, fill=self.palette.accent, anchor="mt")
+        self.text(center, top + self.stroke, "Welcome,", welcome, self.palette.accent, anchor="mt")
         x = center - (box[2] - box[0]) // 2 - box[0]
         y = top + height - box[3]
-        self.draw.multiline_text((x, y), name, font=face, fill=self.palette.ink, spacing=gap, align="center")
+        self.draw.multiline_text((x, y), name, font=face, fill=self.palette.ink, spacing=gap, align="center",
+                                 stroke_width=self.stroke)
 
     def heading(self, x, y, title, width):
         side = self.bold.size
@@ -264,8 +267,7 @@ class Canvas:
                     self.image.paste(avatar.resize((side, side), Image.Resampling.LANCZOS), (x, y))
                 else:
                     self.draw.regular_polygon(((x + side / 2, y + side / 2), side * 0.45), 6, fill=self.palette.kicker)
-                    self.draw.text((x + side / 2, y + side / 2), str(details.rank), fill=self.palette.band,
-                                   font=self.title, anchor="mm")
+                    self.text(x + side / 2, y + side / 2, str(details.rank), self.title, self.palette.band, anchor="mm")
                 available -= side + self.pad
             if self.small.getlength(kicker) > available:
                 kicker = f"Active member  ·  {today:%b} {today.day}"
@@ -380,16 +382,26 @@ class Canvas:
         return len(pages)
 
 
-def render(size, screen, now, data, page=0, *, variant=0, dimmed=False):
-    canvas = Canvas(size, variant=variant, dimmed=dimmed)
+def render(size, screen, now, data, page=0, *, variant=0, dimmed=False, insets=(0, 0, 0, 0), stroke=0):
+    left, top, right, bottom = insets
+    viewport = (size[0] - left - right, size[1] - top - bottom)
+    if min(viewport) <= 0:
+        raise ValueError(f"WelcomePi insets {insets} leave no visible area on a {size[0]}x{size[1]} display")
+    canvas = Canvas(viewport, variant=variant, dimmed=dimmed, stroke=stroke)
+    count = draw_page(canvas, screen, now, data, page)
+    image = ImageOps.expand(canvas.image, border=insets, fill="black") if any(insets) else canvas.image
+    return image, count
+
+
+def draw_page(canvas, screen, now, data, page):
     today = now.astimezone(EASTERN)
     date = f"{today:%A, %B} {today.day}"
     if screen.page == "welcome":
         canvas.greeting(screen.record_first, date)
-        return canvas.image, 1
+        return 1
     if screen.greeting and not agenda_ready(data):
         canvas.greeting(screen.member.first, date)
-        return canvas.image, 1
+        return 1
     bounds = canvas.header(screen, today, date, data.get("details"), data.get("avatar"))
     count = (canvas.board(data, bounds, page) if screen.page == "board"
              else canvas.personal(screen.page, data, bounds, page))
@@ -397,6 +409,5 @@ def render(size, screen, now, data, page=0, *, variant=0, dimmed=False):
         x = canvas.pad if canvas.media_left else canvas.w - canvas.pad
         y = canvas.pad if canvas.lower_header else canvas.h - canvas.pad
         anchor = ("l" if canvas.media_left else "r") + ("t" if canvas.lower_header else "b")
-        canvas.draw.text((x, y), f"{page % count + 1}/{count}", font=canvas.small,
-                         fill=canvas.palette.muted, anchor=anchor)
-    return canvas.image, count
+        canvas.text(x, y, f"{page % count + 1}/{count}", canvas.small, canvas.palette.muted, anchor=anchor)
+    return count

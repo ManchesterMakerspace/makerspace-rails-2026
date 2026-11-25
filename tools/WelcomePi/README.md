@@ -1,12 +1,12 @@
 # WelcomePi
 
-WelcomePi is a read-only entrance kiosk for Raspberry Pi OS Lite **Bookworm**. It draws directly to one HDMI display with Pillow and KMS. A successful door check-in or a tap on the local PN532 wakes the display and greets a member. Local taps only control this screen.
+WelcomePi is a read-only entrance kiosk for Raspberry Pi OS Lite **Trixie or Bookworm**. It draws directly to one HDMI display with Pillow and KMS. A successful door check-in or a tap on the local PN532 wakes the display and greets a member. Local taps only control this screen.
 
 For a **Pi Zero W at 720p**, follow the [step-by-step setup guide](setup-pi0.MD). It covers the workstation transfer, GPIO wiring, Pi installer and separate first-welcome checks at the kiosk and the door. A working kiosk can [enroll for automatic updates from master](setup-pi0.MD#8-enable-automatic-updates-from-master).
 
 ## Install on a Pi 4 or Pi 5
 
-1. In Raspberry Pi Imager, choose your board and **Raspberry Pi OS (Legacy, 64-bit) Lite**, Debian 12 Bookworm. Both Pi 4 Model B and Pi 5 support this image. Pi 4B can also use 32-bit Bookworm Lite. Enable SSH and configure networking. With the Pi powered off, connect the monitor to the micro-HDMI socket marked **HDMI0** or **HDMI1**. [Raspberry Pi OS images](https://www.raspberrypi.com/software/operating-systems/)
+1. In Raspberry Pi Imager, choose your board and **Raspberry Pi OS Lite (64-bit)** for Debian 13 (Trixie) or the Legacy Lite image for Debian 12 (Bookworm). Both Pi 4 Model B and Pi 5 support this image. Pi 4B can also use 32-bit Lite on either release. Enable SSH and configure networking. With the Pi powered off, connect the monitor to the micro-HDMI socket marked **HDMI0** or **HDMI1**. [Raspberry Pi OS images](https://www.raspberrypi.com/software/operating-systems/)
 2. If using a PN532, choose I²C or UART and follow the [40-pin header wiring table](setup-pi0.MD#2-wire-the-pn532-while-power-is-disconnected). For I²C, run `sudo raspi-config nonint do_i2c 0` on the Pi before reboot. For GPIO UART, a fresh install sets `WELCOMEPI_NFC_PORT=/dev/serial0` on Pi 4B and `/dev/ttyAMA0` on Pi 5. Check this setting when reusing an environment file on another board. On a stock Pi 5, `/dev/serial0` points to the dedicated debug header. [Raspberry Pi UART configuration](https://www.raspberrypi.com/documentation/computers/configuration.html#configure-uarts)
 3. From the workstation, transfer the kiosk and connect to the Pi. Substitute your SSH login and hostname.
 
@@ -36,6 +36,20 @@ For a **Pi Zero W at 720p**, follow the [step-by-step setup guide](setup-pi0.MD)
 
 To switch sockets later, change `WELCOMEPI_HDMI_PORT` in `/etc/welcomepi.env` and run `sudo systemctl restart welcomepi.service`.
 
+### Adjust overscan and text weight
+
+If the monitor cuts off the top and right edges, try these values in `/etc/welcomepi.env`. Restart with `sudo systemctl restart welcomepi.service` and adjust the pixel counts to fit your monitor.
+
+```ini
+WELCOMEPI_INSET_TOP=16
+WELCOMEPI_INSET_RIGHT=24
+WELCOMEPI_FONT_STROKE=1
+```
+
+Set `WELCOMEPI_INSET` for a margin on all four sides (default 0). Each of `WELCOMEPI_INSET_TOP`, `WELCOMEPI_INSET_RIGHT`, `WELCOMEPI_INSET_BOTTOM` and `WELCOMEPI_INSET_LEFT` replaces that side's value, including when set to 0. Edges follow the upright picture on a rotated monitor. The kiosk lays out every page inside the remaining space and fills the margins with black.
+
+`WELCOMEPI_FONT_STROKE` thickens text on every screen. Start with 1 pixel for small labels. The supported range is 0 (default) through 3 pixels.
+
 ## Choosing an older board
 
 | Board on hand | Fit for the kiosk |
@@ -44,7 +58,7 @@ To switch sockets later, change `WELCOMEPI_HDMI_PORT` in `/etc/welcomepi.env` an
 | Pi 1, 512 MB | Oldest candidate to try. A later 2012 Model B or a Model B+ has a 700 MHz single-core ARM11 and built-in Ethernet. Start at 1280×720 and measure the greeting on that board. Some Pi 1 revisions have only 256 MB. Look up the value from `grep '^Revision' /proc/cpuinfo` before choosing one. [Board specifications](https://www.raspberrypi.com/documentation/computers/sbcs.html) · [Revision table](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#raspberry-pi-revision-codes) |
 | Pi 2 Model B, 1 GB | Wired option with four CPU cores and more room for a 1080p portrait display. [Board specifications](https://www.raspberrypi.com/documentation/computers/sbcs.html) |
 
-Select **Raspberry Pi OS (Legacy, 32-bit) Lite**, Debian 12 Bookworm. The official download lists Zero W, 1B+, and 2B for this image. The earliest 256 MB Pi 1 boards are experimental for this kiosk. At 720p the two HDMI buffers occupy about 7 MiB, rising to 16 MiB at 1080p, before Pillow's working images, Python, the member cache, and the OS. The 500 ms greeting target and monitor wake behavior require on-device measurement. [Raspberry Pi OS downloads](https://www.raspberrypi.com/software/operating-systems/)
+Select **Raspberry Pi OS Lite (32-bit)** for Trixie or **Legacy Lite (32-bit)** for Bookworm. The earliest 256 MB Pi 1 boards are experimental for this kiosk. At 720p the two HDMI buffers occupy about 7 MiB, rising to 16 MiB at 1080p, before Pillow's working images, Python, the member cache, and the OS. The 500 ms greeting target and monitor wake behavior require on-device measurement. [Raspberry Pi OS downloads](https://www.raspberrypi.com/software/operating-systems/)
 
 ## Install on a Pi Zero or Pi 3B+
 
@@ -81,7 +95,8 @@ Set values in `/etc/welcomepi.env`. Restart the service after edits.
 | Variable | Use |
 | --- | --- |
 | `MLAB_URI`, `LEDGER_URI` | Required. Read-only MongoDB URIs including the Rails source and Ledger database names respectively. Use the source database watched by ChangeStream2MQTT, normally `makerauth`. |
-| `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS` | Host required. TLS defaults to `true` with port 8883. Explicit `false` defaults to 1883. TLS verifies the broker against the OS trust store. |
+| `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS` | Host required. TLS defaults to `true` with port 8883. Explicit `false` defaults to 1883. |
+| `MQTT_CAFILE` | Optional PEM CA bundle for verifying the broker. Leave unset to use the OS trust store. [MQTT configuration](MQTT.MD#configure-the-pi) |
 | `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_CLIENT_ID` | Broker credentials if required. The default client ID is `welcomepi-<hostname>`. Give each kiosk a unique ID. |
 | `WELCOMEPI_LOCATION_PATTERNS` | JSON array of case-insensitive regexes for door welcomes. For example, `WELCOMEPI_LOCATION_PATTERNS='["^Main Entrance$","^Lobby Reader-"]'` matches the entire first location or any location with the second prefix. Unanchored expressions match anywhere. Unset allows all locations. `[]` makes all MQTT arrivals history-only. |
 | `WELCOMEPI_I2C_BUS`, `WELCOMEPI_I2C_ADDRESSES` | Default `/dev/i2c-1` and `0x24`. For an address translator, list the mapped 7-bit addresses in probe order, separated by commas. |
@@ -109,9 +124,11 @@ For check-in topics, the payload starts with `welcome`, `processed` or `insert`,
 
 **Application logs** use syslog's `daemon` facility and `welcomepi` tag. On the Pi the default destination is `/dev/log`. Follow it with `sudo journalctl -b -t welcomepi -f`. On systems without a syslog socket the service writes to the local journal via stderr. A configured remote collector receives UDP datagrams directly with the kiosk hostname. The Pi keeps the delivery queue in RAM. UDP carries member names in clear text, so select a collector and network approved for attendance records.
 
-- **INFO** records the selected PN532 interface, local card presentations and door arrivals. A verified scan includes the member's first and last name. For a local scan the log identifies the transport and device. For an MQTT scan it includes the received topic and the resolved location. On an activity topic, the final segment identifies the sending reader. A location mismatch is logged and the arrival still counts toward **Recent check-ins**. Local taps only control the screen. Retained and duplicate MQTT deliveries do not trigger another welcome.
+- **DEBUG** records each MQTT check-in as it arrives, before parsing, with its topic, byte count and retained flag. The raw message body is omitted. Follow these receipts on the Pi with `sudo journalctl -b -t welcomepi -p debug -f` when using local logging.
+- **INFO** records a public first-name welcome or an accepted scan. Verified scans include the member's name and the MQTT topic and location or local reader interface. A public first-name welcome can precede the member lookup.
 - When the display loses its HDMI connection, a **WARNING** names the socket and cable to check. A missing fixed display also triggers the warning at startup. Reconnecting it produces an **INFO** recovery message. Both messages go to the configured log and to stderr once per transition. A sleeping monitor can drop its connection signal, so the kiosk checks for persistent loss after wake. To watch stderr on the Pi, use `sudo journalctl -b -u welcomepi.service -f`, including with remote syslog enabled.
-- **WARNING** reports MQTT-only operation when neither reader responds. Every unverified scan also gets a warning explaining whether eligibility or a lookup failure prevented identification.
+- **WARNING** gives the reason a check-in was skipped for a welcome, including malformed data, retained or duplicate delivery, timestamps outside the freshness window, a location filter, ineligibility, or a newer arrival. History can still use a valid record. An unverified local tap or unavailable PN532 also produces a warning.
+- **ERROR** reports when an MQTT welcome cannot identify a member through the card and member directory, including a failed database lookup. A name-only greeting can still appear on the public display. An error for the missing UID explains why it could not open a personal agenda.
 - **ERROR** records MQTT socket/TLS, connection, subscription and keepalive failures, and MongoDB query, server-selection and heartbeat failures with their driver messages. Credentials and echoed MongoDB commands are filtered from application logs.
 
 ## Operation

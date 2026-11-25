@@ -117,13 +117,19 @@ class Inputs(unittest.TestCase):
         def msg(document=doc, published=epoch):
             return f'insert {published} {{"document": {json_util.dumps(document)} }}'.encode()
         # Retained/old records can update history without waking a screen.
-        for packet, retained in ((msg(), True), (msg(published=epoch-121), False),
-                                 (msg({**doc, "timeOf": epoch-121}), False)):
-            self.assertFalse(feed.message("checkins/insert", packet, retained, NOW, 8)[-1])
+        for packet, retained, reason in ((msg(), True, "retained"), (msg(published=epoch-121), False, "stale"),
+                                         (msg({**doc, "timeOf": epoch-121}), False, "stale"),
+                                         (msg(published=epoch+11), False, "future")):
+            with self.assertLogs("welcomepi.inputs", "DEBUG") as logs:
+                self.assertFalse(feed.message("checkins/insert", packet, retained, NOW, 8)[-1])
+            self.assertEqual([r.levelname for r in logs.records], ["DEBUG", "WARNING"])
+            self.assertIn(reason, logs.output[-1])
         kind, record, at, topic, fresh = feed.message("checkins/insert", msg(), False, NOW, 8)
         self.assertEqual((kind, record.uid, record.at, record.location, at, topic, fresh),
                          ("checkin", "00AB", NOW, "Workshop door", 8, "checkins/insert", True))
-        self.assertFalse(feed.message("checkins/insert", msg(), False, NOW, 9)[-1])
+        with self.assertLogs("welcomepi.inputs", "WARNING") as logs:
+            self.assertFalse(feed.message("checkins/insert", msg(), False, NOW, 9)[-1])
+        self.assertIn("duplicate", logs.output[0])
         self.assertEqual(feed.message("checkins/insert", msg({**doc, "_id": "other", "where": None}),
                                       False, NOW, 9)[1].location, "blank:")
         with self.assertRaises(ValueError):
@@ -154,11 +160,13 @@ class Inputs(unittest.TestCase):
                               payload=b'update 1 {"document":{"_id":{"$oid":"oops"}}}'))
         self.assertEqual(emit.call_args.args, ("resync",))
         reader_topic = "activity/checkins/activeMember/A0B1C2"
-        with self.assertLogs("welcomepi.inputs", "WARNING") as logs:
+        with self.assertLogs("welcomepi.inputs", "DEBUG") as logs:
             client.on_message(client, None, SimpleNamespace(topic=reader_topic, retain=False,
                               payload=b'processed 1700000000 {"uid":"FF0001","_id":{"$oid":"invalid"}}'))
-        self.assertIn(reader_topic, logs.output[0])
-        self.assertNotIn("FF0001", logs.output[0])
+        self.assertEqual([r.levelname for r in logs.records], ["DEBUG", "WARNING"])
+        for line in logs.output:
+            self.assertIn(reader_topic, line)
+            self.assertNotIn("FF0001", line)
 
 
 class ManualExecutor:
@@ -194,19 +202,19 @@ class Controller(unittest.TestCase):
         self.k.work = self.k.identity_work = ManualExecutor()
         self.k.tick()
 
-    def render(self, size, screen, now, data, page, *, variant, dimmed):
+    def render(self, size, screen, now, data, page, *, variant, dimmed, insets, stroke):
         self.frames.append(SimpleNamespace(page=screen.page, member=screen.member, greeting=screen.greeting,
                                            record_first=screen.record_first, data=dict(data), jobs=list(self.k.jobs),
                                            number=page, variant=variant, dimmed=dimmed))
         return Mock(), self.page_count
 
-    def finish(self, name, value=None, error=None, tag=None):
+    def finish(self, name, value=None, error=None, tag=None, known=False):
         tag = next(t for n, t in self.k.jobs if n == name) if tag is None else tag
         future = self.k.jobs[(name, tag)]
         if error:
             future.set_exception(error)
         else:
-            future.set_result(value)
+            future.set_result((value, known or value is not None) if name == "lookup" else value)
         while not self.k.events.empty():
             self.k.handle(self.k.events.get_nowait())
         self.k.tick()
@@ -252,7 +260,7 @@ class Controller(unittest.TestCase):
             self.finish("lookup", self.cache.lookup("AA", NOW), tag=old_tag)
             self.scan("BB")
             self.finish("lookup", error=ServerSelectionTimeoutError("test-db:27017 timed out"))
-        self.assertEqual(sum(r.getMessage().startswith("Card scan") for r in log.records), 3)
+        self.assertEqual(sum(r.getMessage().startswith("Card scan") for r in log.records), 2)
         self.assertEqual(sum(r.levelname == "WARNING" for r in log.records), 3)
         self.assertIn("MongoDB lookup failed: ServerSelectionTimeoutError: test-db:27017 timed out",
                       next(r.getMessage() for r in log.records if r.levelname == "ERROR"))
@@ -503,6 +511,7 @@ class Controller(unittest.TestCase):
         self.assertIn("side-reader", messages.output[0])
         self.assertNotIn("BB", messages.output[0])
         self.assertIn("location", messages.output[0])
+        self.assertEqual(messages.records[0].levelname, "WARNING")
         self.assertEqual((self.k.screen.member.first, self.k.screen.last_activity), ("Mara", old_activity))
         self.assertEqual([name for name, _ in self.k.recent.rows(now)], ["Lee"])
 
@@ -576,7 +585,7 @@ class Controller(unittest.TestCase):
             self.assertFalse(any(name in ("lookup", "reservations") for name, _ in first.jobs))
             self.k.tick()
             lookup, = [c for c in submit.call_args_list if c.args[0] == "lookup"]
-            self.assertEqual(lookup.args[2:4], (self.k.rails.identity, "BB"))
+            self.assertEqual(lookup.args[2:4], (self.k.rails.scan_identity, "BB"))
         self.finish("lookup", self.cache.lookup("BB", NOW))
         self.k.tick()
         self.assertEqual(self.k.screen.member.member_id, self.pairs[1][0]["_id"])
@@ -604,8 +613,9 @@ class Controller(unittest.TestCase):
                 self.at += 1
                 self.named_checkin(name, uid)
                 self.k.tick()
-                with self.assertLogs("welcomepi.app", level="WARNING"):
-                    self.finish("lookup", None)
+                with self.assertLogs("welcomepi.app", level="WARNING") as logs:
+                    self.finish("lookup", None, known=uid == "AA")
+                self.assertEqual([r.levelname for r in logs.records], ["WARNING" if uid == "AA" else "ERROR"])
                 self.assertIsNone(self.k.screen.member)
                 self.assertFalse(any(name in ("reservations", "details") for name, _ in self.k.jobs))
 

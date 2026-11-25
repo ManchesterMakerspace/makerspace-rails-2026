@@ -5,26 +5,30 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
+
+from pymongo.errors import NetworkTimeout, _OperationCancelled
 
 from pi0 import check, configure_boot
 from welcomepi.config import Settings
 
 
 class BootProfile(unittest.TestCase):
-    def test_supported_board_models_and_bookworm_images(self):
+    def test_supported_board_models_and_os_images(self):
         models = (("Raspberry Pi Zero W Rev 1.1\0", "armhf", "pi0w"),
                   ("Raspberry Pi 4 Model B Rev 1.5\0", "armhf", "pi4"),
                   ("Raspberry Pi 4 Model B Rev 1.5\0", "arm64", "pi4"),
                   ("Raspberry Pi 5 Model B Rev 1.0\0", "arm64", "pi5"),
                   ("Raspberry Pi 5\0", "arm64", "pi5"))
         for model, arch, board in models:
-            with self.subTest(model=model, architecture=arch):
-                self.assertEqual(configure_boot.board_profile(model, "bookworm", arch), board)
+            for codename in ("bookworm", "trixie"):
+                with self.subTest(model=model, architecture=arch, codename=codename):
+                    self.assertEqual(configure_boot.board_profile(model, codename, arch), board)
         unsupported = (("Raspberry Pi 400 Rev 1.0", "bookworm", "arm64"),
                        ("Raspberry Pi 500 Rev 1.0", "bookworm", "arm64"),
                        ("Raspberry Pi 5", "bookworm", "armhf"),
-                       ("Raspberry Pi 5", "trixie", "arm64"))
+                       ("Raspberry Pi 5", "trixie", "armhf"),
+                       ("Raspberry Pi 5", "bullseye", "arm64"))
         for values in unsupported:
             with self.subTest(platform=values), self.assertRaises(ValueError):
                 configure_boot.board_profile(*values)
@@ -97,6 +101,27 @@ class BootProfile(unittest.TestCase):
 
 
 class Commissioning(unittest.TestCase):
+    def test_probe_logs_live_cancellation_and_timeout_but_skips_close_cancellation(self):
+        def provider(uri, listener):
+            def heartbeat(error):
+                listener.failed(SimpleNamespace(reply=error, connection_id=("db", 27017)))
+
+            db = MagicMock()
+            db["members"].find_one.side_effect = lambda *_: heartbeat(_OperationCancelled("live"))
+
+            def close():
+                heartbeat(_OperationCancelled("closing"))
+                heartbeat(NetworkTimeout("timed out"))
+
+            db.client.close.side_effect = close
+            return lambda: db
+
+        with patch.object(check, "database_provider", side_effect=provider), self.assertLogs("welcomepi.logs") as log:
+            check.read_collections("test", ["members"])
+        self.assertEqual(len(log.output), 2)
+        self.assertIn("live", log.output[0])
+        self.assertIn("timed out", log.output[1])
+
     def setUp(self):
         self.settings = Settings.load({"MLAB_URI": "test", "LEDGER_URI": "test", "MQTT_HOST": "broker",
                                        "MQTT_CLIENT_ID": "live-kiosk"})

@@ -12,7 +12,7 @@ from .state import (CARD_FIELDS, EASTERN, MEMBER_FIELDS, UTC, Directory, checkin
                     day_bounds, identify, uid_key)
 
 
-def database_provider(uri):
+def database_provider(uri, listener=None):
     """Connect on a worker, including SRV DNS and TLS initialization."""
     lock = Lock()
     database = None
@@ -23,7 +23,8 @@ def database_provider(uri):
             if database is None:
                 client = MongoClient(uri, connect=False, tz_aware=True, appname="WelcomePi",
                                      serverSelectionTimeoutMS=3000, connectTimeoutMS=3000,
-                                     socketTimeoutMS=6000, maxPoolSize=8, event_listeners=[MongoFailures()])
+                                     socketTimeoutMS=6000, maxPoolSize=8,
+                                     event_listeners=[listener if listener is not None else MongoFailures()])
                 database = client.get_default_database()
         return database
 
@@ -71,14 +72,19 @@ class RailsData:
         return cache
 
     def identity(self, uid, now):
+        member, _ = self.scan_identity(uid, now)
+        return member
+
+    def scan_identity(self, uid, now):
+        """Return the eligible identity and whether the card resolved to a member record."""
         if not isinstance(uid, str) or not uid.strip():
-            return None
+            return None, False
         cards = list(self.db.cards.find({"uid": uid_filter(uid)}, list(CARD_FIELDS)).limit(2))
         if len(cards) != 1 or uid_key(cards[0]["uid"]) != uid_key(uid):
-            return None
+            return None, False
         member = self.db.members.find_one({"_id": cards[0].get("member_id"), "merged_at": None},
                                           list(MEMBER_FIELDS))
-        return identify(cards[0], member, now)
+        return identify(cards[0], member, now), member is not None
 
     def valid_tools(self, member_id, now):
         # Mongoid Date is stored as midnight UTC for the calendar label.

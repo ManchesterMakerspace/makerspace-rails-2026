@@ -110,14 +110,15 @@ class SyslogTests(unittest.TestCase):
                 log.warning("[udp-test] No valid member found at local PN532 UART")
                 log.error("[udp-test] MongoDB timeout\n%s p@ss mqtt-private slack-private",
                           config.rails_uri + "?authMechanism=x")
+                logging.getLogger("welcomepi.inputs.checkin").debug("[udp-test] Received MQTT check-in")
             # PyMongo can finish a heartbeat asynchronously after its test client closes.
             messages = []
-            while len(messages) < 3:
+            while len(messages) < 4:
                 packet = server.recv(9000).decode()
                 if "[udp-test]" in packet:
                     messages.append(packet)
         self.assertEqual(stderr.getvalue(), "")
-        for line, prefix in zip(messages, ("<30>", "<28>", "<27>")):
+        for line, prefix in zip(messages, ("<30>", "<28>", "<27>", "<31>")):
             self.assertTrue(line.startswith(prefix), line)
             self.assertIn("welcomepi[", line)
         self.assertIn("Door A), member Test Member", messages[0])
@@ -176,6 +177,17 @@ class MqttErrors(unittest.TestCase):
         self.assertIn(mqtt.error_string(mqtt.MQTT_ERR_KEEPALIVE), log.output[2])
         self.assertIn("detailed Paho error", log.output[3])
         self.assertEqual(self.emit.call_count, 3)
+
+    def test_tls_uses_configured_ca_or_system_trust(self):
+        path = "/etc/welcomepi/broker-ca.pem"
+        for config, expected in (({}, None), ({"MQTT_CAFILE": ""}, None), ({"MQTT_CAFILE": path}, path)):
+            with self.subTest(config=config):
+                self.client.tls_set.reset_mock()
+                start_mqtt(settings(MQTT_TLS="true", **config), self.emit)
+                self.client.tls_set.assert_called_once_with(ca_certs=expected)
+        self.client.tls_set.reset_mock()
+        start_mqtt(settings(MQTT_TLS="false", MQTT_CAFILE=path), self.emit)
+        self.client.tls_set.assert_not_called()
 
     def test_v2_disconnect_preserves_broker_reason(self):
         reason = Mock(value=135, is_failure=True)

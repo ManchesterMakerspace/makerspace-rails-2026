@@ -11,13 +11,14 @@ from bson import ObjectId, json_util
 from bson.errors import BSONError
 import paho.mqtt.client as mqtt
 
-from .checkin_payload import parse_checkin
+from .checkin_payload import CheckinFormatError, parse_checkin
 from .logs import driver_detail
 from .recent import COPY_INTERVAL, Checkin, compatible_names
 from .state import CARD_FIELDS, MEMBER_FIELDS, PERSONAL_SECONDS, UTC, uid_key
 
 
 LOG = logging.getLogger(__name__)
+CHECKIN_LOG = LOG.getChild("checkin")
 MUTATIONS = ("insert", "update", "replace", "delete")
 ACTIVITY = "activity/checkins/#"
 TOPICS = [("checkins/insert", 2), (ACTIVITY, 2)] + [(f"{c}/{op}", 2) for c in ("members", "cards") for op in MUTATIONS]
@@ -72,14 +73,24 @@ class DoorFeed:
 
     def message(self, topic, payload, retained, now, monotonic):
         if topic == "checkins/insert" or mqtt.topic_matches_sub(ACTIVITY, topic):
+            CHECKIN_LOG.debug("Received MQTT check-in on %s (%d bytes, retained=%s)", topic, len(payload), retained)
             record, operation, published, identifier, door_time = parse_checkin(payload)
-            fresh = bool(record.uid or record.name) and not retained and all(
-                -10 <= (now - stamp).total_seconds() < PERSONAL_SECONDS for stamp in (published, record.at))
-            if fresh:
-                fresh = self.first_delivery(record, (topic, operation), identifier, door_time, monotonic)
-                if fresh:
-                    self.last_public = None if record.uid else record
-            return ("checkin", record, monotonic, topic, fresh)
+            ages = [(now - stamp).total_seconds() for stamp in (published, record.at)]
+            if retained:
+                reason = "retained delivery"
+            elif max(ages) >= PERSONAL_SECONDS:
+                reason = "stale publication or check-in time"
+            elif min(ages) < -10:
+                reason = "publication or check-in time is in the future"
+            elif not (record.uid or record.name):
+                reason = "no card UID or display name for a greeting"
+            elif not self.first_delivery(record, (topic, operation), identifier, door_time, monotonic):
+                reason = "duplicate delivery"
+            else:
+                self.last_public = None if record.uid else record
+                return ("checkin", record, monotonic, topic, True)
+            CHECKIN_LOG.warning("MQTT check-in on %s ignored for welcome: %s", topic, reason)
+            return ("checkin", record, monotonic, topic, False)
         if (topic, 2) not in TOPICS:
             return None
         collection, operation = topic.split("/")
@@ -183,7 +194,8 @@ def start_mqtt(settings, emit):
             event = feed.message(msg.topic, msg.payload, msg.retain, datetime.now(UTC), time.monotonic())
         except (BSONError, ValueError, KeyError, TypeError, OverflowError, AttributeError, OSError, RecursionError) as error:
             # BSON decode errors can quote field values. These are payload errors, not driver errors.
-            LOG.warning("Malformed MQTT message on %s (%s)", msg.topic, type(error).__name__)
+            reason = str(error) if isinstance(error, CheckinFormatError) else type(error).__name__
+            LOG.warning("Ignored malformed MQTT message on %s (%s)", msg.topic, reason)
             event = ("resync",) if msg.topic.split("/")[0] in ("members", "cards") else None
         if event:
             emit(*event)
@@ -196,7 +208,7 @@ def start_mqtt(settings, emit):
         args = {"callback_api_version": mqtt.CallbackAPIVersion.VERSION2} if hasattr(mqtt, "CallbackAPIVersion") else {}
         client = mqtt.Client(client_id=settings.mqtt_id, clean_session=True, **args)
         if settings.mqtt_tls:
-            client.tls_set()
+            client.tls_set(ca_certs=settings.mqtt_cafile)
         if settings.mqtt_user:
             client.username_pw_set(settings.mqtt_user, settings.mqtt_password)
         client.on_connect = connected
