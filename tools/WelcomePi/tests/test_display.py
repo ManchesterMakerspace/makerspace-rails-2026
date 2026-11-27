@@ -184,6 +184,7 @@ class Layout(unittest.TestCase):
                     patch.object(canvas, "text", wraps=canvas.text) as text:
                 self.assertEqual(canvas.board(Screen(0), self.now, "November 23", data, page), 2)
             checkins, leaders, work = [call.args[1] for call in headings.call_args_list]
+            self.assertIn("Volunteer Opportunities", [call.args[2] for call in text.call_args_list])
             self.assertEqual(leaders - checkins - checkins_height, expected_gap)
             self.assertEqual(work, leaders)
             visible = [call.args[2] for call in text.call_args_list if call.args[2] in names]
@@ -212,8 +213,8 @@ class Layout(unittest.TestCase):
                 self.assertGreater(enlarged[2] - enlarged[0], base_qr.side)
 
     def test_idle_qr_doubles_in_a_free_corner_and_clears_text_on_other_pages(self):
-        # Leave room beside “Open volunteering” for the doubled QR even with DejaVu Sans Bold.
-        size = (960, 480)
+        # Leave room beside “Volunteer Opportunities” for the doubled QR with DejaVu Sans Bold.
+        size = (1080, 480)
         canvas = Canvas(size, stroke=1)
         header = canvas.header_height(True)
         original = qr_image(header - canvas.pad).width
@@ -380,6 +381,15 @@ class Hardware(unittest.TestCase):
                 with self.subTest(key=key, invalid=invalid), self.assertRaisesRegex(ValueError, key):
                     Settings.load({**env, key: invalid})
 
+    def test_idle_display_modes(self):
+        env = {"MLAB_URI": "test", "LEDGER_URI": "test", "MQTT_HOST": "broker"}
+        self.assertEqual(Settings.load(env).idle_display, "black")
+        for mode in ("black", "standby"):
+            self.assertEqual(Settings.load({**env, "WELCOMEPI_IDLE_DISPLAY": mode}).idle_display, mode)
+        for invalid in ("", "off"):
+            with self.assertRaisesRegex(ValueError, "WELCOMEPI_IDLE_DISPLAY"):
+                Settings.load({**env, "WELCOMEPI_IDLE_DISPLAY": invalid})
+
     def monitors(self):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(patch.dict("sys.modules", pykms=Mock()))
@@ -483,11 +493,9 @@ class Hardware(unittest.TestCase):
             display = Display("auto", "1")
             self.assertTrue(display.probe(0))
             old = display.output
-            old.active = False
             selected.write_text("disconnected\n")  # HDMI0 remains connected throughout.
-            self.assertFalse(display.probe(2))
+            self.assertFalse(display.probe(2, sleeping=True))
             self.assertIs(display.output, old)
-            old.active = True  # The wake frame was submitted with the stored mode.
             self.assertFalse(display.probe(4))
             selected.write_text("connected\n")
             self.assertTrue(display.probe(6))
@@ -500,11 +508,9 @@ class Hardware(unittest.TestCase):
         with self.assertNoLogs("welcomepi.display.cable", "INFO"):
             display = Display("auto")
             self.assertTrue(display.probe(0))
-            display.output.active = False
             first.write_text("disconnected\n")
-            self.assertFalse(display.probe(2))
+            self.assertFalse(display.probe(2, sleeping=True))
             self.output.assert_called_once_with(display.kms, "/dev/dri/card2", "HDMI-A-1", "auto")
-            display.output.active = True
             self.assertFalse(display.probe(4))  # Give a sleeping monitor time to reassert hotplug.
         with self.assertLogs("welcomepi.display.cable", "WARNING") as logs:
             self.assertTrue(display.probe(6))
@@ -527,7 +533,7 @@ class Hardware(unittest.TestCase):
         conn = Mock(id=12, fullname="HDMI-A-1")
         conn.get_current_crtc.return_value = crtc
         conn.get_possible_crtcs.return_value = [crtc]
-        conn.has_prop.return_value = False
+        conn.has_prop.side_effect = lambda name: name == "link-status"
         plane = Mock()
         plane.get_prop_value.side_effect = {"type": 1, "CRTC_ID": crtc.id, "rotation": 1}.__getitem__
         card = SimpleNamespace(connectors=[conn], planes=[plane])
@@ -555,10 +561,16 @@ class Hardware(unittest.TestCase):
         self.assertEqual(output.maps[0][:], image.transpose(Image.Transpose.ROTATE_270).tobytes("raw", "BGRX", 16, 1))
         requests[-1].add.assert_any_call(plane, "rotation", 1)
         output.standby()
-        requests[-1].add.assert_any_call(crtc, {"MODE_ID": 0, "ACTIVE": 0})
+        requests[-1].add.assert_any_call(conn, "CRTC_ID", crtc.id)
+        requests[-1].add.assert_any_call(crtc, {"MODE_ID": 7, "ACTIVE": 0})
         output.present(Image.new("RGB", (2, 3), "green"))
+        requests[-1].add.assert_any_call(crtc, {"MODE_ID": 7, "ACTIVE": 1})
+        requests[-1].add.assert_any_call(conn, "link-status", 0)
+        requests[-1].add_plane.assert_called_once_with(plane, output.frames[1], crtc)
         requests[-1].commit_sync.assert_called_once_with(allow_modeset=True)
         self.assertNotEqual(output.maps[0][:], output.maps[1][:])
+        output.disable()
+        requests[-1].add.assert_any_call(crtc, {"MODE_ID": 0, "ACTIVE": 0})
 
 
 class PrivateImage(unittest.TestCase):

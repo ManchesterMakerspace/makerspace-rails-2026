@@ -30,7 +30,7 @@ After startup MQTT supplies arrivals, including after broker reconnects.
 Door locations use `where`, then `reader`, then `blank:`.
 A location excluded by `WELCOMEPI_LOCATION_PATTERNS` is logged and contributes
 to history. It can brighten an awake display while leaving the current page
-and HDMI standby timer in place. A fresh, matching
+and four-hour idle timer in place. A fresh, matching
 check-in with a name displays the first name in large type before the card lookup.
 To load the agenda, the kiosk uses the card UID from the check-in (`uid` or
 `cardUID`) or local fob tap to find the active card, then looks up the card’s
@@ -50,7 +50,13 @@ or volunteer opportunities to show, or completion of all three reads for an empt
 Personal volunteer listings apply `WELCOMEPI_OPPORTUNITY_MIN_POINTS` (default 1.0)
 before reserving weekday slots and limiting the results. Local taps advance the
 personal pages.
-Two idle minutes clear personal content and four idle hours disable HDMI.
+Two idle minutes clear personal content. After four idle hours the default
+`black` mode displays solid black and keeps HDMI active. It redraws black if a
+monitor reconnects while idle. Setting `WELCOMEPI_IDLE_DISPLAY=standby` puts
+the selected HDMI output in standby, retaining its video mode. If the first
+wake frame fails while the monitor reports itself disconnected, the kiosk
+retries every two seconds using the current page and the saved mode.
+Either mode resumes the welcome on a qualifying local tap or door check-in.
 To reduce monitor burn-in, the public board alternates light and dark colors
 and cycles the portal QR through four corners. Pages with room add one blank row
 between check-ins and volunteer lists. The QR can grow to twice its fitted width and
@@ -84,6 +90,11 @@ The [Pi Zero W guide](../tools/WelcomePi/setup-pi0.MD) and
 use `workstation/setup.sh` to transfer the deployable files by SSH. On the Pi,
 `sudo bash setup.sh install` installs packages and the unit, builds the venv,
 and backs up and edits the two boot files. The Zero W uses 720p.
+The installer sets `consoleblank=0` for the text console. On a Pi with a desktop,
+an operator can run `sudo bash setup.sh desktop-blanking off` or
+`sudo bash setup.sh desktop-blanking on` from the active desktop user's account.
+This calls `raspi-config` for the running Raspberry Pi OS desktop, verifies
+the saved setting, and takes effect at the next desktop login.
 The Pi 4B and Pi 5 use the monitor's advertised mode or its configured kernel
 mode. The installer preserves existing credentials
 and restarts an already running service. After configuration and reboot,

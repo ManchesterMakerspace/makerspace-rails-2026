@@ -4,20 +4,36 @@ set -euo pipefail
 
 usage() {
     echo "Usage: sudo bash setup.sh install | check | watch-door | enable-updates"
+    echo "       sudo bash setup.sh desktop-blanking off|on"
     echo "  install     Configure a Pi Zero W, Pi 4 Model B or Pi 5 and install the service files"
     echo "  check       Report HDMI status and check the reader, database reads and broker subscriptions"
     echo "  watch-door  Wait for a fresh door check-in beside the running kiosk"
     echo "  enable-updates  Enroll this installation for automatic updates from master"
+    echo "  desktop-blanking  Set the Raspberry Pi OS desktop's idle blanking policy"
 }
 die() { echo "$*" >&2; exit 1; }
 if [[ $# == 1 && $1 == --help ]]; then usage; exit 0; fi
-if [[ $# != 1 ]]; then usage >&2; exit 2; fi
-case "$1" in install|check|watch-door|enable-updates) ;; *) usage >&2; exit 2 ;; esac
+case "${1:-}" in
+    desktop-blanking) [[ $# == 2 && ( $2 == off || $2 == on ) ]] || { usage >&2; exit 2; } ;;
+    install|check|watch-door|enable-updates) [[ $# == 1 ]] || { usage >&2; exit 2; } ;;
+    *) usage >&2; exit 2 ;;
+esac
 [[ $EUID == 0 ]] || die "Run this command with sudo on the Pi."
 umask 022
 
 app=/opt/welcomepi
 case "$1" in
+    desktop-blanking)
+        # raspi-config selects the backend from the running compositor. On Lite
+        # there is no desktop to configure; install already sets consoleblank=0.
+        pgrep -x 'Xorg|labwc|wayfire' >/dev/null || die "Run from the Raspberry Pi OS desktop login while its session is active."
+        blanking=1  # raspi-config uses 1 for disabled, 0 for enabled.
+        if [[ $2 == on ]]; then blanking=0; fi
+        raspi-config nonint do_blanking "$blanking"
+        [[ $(raspi-config nonint get_blanking) == "$blanking" ]] || die "Could not verify the desktop blanking setting."
+        echo "Desktop blanking set to $2. Log out and back in to apply it."
+        exit 0
+        ;;
     check|watch-door)
         if [[ -L "$app/current" ]]; then app="$app/current"; fi
         [[ -x "$app/.venv/bin/python" && -f /etc/welcomepi.env ]] || die "Run the install step first."

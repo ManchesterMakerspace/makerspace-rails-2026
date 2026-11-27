@@ -1,5 +1,5 @@
 diff --git a/digital-makerspace/members/check-in-activity.md b/digital-makerspace/members/check-in-activity.md
-index e7dea43..dc12a99 100644
+index e7dea43..b659435 100644
 --- a/digital-makerspace/members/check-in-activity.md
 +++ b/digital-makerspace/members/check-in-activity.md
 @@ -22,6 +22,18 @@ The list shows the newest scans first. For each one you see the **Timestamp**, t
@@ -14,7 +14,7 @@ index e7dea43..dc12a99 100644
 +
 +**Everyone near the screen can see your personal information if you open it.** While your agenda is on screen, tap your own active fob on the kiosk reader to open your details. Ledger participants see their character sheet and current avatar or rank icon. Other members see the text of kudos they have received, including private messages, followed by their current tool checkouts. Tap once more to clear your details.
 +
-+A different local fob starts its owner's welcome immediately. On the details screen you have 30 seconds before a waiting arrival with a verified fob takes over. A name-only arrival leaves your details on screen. After two minutes without a qualifying scan, the display returns to the five most recently checked-in members from the past 16 hours, lifetime volunteer point leaders, available work, and the portal QR code. Each member appears once at their latest arrival time, including arrivals at doors that do not open a welcome on this kiosk. After four hours it sleeps until the next qualifying scan.
++A different local fob starts its owner's welcome immediately. On the details screen you have 30 seconds before a waiting arrival with a verified fob takes over. A name-only arrival leaves your details on screen. After two minutes without a qualifying scan, the display returns to the five most recently checked-in members from the past 16 hours, lifetime volunteer point leaders, **Volunteer Opportunities**, and the portal QR code. Each member appears once at their latest arrival time, including arrivals at doors that do not open a welcome on this kiosk. After four quiet hours the screen goes dark until the next qualifying scan.
 +
 +The public board changes colors and moves the portal QR through all four corners to reduce monitor burn-in. The QR can extend past the colored title bar into a clear corner. It stays steady as the lists page, so you can keep your phone aimed at it. A fresh door check-in or a tap on the display's reader brightens a dim board. Greetings, agendas and details stay at normal brightness and use a different layout the next time you open them.
 +
@@ -22,16 +22,20 @@ index e7dea43..dc12a99 100644
 
  Admins can open the tab on a member's profile. For admins it also lists **Additional Details** for each scan, such as the **Card Holder**, plus the validity and location. Use it to help a member whose fob does not work: find their recent scans and read the validity of the refused ones. Open it only for a real need, such as a member asking for help, and do not share what you see with others.
 diff --git a/digital-makerspace/troubleshooting.md b/digital-makerspace/troubleshooting.md
-index 6bbd6bb..2af33a3 100644
+index 6bbd6bb..0950c2d 100644
 --- a/digital-makerspace/troubleshooting.md
 +++ b/digital-makerspace/troubleshooting.md
-@@ -42,6 +42,14 @@ A fob works only while your membership is active and not expired, and only if it
+@@ -42,6 +42,18 @@ A fob works only while your membership is active and not expired, and only if it
 
  Look at **Subscriptions** in the portal menu. If you pay by subscription, the date moves forward after each successful payment. If something does not look right, tell the board.
 
 +### The entrance display did not show my agenda
 +
 +Some doors update the Recent check-ins list without opening a welcome on this kiosk. A door that sends only your name can show the large first-name greeting immediately. Your agenda opens when the kiosk receives your fob’s card ID and verifies your membership. If the greeting stays on screen, tap your own active fob on the reader beside the display. Check your expiration date on the portal Home page and your door scans in [Check-In Activity](/digital-makerspace/members/check-in-activity). If the local tap or a welcome-enabled door still fails, tell the board which reader you used and when.
++
++### The entrance monitor shows No Signal
++
++After four quiet hours the kiosk either shows solid black or puts the monitor into standby. Some monitors show **No Signal** in standby. Tap your active fob once on the reader beside it and give the monitor a few seconds to show your welcome. If it stays dark, tell the board which reader you used and when.
 +
 +### The entrance display showed another welcome while I was reading
 +
@@ -44,7 +48,7 @@ diff --git a/digital-makerspace/admin/welcomepi-updates.md b/digital-makerspace/
 new file mode 100644
 --- /dev/null
 +++ b/digital-makerspace/admin/welcomepi-updates.md
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,47 @@
 +---
 +title: WelcomePi updates
 +description: Choose the entrance display output and manage automatic updates.
@@ -75,7 +79,11 @@ new file mode 100644
 +
 +Set `WELCOMEPI_OPPORTUNITY_MIN_POINTS` in `/etc/welcomepi.env` to choose the minimum points per opportunity on member agendas. The default is 1.0 and accepts fractional overrides. If text is cut off, set `WELCOMEPI_INSET` in pixels for all edges, or adjust just the clipped edges with `WELCOMEPI_INSET_TOP`, `WELCOMEPI_INSET_RIGHT`, `WELCOMEPI_INSET_BOTTOM` and `WELCOMEPI_INSET_LEFT`. These settings follow the upright picture. For heavier text, start with `WELCOMEPI_FONT_STROKE=1`. Set these in `/etc/welcomepi.env` and restart `welcomepi.service`.
 +
-+A fresh check-in at any door or a distinct tap on the local reader restores normal brightness while HDMI is awake. This includes history-only doors and unrecognized local fobs. Normal welcome and membership rules still determine which page opens. Two minutes without qualifying activity clear personal details. After four hours without qualifying activity HDMI enters standby until a qualifying scan.
++A fresh check-in at any door or a distinct local tap brightens a dim public board, including at history-only doors and with unrecognized fobs. Two minutes without qualifying activity clear personal details. After four hours the kiosk shows solid black with HDMI active by default. To put the monitor in standby instead, set `WELCOMEPI_IDLE_DISPLAY=standby` in `/etc/welcomepi.env` and restart `welcomepi.service`. In either mode an eligible local tap or a fresh welcome-enabled door check-in brings the greeting back.
++
++On Raspberry Pi OS Lite, installation disables text-console blanking at boot. If the Pi also runs an X11 or Wayland desktop, open a terminal as the desktop user and run `sudo bash setup.sh desktop-blanking off` from the updated `~/WelcomePi` directory. Log out and back in. Use `desktop-blanking on` to restore desktop blanking.
++
++If a monitor stays on **No Signal** after standby, check the configured log for the accepted scan and the welcome frame submission. The kiosk retries a failed wake every two seconds while the monitor reports itself disconnected. Check the selected HDMI input and cable if the service journal reports a persistent disconnect.
 +
 +## Enable automatic updates
 +

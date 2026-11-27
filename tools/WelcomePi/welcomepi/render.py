@@ -431,7 +431,7 @@ class Canvas:
                 list_top += self.line
             y = list_top
             section(leader_x, y, "Volunteer leaders", width, draw)
-            section(work_x, y, "Open volunteering", width, draw)
+            section(work_x, y, "Volunteer Opportunities", width, draw)
             for left, right in page_rows:
                 y += self.line
                 label(leader_x, y, left, self.body, draw)
