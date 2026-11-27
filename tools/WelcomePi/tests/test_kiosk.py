@@ -9,6 +9,7 @@ from bson import ObjectId, json_util
 
 from welcomepi.app import Kiosk
 from welcomepi.config import Settings
+from welcomepi.display import Display
 from welcomepi.inputs import DoorFeed, TOPICS, start_mqtt
 from welcomepi.ledger import Avatar, Details
 from welcomepi.reader import CardPresence
@@ -272,6 +273,7 @@ class Controller(unittest.TestCase):
         self.finish("snapshot", self.cache)
 
     def test_single_page_board_rotates_and_dims_without_refreshing_or_extending_activity(self):
+        self.k.settings = replace(self.k.settings, idle_display="standby")
         self.at = 419
         self.k.tick()
         first = self.frames[-1]
@@ -318,6 +320,70 @@ class Controller(unittest.TestCase):
                 frame = self.frames[-1]
                 self.assertEqual((frame.dimmed, frame.variant != first.variant), (dimmed, rotated))
 
+    def test_default_black_idle_frame_keeps_signal_repaints_on_reconnect_and_wakes_on_activity(self):
+        self.preload()
+        output = self.display.output
+        output.present.reset_mock()
+        self.at = 14400
+        self.k.tick()
+        self.display.probe.assert_called_with(self.at, sleeping=False)
+        image, = output.present.call_args.args
+        self.assertEqual((image.size, image.mode, image.getbbox()), (output.size, "RGB", None))
+        self.at += 5
+        self.k.tick()
+        output.present.assert_called_once()
+
+        self.display.probe.return_value = True  # Reconnected monitor with a new mode.
+        output.size = (480, 800)
+        self.k.tick()
+        image, = output.present.call_args.args
+        self.assertEqual((image.size, image.getbbox()), (output.size, None))
+        self.display.probe.return_value = False
+        self.scan("AA")
+        self.assertEqual((self.frames[-1].member.first, self.frames[-1].dimmed), ("Mara", False))
+        self.at += 14400
+        self.k.tick()
+        frame = self.named_checkin("Lee", uid="BB")
+        self.assertEqual((frame.record_first, frame.dimmed), ("Lee", False))
+        output.standby.assert_not_called()
+        output.disable.assert_not_called()
+
+    def test_wake_retries_saved_output_while_monitor_still_reports_disconnected(self):
+        self.k.settings = replace(self.k.settings, idle_display="standby")
+        self.preload()
+        port = "card2-HDMI-A-2"
+        connected = [port]
+        with patch.dict("sys.modules", pykms=Mock()), \
+                patch("welcomepi.display.connected_outputs", return_value=connected), \
+                patch("welcomepi.display.Output") as open_output:
+            self.k.display = Display("normal", "1")
+            output = open_output.return_value
+            output.size = (800, 480)
+            self.at = 14399
+            self.k.tick()
+            self.at += 1  # Standby starts between connector polls.
+            self.k.tick()
+            output.standby.assert_called_once_with()
+            output.active = False
+            output.present.reset_mock()
+            output.present.side_effect = [OSError("HDMI waking"), None]
+            connected.clear()
+
+            with self.assertLogs("welcomepi.app", "WARNING"):
+                self.scan("AA")
+            output.present.assert_called_once()
+            self.assertIsNone(self.k.screen.welcome_presented_at)
+            self.at += 1
+            self.k.tick()
+            output.present.assert_called_once()
+            self.at += 1
+            self.k.tick()
+            self.assertEqual(output.present.call_count, 2)
+            self.assertEqual(self.k.screen.welcome_presented_at, self.at)
+            self.assertEqual(self.frames[-1].member.first, "Mara")
+            output.close.assert_not_called()
+            open_output.assert_called_once()
+
     def test_pagination_and_data_updates_keep_the_current_layout_and_page_deadline(self):
         self.page_count = 3
         self.finish("leaders", [("Example", "1 pt")])
@@ -357,6 +423,7 @@ class Controller(unittest.TestCase):
         self.assertEqual(len({variants[view][0] for view in ("welcome", "agenda", "details")}), 3)
 
     def test_filtered_arrivals_and_unknown_local_taps_brighten_only_the_awake_board(self):
+        self.k.settings = replace(self.k.settings, idle_display="standby")
         def door_event(fresh):
             record = Checkin(self.k.wall(), name="Example", location="Side door")
             self.k.handle(("checkin", record, self.at, "activity/checkins/side", fresh))

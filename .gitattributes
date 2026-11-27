@@ -1,5 +1,6 @@
 *.rb    text eol=lf
 *.json  text eol=lf
+tools/WelcomePi/wiki-release.patch text eol=lf
 *.rake  text eol=lfbin/* text eol=lf
 bin/* text eol=lf
 bin/* text eol=lf

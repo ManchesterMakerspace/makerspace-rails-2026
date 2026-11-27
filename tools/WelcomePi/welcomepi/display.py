@@ -104,6 +104,8 @@ class Output:
         if not self.active:
             req.add(self.conn, "CRTC_ID", self.crtc.id)
             req.add(self.crtc, {"MODE_ID": self.blob.id, "ACTIVE": 1})
+            if self.conn.has_prop("link-status"):
+                req.add(self.conn, "link-status", 0)  # DRM_MODE_LINK_STATUS_GOOD
         req.add_plane(self.plane, fb, self.crtc)
         if self.has_rotation:
             req.add(self.plane, "rotation", 1)  # Pillow owns the transform.
@@ -113,6 +115,16 @@ class Output:
         self.back = 1 - self.back
 
     def standby(self):
+        # Atomic DPMS keeps the route and mode reserved while the CRTC sleeps.
+        # Set both explicitly in case the monitor first connected during sleep.
+        req = self.kms.AtomicReq(self.card)
+        req.add(self.conn, "CRTC_ID", self.crtc.id)
+        req.add(self.crtc, {"ACTIVE": 0, "MODE_ID": self.blob.id})
+        if req.commit_sync(allow_modeset=True):
+            raise OSError("Cannot put HDMI output in standby")
+        self.active = False
+
+    def disable(self):
         req = self.kms.AtomicReq(self.card)
         req.add(self.plane, {"FB_ID": 0, "CRTC_ID": 0})
         req.add(self.conn, "CRTC_ID", 0)
@@ -156,19 +168,20 @@ class Display:
             HDMI_CABLE_LOG.warning("%s is disconnected. Check the HDMI cable and monitor power.", self.port_label(name))
             self.missing_connectors.add(name)
 
-    def probe(self, at):
+    def probe(self, at, *, sleeping=False):
+        if self.output and sleeping:
+            self.was_asleep = True
         if at < self.next_probe:
             return False
         self.next_probe = at + 2
         outputs = list(connected_outputs(self.hdmi_port))
-        asleep = self.output is not None and not self.output.active
         # Monitors can deassert hotplug in standby. Allow one polling interval
         # on wake before reporting a loss or handing the kiosk to another port.
-        waking = self.output is not None and self.was_asleep and not asleep
-        self.was_asleep = asleep
-        self.report_cables(outputs, suppress_loss=asleep or waking)
+        keep_port = self.output is not None and (self.was_asleep or sleeping)
+        self.was_asleep = sleeping
+        self.report_cables(outputs, suppress_loss=keep_port)
         port = next(iter(outputs), None)
-        if self.output and (asleep or waking):
+        if keep_port:
             port = self.port if self.port in outputs else None
             if port is None:
                 self.lost_signal = True
@@ -185,6 +198,14 @@ class Display:
             self.port = port
             self.expected_connector = name
         return True
+
+    def retry(self):
+        if self.output and not self.output.active:
+            # A sleeping sink can reject the wake frame before raising hotplug.
+            # Keep its mode for another attempt, and reopen when detected again.
+            self.lost_signal = True
+        else:
+            self.close()
 
     def close(self):
         if self.output:

@@ -7,6 +7,7 @@ from queue import Empty, Queue
 from threading import Thread
 import time
 
+from PIL import Image
 from pymongo.errors import PyMongoError
 
 from .data import RailsData, database_provider
@@ -57,6 +58,7 @@ class Kiosk:
         self.layout_started = self.screen.entered
         self.dimmed = False
         self.dirty = True
+        self.retry_paint_at = 0
         self.greeting_started = None
         self.uids_after_paint = set()
 
@@ -346,11 +348,15 @@ class Kiosk:
             self.dirty = True
 
     def paint(self, at, now):
+        if at < self.retry_paint_at:
+            return
         try:
-            if self.display.probe(at):
+            idle = self.screen.page == "sleep"
+            standby = idle and self.settings.idle_display == "standby"
+            if self.display.probe(at, sleeping=standby):
                 self.dirty = True
             output = self.display.output
-            if output and self.screen.page != "sleep":
+            if output and not idle:
                 if self.screen.greeting and self.screen.welcome_presented_at is not None:
                     if not self.screen.dated_welcome_presented:
                         self.dirty = True
@@ -360,8 +366,10 @@ class Kiosk:
                 self.update_appearance(at)
             if not output or not self.dirty:
                 return
-            if self.screen.page == "sleep":
+            if standby:
                 output.standby()
+            elif idle:
+                output.present(Image.new("RGB", output.size, "black"))
             else:
                 image, self.page_count = render(output.size, self.screen, now, self.data, self.page,
                                                 variant=self.variant, dimmed=self.dimmed,
@@ -375,11 +383,14 @@ class Kiosk:
                 if self.greeting_started is not None and self.screen.page in ("agenda", "welcome"):
                     LOG.info("Welcome frame submitted in %.0f ms", (self.clock() - self.greeting_started) * 1000)
             self.dirty = False
+            self.retry_paint_at = 0
             self.greeting_started = None
         except (OSError, RuntimeError, ValueError, IndexError, StopIteration) as error:
-            LOG.warning("HDMI unavailable (%s); probing again", type(error).__name__)
-            self.display.close()
-            self.display.next_probe = at + 2
+            if not self.retry_paint_at:
+                LOG.warning("HDMI unavailable (%s); probing again", type(error).__name__)
+            self.display.retry()
+            self.dirty = True
+            self.retry_paint_at = at + 2
 
     def tick(self):
         at, now = self.clock(), self.wall()
@@ -424,7 +435,7 @@ class Kiosk:
         self.identity_work.shutdown(wait=False, cancel_futures=True)
         if self.display.output:
             try:
-                self.display.output.standby()
+                self.display.output.disable()
             except (OSError, RuntimeError):
                 pass
         self.display.close()

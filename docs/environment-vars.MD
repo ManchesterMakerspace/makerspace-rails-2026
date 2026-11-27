@@ -43,7 +43,8 @@ job to check the release bytes a second time. Both are workflow-local.
 | `WELCOMEPI_INSET_LEFT`, `WELCOMEPI_INSET_TOP`, `WELCOMEPI_INSET_RIGHT`, `WELCOMEPI_INSET_BOTTOM` | No | Each replaces the global inset for that edge. An explicit 0 removes that edge's margin. |
 | `WELCOMEPI_FONT_STROKE` | No | Extra stroke width on all kiosk text, in whole pixels from 0 (default) to 3. |
 | `WELCOMEPI_LAYOUT_INTERVAL_MINUTES` | No | Positive whole minutes between layout and color changes while the public board stays visible. Defaults to 7. Greetings, agendas and details change layout on successive visits. |
-| `WELCOMEPI_DIM_AFTER_MINUTES` | No | Positive whole minutes since the last fresh door check-in or distinct local fob tap before the public board dims. Defaults to 15. Personal pages use normal brightness. The four-hour HDMI standby timer uses its own activity rules. |
+| `WELCOMEPI_DIM_AFTER_MINUTES` | No | Positive whole minutes since the last fresh door check-in or distinct local fob tap before the public board dims. Defaults to 15. Personal pages use normal brightness. The four-hour idle timer uses its own activity rules. |
+| `WELCOMEPI_IDLE_DISPLAY` | No | After four hours without a qualifying scan, `black` (default) displays solid black with HDMI active. Set `standby` to put HDMI into standby. The next qualifying scan resumes the welcome in either mode. |
 | `WELCOMEPI_OPPORTUNITIES` | No | Positive integer. Defaults to five opportunities on the member agenda. |
 | `WELCOMEPI_OPPORTUNITY_MIN_POINTS` | No | Inclusive minimum credit value for volunteer tasks and events on the member agenda. Defaults to `1.0`. Accepts finite nonnegative numbers, including fractions. The public board lists opportunities of any value. |
 | `EVENTBRITE_ORGANIZATION_IDS` | No | Comma-separated organization IDs, matching the Rails sync configuration. Empty includes public occurrences from all synced organizations. |

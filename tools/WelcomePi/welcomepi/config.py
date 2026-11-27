@@ -74,6 +74,7 @@ class Settings:
     insets: tuple[int, int, int, int] = (0, 0, 0, 0)
     font_stroke: int = 0
     opportunity_min_points: float = 1.0
+    idle_display: str = "black"
 
     def welcomes_location(self, location):
         return self.location_patterns is None or any(pattern.search(location) for pattern in self.location_patterns)
@@ -94,6 +95,9 @@ class Settings:
             raise ValueError("Invalid WELCOMEPI_ROTATION")
         hdmi_port = env.get("WELCOMEPI_HDMI_PORT", "auto")
         hdmi_connector(hdmi_port)
+        idle_display = env.get("WELCOMEPI_IDLE_DISPLAY", cls.idle_display)
+        if idle_display not in ("standby", "black"):
+            raise ValueError("WELCOMEPI_IDLE_DISPLAY must be standby or black")
         count = int(env.get("WELCOMEPI_OPPORTUNITIES", "5"))
         try:
             minimum = float(env.get("WELCOMEPI_OPPORTUNITY_MIN_POINTS", "1.0"))
@@ -140,4 +144,4 @@ class Settings:
                    layout_interval_minutes=positive_minutes(env, "WELCOMEPI_LAYOUT_INTERVAL_MINUTES", 7),
                    dim_after_minutes=positive_minutes(env, "WELCOMEPI_DIM_AFTER_MINUTES", 15),
                    mqtt_cafile=env.get("MQTT_CAFILE") or None, insets=insets, font_stroke=stroke,
-                   opportunity_min_points=minimum)
+                   opportunity_min_points=minimum, idle_display=idle_display)
