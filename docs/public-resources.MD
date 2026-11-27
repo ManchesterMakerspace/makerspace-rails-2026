@@ -58,6 +58,7 @@ document that follows the structure below.
 | `/api/rental_spots/:id/public` | `GET` | QR/deep-link visitors and Member Portal pre-login landing pages | No member session or token | JSON | `id` (path; MongoDB ID or spot number) | None | `RentalSpotsController#public_show` | [Public rental spots](rental-spots.MD) |
 | `/volunteer/bounties` | `GET` | Public displays, integrations, and prospective volunteers | No member session; shared `token` required only when volunteer token gating is enabled | HTML, JSON, XML | None | `shop`, `token` (query); `.json`/`.xml` extension or matching `Accept` header | `Volunteer::BountiesController#index` | [Public volunteer resources](volunteer-public-resources.MD#bounties) |
 | `/volunteer/leaderboard` | `GET` | Public displays, browsers, and integrations | No member session; shared `token` required only when volunteer token gating is enabled | HTML, JSON | None | `token` (query); `.json` extension or JSON `Accept` header | `Volunteer::LeaderboardController#index` | [Public volunteer resources](volunteer-public-resources.MD#leaderboard) |
+| `/eventbrite/events` | `GET` | Visitors, displays and integrations | No member session or token | HTML, JSON, XML by suffix or `Accept` | None | `max_days` (default 31), `min_tickets_remaining`, `name`, `notname` | `PublicEventbriteEventsController#index` | [Public Eventbrite feed](volunteer-public-resources.MD#eventbrite-events) |
 
 ## Public runtime configuration
 
@@ -238,11 +239,7 @@ The pending-credit count remains global. Omitting `year` returns all-time activi
 
 ## Eventbrite resources
 
-| Route | Access and formats | Optional query parameters |
-| --- | --- | --- |
-| `GET /eventbrite/events` | Public, token-free HTML, JSON and XML by suffix or `Accept` | `max_days` (default 31), `min_tickets_remaining`, `name`, `notname` |
-
-The feed includes ongoing and future public occurrences from imported records.
+The public `GET /eventbrite/events` feed includes ongoing and future occurrences from imported records.
 See the [public feed catalog](volunteer-public-resources.MD#eventbrite-events) for eligibility, fields and examples.
 
 `POST <EVENTBRITE_WEBHOOK_PATH>` receives private-URL Eventbrite JSON pointers,
