@@ -238,6 +238,13 @@ The pending-credit count remains global. Omitting `year` returns all-time activi
 
 ## Eventbrite resources
 
+| Route | Access and formats | Optional query parameters |
+| --- | --- | --- |
+| `GET /eventbrite/events` | Public, token-free HTML, JSON and XML by suffix or `Accept` | `max_days` (default 31), `min_tickets_remaining`, `name`, `notname` |
+
+The feed includes ongoing and future public occurrences from imported records.
+See the [public feed catalog](volunteer-public-resources.MD#eventbrite-events) for eligibility, fields and examples.
+
 `POST <EVENTBRITE_WEBHOOK_PATH>` receives private-URL Eventbrite JSON pointers,
 outside session/CSRF authentication; only this receiver bypasses CSRF. It returns
 202 after persistence, 200 for test, 204 for unsupported actions, 400 for malformed
@@ -268,6 +275,8 @@ never the import time. It remains null when that date is unknown, while refund
 invalidation and provider status remain visible. Existing known refund dates are
 preserved on replay. The EventbriteRecord schema retains its nullable string shape.
 The React `/admin/eventbrite` browser and member Eventbrite tab use these routes.
+Global list requests also accept `from_date`, `to_date` and `exclude_open_house=true`.
+The browser sends its initial Eastern date range and title exclusion on all three tabs.
 See [Eventbrite](eventbrite.md).
 
 ### Eventbrite announcements configuration

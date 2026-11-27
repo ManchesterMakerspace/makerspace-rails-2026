@@ -11179,11 +11179,52 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive Eastern calendar date of the event start."
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive Eastern calendar date of the event start."
+          },
+          {
+            "name": "exclude_open_house",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Exclude events whose title contains Open House, ignoring case."
           }
         ],
         "responses": {
+          "400": {
+            "description": "Invalid or reversed event date range"
+          },
           "200": {
             "description": "Staff records with total-items pagination header",
+            "headers": {
+              "total-items": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Matching records before pagination."
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -11260,11 +11301,52 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive Eastern calendar date of the event start."
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive Eastern calendar date of the event start."
+          },
+          {
+            "name": "exclude_open_house",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Exclude events whose title contains Open House, ignoring case."
           }
         ],
         "responses": {
+          "400": {
+            "description": "Invalid or reversed event date range"
+          },
           "200": {
             "description": "Staff records with total-items pagination header",
+            "headers": {
+              "total-items": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Matching records before pagination."
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -11341,11 +11423,52 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive Eastern calendar date of the event start."
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive Eastern calendar date of the event start."
+          },
+          {
+            "name": "exclude_open_house",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Exclude events whose title contains Open House, ignoring case."
           }
         ],
         "responses": {
+          "400": {
+            "description": "Invalid or reversed event date range"
+          },
           "200": {
             "description": "Staff records with total-items pagination header",
+            "headers": {
+              "total-items": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Matching records before pagination."
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -15493,6 +15616,176 @@
           },
           "404": {
             "description": "Unavailable or hidden record; no-store, generic error (HTML shows public directory)"
+          }
+        }
+      }
+    },
+    "/eventbrite/events": {
+      "get": {
+        "summary": "Lists public upcoming and ongoing Eventbrite occurrences",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "tags": [
+          "Eventbrite"
+        ],
+        "operationId": "listPublicEventbriteEvents",
+        "security": [],
+        "description": "Defaults to HTML. Use .html, .json, .xml or Accept. Returns listed, valid, unrestricted occurrences in allowed organizations, excluding draft and deleted events. Includes Open House. Results are ordered by start time.",
+        "parameters": [
+          {
+            "name": "max_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 31
+            },
+            "description": "Rolling window in days. Starts at the cutoff are excluded. Ongoing events are included."
+          },
+          {
+            "name": "min_tickets_remaining",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Inclusive minimum. Supplying it excludes unknown inventory."
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Include titles containing this literal text, ignoring case."
+          },
+          {
+            "name": "notname",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exclude titles containing this literal text, ignoring case."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching public events in chronological order",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "eventbrite_id",
+                      "name",
+                      "starts_at",
+                      "ends_at",
+                      "timezone",
+                      "summary",
+                      "venue_label",
+                      "status",
+                      "public_url",
+                      "image_url",
+                      "tickets_remaining"
+                    ],
+                    "properties": {
+                      "eventbrite_id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "starts_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "ends_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                      },
+                      "timezone": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "summary": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "venue_label": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "status": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "public_url": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "image_url": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "tickets_remaining": {
+                        "type": "integer",
+                        "nullable": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

@@ -1556,6 +1556,14 @@ adds. Neither path sends notices inside its approval transaction.
 
 ## Eventbrite ingestion and manual imports
 
+`EventbriteIntegration::HistoryQuery` filters staff lists before counting and
+paging. Date bounds and title exclusions use the parent event in the same
+organization for orders and attendees. `OrderHistoryQuery` adds attendee-link
+conditions for order history. Invalid date filters return 400.
+`EventbriteIntegration::PublicEvents` reads allowed organizations' public
+occurrences and stored inventory for the [HTML/JSON/XML feed](volunteer-public-resources.MD#eventbrite-events).
+It validates query parameters, projects public fields, and makes no provider calls or writes.
+
 `EventbriteDeliveryJob` hydrates persisted receiver pointers through the API token,
 enforces the optional organization allowlist when nonempty, and idempotently
 synchronizes domain records. A blank/unset allowlist accepts any organization the
