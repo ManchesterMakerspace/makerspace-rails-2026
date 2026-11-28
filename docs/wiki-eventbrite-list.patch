@@ -1,8 +1,8 @@
 diff --git a/digital-makerspace/resource-managers/eventbrite.md b/digital-makerspace/resource-managers/eventbrite.md
-index c2734dc..4ebf8b1 100644
+index c2734dc..b44554d 100644
 --- a/digital-makerspace/resource-managers/eventbrite.md
 +++ b/digital-makerspace/resource-managers/eventbrite.md
-@@ -18,6 +18,22 @@ Resource Managers, Board and Admins can open **Eventbrite** from the portal menu
+@@ -18,6 +18,23 @@ Resource Managers, Board and Admins can open **Eventbrite** from the portal menu
 
  Search by **Name or email**, or filter by organization, event, provider status and member link. **Previous** and **Next** move between pages. **View details** opens a record; event details include ticket classes and order details include attendees. Use **Retry** if loading fails.
 
@@ -15,10 +15,11 @@ index c2734dc..4ebf8b1 100644
 +once. Multi-day events show both dates. Orders sort by Eastern event day and
 +then buyer email. Attendees sort alphabetically by email.
 +
-+Visitors can open `/eventbrite/events` on the portal to see ongoing events and
-+public classes starting in the next 31 days, including Open House. Each row
-+shows the title and start time beside the thumbnail when available. Select a
-+linked title to open Eventbrite in a new tab. The row also shows the last known
++Open `/eventbrite/events` for **Upcoming events**. The list includes ongoing
++events and public classes starting in the next 31 days, including Open House.
++Each row shows the event title and local start time, such as **Dec 3rd, 6PM** or
++**Dec 3rd, 6:30PM**, beside the thumbnail when available. Select a linked title
++to open Eventbrite in a new tab. The row also shows the last known
 +number of tickets remaining, with **SOLD OUT** in red when it reaches zero. For a display
 +of events with seats available, use `/eventbrite/events?min_tickets_remaining=1`.
 +
