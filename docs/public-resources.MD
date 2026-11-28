@@ -240,7 +240,7 @@ The pending-credit count remains global. Omitting `year` returns all-time activi
 ## Eventbrite resources
 
 The public `GET /eventbrite/events` feed includes ongoing and future occurrences from imported records.
-HTML shows a thumbnail beside the title and local start time. A linked title opens the Eventbrite page in a new tab.
+The HTML header pairs the makerspace logo with **Upcoming events**. Each listing shows a thumbnail beside the event title and local start time (for example, `Thursday Dec 3rd, 6PM`). A linked title opens the Eventbrite page in a new tab.
 Events with zero tickets remaining show **SOLD OUT** in red.
 See the [public feed catalog](volunteer-public-resources.MD#eventbrite-events) for eligibility, fields and examples.
 

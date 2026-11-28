@@ -10,6 +10,9 @@
   <body>
     <header>
       <a href="https://manchestermakerspace.org"><%= image_tag "FilledLaserableLogo.svg", alt: "Manchester Makerspace", width: 180 %></a>
+      <% if page[:show_header_title] %>
+        <h1><%= page[:name] %></h1>
+      <% end %>
     </header>
     <main><article><%= yield %></article></main>
     <footer>

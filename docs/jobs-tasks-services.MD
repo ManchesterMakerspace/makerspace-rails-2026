@@ -1574,6 +1574,7 @@ and end times for rendering date ranges. Invalid date filters return 400.
 `EventbriteIntegration::PublicEvents` reads allowed organizations' public
 occurrences and stored inventory for the [HTML/JSON/XML feed](volunteer-public-resources.MD#eventbrite-events).
 It validates query parameters, projects public fields, and makes no provider calls or writes.
+`PublicEventbriteEventsHelper` formats the weekday, date and time in the event's timezone for HTML, using Eastern time when the timezone is missing or unrecognized.
 
 `EventbriteDeliveryJob` hydrates persisted receiver pointers through the API token,
 enforces the optional organization allowlist when nonempty, and idempotently

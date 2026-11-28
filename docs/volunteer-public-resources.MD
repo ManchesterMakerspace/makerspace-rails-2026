@@ -29,9 +29,11 @@ filters return 400. To list wood classes in the next two weeks with at least
 two tickets and exclude Open House, request
 `/eventbrite/events.json?max_days=14&min_tickets_remaining=2&name=wood&notname=Open%20House`.
 
-HTML displays a compact row with the thumbnail on the left when available.
+The HTML page shows the makerspace logo beside the **Upcoming events** heading.
+Each event has a compact row with the thumbnail on the left when available.
 The title opens the event in a new tab when a registration URL is available.
-The row shows the local start date and time, summary and ticket availability.
+The row shows the event-local start time (for example, `Thursday Dec 3rd, 6PM` or
+`Thursday Dec 3rd, 6:30PM`), summary and ticket availability.
 A known count of zero displays **SOLD OUT** in red. Missing inventory displays “Ticket availability unknown”.
 
 Each JSON and XML event exposes `eventbrite_id`, `name`, `starts_at`, `ends_at`, `timezone`,

@@ -53,19 +53,32 @@ RSpec.describe 'Public Eventbrite event feed', type: :request do
       image_url: 'https://example.org/photo.jpg', venue_label: 'Workshop 2', ends_at: 4.hours.from_now,
       summary: 'Learn to weld.', timezone: 'America/New_York', tickets_remaining: 1)
     get '/eventbrite/events'
-    row = Nokogiri::HTML(response.body).at_css('section.eventbrite-listing')
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css('title').text).to eq('Upcoming events · Manchester Makerspace')
+    expect(document.css('h1').map(&:text)).to eq(['Upcoming events'])
+    expect(document.at_css('header > a:has(img[alt="Manchester Makerspace"]) + h1')).to be_present
+    row = document.at_css('section.eventbrite-listing')
     link = row.at_css('img + div h2 a')
     expect(link.text).to eq('MIG Welding')
     expect(link['href']).to eq('https://www.eventbrite.com/e/1999272400569')
     expect(link['target']).to eq('_blank')
     expect(link['rel'].split).to include('noopener')
     expect(row.css('a').size).to eq(1)
-    expect(row.css('time').map(&:text)).to eq(['Oct 31, 2026 at 1:00 PM EDT'])
+    time = row.at_css('time')
+    expect(time.text).to eq('Saturday Oct 31st, 1PM')
+    expect(Time.iso8601(time['datetime'])).to eq(1.hour.from_now)
     expect(row.text).to include('Learn to weld.', '1 ticket remaining')
     expect(row.text).not_to include('1999272400569', 'live', 'Workshop 2', 'View event on Eventbrite')
     get '/eventbrite/events.json'
     expect(response.parsed_body.first).to include('eventbrite_id' => '1999272400569', 'venue_label' => 'Workshop 2',
       'status' => 'live', 'ends_at' => 4.hours.from_now.as_json)
+  end
+
+  it 'uses the event-local weekday and date and keeps nonzero minutes' do
+    event('Late workshop', starts_at: Time.utc(2026, 11, 14, 2, 5), timezone: 'America/Los_Angeles')
+    event('Evening class', starts_at: Time.utc(2026, 12, 4, 0), timezone: 'America/Chicago')
+    get '/eventbrite/events', params: { max_days: 40 }
+    expect(Nokogiri::HTML(response.body).css('time').map(&:text)).to eq(['Friday Nov 13th, 6:05PM', 'Thursday Dec 3rd, 6PM'])
   end
 
   it 'escapes imported display text and omits unsafe links and internal fields' do
