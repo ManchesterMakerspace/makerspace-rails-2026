@@ -65,7 +65,7 @@ RSpec.describe 'Public Eventbrite event feed', type: :request do
     expect(link['rel'].split).to include('noopener')
     expect(row.css('a').size).to eq(1)
     time = row.at_css('time')
-    expect(time.text).to eq('Oct 31st, 1PM')
+    expect(time.text).to eq('Saturday Oct 31st, 1PM')
     expect(Time.iso8601(time['datetime'])).to eq(1.hour.from_now)
     expect(row.text).to include('Learn to weld.', '1 ticket remaining')
     expect(row.text).not_to include('1999272400569', 'live', 'Workshop 2', 'View event on Eventbrite')
@@ -74,10 +74,11 @@ RSpec.describe 'Public Eventbrite event feed', type: :request do
       'status' => 'live', 'ends_at' => 4.hours.from_now.as_json)
   end
 
-  it 'keeps nonzero minutes and uses the event-local date for the ordinal' do
+  it 'uses the event-local weekday and date and keeps nonzero minutes' do
     event('Late workshop', starts_at: Time.utc(2026, 11, 14, 2, 5), timezone: 'America/Los_Angeles')
-    get '/eventbrite/events'
-    expect(Nokogiri::HTML(response.body).at_css('time').text).to eq('Nov 13th, 6:05PM')
+    event('Evening class', starts_at: Time.utc(2026, 12, 4, 0), timezone: 'America/Chicago')
+    get '/eventbrite/events', params: { max_days: 40 }
+    expect(Nokogiri::HTML(response.body).css('time').map(&:text)).to eq(['Friday Nov 13th, 6:05PM', 'Thursday Dec 3rd, 6PM'])
   end
 
   it 'escapes imported display text and omits unsafe links and internal fields' do

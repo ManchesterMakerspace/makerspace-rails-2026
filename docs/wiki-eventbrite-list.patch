@@ -1,5 +1,5 @@
 diff --git a/digital-makerspace/resource-managers/eventbrite.md b/digital-makerspace/resource-managers/eventbrite.md
-index c2734dc..b44554d 100644
+index c2734dc..5311a1c 100644
 --- a/digital-makerspace/resource-managers/eventbrite.md
 +++ b/digital-makerspace/resource-managers/eventbrite.md
 @@ -18,6 +18,23 @@ Resource Managers, Board and Admins can open **Eventbrite** from the portal menu
@@ -17,8 +17,8 @@ index c2734dc..b44554d 100644
 +
 +Open `/eventbrite/events` for **Upcoming events**. The list includes ongoing
 +events and public classes starting in the next 31 days, including Open House.
-+Each row shows the event title and local start time, such as **Dec 3rd, 6PM** or
-+**Dec 3rd, 6:30PM**, beside the thumbnail when available. Select a linked title
++Each row shows the event title and local start time, such as **Thursday Dec 3rd, 6PM** or
++**Thursday Dec 3rd, 6:30PM**, beside the thumbnail when available. Select a linked title
 +to open Eventbrite in a new tab. The row also shows the last known
 +number of tickets remaining, with **SOLD OUT** in red when it reaches zero. For a display
 +of events with seats available, use `/eventbrite/events?min_tickets_remaining=1`.

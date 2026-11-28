@@ -32,8 +32,8 @@ two tickets and exclude Open House, request
 The HTML page shows the makerspace logo beside the **Upcoming events** heading.
 Each event has a compact row with the thumbnail on the left when available.
 The title opens the event in a new tab when a registration URL is available.
-The row shows the event-local start time (for example, `Dec 3rd, 6PM` or
-`Dec 3rd, 6:30PM`), summary and ticket availability.
+The row shows the event-local start time (for example, `Thursday Dec 3rd, 6PM` or
+`Thursday Dec 3rd, 6:30PM`), summary and ticket availability.
 A known count of zero displays **SOLD OUT** in red. Missing inventory displays “Ticket availability unknown”.
 
 Each JSON and XML event exposes `eventbrite_id`, `name`, `starts_at`, `ends_at`, `timezone`,
