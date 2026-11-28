@@ -9,11 +9,7 @@ class CheckoutRequestReminderJob < ApplicationJob
   def perform
     now = Time.current
     cutoff = (now.in_time_zone.to_date - CheckoutRequestReminder::INTERVAL_DAYS).end_of_day
-    ToolCheckoutRequest.where(status: 'open', :request_date.lte => cutoff).each do |request|
-      CheckoutRequestReminder.remind!(request, now: now)
-    rescue => error
-      Service::ErrorReporter.notify(error, context: { phase: 'checkout request reminder', request_id: request.id.to_s })
-    end
+    CheckoutRequestReminder.deliver_due!(ToolCheckoutRequest.where(status: 'open', :request_date.lte => cutoff), now: now)
     ToolCheckoutRequest.where(status: 'open', reminder_open: true).each do |request|
       CheckoutRequestReminder.time_out_due!(request, now: now)
     rescue => error

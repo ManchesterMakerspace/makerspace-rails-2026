@@ -11,10 +11,8 @@ class ToolCheckoutRequest
   field :decided_by_id, type: BSON::ObjectId
   field :decided_at, type: Time
   field :decision_reason, type: String
-  # One entry per "still waiting" post in the Resource Managers channel, keyed
-  # by reminder number ("1" at 5 days, "2" at 10 days, ...). reminder_open stays
-  # true while a posted reminder still needs its resolution update. See
-  # CheckoutRequestReminder.
+  # Keyed by five-day reminder interval. Entries with the same delivery_id
+  # share a Slack message. reminder_open keeps failed resolution edits retryable.
   field :reminders, type: Hash, default: {}
   field :reminder_open, type: Boolean, default: false
 

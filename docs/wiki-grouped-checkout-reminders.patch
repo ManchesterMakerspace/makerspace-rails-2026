@@ -1,0 +1,28 @@
+diff --git a/digital-makerspace/approvers/requests-and-notifications.md b/digital-makerspace/approvers/requests-and-notifications.md
+index 168e862..ffc0e6a 100644
+--- a/digital-makerspace/approvers/requests-and-notifications.md
++++ b/digital-makerspace/approvers/requests-and-notifications.md
+@@ -49,6 +49,15 @@ The member receives your reason in Slack, so say what they need to do next, for
+ - **A channel announcement.** If the tool has request announcements turned on, a message appears in the tool's channel when a request is made, or in the shop's channel if the tool has none of its own.
+ - **Reminders in the Resource Managers channel.** A request still open after 5 days, then again at 10 and 15 days, is posted there. The third is marked as the last reminder and says when the request will close.
+
++If a member requested several tools in one shop on the same date, look for one
++reminder listing the tools alphabetically. A requested tool group appears once,
++labeled “(tool group)”. A final warning lists only requests with that deadline.
++
++For example, “Pat Member requested checkout on Woodworking tools Bandsaw, Drill
++Press, Lathes (tool group) on 2026-10-01 and is still waiting.” Record each
++checkout as you complete it. The shared post lists the tools still waiting and
++shows a completion notice when the last request closes.
++
+ An example of the daily summary (names and tools are examples):
+
+ ```
+@@ -66,6 +75,6 @@ Already did one in person? Record it (Approve in Slack, or Check Out Member in t
+
+ ## If nobody acts
+
+-If no checkout is recorded **20 days** after the request, the system **declines it automatically**. The member is told by Slack, with the suggestion to contact the board or visit an open house to see a board member in person, or to submit a new request. The channel posts and reminders are updated to say it timed out. The automatic decline is recorded in the audit log.
++If no checkout is recorded **20 days** after the request, the system **declines it automatically**. The member is told by Slack, with the suggestion to contact the board or visit an open house to see a board member in person, or to submit a new request. The request announcement and individual reminders show the timeout. Shared reminders drop the timed-out tool. The automatic decline is recorded in the audit log.
+
+ ## What members receive
