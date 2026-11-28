@@ -7,7 +7,7 @@ RSpec.describe 'Public Eventbrite events', type: :request do
       operationId 'listPublicEventbriteEvents'
       security []
       produces 'application/json'
-      description 'Defaults to compact HTML rows with the event title, start time, summary and ticket availability. Titles with a public URL open Eventbrite in a new tab. Use .html, .json, .xml or Accept. Returns listed, valid, unrestricted occurrences in allowed organizations, excluding draft and deleted events. Includes Open House. Results are ordered by start time.'
+      description 'Defaults to compact HTML rows with the event title, start time, summary and ticket availability. HTML shows SOLD OUT for zero remaining tickets. Titles with a public URL open Eventbrite in a new tab. Use .html, .json, .xml or Accept. Returns listed, valid, unrestricted occurrences in allowed organizations, excluding draft and deleted events. Includes Open House. Results are ordered by start time.'
       parameter name: :max_days, in: :query, required: false, schema: { type: :integer, minimum: 1, default: 31 },
         description: 'Rolling window in days. Starts at the cutoff are excluded. Ongoing events are included.'
       parameter name: :min_tickets_remaining, in: :query, required: false, schema: { type: :integer, minimum: 0 },

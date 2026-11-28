@@ -24,3 +24,4 @@ body{margin:0;background:#fafafa;color:rgba(0,0,0,.87);font-family:Roboto,Helvet
 .eventbrite-listing h2 { margin: 0; font-size: 1.125rem; line-height: 1.3; }
 .eventbrite-listing time, .eventbrite-listing p { font-size: 0.9375rem; line-height: 1.4; }
 .eventbrite-listing p { margin: 0.15rem 0 0; }
+.eventbrite-listing .sold-out { color: #b42318; font-weight: 700; }

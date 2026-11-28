@@ -1,5 +1,5 @@
 diff --git a/digital-makerspace/resource-managers/eventbrite.md b/digital-makerspace/resource-managers/eventbrite.md
-index c2734dc..094b64a 100644
+index c2734dc..4ebf8b1 100644
 --- a/digital-makerspace/resource-managers/eventbrite.md
 +++ b/digital-makerspace/resource-managers/eventbrite.md
 @@ -18,6 +18,22 @@ Resource Managers, Board and Admins can open **Eventbrite** from the portal menu
@@ -19,7 +19,7 @@ index c2734dc..094b64a 100644
 +public classes starting in the next 31 days, including Open House. Each row
 +shows the title and start time beside the thumbnail when available. Select a
 +linked title to open Eventbrite in a new tab. The row also shows the last known
-+number of tickets remaining. For a display
++number of tickets remaining, with **SOLD OUT** in red when it reaches zero. For a display
 +of events with seats available, use `/eventbrite/events?min_tickets_remaining=1`.
 +
  Records show the event and date, provider status, refund or invalidation state, and links to member profiles. A member profile also has an **Eventbrite** tab with that member's orders and attendees. An order can link to several members through its attendees; its buyer alone is not treated as an attendee.
