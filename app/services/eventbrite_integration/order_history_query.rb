@@ -12,7 +12,7 @@ module EventbriteIntegration
       super
     end
 
-    def page(offset:, limit:)
+    def page(...)
       return [] if empty?
       super
     end

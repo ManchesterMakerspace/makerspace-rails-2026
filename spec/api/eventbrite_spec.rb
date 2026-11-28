@@ -56,6 +56,8 @@ describe 'Eventbrite API', type: :request do
   %w[events orders attendees].each do |kind|
     path "/admin/eventbrite/#{kind}" do
       get "Lists restricted Eventbrite #{kind}" do
+        description 'Sorted by Eastern event start date (earliest first), then buyer email (A–Z). Undated events sort last.' if kind == 'orders'
+        description 'Sorted by attendee email (A–Z).' if kind == 'attendees'
         tags 'Eventbrite'
         operationId "listEventbrite#{kind.capitalize}"
         produces 'application/json'

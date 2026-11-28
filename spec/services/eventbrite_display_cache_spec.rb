@@ -18,14 +18,14 @@ RSpec.describe EventbriteIntegration::DisplayCache do
   before { allow(EventbriteIntegration::Configuration).to receive(:organization_ids).and_return([]) }
 
   it 'batches projected metadata, distinguishes organizations and caches missing records' do
-    first = event
+    first = event(ends_at: 3.days.from_now.change(usec: 0))
     second = event(organization_id: 'other', name: 'Other workshop')
     admission = ticket
     pairs = [['org', 'event'], ['other', 'event'], ['org', 'missing']]
     result = described_class.fetch_events(pairs)
     expect(result).to eq(
-      pairs[0] => { 'name' => first.name, 'starts_at' => first.starts_at, 'timezone' => first.timezone },
-      pairs[1] => { 'name' => second.name, 'starts_at' => second.starts_at, 'timezone' => second.timezone },
+      pairs[0] => { 'name' => first.name, 'starts_at' => first.starts_at, 'ends_at' => first.ends_at, 'timezone' => first.timezone },
+      pairs[1] => { 'name' => second.name, 'starts_at' => second.starts_at, 'ends_at' => nil, 'timezone' => second.timezone },
       pairs[2] => nil)
     expect(described_class.fetch_ticket_classes([['org', 'ticket']])).to eq(['org', 'ticket'] => { 'name' => admission.name })
     expect(EventbriteEvent).not_to receive(:where)
@@ -40,6 +40,8 @@ RSpec.describe EventbriteIntegration::DisplayCache do
     expect(described_class.fetch_events([['org', 'event']]).values.first['name']).to eq('Workshop')
     record.update!(name: 'Renamed')
     expect(described_class.fetch_events([['org', 'event']]).values.first['name']).to eq('Renamed')
+    record.update!(ends_at: 4.days.from_now.change(usec: 0))
+    expect(described_class.fetch_events([['org', 'event']]).values.first['ends_at']).to eq(record.ends_at)
     record.destroy!
     expect(described_class.fetch_events([['org', 'event']])).to eq(['org', 'event'] => nil)
 

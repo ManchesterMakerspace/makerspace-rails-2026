@@ -206,6 +206,10 @@
                 "type": "string",
                 "nullable": true
               },
+              "endsAt": {
+                "type": "string",
+                "nullable": true
+              },
               "timezone": {
                 "type": "string",
                 "nullable": true
@@ -229,6 +233,10 @@
             "type": "boolean"
           },
           "startsAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "endsAt": {
             "type": "string",
             "nullable": true
           },
@@ -11248,6 +11256,7 @@
     "/admin/eventbrite/orders": {
       "get": {
         "summary": "Lists restricted Eventbrite orders",
+        "description": "Sorted by Eastern event start date (earliest first), then buyer email (A–Z). Undated events sort last.",
         "tags": [
           "Eventbrite"
         ],
@@ -11370,6 +11379,7 @@
     "/admin/eventbrite/attendees": {
       "get": {
         "summary": "Lists restricted Eventbrite attendees",
+        "description": "Sorted by attendee email (A–Z).",
         "tags": [
           "Eventbrite"
         ],
@@ -15633,7 +15643,7 @@
         ],
         "operationId": "listPublicEventbriteEvents",
         "security": [],
-        "description": "Defaults to HTML. Use .html, .json, .xml or Accept. Returns listed, valid, unrestricted occurrences in allowed organizations, excluding draft and deleted events. Includes Open House. Results are ordered by start time.",
+        "description": "Defaults to compact HTML rows with the event title, start time, summary and ticket availability. Titles with a public URL open Eventbrite in a new tab. Use .html, .json, .xml or Accept. Returns listed, valid, unrestricted occurrences in allowed organizations, excluding draft and deleted events. Includes Open House. Results are ordered by start time.",
         "parameters": [
           {
             "name": "max_days",

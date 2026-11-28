@@ -38,12 +38,27 @@ module EventbriteIntegration
       @model.collection.aggregate(filter_pipeline + [{ '$count' => 'count' }]).first&.fetch('count') || 0
     end
 
-    def page(offset:, limit:)
-      if joins.empty?
+    def page(offset:, limit:, staff_list: false)
+      sort_by_email = staff_list && [EventbriteOrder, EventbriteAttendee].include?(@model)
+      if joins.empty? && !sort_by_email
         return @scope.order_by(created_at: :desc, id: :desc).skip(offset).limit(limit).only(*Presenter::FIELDS)
       end
-      pipeline = filter_pipeline + [{ '$sort' => { 'created_at' => -1, '_id' => -1 } },
-        { '$skip' => offset }, { '$limit' => limit }, { '$project' => Presenter::FIELDS.index_with { 1 } }]
+      pipeline = filter_pipeline
+      sort = { 'created_at' => -1, '_id' => -1 }
+      if sort_by_email
+        keys = { 'sort_email' => { '$toLower' => '$email' } }
+        sort = {}
+        if @model == EventbriteOrder
+          pipeline << parent_lookup if @event_filter.empty?
+          keys['event_day'] = { '$dateToString' => { 'date' => { '$first' => '$parent_event.starts_at' },
+            'timezone' => 'America/New_York', 'format' => '%Y-%m-%d', 'onNull' => 'undated' } }
+          sort['event_day'] = 1
+        end
+        pipeline << { '$set' => keys }
+        sort.merge!('sort_email' => 1, '_id' => 1)
+      end
+      pipeline += [{ '$sort' => sort }, { '$skip' => offset }, { '$limit' => limit },
+        { '$project' => Presenter::FIELDS.index_with { 1 } }]
       @model.collection.aggregate(pipeline).map { |row| @model.instantiate(row) }
     end
 
@@ -56,13 +71,16 @@ module EventbriteIntegration
 
       # Keep orphan history visible when only excluding a title. A date
       # condition, on the other hand, requires a known parent start time.
-      [{ '$lookup' => { 'from' => EventbriteEvent.collection_name.to_s,
+      [parent_lookup, { '$match' => @event_filter.transform_keys { |field| "parent_event.#{field}" } }]
+    end
+
+    def parent_lookup
+      { '$lookup' => { 'from' => EventbriteEvent.collection_name.to_s,
         'localField' => 'event_id', 'foreignField' => 'eventbrite_id',
         'let' => { 'org' => '$organization_id' },
         'pipeline' => [{ '$match' => { '$expr' => { '$eq' => ['$organization_id', '$$org'] } } },
           { '$project' => { 'starts_at' => 1, 'name' => 1 } }],
-        'as' => 'parent_event' } },
-        { '$match' => @event_filter.transform_keys { |field| "parent_event.#{field}" } }]
+        'as' => 'parent_event' } }
     end
   end
 end

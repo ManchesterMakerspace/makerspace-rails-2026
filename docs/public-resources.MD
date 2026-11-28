@@ -240,6 +240,7 @@ The pending-credit count remains global. Omitting `year` returns all-time activi
 ## Eventbrite resources
 
 The public `GET /eventbrite/events` feed includes ongoing and future occurrences from imported records.
+HTML shows a thumbnail beside the title and local start time. A linked title opens the Eventbrite page in a new tab.
 See the [public feed catalog](volunteer-public-resources.MD#eventbrite-events) for eligibility, fields and examples.
 
 `POST <EVENTBRITE_WEBHOOK_PATH>` receives private-URL Eventbrite JSON pointers,
@@ -273,6 +274,8 @@ invalidation and provider status remain visible. Existing known refund dates are
 preserved on replay. The EventbriteRecord schema retains its nullable string shape.
 The React `/admin/eventbrite` browser and member Eventbrite tab use these routes.
 Global list requests also accept `from_date`, `to_date` and `exclude_open_house=true`.
+Global orders sort by Eastern event day, earliest first, then buyer email. Undated orders come last.
+Global attendees sort by email. Both email sorts are case-insensitive and apply before pagination.
 The browser sends its initial Eastern date range and title exclusion on all three tabs.
 See [Eventbrite](eventbrite.md).
 

@@ -115,7 +115,7 @@ No public API contract, collection, environment variable, or recurring job chang
 
 The Eventbrite history reader batches parent/ticket metadata and aggregates order
 member IDs; link filters use correlated organization/order existence joins.
-Shared event name/start/timezone, ticket names and public signup choices use a
+Shared event names, start and end times, timezones, ticket names and public signup choices use a
 five-minute display cache with generation-fenced publication and MongoDB fallback.
 Signup choices also expire at Eastern midnight; mutation validation/member links
 remain live. Announcements use projected live reads scoped by channel bindings,

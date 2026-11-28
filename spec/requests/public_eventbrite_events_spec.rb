@@ -48,12 +48,33 @@ RSpec.describe 'Public Eventbrite event feed', type: :request do
     expect(ids(name: 'missing')).to eq([])
   end
 
+  it 'renders a thumbnail beside a linked title and local start time, with provider details only in the feed data' do
+    event('1999272400569', name: 'MIG Welding', public_url: 'https://www.eventbrite.com/e/1999272400569',
+      image_url: 'https://example.org/photo.jpg', venue_label: 'Workshop 2', ends_at: 4.hours.from_now,
+      summary: 'Learn to weld.', timezone: 'America/New_York', tickets_remaining: 1)
+    get '/eventbrite/events'
+    row = Nokogiri::HTML(response.body).at_css('section.eventbrite-listing')
+    link = row.at_css('img + div h2 a')
+    expect(link.text).to eq('MIG Welding')
+    expect(link['href']).to eq('https://www.eventbrite.com/e/1999272400569')
+    expect(link['target']).to eq('_blank')
+    expect(link['rel'].split).to include('noopener')
+    expect(row.css('a').size).to eq(1)
+    expect(row.css('time').map(&:text)).to eq(['Oct 31, 2026 at 1:00 PM EDT'])
+    expect(row.text).to include('Learn to weld.', '1 ticket remaining')
+    expect(row.text).not_to include('1999272400569', 'live', 'Workshop 2', 'View event on Eventbrite')
+    get '/eventbrite/events.json'
+    expect(response.parsed_body.first).to include('eventbrite_id' => '1999272400569', 'venue_label' => 'Workshop 2',
+      'status' => 'live', 'ends_at' => 4.hours.from_now.as_json)
+  end
+
   it 'escapes imported display text and omits unsafe links and internal fields' do
     event('entry', name: '<b>Class</b>', summary: '<em>Hello</em>', public_url: 'javascript:alert(1)',
       image_url: 'https://example.org/photo.jpg', slack_receipts: { 'internal' => 'sensitive' })
     get '/eventbrite/events.html'
     expect(response.body).to include('&lt;b&gt;Class&lt;/b&gt;', '&lt;em&gt;Hello&lt;/em&gt;', 'https://example.org/photo.jpg')
     expect(response.body).not_to include('javascript:alert', 'sensitive')
+    expect(Nokogiri::HTML(response.body).at_css('section h2 a')).to be_nil
     get '/eventbrite/events.json'
     expect(response.parsed_body.first).to include('public_url' => nil, 'tickets_remaining' => nil)
     expect(response.parsed_body.first.keys).not_to include('slack_receipts', 'organization_id')

@@ -10,7 +10,7 @@ class Admin::EventbriteController < AdminOrRmController
       EventbriteIntegration::HistoryQuery.new(scope, event_filter: filter)
     end
     response.set_header('total-items', query.count)
-    records = query.page(offset: offset, limit: 50)
+    records = query.page(offset: offset, limit: 50, staff_list: @member_id.nil?)
     render json: EventbriteIntegration::Presenter.many(records), adapter: :attributes
   rescue EventbriteIntegration::HistoryQuery::InvalidFilter => e
     render json: { error: e.message }, status: :bad_request

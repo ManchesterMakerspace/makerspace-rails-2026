@@ -59,6 +59,33 @@ RSpec.describe 'Eventbrite staff visibility', type: :request do
       expect(response).to have_http_status(:bad_request)
     end
   end
+  it 'sorts staff orders by Eastern event day then buyer email, and attendees by email, before paging' do
+    sign_in create(:member, role: 'admin')
+    # Two start times on January 9 in Eastern time, across a UTC date boundary.
+    { 'morning' => Time.utc(2027, 1, 9, 15), 'evening' => Time.utc(2027, 1, 10, 2),
+      'next-day' => Time.utc(2027, 1, 10, 15) }.each do |id, start|
+      EventbriteEvent.create!(organization_id: 'org', eventbrite_id: id, starts_at: start)
+    end
+    rows = [['alpha', 'evening'], ['Bravo', 'morning'], ['aaa', 'next-day'], ['orphan', nil]]
+    rows += (1..49).map { |n| [format('m%02d', n), 'morning'] }
+    rows.reverse_each do |name, event|
+      attrs = { organization_id: 'org', eventbrite_id: name, event_id: event, email: "#{name}@example.org" }
+      EventbriteOrder.create!(attrs)
+      EventbriteAttendee.create!(attrs.merge(order_id: name, member_id: BSON::ObjectId.new))
+    end
+    by_event_day = %w[alpha Bravo] + (1..49).map { |n| format('m%02d', n) } + %w[aaa orphan]
+    by_email = rows.map(&:first).sort_by(&:downcase)
+    { 'orders' => by_event_day, 'attendees' => by_email }.each do |kind, expected|
+      [0, 1].each do |page|
+        get "/api/admin/eventbrite/#{kind}", params: { pageNum: page }
+        expect(response.headers['total-items'].to_i).to eq(rows.size)
+        expect(response.parsed_body.pluck('eventbriteId')).to eq(expected.slice(page * 50, 50))
+      end
+      get "/api/admin/eventbrite/#{kind}", params: { from_date: '2027-01-09', linked: 'linked' }
+      expect(response.parsed_body.pluck('eventbriteId')).to eq((expected - ['orphan']).first(50))
+    end
+  end
+
   it 'cannot use filters or search to cross the organization allowlist' do
     EventbriteOrder.create!(organization_id: 'outside', eventbrite_id: '1', name: 'Secret')
     sign_in create(:member, role: 'admin')

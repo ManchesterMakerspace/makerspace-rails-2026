@@ -17,7 +17,7 @@ module EventbriteIntegration
       result['memberId'] = record.member_id.to_s if record.respond_to?(:member_id) && record.member_id
       if record.respond_to?(:event_id)
         parent = context.event(record)
-        result['event'] = { name: parent['name'], startsAt: parent['starts_at'], timezone: parent['timezone'] } if parent
+        result['event'] = { name: parent['name'], startsAt: parent['starts_at'], endsAt: parent['ends_at'], timezone: parent['timezone'] } if parent
       end
       if record.is_a?(EventbriteOrder)
         result['memberIds'] = context.member_ids(record)
