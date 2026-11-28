@@ -97,20 +97,8 @@ class FixTicketDelivery
       end
     end
     def reconcile(attempt, uuid)
-      cursor = nil
-      loop do
-        args = { channel: attempt.fetch('channel'), oldest: attempt.fetch('oldest'), limit: 100, cursor: cursor }
-        response = if attempt['thread_ts']
-          client.conversations_replies(**args.merge(ts: attempt['thread_ts']))
-        else
-          client.conversations_history(**args)
-        end
-        found = Array(response['messages']).find { |message| message['client_msg_id'] == uuid }
-        return { 'ts' => found['ts'], 'channel' => attempt['channel'] } if found
-        cursor = response.dig('response_metadata', 'next_cursor').presence
-        break unless cursor
-      end
-      nil
+      Service::SlackConnector.find_post_receipt(channel: attempt.fetch('channel'), oldest: attempt.fetch('oldest'),
+        client_msg_id: uuid, thread_ts: attempt['thread_ts']) { client }
     end
     def post(event, key, channel, text, thread_ts: nil, broadcast: false, blocks: nil)
       return event.delivered[key] if event.delivered[key].is_a?(Hash)

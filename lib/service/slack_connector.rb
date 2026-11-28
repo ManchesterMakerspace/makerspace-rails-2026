@@ -60,9 +60,9 @@ module Service
     # Every send is recorded in the audit log (Service::SlackMessageLog), except
     # inside Service::SlackMessageLog.without_logging -- AuditLogger wraps its own
     # Slack posts in that, because the audit entry already records the post.
-    def self.send_slack_message(message, channel = ::Service::SlackConnector.members_relations_channel, source: nil)
+    def self.send_slack_message(message, channel = ::Service::SlackConnector.members_relations_channel, source: nil, client_msg_id: nil)
       return if Rails.env.test?
-      response = post_slack_message(message, channel)
+      response = post_slack_message(message, channel, **(client_msg_id ? { client_msg_id: client_msg_id } : {}))
       record_slack_message(channel: channel, message: message, source: source, response: response)
       response
     rescue => e
@@ -77,7 +77,7 @@ module Service
     rescue StandardError
       nil
     end
-    def self.post_slack_message(message, channel)
+    def self.post_slack_message(message, channel, **options)
       send_as_msg = message.kind_of?(String)
       begin
         if send_as_msg
@@ -86,7 +86,7 @@ module Service
             text: message,
             as_user: false,
             username: 'MemberPortalBot',
-            icon_emoji: ':ghost:'
+            icon_emoji: ':ghost:', **options
           )
         else
           client.chat_postMessage(
@@ -94,7 +94,7 @@ module Service
             blocks: message,
             as_user: false,
             username: 'MemberPortalBot',
-            icon_emoji: ':ghost:'
+            icon_emoji: ':ghost:', **options
           )
         end
       rescue Slack::Web::Api::Errors::SlackError
@@ -102,12 +102,12 @@ module Service
           if send_as_msg
             client.chat_postMessage(
               channel: safe_channel(channel),
-              text: message
+              text: message, **options
             )
           else
             client.chat_postMessage(
               channel: safe_channel(channel),
-              blocks: message
+              blocks: message, **options
             )
           end
         rescue Slack::Web::Api::Errors::SlackError => e
@@ -118,6 +118,21 @@ module Service
         end
       end
     end
+    # Reconcile an interrupted post against the channel (or thread) where it was attempted.
+    def self.find_post_receipt(channel:, oldest:, client_msg_id:, thread_ts: nil)
+      cursor = nil
+      loop do
+        api = block_given? ? yield : client
+        args = { channel: channel, oldest: oldest, limit: 100, cursor: cursor }
+        response = thread_ts ? api.conversations_replies(**args.merge(ts: thread_ts)) : api.conversations_history(**args)
+        found = Array(response['messages']).find { |message| message['client_msg_id'] == client_msg_id }
+        return { 'ts' => found.fetch('ts'), 'channel' => channel } if found
+        cursor = response.dig('response_metadata', 'next_cursor').presence
+        break unless cursor
+      end
+      nil
+    end
+
     def self.update_slack_message(channel, ts, message, resolved_channel: false)
       return if Rails.env.test?
       # A posted-message receipt already identifies the actual conversation,

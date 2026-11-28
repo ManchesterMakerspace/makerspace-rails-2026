@@ -21,6 +21,17 @@ RSpec.describe Service::SlackMessageLog do
   def entries = AuditLog.where(log_type: 'slack').order_by(created_at: :asc).to_a
 
   describe 'SlackConnector.send_slack_message' do
+    it 'passes the same optional delivery ID to Slack on the bot-profile fallback' do
+      live!
+      uuid = SecureRandom.uuid
+      expect(client).to receive(:chat_postMessage).with(hash_including(client_msg_id: uuid, username: 'MemberPortalBot')).ordered
+        .and_raise(Slack::Web::Api::Errors::SlackError.new('not_allowed'))
+      expect(client).to receive(:chat_postMessage).with(channel: anything, text: 'Checkout reminder', client_msg_id: uuid).ordered
+        .and_return({ 'ts' => '1.2', 'channel' => 'CRM' })
+      Service::SlackConnector.send_slack_message('Checkout reminder', 'resource_managers', client_msg_id: uuid)
+      expect(entries.first.after_snapshot).to include('ts' => '1.2')
+    end
+
     it 'records a channel post with its text, channel, receipt and the sending code' do
       live!
       allow(client).to receive(:chat_postMessage).and_return({ 'ok' => true, 'channel' => 'C123', 'ts' => '111.222' })

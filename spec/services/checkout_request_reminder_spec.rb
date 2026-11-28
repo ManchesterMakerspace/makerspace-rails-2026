@@ -25,7 +25,7 @@ RSpec.describe CheckoutRequestReminder do
 
     expect(Service::SlackConnector).to have_received(:send_slack_message)
       .with("*Pat Member* requested checkout on *Laguna Bandsaw* (#{shop.name}) on 2026-10-01 and is still waiting. "             "If this was already done in person, please record the checkout so this stops.",
-            "resource_managers")
+            "resource_managers", client_msg_id: a_kind_of(String))
     expect(request.reload.reminders.fetch("1")).to include("status" => "sent", "ts" => "111.222", "channel" => "CRM")
     expect(request.reminder_open).to be(true)
   end
@@ -45,6 +45,8 @@ RSpec.describe CheckoutRequestReminder do
   end
 
   it "retries a failed post on the next scan" do
+    allow(Service::SlackConnector).to receive(:resolved_channel_id).and_return('CRM')
+    allow(Service::SlackConnector).to receive(:find_post_receipt).and_return(nil)
     allow(Service::ErrorReporter).to receive(:notify)
     attempts = 0
     allow(Service::SlackConnector).to receive(:send_slack_message) do

@@ -172,7 +172,7 @@ the moved tool's new shop/channel.
 The `enqueue_today` helper reports auxiliary queue errors without failing a
 completed catalog write; the periodic task recovers the missed refresh.
 
-`ReservationAnnouncementLease` is a renewable Redis lease per delivery, with a
+`ReservationAnnouncementLease` uses the shared `SlackDeliveryLease` under its reservation key, with a
 120-second lifetime and 30-second heartbeat. Linked today canvases refresh under
 the lease before the final message fingerprint is compared. Overnight carryover
 edits and cancellations therefore update the live agenda even when today's
@@ -639,7 +639,7 @@ job wrapper records `job_status_<admin key>` with a completion time and
 | `membership_expiration_notice` | `membership_expiration_notice` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'MembershipExpirationNoticeJob.perform_now'`. | Finds active, non-landlord members with no Braintree subscription (`subscription` not true and `subscription_id` blank) and no active Earned Membership whose `expirationTime` falls exactly 3 days out, and emails each a renewal reminder; separately finds the same population whose `expirationTime` fell exactly 1 day ago and emails an expired notice. Each email is sent at most once per expiration -- the sent state is keyed to the exact `expirationTime` value, so it resets automatically once the member renews to a new date. Only the job wrapper records status. |
 | `member_reminders` | `member_reminders` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'MemberReminderJob.perform_now'`. | Sends the two member reminder emails, each only while its flag is on (`fob_reminder_enabled`, `signup_reminder_enabled`; both off by default, so nothing is sent until an admin enables them). The fob reminder goes to members who paid but have no fob; the signup reminder goes to `pending` members who signed up and have not paid or been issued a fob. Both send on day 8 (the `fob_reminder_days` / `signup_reminder_days` setting, default 7, plus one) and again 14 days later, never after 30 days, at most one per member per run, with a matching Slack DM when the member has a linked Slack account. Sent state is kept on the member (`fob_reminder_count`, `fob_reminder_last_sent_at`, `signup_reminder_count`, `signup_reminder_last_sent_at`). Each member is handled separately, so one failure is reported and the rest continue. Only the job wrapper records status. |
 | `volunteer_event_reminder` | `volunteer_event_reminder` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'VolunteerEventReminderJob.perform_now'`. | Sends/retries assigned shop RM review DMs for submitted tasks and dated open events ready for closure; posts or updates Members Relations Channel reminders after more than five days and retries saved final-outcome updates. See the volunteer approval reminder workflow below. Individual delivery failures do not fail the complete scan. |
-| `checkout_request_reminder` | `checkout_request_reminder` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'`. | Posts a "still waiting" reminder in the configured Resource Managers Slack channel (`slack_channel_rm`, default `resource_managers`) for every open checkout request that has been open for 5 days, then again at 10 and 15 days (three reminders in all, the third being the last); declines (as a system decision, audit-logged and DMed to the requester) a request still unrecorded 5 days after the third reminder; edits each posted reminder when its request is approved, declined, timed out or cancelled and retries any resolution edit that failed. Each reminder is recorded on the request, so a reminder is never posted twice. Individual failures are reported without stopping the scan. See the checkout request notifications section below. |
+| `checkout_request_reminder` | `checkout_request_reminder` | Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestReminderJob.perform_now'`. | Posts grouped reminders to the configured Resource Managers Slack channel (`slack_channel_rm`, default `resource_managers`) for requests open 5, 10 and 15 days. Each request records its own delivery history. Five days after its third reminder, the job automatically declines an outstanding request, records the decision and DMs the requester. It updates existing posts as requests close and retries interrupted sends and edits. |
 | `checkout_request_digest` | `checkout_request_digest` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'CheckoutRequestDigestJob.perform_now'`. | Sends each resource manager and assigned approver one Slack DM rolling up every open checkout request they can act on, grouped by requester with each tool, its shop, and its age in calendar days. A recipient is messaged only when there is a request new since their last digest, or an open request that is exactly 5, 10, 15, ... days old, and at most once a day; nothing is sent otherwise. Not sent to a requester about their own request, or to members without a linked Slack account or with suppressed notifications. Redis keys (`checkout_request_digest:MEMBER_ID:DATE`, `checkout_request_digest_last:MEMBER_ID`) prevent duplicates and track the last digest, and `checkout_request_digest_message:MEMBER_ID` remembers the last digest's Slack message so the next digest can edit it into a "replaced" stub; the daily key is released after a failed send. Individual failures are reported without stopping the run. Also posts one daily list to Members Relations of open requests nobody would receive a digest for, until someone is assigned. |
 | `rental_vacating_check` | `rental_vacating_check` | **No Rake task currently exists.** Use `RAILS_ENV=production bundle exec rails runner 'RentalVacatingCheckJob.perform_now'`. | Reminds staff, in one Members Relations post, about rentals still `vacating` after their end date and rentals a member says they have vacated (`awaiting_verification`). It never changes a rental and posts nothing when none are waiting. Records its run status. |
 
@@ -905,21 +905,29 @@ The tool's announce-channel post for a new request is unchanged and immediate.
 
 `CheckoutRequestReminderJob` runs daily at 12:30 UTC (about 8:30 am Eastern) and as the
 `checkout_request_reminder` admin job. A request open for 5 calendar days gets a message in the
-Resource Managers channel (`slack_channel_rm`): "MEMBER requested checkout on TOOL (SHOP) on DATE
-and is still waiting. If this was already done in person, please record the checkout so this
-stops." It is reminded again at 10 and 15 days; the third reminder says it is the last and gives
-the automatic decline date, and no fourth is posted. Receipts are kept in the request's
-`reminders` hash keyed by reminder number; `reminder_open` marks a request whose posted reminders
-still need their resolution edit.
+Resource Managers channel (`slack_channel_rm`). `CheckoutRequestReminder` processes request
+dates oldest first, grouping by requester and shop IDs and warning deadline. A shared post lists
+the pending tools alphabetically. A tool group appears once with the label “(tool group)”.
+Reminders recur at 10 and 15 days. The third gives the automatic decline date.
+
+`CheckoutReminderSender` saves a pending `CheckoutReminderDelivery` before sending under
+a renewable per-member `SlackDeliveryLease`. `SlackConnector.send_slack_message` passes its
+stable UUID to Slack. After an interrupted send, `SlackConnector.find_post_receipt` checks the
+destination's message history for that UUID before retrying. Recovery needs the bot to be able
+to read history in that channel. A failed history lookup leaves the delivery pending. A known
+Slack timestamp lets recovery finish writing request receipts directly. Once all represented
+requests hold the receipt, the pending delivery is removed. Only confirmed posts count toward
+the cap. Errors are reported and the daily scan retries.
 
 The same run declines (`CheckoutRequestDecision.time_out!`) any open request that has had all
 three reminders posted and whose last reminder is at least 5 calendar days old, counting
 reminders actually posted so an already-old request still gets all three first. The request
 becomes `declined` with no `decided_by_id`, the audit log records `tool_checkout_request_timed_out`,
 and `CheckoutNotificationJob` (`decline` action) DMs the requester and edits the announcement. When the
-request is approved, declined, timed out or cancelled, each posted reminder is edited to say so
-(immediately for a decline, timeout or cancellation or when the approval's notifications run,
-otherwise by the next daily scan).
+request closes, a shared reminder is rebuilt from the still-open participants in that exact post.
+It retains the final-warning date until all requests close, then reports none still waiting.
+Single-request reminders show the outcome. Failed or contended edits stay eligible for the
+daily scan through `reminder_open`.
 
 ### Email bounce alerts
 

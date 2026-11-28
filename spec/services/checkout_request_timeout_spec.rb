@@ -11,8 +11,6 @@ RSpec.describe "Checkout request reminders cap and time-out" do
   let(:posted) { double(ts: "111.222", channel: "CRM") }
 
   before do
-    allow(REDIS).to receive(:set).and_return(true)
-    allow(REDIS).to receive(:eval).and_return(1)
     allow(Service::SlackConnector).to receive(:resource_managers_channel).and_return("resource_managers")
     allow(Service::SlackConnector).to receive(:send_slack_message).and_return(posted)
     allow(Service::SlackConnector).to receive(:update_slack_message)
@@ -25,7 +23,7 @@ RSpec.describe "Checkout request reminders cap and time-out" do
   it "posts at most three reminders" do
     [5, 10, 15, 20, 25, 30].each { |days| remind(days) }
 
-    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, "resource_managers").exactly(3).times
+    expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, "resource_managers", client_msg_id: a_kind_of(String)).exactly(3).times
     expect(request.reload.reminders.keys).to contain_exactly("1", "2", "3")
   end
 
@@ -33,13 +31,13 @@ RSpec.describe "Checkout request reminders cap and time-out" do
     remind(5)
     remind(10)
     expect(Service::SlackConnector).to have_received(:send_slack_message)
-      .with(satisfy { |text| !text.include?("last reminder") }, "resource_managers").twice
+      .with(satisfy { |text| !text.include?("last reminder") }, "resource_managers", client_msg_id: a_kind_of(String)).twice
 
     remind(15)
 
     expect(Service::SlackConnector).to have_received(:send_slack_message)
       .with(a_string_including("This is the last reminder", "automatically declined on 2026-10-21",
-                               "already done in person"), "resource_managers").once
+                               "already done in person"), "resource_managers", client_msg_id: a_kind_of(String)).once
   end
 
   describe ".time_out_due!" do
@@ -131,13 +129,13 @@ RSpec.describe "Checkout request reminders cap and time-out" do
         travel_to(requested_at + days.days + 1.hour) { CheckoutRequestReminderJob.perform_now }
       end
       expect(request.reload).to be_open
-      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, "resource_managers").exactly(3).times
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, "resource_managers", client_msg_id: a_kind_of(String)).exactly(3).times
 
       travel_to(requested_at + 20.days + 1.hour) { CheckoutRequestReminderJob.perform_now }
 
       expect(request.reload).to be_timed_out
       # No fourth reminder; the only other post is the audit log entry.
-      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, "resource_managers").exactly(3).times
+      expect(Service::SlackConnector).to have_received(:send_slack_message).with(anything, "resource_managers", client_msg_id: a_kind_of(String)).exactly(3).times
     end
   end
 end

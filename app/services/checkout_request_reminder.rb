@@ -3,9 +3,8 @@
 # (`slack_channel_rm`), and another every 5 days after that, up to 3 reminders.
 # The third says it is the last reminder. If no checkout is recorded 5 days after
 # the third reminder the system declines the request (see `time_out_due!`).
-# When the request is approved, declined, timed out or cancelled, each reminder
-# that was posted is edited to say so, so the channel is not left with stale
-# reminders.
+# Matching requests share one post. When a request closes, the post lists the
+# remaining tools or reports that the last request has closed.
 #
 # Each reminder has a receipt on the request (`reminders`, keyed by reminder
 # number). A short lease prevents concurrent workers posting the same reminder
@@ -17,7 +16,6 @@ module CheckoutRequestReminder
   # Reminders actually posted, not elapsed intervals, so a request that is already
   # old when this ships still gets all of them before it is declined.
   MAX_REMINDERS = 3
-  LEASE = 5.minutes
 
   class << self
     # Calendar days in the application time zone, so the reminder and the
@@ -28,34 +26,43 @@ module CheckoutRequestReminder
       ((now.in_time_zone.to_date - request.request_date.in_time_zone.to_date).to_i / INTERVAL_DAYS).floor
     end
 
-    def remind!(request, now: Time.current)
-      request.reload
-      return unless request.open? && request.target
-      return if sent_receipts(request).size >= MAX_REMINDERS
-
-      number = due_number(request, now)
-      return if number < 1
-
-      key = number.to_s
-      token = claim(request, key, now)
-      return unless token
-
-      begin
-        request.reload
-        unless request.open?
-          release(request, key, token, 'obsolete', now)
-          return
-        end
-        channel = Service::SlackConnector.resource_managers_channel
-        declines_on = (now.in_time_zone.to_date + INTERVAL_DAYS) if sent_receipts(request).size + 1 >= MAX_REMINDERS
-        response = Service::SlackConnector.send_slack_message(waiting_message(request, declines_on: declines_on), channel)
-        finish(request, key, token, 'sent', now,
-               'channel' => (response.channel if response.respond_to?(:channel)) || channel,
-               'ts' => (response.ts if response.respond_to?(:ts)))
-      rescue => error
-        finish(request, key, token, 'failed', now, 'error_class' => error.class.name)
-        raise
+    def deliver_due!(requests, now: Time.current)
+      work = Hash.new { |hash, key| hash[key] = [] }
+      requests.only(:id, :member_id, :request_date).each do |request|
+        next unless request.request_date
+        work[[request_day(request), request.member_id]] << request.id
       end
+      # A crash can leave an accepted post to record even if every request closed.
+      CheckoutReminderDelivery.all.only(:day, :member_id).each { |post| work[[post.day, post.member_id]] }
+      work.sort_by { |(day, member), _| [day, member.to_s] }.each do |(day, member), ids|
+        deliver_for!(day, member, ids, now) do |error, request_ids|
+          Service::ErrorReporter.notify(error, context: { phase: 'checkout request reminder', request_ids: request_ids.map(&:to_s) })
+        end
+      rescue SlackDeliveryLease::Busy
+        next
+      rescue => error
+        Service::ErrorReporter.notify(error, context: { phase: 'checkout request reminder', member_id: member.to_s })
+      end
+    end
+
+    def remind!(request, now: Time.current)
+      return unless request.request_date
+      deliver_for!(request_day(request), request.member_id, [request.id], now)
+    end
+
+    def due?(request, now)
+      number = due_number(request, now)
+      receipt = request.reminders.fetch(number.to_s, {})
+      request.open? && request.member && request.target && number.positive? &&
+        sent_receipts(request).size < MAX_REMINDERS && receipt['status'] != 'sent' &&
+        !(receipt['lease_until'] && receipt['lease_until'] >= now)
+    end
+
+    def request_day(request) = request.request_date.in_time_zone.to_date.iso8601
+    def final_warning?(request) = sent_receipts(request).size == MAX_REMINDERS - 1
+
+    def with_member_lease(id, &block)
+      SlackDeliveryLease.with("checkout_reminder:#{ToolCheckoutRequest.collection.database.name}:#{id}", &block)
     end
 
     # Decline a request once all reminders have been posted and the last one has had
@@ -81,15 +88,43 @@ module CheckoutRequestReminder
     def finalize!(request, now: Time.current)
       request.reload
       return if request.open? || !request.reminder_open
+      with_member_lease(request.member_id) { |check| finalize_receipts!(request.reload, now, check) }
+    rescue SlackDeliveryLease::Busy
+      # Another send or edit owns the member. The daily scan retries this flag.
+      nil
+    end
 
+    def finalize_receipts!(request, now, check)
       request.reminders.each do |key, receipt|
         next unless receipt['status'] == 'sent' && !receipt['finalized'] && receipt['ts'].present?
-
-        Service::SlackConnector.update_slack_message(receipt['channel'], receipt['ts'],
-                                                     resolved_message(request), resolved_channel: true)
-        ToolCheckoutRequest.collection.find('_id' => request.id)
-                           .update_one('$set' => { "reminders.#{key}.finalized" => true,
-                                                   "reminders.#{key}.finalized_at" => now })
+        # A partially recorded send must finish copying receipts before an edit
+        # can use them to determine the complete membership of its Slack post.
+        next if receipt['delivery_id'] && CheckoutReminderDelivery.where(id: receipt['delivery_id']).exists?
+        next if receipt['destination_mode'] && receipt['destination_mode'] != Service::SlackConnector.message_destination_mode
+        resolved_ids = [request.id]
+        text = if receipt['grouped']
+          participants = ToolCheckoutRequest.where(member_id: request.member_id, "reminders.#{key}.delivery_id" => receipt.fetch('delivery_id'))
+          pending, closed = participants.partition(&:open?)
+          resolved_ids = closed.map(&:id)
+          group_message(pending, receipt)
+        else
+          resolved_message(request)
+        end
+        check.call
+        begin
+          Service::SlackConnector.update_slack_message(receipt['channel'], receipt['ts'], text, resolved_channel: true)
+          check.call
+        rescue
+          # An uncertain or late chat.update can land after another worker's
+          # final edit. Make the latest state eligible for reconciliation again.
+          ToolCheckoutRequest.collection.find('_id' => request.id, "reminders.#{key}.ts" => receipt['ts'])
+            .update_one('$set' => { "reminders.#{key}.finalized" => false, 'reminder_open' => true })
+          raise
+        end
+        # Only acknowledge closures observed in this edit's snapshot. Anything
+        # that closed during chat.update still needs a fresh resolution edit.
+        ToolCheckoutRequest.collection.find('_id' => { '$in' => resolved_ids })
+          .update_many('$set' => { "reminders.#{key}.finalized" => true, "reminders.#{key}.finalized_at" => now })
       end
       request.reload
       unresolved = request.reminders.any? do |_, receipt|
@@ -100,14 +135,28 @@ module CheckoutRequestReminder
 
     def waiting_message(request, declines_on: nil)
       text = "*#{CheckoutDisplay.escape(request.member.fullname)}* requested checkout on " \
-             "*#{CheckoutDisplay.escape(request.target.name)}* (#{CheckoutDisplay.escape(request.target.shop&.name)}) " \
-             "on #{request.request_date.to_date.iso8601} and is still waiting. "
+             "*#{target_label(request)}* (#{CheckoutDisplay.escape(request.target.shop&.name)}) " \
+             "on #{request_day(request)} and is still waiting. "
       if declines_on
         text + "This is the last reminder: if no checkout is recorded it will be automatically declined on " \
-               "#{declines_on.iso8601}. If this was already done in person, please record the checkout."
+               "#{declines_on}. If this was already done in person, please record the checkout."
       else
         text + "If this was already done in person, please record the checkout so this stops."
       end
+    end
+
+    def group_message(requests, receipt)
+      member = "*#{CheckoutDisplay.escape(receipt.fetch('member_name'))}*"
+      shop = "*#{CheckoutDisplay.escape(receipt.fetch('shop_name'))}*"
+      day = receipt.fetch('day')
+      return "No checkout requests from #{member} for #{shop} on #{day} are still waiting." if requests.empty?
+
+      names = requests.map { |request| target_label(request) }.uniq.sort_by { |name| [name.downcase, name] }
+      text = "#{member} requested checkout on #{shop} tools #{names.map { |name| "*#{name}*" }.join(', ')} on #{day} and is still waiting. "
+      if receipt['declines_on']
+        text += "This is the last reminder. Outstanding requests will be automatically declined on #{receipt['declines_on']}. "
+      end
+      text + 'If this was already done in person, please record the outstanding checkouts.'
     end
 
     def resolved_message(request)
@@ -123,33 +172,40 @@ module CheckoutRequestReminder
 
     private
 
-    def claim(request, key, now)
-      token = SecureRandom.hex(8)
-      path = "reminders.#{key}"
-      claimed = ToolCheckoutRequest.collection.find(
-        '_id' => request.id, 'status' => 'open',
-        '$and' => [
-          { "#{path}.status" => { '$ne' => 'sent' } },
-          { '$or' => [{ "#{path}.lease_until" => nil }, { "#{path}.lease_until" => { '$lt' => now } }] }
-        ]
-      ).find_one_and_update('$set' => { path => { 'status' => 'sending', 'token' => token,
-                                                   'lease_until' => now + LEASE, 'started_at' => now,
-                                                   'finalized' => false },
-                                        'reminder_open' => true })
-      claimed ? token : nil
+    def target_label(request)
+      name = CheckoutDisplay.escape(request.target&.name)
+      request.tool_group_id ? "#{name} (tool group)" : name
     end
 
-    def finish(request, key, token, status, now, extra = {})
-      path = "reminders.#{key}"
-      receipt = { 'status' => status, 'token' => token, 'finished_at' => now, 'finalized' => false }
-      receipt['sent_at'] = now if status == 'sent'
-      receipt.merge!(extra.compact)
-      ToolCheckoutRequest.collection.find('_id' => request.id, "#{path}.token" => token)
-                         .find_one_and_update('$set' => { path => receipt })
+    def deliver_for!(day, member_id, ids, now, &on_error)
+      with_member_lease(member_id) do |check|
+        # Resume saved batches with their original UUID before planning fresh posts.
+        CheckoutReminderDelivery.where(member_id: member_id, day: day).each do |post|
+          ids = ids - post.request_ids
+          deliver_post!(post, check, now, &on_error)
+        end
+        requests = ToolCheckoutRequest.in(id: ids).where(member_id: member_id, status: 'open').includes(:member, :tool, :tool_group).select do |request|
+          due?(request, now) && request_day(request) == day
+        end
+        groups = requests.group_by { |r| [r.target.shop_id || r.id, final_warning?(r)] }
+        groups.each do |(_, final_warning), rows|
+          first = rows.first
+          check.call
+          post = CheckoutReminderDelivery.create!(member_id: member_id, day: day, shop_id: first.target.shop_id,
+            request_ids: rows.map(&:id), number: due_number(first, now), final_warning: final_warning,
+            destination_mode: Service::SlackConnector.message_destination_mode)
+          deliver_post!(post, check, now, &on_error)
+        end
+      end
     end
 
-    def release(request, key, token, status, now)
-      finish(request, key, token, status, now)
+    def deliver_post!(post, check, now)
+      CheckoutReminderSender.deliver!(post, check, now)
+    rescue SlackDeliveryLease::Busy
+      raise
+    rescue => error
+      raise unless block_given?
+      yield error, post.request_ids
     end
   end
 end
