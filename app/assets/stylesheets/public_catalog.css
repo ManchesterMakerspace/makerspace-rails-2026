@@ -16,3 +16,11 @@ body{margin:0;background:#fafafa;color:rgba(0,0,0,.87);font-family:Roboto,Helvet
 .storage-map-tool { fill: rgba(214, 40, 40, 0.3); stroke: #d62828; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .storage-map-glyph { fill: #fff; pointer-events: none; }
 .storage-map-marker { fill: #d62828; stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; }
+
+.eventbrite-listing { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.65rem 0; }
+.eventbrite-listing + .eventbrite-listing { border-top: 1px solid #ddd; }
+.eventbrite-listing img { flex: none; width: clamp(4.5rem, 20%, 9rem); aspect-ratio: 2 / 1; object-fit: cover; }
+.eventbrite-listing div { min-width: 0; }
+.eventbrite-listing h2 { margin: 0; font-size: 1.125rem; line-height: 1.3; }
+.eventbrite-listing time, .eventbrite-listing p { font-size: 0.9375rem; line-height: 1.4; }
+.eventbrite-listing p { margin: 0.15rem 0 0; }

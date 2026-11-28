@@ -46,6 +46,7 @@ Rails.application.routes.draw do
   end
 
   get '/reservations/agenda', to: 'reservation_agendas#index'
+  get '/eventbrite/events', to: 'public_eventbrite_events#index'
 
   scope :api, defaults: { format: :json } do
     get "/shortcodes/:code", to: "shortcode_resolutions#show"

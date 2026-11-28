@@ -1556,6 +1556,17 @@ adds. Neither path sends notices inside its approval transaction.
 
 ## Eventbrite ingestion and manual imports
 
+`EventbriteIntegration::HistoryQuery` filters staff lists before counting and
+paging. Date bounds and title exclusions use the parent event in the same
+organization for orders and attendees. `OrderHistoryQuery` adds attendee-link
+conditions for order history. Global orders sort by Eastern event day then
+case-insensitive buyer email, and global attendees by case-insensitive email.
+Both sorts apply before paging. Cached staff event summaries include the start
+and end times for rendering date ranges. Invalid date filters return 400.
+`EventbriteIntegration::PublicEvents` reads allowed organizations' public
+occurrences and stored inventory for the [HTML/JSON/XML feed](volunteer-public-resources.MD#eventbrite-events).
+It validates query parameters, projects public fields, and makes no provider calls or writes.
+
 `EventbriteDeliveryJob` hydrates persisted receiver pointers through the API token,
 enforces the optional organization allowlist when nonempty, and idempotently
 synchronizes domain records. A blank/unset allowlist accepts any organization the
@@ -1587,7 +1598,7 @@ IDs when child jobs reload documents. Expanded order imports reuse their parent,
 saved order and one ticket existence batch; announcement dirtying increments
 revisions and schedules eligible due work in bulk without shortening backoff.
 
-`DisplayCache` caches only shared event name/start/timezone, ticket names and
+`DisplayCache` caches shared event names, start and end times, timezones, ticket names and
 public signup choices for at most five minutes. Keys include schema version,
 environment, MongoDB database and organization configuration. Batched misses use
 projected MongoDB reads; missing records/empty choices are cached too. Each hit

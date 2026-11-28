@@ -1,0 +1,17 @@
+<h1>Upcoming Eventbrite events</h1>
+<% if events.empty? %>
+  <p>No matching events.</p>
+<% end %>
+<% events.each do |event| %>
+  <section class="eventbrite-listing">
+    <% if event['image_url'] %><img src="<%= event['image_url'] %>" alt="" loading="lazy"><% end %>
+    <div>
+      <h2><%= link_to_if event['public_url'], event['name'].presence || 'Untitled event', event['public_url'], target: '_blank', rel: 'noopener noreferrer' %></h2>
+      <% start = event.fetch('starts_at') %>
+      <% zone = ActiveSupport::TimeZone[event['timezone'].presence || 'America/New_York'] || ActiveSupport::TimeZone['America/New_York'] %>
+      <time datetime="<%= start.iso8601 %>"><%= start.in_time_zone(zone).strftime('%b %-d, %Y at %-I:%M %p %Z') %></time>
+      <% if event['summary'].present? %><p><%= event['summary'] %></p><% end %>
+      <p><%= event['tickets_remaining'].nil? ? 'Ticket availability unknown' : "#{pluralize(event['tickets_remaining'], 'ticket')} remaining" %></p>
+    </div>
+  </section>
+<% end %>

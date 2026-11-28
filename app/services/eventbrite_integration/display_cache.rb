@@ -4,7 +4,7 @@ module EventbriteIntegration
   # Display data only. Authorization, signup validation and delivery state stay live.
   class DisplayCache
     TTL = 300
-    VERSION = 2
+    VERSION = 3
     CACHE_ERRORS = [Redis::BaseError, IOError, SystemCallError].freeze
     READ = <<~LUA.freeze
       local token = redis.call('GET', KEYS[1])
@@ -33,7 +33,7 @@ module EventbriteIntegration
     class << self
       # Return an entry (or nil for a missing record) keyed by [organization_id, provider_id].
       def fetch_events(pairs)
-        fetch_records(:events, EventbriteEvent, pairs, %i[name starts_at timezone])
+        fetch_records(:events, EventbriteEvent, pairs, %i[name starts_at ends_at timezone])
       end
 
       def fetch_ticket_classes(pairs)
@@ -148,7 +148,9 @@ module EventbriteIntegration
       def publish(kind, token, entries, expires_at)
         return if entries.empty?
         values = entries.values.map do |entry|
-          entry = entry.merge('starts_at' => entry['starts_at']&.iso8601(6)) if kind == :events && entry
+          if kind == :events && entry
+            entry = entry.merge('starts_at' => entry['starts_at']&.iso8601(6), 'ends_at' => entry['ends_at']&.iso8601(6))
+          end
           JSON.generate(version: VERSION, generation: token, expires_at: expires_at, entry: entry)
         end
         best_effort do
@@ -167,9 +169,11 @@ module EventbriteIntegration
         if kind == :signup
           return nil unless entry.is_a?(Array) && entry.all? { |row| valid_signup_row?(row) }
         elsif !entry.nil?
-          fields = kind == :events ? %w[name starts_at timezone] : %w[name]
+          fields = kind == :events ? %w[name starts_at ends_at timezone] : %w[name]
           return nil unless entry.is_a?(Hash) && entry.keys.sort == fields.sort && entry.values.all? { |value| value.nil? || value.is_a?(String) }
-          entry['starts_at'] = Time.iso8601(entry['starts_at']) if kind == :events && entry['starts_at']
+          if kind == :events
+            %w[starts_at ends_at].each { |field| entry[field] = Time.iso8601(entry[field]) if entry[field] }
+          end
         elsif !payload.key?('entry')
           return nil
         end

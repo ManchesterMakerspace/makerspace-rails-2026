@@ -1,8 +1,42 @@
-# Public Volunteer Resources
+# Public Volunteer and Eventbrite Resources
 
 The volunteer bounty and leaderboard routes are accessible without a member
 session. They share optional token protection but expose different formats and
-data.
+data. The public Eventbrite feed below also works without a session and can be
+read regardless of the volunteer token settings.
+
+## Eventbrite events
+
+`GET /eventbrite/events` serves an HTML listing. Use `.html`, `.json`, `.xml`,
+or a matching `Accept` header. The JSON array and XML `<events>` collection
+contain one entry per occurrence, earliest start first. An empty list returns 200.
+
+The feed includes ongoing events with a known end after the request time and
+events starting before the cutoff. It includes Open House. Events must be listed,
+valid (no invalidation timestamp), unrestricted, and within the configured
+organization allowlist. Series parents and provider statuses `draft` and
+`deleted` are excluded.
+
+| Query parameter | Effect |
+| --- | --- |
+| `max_days` | Positive integer, default 31. The cutoff is this many 24-hour periods after the request. |
+| `min_tickets_remaining` | Nonnegative integer. Includes known counts at or above this minimum. Omit to include unknown counts. |
+| `name` | Include titles containing this text, ignoring case. |
+| `notname` | Exclude titles containing this text, ignoring case. |
+
+Filters combine. Both title filters use literal substrings. Invalid numeric
+filters return 400. To list wood classes in the next two weeks with at least
+two tickets and exclude Open House, request
+`/eventbrite/events.json?max_days=14&min_tickets_remaining=2&name=wood&notname=Open%20House`.
+
+HTML displays a compact row with the thumbnail on the left when available.
+The title opens the event in a new tab when a registration URL is available.
+The row shows the local start date and time, summary and ticket availability.
+
+Each JSON and XML event exposes `eventbrite_id`, `name`, `starts_at`, `ends_at`, `timezone`,
+`summary`, `venue_label`, `status`, `public_url`, `image_url`, and
+`tickets_remaining`. Times are ISO 8601. Missing inventory is null. Availability
+reflects the last local Eventbrite inventory update.
 
 ## Shared token protection
 

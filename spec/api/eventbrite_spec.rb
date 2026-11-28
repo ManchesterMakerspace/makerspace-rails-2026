@@ -56,6 +56,8 @@ describe 'Eventbrite API', type: :request do
   %w[events orders attendees].each do |kind|
     path "/admin/eventbrite/#{kind}" do
       get "Lists restricted Eventbrite #{kind}" do
+        description 'Sorted by Eastern event start date (earliest first), then buyer email (A–Z). Undated events sort last.' if kind == 'orders'
+        description 'Sorted by attendee email (A–Z).' if kind == 'attendees'
         tags 'Eventbrite'
         operationId "listEventbrite#{kind.capitalize}"
         produces 'application/json'
@@ -65,7 +67,19 @@ describe 'Eventbrite API', type: :request do
         %w[event_id status linked search pageNum].each do |name|
           parameter name: name.to_sym, in: :query, required: false, schema: { type: :string }
         end
+        %i[from_date to_date].each do |name|
+          parameter name: name, in: :query, required: false, schema: { type: :string, format: :date },
+            description: 'Inclusive Eastern calendar date of the event start.'
+        end
+        parameter name: :exclude_open_house, in: :query, required: false, schema: { type: :boolean, default: false },
+          description: 'Exclude events whose title contains Open House, ignoring case.'
+        response '400', 'Invalid or reversed event date range' do
+          let(:from_date) { '2026-02-30' }
+          before { sign_in create(:member, role: 'resource_manager') }
+          run_test!
+        end
         response '200', 'Staff records with total-items pagination header' do
+          header 'total-items', schema: { type: :integer }, description: 'Matching records before pagination.'
           schema type: :array, items: { '$ref' => '#/components/schemas/EventbriteRecord' }
           before do
             sign_in create(:member, role: 'resource_manager')

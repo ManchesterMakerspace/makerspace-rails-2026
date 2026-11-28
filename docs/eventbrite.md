@@ -210,6 +210,24 @@ their own imported history. The public signup listing and Member serializers
 never include attendee/order data. Staff APIs use zero-based `pageNum`, 50 rows,
 and `total-items`, with organization/event/status/link/name/email filters.
 
+The global Events, Orders and Attendees tabs initially show event starts from today
+through six calendar months ahead in America/New_York and omit titles containing
+Open House (case-insensitive). **From** and **To** are inclusive and can be used
+independently. **Show all dates** clears both dates. **Show Open House** includes
+those titles and **Hide Open House** restores the exclusion. Existing filters
+compose with these controls. Member profiles continue to show full linked history.
+Staff event labels show each local calendar date once, including dates already
+written in the title. Events spanning multiple days show both dates. Global
+orders sort by Eastern event day, earliest first, then buyer email. Undated
+orders follow dated ones. Global attendees sort alphabetically by email.
+The staff API accepts optional `from_date`, `to_date` (YYYY-MM-DD) and
+`exclude_open_house=true` on global lists; malformed or reversed dates return 400.
+
+For public displays and integrations use the [public Eventbrite feed](volunteer-public-resources.MD#eventbrite-events).
+The [staff wiki update](wiki-eventbrite-list.patch) applies to the Eventbrite
+guide and troubleshooting page on the existing wiki draft. Publish after Rails
+and React deploy.
+
 ### Read performance and display caching
 
 Staff history presentation batches parent events/ticket names and aggregates
@@ -220,7 +238,7 @@ Recovery scans project IDs for jobs that reload their records, expanded order
 imports reuse their known parent/order and batch ticket checks, and event changes
 dirty matching Slack deliveries in bulk without shortening a future retry.
 
-Shared event name/start/timezone, ticket names, and public signup choices use
+Shared event names, start and end times, timezones, ticket names, and public signup choices use
 `EventbriteIntegration::DisplayCache` with a five-minute maximum lifetime. Missing
 metadata and empty choices are cached. Keys separate environments, databases and
 organization configurations; signup choices also separate Eastern dates and

@@ -58,6 +58,7 @@ document that follows the structure below.
 | `/api/rental_spots/:id/public` | `GET` | QR/deep-link visitors and Member Portal pre-login landing pages | No member session or token | JSON | `id` (path; MongoDB ID or spot number) | None | `RentalSpotsController#public_show` | [Public rental spots](rental-spots.MD) |
 | `/volunteer/bounties` | `GET` | Public displays, integrations, and prospective volunteers | No member session; shared `token` required only when volunteer token gating is enabled | HTML, JSON, XML | None | `shop`, `token` (query); `.json`/`.xml` extension or matching `Accept` header | `Volunteer::BountiesController#index` | [Public volunteer resources](volunteer-public-resources.MD#bounties) |
 | `/volunteer/leaderboard` | `GET` | Public displays, browsers, and integrations | No member session; shared `token` required only when volunteer token gating is enabled | HTML, JSON | None | `token` (query); `.json` extension or JSON `Accept` header | `Volunteer::LeaderboardController#index` | [Public volunteer resources](volunteer-public-resources.MD#leaderboard) |
+| `/eventbrite/events` | `GET` | Visitors, displays and integrations | No member session or token | HTML, JSON, XML by suffix or `Accept` | None | `max_days` (default 31), `min_tickets_remaining`, `name`, `notname` | `PublicEventbriteEventsController#index` | [Public Eventbrite feed](volunteer-public-resources.MD#eventbrite-events) |
 
 ## Public runtime configuration
 
@@ -238,6 +239,10 @@ The pending-credit count remains global. Omitting `year` returns all-time activi
 
 ## Eventbrite resources
 
+The public `GET /eventbrite/events` feed includes ongoing and future occurrences from imported records.
+HTML shows a thumbnail beside the title and local start time. A linked title opens the Eventbrite page in a new tab.
+See the [public feed catalog](volunteer-public-resources.MD#eventbrite-events) for eligibility, fields and examples.
+
 `POST <EVENTBRITE_WEBHOOK_PATH>` receives private-URL Eventbrite JSON pointers,
 outside session/CSRF authentication; only this receiver bypasses CSRF. It returns
 202 after persistence, 200 for test, 204 for unsupported actions, 400 for malformed
@@ -268,6 +273,10 @@ never the import time. It remains null when that date is unknown, while refund
 invalidation and provider status remain visible. Existing known refund dates are
 preserved on replay. The EventbriteRecord schema retains its nullable string shape.
 The React `/admin/eventbrite` browser and member Eventbrite tab use these routes.
+Global list requests also accept `from_date`, `to_date` and `exclude_open_house=true`.
+Global orders sort by Eastern event day, earliest first, then buyer email. Undated orders come last.
+Global attendees sort by email. Both email sorts are case-insensitive and apply before pagination.
+The browser sends its initial Eastern date range and title exclusion on all three tabs.
 See [Eventbrite](eventbrite.md).
 
 ### Eventbrite announcements configuration

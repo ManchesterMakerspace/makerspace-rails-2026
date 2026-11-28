@@ -49,7 +49,7 @@ class EventbriteEvent
 
   def invalidate_changed_display_cache
     fields = previous_changes.keys
-    EventbriteIntegration::DisplayCache.invalidate_events if (fields & %w[_id organization_id eventbrite_id name starts_at timezone]).any?
+    EventbriteIntegration::DisplayCache.invalidate_events if (fields & %w[_id organization_id eventbrite_id name starts_at ends_at timezone]).any?
     if (fields & %w[_id organization_id eventbrite_id name starts_at timezone listed series_parent status invalidated_at]).any?
       EventbriteIntegration::DisplayCache.invalidate_signup_choices
     end

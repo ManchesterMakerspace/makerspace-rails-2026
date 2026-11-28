@@ -3,15 +3,17 @@ class Admin::EventbriteController < AdminOrRmController
   def index
     scope = filtered
     offset = [(params[:page_num] || params[:pageNum]).to_i, 0].max * 50
-    if params[:kind] == 'orders' && (@member_id || params[:linked].present?)
-      query = EventbriteIntegration::OrderHistoryQuery.new(scope, member_id: @member_id, linked: params[:linked])
-      response.set_header('total-items', query.count)
-      records = query.page(offset: offset, limit: 50)
+    filter = @member_id ? {} : EventbriteIntegration::HistoryQuery.event_filter(params)
+    query = if params[:kind] == 'orders' && (@member_id || params[:linked].present?)
+      EventbriteIntegration::OrderHistoryQuery.new(scope, member_id: @member_id, linked: params[:linked], event_filter: filter)
     else
-      response.set_header('total-items', scope.count)
-      records = scope.order_by(created_at: :desc, id: :desc).skip(offset).limit(50).only(*EventbriteIntegration::Presenter::FIELDS)
+      EventbriteIntegration::HistoryQuery.new(scope, event_filter: filter)
     end
+    response.set_header('total-items', query.count)
+    records = query.page(offset: offset, limit: 50, staff_list: @member_id.nil?)
     render json: EventbriteIntegration::Presenter.many(records), adapter: :attributes
+  rescue EventbriteIntegration::HistoryQuery::InvalidFilter => e
+    render json: { error: e.message }, status: :bad_request
   end
   def show
     record = base.only(*EventbriteIntegration::Presenter::FIELDS).find(params[:id])
