@@ -15643,7 +15643,7 @@
         ],
         "operationId": "listPublicEventbriteEvents",
         "security": [],
-        "description": "Defaults to compact HTML rows with the event title, start time, summary and ticket availability. Titles with a public URL open Eventbrite in a new tab. Use .html, .json, .xml or Accept. Returns listed, valid, unrestricted occurrences in allowed organizations, excluding draft and deleted events. Includes Open House. Results are ordered by start time.",
+        "description": "Defaults to compact HTML rows with the event title, start time, summary and ticket availability. HTML shows SOLD OUT for zero remaining tickets. Titles with a public URL open Eventbrite in a new tab. Use .html, .json, .xml or Accept. Returns listed, valid, unrestricted occurrences in allowed organizations, excluding draft and deleted events. Includes Open House. Results are ordered by start time.",
         "parameters": [
           {
             "name": "max_days",

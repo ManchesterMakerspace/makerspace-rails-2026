@@ -11,7 +11,11 @@
       <% zone = ActiveSupport::TimeZone[event['timezone'].presence || 'America/New_York'] || ActiveSupport::TimeZone['America/New_York'] %>
       <time datetime="<%= start.iso8601 %>"><%= start.in_time_zone(zone).strftime('%b %-d, %Y at %-I:%M %p %Z') %></time>
       <% if event['summary'].present? %><p><%= event['summary'] %></p><% end %>
-      <p><%= event['tickets_remaining'].nil? ? 'Ticket availability unknown' : "#{pluralize(event['tickets_remaining'], 'ticket')} remaining" %></p>
+      <% if event['tickets_remaining'] == 0 %>
+        <p class="sold-out">SOLD OUT</p>
+      <% else %>
+        <p><%= event['tickets_remaining'].nil? ? 'Ticket availability unknown' : "#{pluralize(event['tickets_remaining'], 'ticket')} remaining" %></p>
+      <% end %>
     </div>
   </section>
 <% end %>

@@ -32,6 +32,7 @@ two tickets and exclude Open House, request
 HTML displays a compact row with the thumbnail on the left when available.
 The title opens the event in a new tab when a registration URL is available.
 The row shows the local start date and time, summary and ticket availability.
+A known count of zero displays **SOLD OUT** in red. Missing inventory displays “Ticket availability unknown”.
 
 Each JSON and XML event exposes `eventbrite_id`, `name`, `starts_at`, `ends_at`, `timezone`,
 `summary`, `venue_label`, `status`, `public_url`, `image_url`, and

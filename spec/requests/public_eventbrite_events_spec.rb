@@ -80,6 +80,23 @@ RSpec.describe 'Public Eventbrite event feed', type: :request do
     expect(response.parsed_body.first.keys).not_to include('slack_receipts', 'organization_id')
   end
 
+  it 'marks only known zero inventory as sold out in HTML and returns zero in both data feeds' do
+    event('full', tickets_remaining: 0)
+    event('available', tickets_remaining: 2)
+    event('unknown')
+    get '/eventbrite/events'
+    rows = Nokogiri::HTML(response.body).css('section').index_by { |row| row.at_css('h2').text }
+    expect(rows.fetch('full').at_css('.sold-out').text).to eq('SOLD OUT')
+    expect(rows.fetch('available').text).to include('2 tickets remaining')
+    expect(rows.fetch('unknown').text).to include('Ticket availability unknown')
+    expect(response.body.scan('SOLD OUT').size).to eq(1)
+    expect(response.body).not_to include('0 tickets remaining')
+    get '/eventbrite/events.json', params: { name: 'full' }
+    expect(response.parsed_body.first.fetch('tickets_remaining')).to eq(0)
+    get '/eventbrite/events.xml', params: { name: 'full' }
+    expect(Nokogiri::XML(response.body).at_xpath('/events/event/tickets_remaining').text).to eq('0')
+  end
+
   it 'rejects malformed numeric filters in each representation' do
     %w[html json xml].each do |format|
       [{ max_days: 0 }, { max_days: 'abc' }, { min_tickets_remaining: '-1' }, { min_tickets_remaining: '1.5' }].each do |filters|
